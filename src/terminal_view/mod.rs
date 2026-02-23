@@ -2,8 +2,10 @@ use crate::colors::TerminalColors;
 use crate::commands::{self, CommandAction};
 use crate::config::{
     self, AppConfig, CursorStyle as AppCursorStyle, TabTitleConfig, TabTitleSource,
+    TerminalScrollbarStyle, TerminalScrollbarVisibility,
 };
 use crate::keybindings;
+use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
 use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
 use gpui::{
@@ -37,6 +39,7 @@ mod command_palette;
 mod inline_input;
 mod interaction;
 mod render;
+mod scrollbar;
 mod search;
 mod tabs;
 mod titles;
@@ -76,6 +79,26 @@ const COMMAND_PALETTE_MAX_ITEMS: usize = 8;
 const COMMAND_PALETTE_ROW_HEIGHT: f32 = 30.0;
 const COMMAND_PALETTE_SCROLLBAR_WIDTH: f32 = 8.0;
 const COMMAND_PALETTE_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 18.0;
+const TERMINAL_SCROLLBAR_GUTTER_WIDTH: f32 = 12.0;
+const TERMINAL_SCROLLBAR_TRACK_WIDTH: f32 = 12.0;
+const TERMINAL_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 40.0;
+const TERMINAL_SCROLLBAR_HOLD_MS: u64 = 900;
+const TERMINAL_SCROLLBAR_FADE_MS: u64 = 140;
+const TERMINAL_SCROLLBAR_HOLD_DURATION: Duration =
+    Duration::from_millis(TERMINAL_SCROLLBAR_HOLD_MS);
+const TERMINAL_SCROLLBAR_FADE_DURATION: Duration =
+    Duration::from_millis(TERMINAL_SCROLLBAR_FADE_MS);
+const TERMINAL_SCROLLBAR_GUTTER_ALPHA: f32 = 0.14;
+const TERMINAL_SCROLLBAR_TRACK_ALPHA: f32 = 0.28;
+const TERMINAL_SCROLLBAR_THUMB_ALPHA: f32 = 0.56;
+const TERMINAL_SCROLLBAR_THUMB_ACTIVE_ALPHA: f32 = 0.78;
+const TERMINAL_SCROLLBAR_MATCH_MARKER_ALPHA: f32 = 0.55;
+const TERMINAL_SCROLLBAR_CURRENT_MARKER_ALPHA: f32 = 0.92;
+const TERMINAL_SCROLLBAR_MARKER_HEIGHT: f32 = 2.0;
+const TERMINAL_SCROLLBAR_TRACK_RADIUS: f32 = 0.0;
+const TERMINAL_SCROLLBAR_THUMB_RADIUS: f32 = 0.0;
+const TERMINAL_SCROLLBAR_THUMB_INSET: f32 = 1.0;
+const TERMINAL_SCROLLBAR_MUTED_THEME_BLEND: f32 = 0.38;
 const SEARCH_BAR_WIDTH: f32 = 320.0;
 const SEARCH_BAR_HEIGHT: f32 = 36.0;
 const SEARCH_DEBOUNCE_MS: u64 = 50;
@@ -115,6 +138,47 @@ struct CellPos {
 struct TabBarLayout {
     tab_pill_width: f32,
     tab_padding_x: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct TerminalViewportGeometry {
+    origin_x: f32,
+    origin_y: f32,
+    width: f32,
+    height: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TerminalScrollbarDragState {
+    thumb_grab_offset: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TerminalScrollbarHit {
+    local_y: f32,
+    thumb_hit: bool,
+    thumb_top: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TerminalScrollbarMarkerCacheKey {
+    results_revision: u64,
+    history_size: usize,
+    viewport_rows: usize,
+    marker_top_limit_bucket: i32,
+}
+
+#[derive(Clone, Debug, Default)]
+struct TerminalScrollbarMarkerCache {
+    key: Option<TerminalScrollbarMarkerCacheKey>,
+    marker_tops: Vec<f32>,
+}
+
+impl TerminalScrollbarMarkerCache {
+    fn clear(&mut self) {
+        self.key = None;
+        self.marker_tops.clear();
+    }
 }
 
 struct TerminalTab {
@@ -311,6 +375,17 @@ fn adaptive_overlay_panel_alpha_with_floor_for_opacity(
     }
 }
 
+fn blend_rgba(base: gpui::Rgba, tint: gpui::Rgba, tint_factor: f32) -> gpui::Rgba {
+    let tint_factor = tint_factor.clamp(0.0, 1.0);
+    let base_factor = 1.0 - tint_factor;
+    gpui::Rgba {
+        r: (base.r * base_factor) + (tint.r * tint_factor),
+        g: (base.g * base_factor) + (tint.g * tint_factor),
+        b: (base.b * base_factor) + (tint.b * tint_factor),
+        a: (base.a * base_factor) + (tint.a * tint_factor),
+    }
+}
+
 #[derive(Clone, Copy)]
 struct OverlayStyleBuilder<'a> {
     colors: &'a TerminalColors,
@@ -435,6 +510,12 @@ pub struct TerminalView {
     command_palette_show_keybinds: bool,
     inline_input_selecting: bool,
     terminal_scroll_accumulator_y: f32,
+    terminal_scrollbar_visibility: TerminalScrollbarVisibility,
+    terminal_scrollbar_style: TerminalScrollbarStyle,
+    terminal_scrollbar_visibility_controller: ScrollbarVisibilityController,
+    terminal_scrollbar_animation_active: bool,
+    terminal_scrollbar_drag: Option<TerminalScrollbarDragState>,
+    terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache,
     /// Cached cell dimensions
     cell_size: Option<Size<Pixels>>,
     // Search state
@@ -499,6 +580,180 @@ impl TerminalView {
 
     fn overlay_style(&self) -> OverlayStyleBuilder<'_> {
         OverlayStyleBuilder::new(&self.colors, self.background_opacity)
+    }
+
+    fn scrollbar_color(
+        &self,
+        overlay_style: OverlayStyleBuilder<'_>,
+        base_alpha: f32,
+    ) -> gpui::Rgba {
+        match self.terminal_scrollbar_style {
+            TerminalScrollbarStyle::Neutral => overlay_style.panel_foreground(base_alpha),
+            TerminalScrollbarStyle::MutedTheme => {
+                let background = overlay_style.panel_background(base_alpha);
+                let accent = overlay_style.panel_cursor(base_alpha);
+                blend_rgba(background, accent, TERMINAL_SCROLLBAR_MUTED_THEME_BLEND)
+            }
+            TerminalScrollbarStyle::Theme => overlay_style.panel_cursor(base_alpha),
+        }
+    }
+
+    pub(super) fn terminal_scrollbar_mode(&self) -> ScrollbarVisibilityMode {
+        match self.terminal_scrollbar_visibility {
+            TerminalScrollbarVisibility::Off => ScrollbarVisibilityMode::AlwaysOff,
+            TerminalScrollbarVisibility::Always => ScrollbarVisibilityMode::AlwaysOn,
+            TerminalScrollbarVisibility::OnScroll => ScrollbarVisibilityMode::OnScroll,
+        }
+    }
+
+    pub(super) fn terminal_scrollbar_alpha(&self, now: Instant) -> f32 {
+        self.terminal_scrollbar_visibility_controller.alpha(
+            self.terminal_scrollbar_mode(),
+            now,
+            TERMINAL_SCROLLBAR_HOLD_DURATION,
+            TERMINAL_SCROLLBAR_FADE_DURATION,
+        )
+    }
+
+    fn terminal_scrollbar_layout_for_track(
+        &self,
+        track_height: f32,
+    ) -> Option<scrollbar::TerminalScrollbarLayout> {
+        let size = self.active_terminal().size();
+        let viewport_rows = size.rows as usize;
+        if viewport_rows == 0 {
+            return None;
+        }
+
+        let line_height: f32 = size.cell_height.into();
+        let (display_offset, history_size) = self.active_terminal().scroll_state();
+        scrollbar::compute_layout(
+            display_offset,
+            history_size,
+            viewport_rows,
+            line_height,
+            track_height,
+            TERMINAL_SCROLLBAR_MIN_THUMB_HEIGHT,
+        )
+    }
+
+    pub(super) fn terminal_viewport_geometry(&self) -> Option<TerminalViewportGeometry> {
+        let size = self.active_terminal().size();
+        if size.cols == 0 || size.rows == 0 {
+            return None;
+        }
+
+        let (padding_x, padding_y) = self.effective_terminal_padding();
+        let cell_width: f32 = size.cell_width.into();
+        let cell_height: f32 = size.cell_height.into();
+        if cell_width <= f32::EPSILON || cell_height <= f32::EPSILON {
+            return None;
+        }
+
+        Some(TerminalViewportGeometry {
+            origin_x: padding_x,
+            origin_y: self.chrome_height() + padding_y,
+            width: cell_width * f32::from(size.cols),
+            height: cell_height * f32::from(size.rows),
+        })
+    }
+
+    pub(super) fn terminal_surface_geometry(
+        &self,
+        window: &Window,
+    ) -> Option<TerminalViewportGeometry> {
+        let viewport = window.viewport_size();
+        let width: f32 = viewport.width.into();
+        let viewport_height: f32 = viewport.height.into();
+        let height = (viewport_height - self.chrome_height()).max(0.0);
+        if width <= f32::EPSILON || height <= f32::EPSILON {
+            return None;
+        }
+
+        Some(TerminalViewportGeometry {
+            origin_x: 0.0,
+            origin_y: self.chrome_height(),
+            width,
+            height,
+        })
+    }
+
+    pub(super) fn clear_terminal_scrollbar_marker_cache(&mut self) {
+        self.terminal_scrollbar_marker_cache.clear();
+    }
+
+    pub(super) fn mark_terminal_scrollbar_activity(&mut self, cx: &mut Context<Self>) {
+        if self.terminal_scrollbar_mode() != ScrollbarVisibilityMode::OnScroll {
+            return;
+        }
+
+        self.terminal_scrollbar_visibility_controller
+            .mark_activity(Instant::now());
+        self.start_terminal_scrollbar_animation(cx);
+    }
+
+    pub(super) fn start_terminal_scrollbar_drag(
+        &mut self,
+        thumb_grab_offset: f32,
+        cx: &mut Context<Self>,
+    ) {
+        self.terminal_scrollbar_drag = Some(TerminalScrollbarDragState { thumb_grab_offset });
+        self.terminal_scrollbar_visibility_controller
+            .start_drag(Instant::now());
+        self.start_terminal_scrollbar_animation(cx);
+    }
+
+    pub(super) fn finish_terminal_scrollbar_drag(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.terminal_scrollbar_drag.take().is_none() {
+            return false;
+        }
+
+        self.terminal_scrollbar_visibility_controller
+            .end_drag(Instant::now());
+        self.start_terminal_scrollbar_animation(cx);
+        true
+    }
+
+    fn terminal_scrollbar_needs_animation(&self, now: Instant) -> bool {
+        self.terminal_scrollbar_visibility_controller
+            .needs_animation(
+                self.terminal_scrollbar_mode(),
+                now,
+                TERMINAL_SCROLLBAR_HOLD_DURATION,
+                TERMINAL_SCROLLBAR_FADE_DURATION,
+            )
+    }
+
+    fn start_terminal_scrollbar_animation(&mut self, cx: &mut Context<Self>) {
+        if self.terminal_scrollbar_animation_active
+            || self.terminal_scrollbar_mode() != ScrollbarVisibilityMode::OnScroll
+            || !self.terminal_scrollbar_needs_animation(Instant::now())
+        {
+            return;
+        }
+
+        self.terminal_scrollbar_animation_active = true;
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            loop {
+                smol::Timer::after(Duration::from_millis(16)).await;
+
+                let mut keep_running = false;
+                let result = cx.update(|cx| {
+                    this.update(cx, |view, cx| {
+                        keep_running = view.terminal_scrollbar_needs_animation(Instant::now());
+                        if !keep_running {
+                            view.terminal_scrollbar_animation_active = false;
+                        }
+                        cx.notify();
+                    })
+                });
+
+                if result.is_err() || !keep_running {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     fn sync_window_background_appearance(&mut self, window: &mut Window) {
@@ -664,6 +919,12 @@ impl TerminalView {
             command_palette_show_keybinds: config.command_palette_show_keybinds,
             inline_input_selecting: false,
             terminal_scroll_accumulator_y: 0.0,
+            terminal_scrollbar_visibility: config.terminal_scrollbar_visibility,
+            terminal_scrollbar_style: config.terminal_scrollbar_style,
+            terminal_scrollbar_visibility_controller: ScrollbarVisibilityController::default(),
+            terminal_scrollbar_animation_active: false,
+            terminal_scrollbar_drag: None,
+            terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache::default(),
             cell_size: None,
             search_open: false,
             search_input: InlineInputState::new(String::new()),
@@ -721,6 +982,14 @@ impl TerminalView {
         self.padding_x = config.padding_x.max(0.0);
         self.padding_y = config.padding_y.max(0.0);
         self.mouse_scroll_multiplier = config.mouse_scroll_multiplier;
+        if self.terminal_scrollbar_visibility != config.terminal_scrollbar_visibility {
+            self.terminal_scrollbar_visibility = config.terminal_scrollbar_visibility;
+            self.terminal_scrollbar_visibility_controller.reset();
+            self.terminal_scrollbar_drag = None;
+            self.terminal_scrollbar_animation_active = false;
+            self.clear_terminal_scrollbar_marker_cache();
+        }
+        self.terminal_scrollbar_style = config.terminal_scrollbar_style;
         self.command_palette_show_keybinds = config.command_palette_show_keybinds;
 
         for index in 0..self.tabs.len() {

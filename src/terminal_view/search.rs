@@ -18,6 +18,7 @@ impl TerminalView {
         self.search_open = true;
         self.search_state.open();
         self.search_input.clear();
+        self.clear_terminal_scrollbar_marker_cache();
         self.reset_cursor_blink_phase();
         cx.notify();
     }
@@ -30,6 +31,7 @@ impl TerminalView {
         self.search_open = false;
         self.search_state.close();
         self.search_input.clear();
+        self.clear_terminal_scrollbar_marker_cache();
         cx.notify();
     }
 
@@ -39,7 +41,7 @@ impl TerminalView {
         }
 
         self.search_state.next_match();
-        self.scroll_to_current_match();
+        self.scroll_to_current_match(cx);
         cx.notify();
     }
 
@@ -49,11 +51,11 @@ impl TerminalView {
         }
 
         self.search_state.previous_match();
-        self.scroll_to_current_match();
+        self.scroll_to_current_match(cx);
         cx.notify();
     }
 
-    fn scroll_to_current_match(&mut self) {
+    fn scroll_to_current_match(&mut self, cx: &mut Context<Self>) {
         let Some(current) = self.search_state.results().current() else {
             return;
         };
@@ -91,6 +93,7 @@ impl TerminalView {
 
         if delta != 0 {
             self.active_terminal().scroll_display(delta);
+            self.mark_terminal_scrollbar_activity(cx);
         }
     }
 
@@ -124,6 +127,9 @@ impl TerminalView {
         // Jump to nearest match to current viewport
         let viewport_center = -(display_offset as i32) + rows / 2;
         self.search_state.jump_to_nearest(viewport_center);
+        if self.search_state.results().is_empty() {
+            self.clear_terminal_scrollbar_marker_cache();
+        }
     }
 
     pub(super) fn handle_search_key_down(&mut self, key: &str, cx: &mut Context<Self>) {
@@ -154,7 +160,7 @@ impl TerminalView {
                 this.update(cx, |view, cx| {
                     if view.search_debounce_token == token {
                         view.perform_search();
-                        view.scroll_to_current_match();
+                        view.scroll_to_current_match(cx);
                         cx.notify();
                     }
                 })

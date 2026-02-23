@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::scrollbar::{self, ScrollbarPaintStyle, ScrollbarRange};
 use gpui::{point, uniform_list};
 use std::ops::Range;
 
@@ -524,24 +525,22 @@ impl TerminalView {
         &self,
         viewport_height: f32,
         item_count: usize,
-    ) -> Option<(f32, f32)> {
+    ) -> Option<scrollbar::ScrollbarMetrics> {
         let scroll_handle = self.command_palette_base_scroll_handle();
         let max_offset_from_handle: f32 = scroll_handle.max_offset().height.into();
         let estimated_content_height = item_count as f32 * COMMAND_PALETTE_ROW_HEIGHT;
         let estimated_max_offset = (estimated_content_height - viewport_height).max(0.0);
         let max_offset = max_offset_from_handle.max(estimated_max_offset);
-        if max_offset <= f32::EPSILON {
-            return None;
-        }
+        let offset_y: f32 = scroll_handle.offset().y.into();
+        let offset = (-offset_y).max(0.0);
+        let range = ScrollbarRange {
+            offset,
+            max_offset,
+            viewport_extent: viewport_height,
+            track_extent: viewport_height,
+        };
 
-        let offset: f32 = scroll_handle.offset().y.into();
-        let progress = (-offset / max_offset).clamp(0.0, 1.0);
-        let content_height = viewport_height + max_offset;
-        let thumb_height = ((viewport_height / content_height) * viewport_height)
-            .clamp(COMMAND_PALETTE_SCROLLBAR_MIN_THUMB_HEIGHT, viewport_height);
-        let travel = (viewport_height - thumb_height).max(0.0);
-
-        Some((travel * progress, thumb_height))
+        scrollbar::compute_metrics(range, COMMAND_PALETTE_SCROLLBAR_MIN_THUMB_HEIGHT)
     }
 
     fn render_command_palette_rows(
@@ -675,8 +674,10 @@ impl TerminalView {
             ..Font::default()
         };
         let input_selection = overlay_style.panel_cursor(COMMAND_PALETTE_INPUT_SELECTION_ALPHA);
-        let scrollbar_track = overlay_style.panel_cursor(COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA);
-        let scrollbar_thumb = overlay_style.panel_cursor(COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA);
+        let scrollbar_track =
+            self.scrollbar_color(overlay_style, COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA);
+        let scrollbar_thumb =
+            self.scrollbar_color(overlay_style, COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA);
 
         let list = if items.is_empty() {
             div()
@@ -707,33 +708,36 @@ impl TerminalView {
                 .items_start()
                 .child(list);
 
-            if let Some((thumb_top, thumb_height)) =
-                self.command_palette_scrollbar_metrics(list_height, items.len())
+            if let Some(metrics) = self.command_palette_scrollbar_metrics(list_height, items.len())
             {
+                let style = ScrollbarPaintStyle {
+                    width: COMMAND_PALETTE_SCROLLBAR_WIDTH,
+                    track_radius: 0.0,
+                    thumb_radius: 0.0,
+                    thumb_inset: 0.0,
+                    marker_inset: 0.0,
+                    marker_radius: 0.0,
+                    track_color: scrollbar_track,
+                    thumb_color: scrollbar_thumb,
+                    active_thumb_color: scrollbar_thumb,
+                    marker_color: None,
+                    current_marker_color: None,
+                };
                 list_container = list_container.child(
                     div()
                         .w(px(COMMAND_PALETTE_SCROLLBAR_WIDTH + 4.0))
                         .h_full()
                         .pl(px(2.0))
                         .pr(px(2.0))
-                        .child(
-                            div()
-                                .relative()
-                                .w(px(COMMAND_PALETTE_SCROLLBAR_WIDTH))
-                                .h_full()
-                                .rounded_full()
-                                .bg(scrollbar_track)
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .top(px(thumb_top))
-                                        .left_0()
-                                        .right_0()
-                                        .h(px(thumb_height))
-                                        .rounded_full()
-                                        .bg(scrollbar_thumb),
-                                ),
-                        ),
+                        .child(scrollbar::render_vertical(
+                            "command-palette-scrollbar",
+                            metrics,
+                            style,
+                            false,
+                            &[],
+                            None,
+                            0.0,
+                        )),
                 );
             }
 

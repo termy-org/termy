@@ -63,6 +63,11 @@ padding_x = 12\n\
 padding_y = 8\n\
 # Mouse wheel scroll speed multiplier\n\
 # mouse_scroll_multiplier = 3\n\
+# Terminal scrollbar visibility: always | on_scroll | off\n\
+# (while scrolled up in history, scrollbar stays visible in all modes)\n\
+# scrollbar_visibility = on_scroll\n\
+# Scrollbar style: neutral | muted_theme | theme\n\
+# scrollbar_style = neutral\n\
 \n\
 # Advanced runtime settings (usually leave these as defaults)\n\
 # Preferred shell executable path\n\
@@ -323,6 +328,54 @@ impl Default for CursorStyle {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalScrollbarVisibility {
+    Off,
+    Always,
+    OnScroll,
+}
+
+impl TerminalScrollbarVisibility {
+    fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "off" => Some(Self::Off),
+            "always" => Some(Self::Always),
+            "on_scroll" | "onscroll" => Some(Self::OnScroll),
+            _ => None,
+        }
+    }
+}
+
+impl Default for TerminalScrollbarVisibility {
+    fn default() -> Self {
+        Self::OnScroll
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalScrollbarStyle {
+    Neutral,
+    MutedTheme,
+    Theme,
+}
+
+impl TerminalScrollbarStyle {
+    fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "neutral" => Some(Self::Neutral),
+            "muted_theme" | "mutedtheme" => Some(Self::MutedTheme),
+            "theme" => Some(Self::Theme),
+            _ => None,
+        }
+    }
+}
+
+impl Default for TerminalScrollbarStyle {
+    fn default() -> Self {
+        Self::Neutral
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct CustomColors {
     pub foreground: Option<Rgba>,
@@ -353,6 +406,8 @@ pub struct AppConfig {
     pub padding_x: f32,
     pub padding_y: f32,
     pub mouse_scroll_multiplier: f32,
+    pub terminal_scrollbar_visibility: TerminalScrollbarVisibility,
+    pub terminal_scrollbar_style: TerminalScrollbarStyle,
     pub scrollback_history: usize,
     pub inactive_tab_scrollback: Option<usize>,
     pub command_palette_show_keybinds: bool,
@@ -389,6 +444,8 @@ impl Default for AppConfig {
             padding_x: 12.0,
             padding_y: 8.0,
             mouse_scroll_multiplier: DEFAULT_MOUSE_SCROLL_MULTIPLIER,
+            terminal_scrollbar_visibility: TerminalScrollbarVisibility::default(),
+            terminal_scrollbar_style: TerminalScrollbarStyle::default(),
             scrollback_history: DEFAULT_SCROLLBACK_HISTORY,
             inactive_tab_scrollback: DEFAULT_INACTIVE_TAB_SCROLLBACK,
             command_palette_show_keybinds: true,
@@ -601,6 +658,18 @@ impl AppConfig {
                 {
                     config.mouse_scroll_multiplier =
                         multiplier.clamp(MIN_MOUSE_SCROLL_MULTIPLIER, MAX_MOUSE_SCROLL_MULTIPLIER);
+                }
+            }
+
+            if key.eq_ignore_ascii_case("scrollbar_visibility") {
+                if let Some(visibility) = TerminalScrollbarVisibility::from_str(value) {
+                    config.terminal_scrollbar_visibility = visibility;
+                }
+            }
+
+            if key.eq_ignore_ascii_case("scrollbar_style") {
+                if let Some(style) = TerminalScrollbarStyle::from_str(value) {
+                    config.terminal_scrollbar_style = style;
                 }
             }
 
@@ -969,8 +1038,9 @@ fn config_path() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppConfig, CursorStyle, TabTitleMode, TabTitleSource, WorkingDirFallback,
-        replace_or_insert_section, upsert_theme_assignment,
+        AppConfig, CursorStyle, TabTitleMode, TabTitleSource, TerminalScrollbarStyle,
+        TerminalScrollbarVisibility, WorkingDirFallback, replace_or_insert_section,
+        upsert_theme_assignment,
     };
 
     #[test]
@@ -1062,6 +1132,84 @@ mod tests {
 
         let disabled = AppConfig::from_contents("command_palette_show_keybinds = false\n");
         assert!(!disabled.command_palette_show_keybinds);
+    }
+
+    #[test]
+    fn terminal_scrollbar_visibility_parses_and_defaults() {
+        let defaults = AppConfig::from_contents("");
+        assert_eq!(
+            defaults.terminal_scrollbar_visibility,
+            TerminalScrollbarVisibility::OnScroll
+        );
+
+        let off = AppConfig::from_contents("scrollbar_visibility = off\n");
+        assert_eq!(
+            off.terminal_scrollbar_visibility,
+            TerminalScrollbarVisibility::Off
+        );
+
+        let always = AppConfig::from_contents("scrollbar_visibility = always\n");
+        assert_eq!(
+            always.terminal_scrollbar_visibility,
+            TerminalScrollbarVisibility::Always
+        );
+
+        let strict = AppConfig::from_contents("terminal_scrollbar_visibility = always\n");
+        assert_eq!(
+            strict.terminal_scrollbar_visibility,
+            TerminalScrollbarVisibility::OnScroll
+        );
+
+        let on_alias_removed = AppConfig::from_contents("scrollbar_visibility = on\n");
+        assert_eq!(
+            on_alias_removed.terminal_scrollbar_visibility,
+            TerminalScrollbarVisibility::OnScroll
+        );
+
+        let invalid = AppConfig::from_contents("scrollbar_visibility = nope\n");
+        assert_eq!(
+            invalid.terminal_scrollbar_visibility,
+            TerminalScrollbarVisibility::OnScroll
+        );
+    }
+
+    #[test]
+    fn terminal_scrollbar_style_parses_and_defaults() {
+        let defaults = AppConfig::from_contents("");
+        assert_eq!(
+            defaults.terminal_scrollbar_style,
+            TerminalScrollbarStyle::Neutral
+        );
+
+        let theme = AppConfig::from_contents("scrollbar_style = theme\n");
+        assert_eq!(
+            theme.terminal_scrollbar_style,
+            TerminalScrollbarStyle::Theme
+        );
+
+        let muted_theme = AppConfig::from_contents("scrollbar_style = muted_theme\n");
+        assert_eq!(
+            muted_theme.terminal_scrollbar_style,
+            TerminalScrollbarStyle::MutedTheme
+        );
+
+        let neutral = AppConfig::from_contents("scrollbar_style = neutral\n");
+        assert_eq!(
+            neutral.terminal_scrollbar_style,
+            TerminalScrollbarStyle::Neutral
+        );
+
+        let strict = AppConfig::from_contents("terminal_scrollbar_style = theme\n");
+        assert_eq!(
+            strict.terminal_scrollbar_style,
+            TerminalScrollbarStyle::Neutral
+        );
+
+        let invalid = AppConfig::from_contents("scrollbar_style = accent\n");
+        assert_eq!(
+            invalid.terminal_scrollbar_style,
+            TerminalScrollbarStyle::Neutral
+        );
     }
 
     #[test]

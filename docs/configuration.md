@@ -218,6 +218,24 @@ Explicit payload examples:
 - Values: any finite number (clamped to `0.1..=1000`)
 - What it does: multiplies mouse wheel scroll distance. For example, `3` scrolls about three lines per wheel tick.
 
+`scrollbar_visibility`
+- Default: `on_scroll`
+- Values: `always`, `on_scroll`, `off`
+- What it does: controls terminal viewport scrollbar visibility behavior.
+- `off`: hide the scrollbar unless you are scrolled up in history.
+- `always`: always show the terminal scrollbar when scrollback exists.
+- `on_scroll`: show while scrolling/dragging, then auto-hide after inactivity.
+- Note: when you are scrolled up in history, the scrollbar stays visible in all modes.
+
+`scrollbar_style`
+- Default: `neutral`
+- Values: `neutral`, `muted_theme`, `theme`
+- What it does: controls scrollbar colors.
+- `neutral`: keep the scrollbar in neutral gray.
+- `muted_theme`: blend theme background and accent for a softer, integrated tint.
+- `theme`: use the direct theme accent color.
+- Applies to both terminal viewport scrollbar and command palette/theme switcher scrollbar so they stay visually consistent.
+
 `keybind`
 - Default: built-in platform shortcuts
 - Values: repeated `keybind` directives (see `docs/keybindings.md`)

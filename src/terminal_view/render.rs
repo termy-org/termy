@@ -1,8 +1,147 @@
+use super::scrollbar as terminal_scrollbar;
 use super::*;
+use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle};
 
 impl Focusable for TerminalView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
+    }
+}
+
+impl TerminalView {
+    fn refresh_terminal_scrollbar_marker_cache(
+        &mut self,
+        layout: terminal_scrollbar::TerminalScrollbarLayout,
+        marker_height: f32,
+    ) -> Option<f32> {
+        if !self.search_open {
+            self.clear_terminal_scrollbar_marker_cache();
+            return None;
+        }
+
+        let marker_height = marker_height.max(0.0);
+        let marker_top_limit =
+            terminal_scrollbar::marker_top_limit(layout.metrics.track_height, marker_height);
+        let cache_key = TerminalScrollbarMarkerCacheKey {
+            results_revision: self.search_state.results_revision(),
+            history_size: layout.history_size,
+            viewport_rows: layout.viewport_rows,
+            marker_top_limit_bucket: terminal_scrollbar::marker_top_limit_bucket(marker_top_limit),
+        };
+        let rebuild_markers = self.terminal_scrollbar_marker_cache.key.as_ref() != Some(&cache_key);
+
+        let (is_empty, current_line, new_marker_tops) = {
+            let results = self.search_state.results();
+            if results.is_empty() {
+                (true, None, None)
+            } else {
+                let current_line = results.current().map(|current| current.line);
+                let new_marker_tops = rebuild_markers.then(|| {
+                    terminal_scrollbar::deduped_marker_tops(
+                        results
+                            .matches()
+                            .iter()
+                            .map(|search_match| search_match.line),
+                        layout.history_size,
+                        layout.viewport_rows,
+                        marker_height,
+                        marker_top_limit,
+                    )
+                });
+                (false, current_line, new_marker_tops)
+            }
+        };
+
+        if is_empty {
+            self.clear_terminal_scrollbar_marker_cache();
+            return None;
+        }
+
+        if let Some(marker_tops) = new_marker_tops {
+            self.terminal_scrollbar_marker_cache.marker_tops = marker_tops;
+            self.terminal_scrollbar_marker_cache.key = Some(cache_key);
+        }
+
+        current_line.map(|line| {
+            terminal_scrollbar::marker_top_for_line(
+                line,
+                layout.history_size,
+                layout.viewport_rows,
+                marker_top_limit,
+            )
+        })
+    }
+
+    fn render_terminal_scrollbar_overlay(
+        &mut self,
+        layout: terminal_scrollbar::TerminalScrollbarLayout,
+        force_visible: bool,
+    ) -> Option<AnyElement> {
+        let now = Instant::now();
+        let force_visible = force_visible
+            && self.terminal_scrollbar_mode() != ui_scrollbar::ScrollbarVisibilityMode::AlwaysOff;
+        let alpha = if force_visible {
+            1.0
+        } else {
+            self.terminal_scrollbar_alpha(now)
+        };
+        if alpha <= f32::EPSILON && !self.terminal_scrollbar_visibility_controller.is_dragging() {
+            return None;
+        }
+        let overlay_style = self.overlay_style();
+        let gutter_bg = overlay_style.panel_background(TERMINAL_SCROLLBAR_GUTTER_ALPHA);
+        let style = ScrollbarPaintStyle {
+            width: TERMINAL_SCROLLBAR_TRACK_WIDTH,
+            track_radius: TERMINAL_SCROLLBAR_TRACK_RADIUS,
+            thumb_radius: TERMINAL_SCROLLBAR_THUMB_RADIUS,
+            thumb_inset: TERMINAL_SCROLLBAR_THUMB_INSET,
+            marker_inset: TERMINAL_SCROLLBAR_THUMB_INSET,
+            marker_radius: TERMINAL_SCROLLBAR_THUMB_RADIUS,
+            track_color: self.scrollbar_color(overlay_style, TERMINAL_SCROLLBAR_TRACK_ALPHA),
+            thumb_color: self.scrollbar_color(overlay_style, TERMINAL_SCROLLBAR_THUMB_ALPHA),
+            active_thumb_color: self
+                .scrollbar_color(overlay_style, TERMINAL_SCROLLBAR_THUMB_ACTIVE_ALPHA),
+            marker_color: Some(
+                self.scrollbar_color(overlay_style, TERMINAL_SCROLLBAR_MATCH_MARKER_ALPHA),
+            ),
+            current_marker_color: Some(
+                overlay_style.panel_cursor(TERMINAL_SCROLLBAR_CURRENT_MARKER_ALPHA),
+            ),
+        }
+        .scale_alpha(alpha);
+
+        let current_marker_top =
+            self.refresh_terminal_scrollbar_marker_cache(layout, TERMINAL_SCROLLBAR_MARKER_HEIGHT);
+        let marker_tops = &self.terminal_scrollbar_marker_cache.marker_tops;
+
+        Some(
+            div()
+                .id("terminal-scrollbar-overlay")
+                .absolute()
+                .top_0()
+                .right_0()
+                .bottom_0()
+                .w(px(TERMINAL_SCROLLBAR_GUTTER_WIDTH))
+                .bg(gutter_bg)
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .right_0()
+                        .w(px(TERMINAL_SCROLLBAR_TRACK_WIDTH))
+                        .child(ui_scrollbar::render_vertical(
+                            "terminal-scrollbar",
+                            layout.metrics,
+                            style,
+                            self.terminal_scrollbar_visibility_controller.is_dragging(),
+                            marker_tops,
+                            current_marker_top,
+                            TERMINAL_SCROLLBAR_MARKER_HEIGHT,
+                        )),
+                )
+                .into_any_element(),
+        )
     }
 }
 
@@ -83,9 +222,11 @@ impl Render for TerminalView {
         } else {
             None
         };
+        let mut terminal_display_offset = 0usize;
 
         self.active_terminal().with_term(|term| {
             let content = term.renderable_content();
+            terminal_display_offset = content.display_offset;
             let show_cursor = content.display_offset == 0 && cursor_visible;
             for cell in content.display_iter {
                 let point = cell.point;
@@ -614,6 +755,34 @@ impl Render for TerminalView {
             font_size,
             cursor_style: self.terminal_cursor_style(),
         };
+        if self.terminal_scrollbar_mode() == ui_scrollbar::ScrollbarVisibilityMode::OnScroll
+            && !self.terminal_scrollbar_animation_active
+            && self.terminal_scrollbar_needs_animation(Instant::now())
+        {
+            self.start_terminal_scrollbar_animation(cx);
+        }
+        let terminal_track_height = self
+            .terminal_surface_geometry(window)
+            .map(|geometry| geometry.height)
+            .unwrap_or(0.0);
+        let terminal_scrollbar_layout =
+            self.terminal_scrollbar_layout_for_track(terminal_track_height);
+        if terminal_scrollbar_layout.is_none() {
+            self.clear_terminal_scrollbar_marker_cache();
+        }
+        let terminal_scrollbar_overlay = terminal_scrollbar_layout.and_then(|layout| {
+            self.render_terminal_scrollbar_overlay(layout, terminal_display_offset > 0)
+        });
+        let terminal_grid_layer = if let Some(viewport) = self.terminal_viewport_geometry() {
+            div()
+                .relative()
+                .w(px(viewport.width))
+                .h(px(viewport.height))
+                .child(terminal_grid)
+                .into_any_element()
+        } else {
+            div().child(terminal_grid).into_any_element()
+        };
         let command_palette_overlay = if self.command_palette_open {
             Some(self.render_command_palette_modal(cx))
         } else {
@@ -1083,6 +1252,7 @@ impl Render for TerminalView {
                     .on_mouse_move(cx.listener(Self::handle_mouse_move))
                     .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))
                     .on_drop(cx.listener(Self::handle_file_drop))
+                    .relative()
                     .flex_1()
                     .w_full()
                     .px(px(effective_padding_x))
@@ -1091,7 +1261,8 @@ impl Render for TerminalView {
                     .bg(terminal_surface_bg_hsla)
                     .font_family(font_family.clone())
                     .text_size(font_size)
-                    .child(terminal_grid)
+                    .child(terminal_grid_layer)
+                    .children(terminal_scrollbar_overlay)
                     .children(command_palette_overlay)
                     .children(search_overlay),
             )
