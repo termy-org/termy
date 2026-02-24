@@ -541,6 +541,18 @@ impl Terminal {
         term.grid().display_offset() != old_offset
     }
 
+    /// Scroll the displayed viewport to the bottom (live output) atomically.
+    /// Returns true if the scroll position changed.
+    pub fn scroll_to_bottom(&self) -> bool {
+        let mut term = self.term.lock();
+        let old_offset = term.grid().display_offset();
+        if old_offset == 0 {
+            return false;
+        }
+        term.scroll_display(Scroll::Bottom);
+        true
+    }
+
     /// Return `(display_offset, history_size)` for viewport scrollbar rendering.
     pub fn scroll_state(&self) -> (usize, usize) {
         let term = self.term.lock();

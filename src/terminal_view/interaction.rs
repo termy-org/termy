@@ -1442,15 +1442,8 @@ impl TerminalView {
     }
 
     fn scroll_to_bottom(&mut self, cx: &mut Context<Self>) {
-        let (display_offset, _) = self.active_terminal().scroll_state();
-        if display_offset > 0 {
-            // Scroll down to offset 0 (live output).
-            let changed = self
-                .active_terminal()
-                .scroll_display(-(display_offset as i32));
-            if changed {
-                self.mark_terminal_scrollbar_activity(cx);
-            }
+        if self.active_terminal().scroll_to_bottom() {
+            self.mark_terminal_scrollbar_activity(cx);
         }
     }
 
