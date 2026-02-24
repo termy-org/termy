@@ -115,6 +115,9 @@ impl SearchEngine {
             }
         }
 
+        // Reverse so index 0 = bottom (newest) match, matching terminal convention
+        // where the most recent output is at the bottom.
+        matches.reverse();
         SearchResults::from_matches(matches)
     }
 }

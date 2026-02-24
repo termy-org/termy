@@ -35,6 +35,8 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Navigate to the next match in the result list. Since results are ordered
+    /// newest-first (bottom of terminal = index 0), this moves toward older content.
     pub(super) fn search_next(&mut self, cx: &mut Context<Self>) {
         if !self.search_open || self.search_state.results().is_empty() {
             return;
@@ -45,6 +47,8 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Navigate to the previous match in the result list. Since results are ordered
+    /// newest-first (bottom of terminal = index 0), this moves toward newer content.
     pub(super) fn search_previous(&mut self, cx: &mut Context<Self>) {
         if !self.search_open || self.search_state.results().is_empty() {
             return;
@@ -126,8 +130,8 @@ impl TerminalView {
             });
         });
 
-        // Start from the newest output match.
-        self.search_state.jump_to_last();
+        // Start from the bottommost (newest) match, which is now index 0.
+        self.search_state.jump_to_first();
         if self.search_state.results().is_empty() {
             self.clear_terminal_scrollbar_marker_cache();
         }
@@ -262,7 +266,7 @@ impl TerminalView {
                     .flex()
                     .items_center()
                     .gap(px(2.0))
-                    // Previous button
+                    // Up arrow: navigate toward older/top content
                     .child(
                         div()
                             .id("search-prev")
@@ -279,13 +283,13 @@ impl TerminalView {
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _event, _window, cx| {
-                                    this.search_previous(cx);
+                                    this.search_next(cx);
                                     cx.stop_propagation();
                                 }),
                             )
                             .child("\u{2191}"), // Up arrow
                     )
-                    // Next button
+                    // Down arrow: navigate toward newer/bottom content
                     .child(
                         div()
                             .id("search-next")
@@ -302,7 +306,7 @@ impl TerminalView {
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _event, _window, cx| {
-                                    this.search_next(cx);
+                                    this.search_previous(cx);
                                     cx.stop_propagation();
                                 }),
                             )
