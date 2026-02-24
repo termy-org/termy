@@ -54,7 +54,6 @@ fn prettify(contents: &str) -> String {
         "padding_x",
         "padding_y",
         "scrollback_history",
-        "use_tabs",
     ];
 
     for line in contents.lines() {

@@ -1,8 +1,8 @@
 use crate::colors::TerminalColors;
 use crate::commands::{self, CommandAction};
 use crate::config::{
-    self, AppConfig, CursorStyle as AppCursorStyle, TabTitleConfig, TabTitleSource,
-    TerminalScrollbarStyle, TerminalScrollbarVisibility,
+    self, AppConfig, CursorStyle as AppCursorStyle, TabCloseVisibility, TabTitleConfig,
+    TabTitleSource, TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility,
 };
 use crate::keybindings;
 use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
@@ -11,10 +11,9 @@ use flume::{Sender, bounded};
 use gpui::{
     AnyElement, App, AsyncApp, ClipboardItem, Context, Element, ExternalPaths, FocusHandle,
     Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, ScrollHandle,
-    ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase,
-    UniformListScrollHandle, WeakEntity, Window, WindowBackgroundAppearance, WindowControlArea,
-    div, point, px,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, ScrollWheelEvent,
+    SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase, UniformListScrollHandle,
+    WeakEntity, Window, WindowBackgroundAppearance, div, point, px,
 };
 use std::{
     env, fs,
@@ -42,13 +41,15 @@ mod interaction;
 mod render;
 mod scrollbar;
 mod search;
-mod tab_chrome;
+mod tab_strip;
 mod tabs;
 mod titles;
 #[cfg(target_os = "macos")]
 mod update_toasts;
 
 use inline_input::{InlineInputAlignment, InlineInputState};
+pub(crate) use tab_strip::constants::*;
+use tab_strip::state::TabStripState;
 
 const MIN_FONT_SIZE: f32 = 8.0;
 const MAX_FONT_SIZE: f32 = 40.0;
@@ -57,43 +58,6 @@ const ZOOM_STEP: f32 = 1.0;
 const TITLEBAR_HEIGHT: f32 = 32.0;
 #[cfg(not(target_os = "windows"))]
 const TITLEBAR_HEIGHT: f32 = 34.0;
-const TABBAR_HEIGHT: f32 = 34.0;
-const TOP_STRIP_SIDE_PADDING: f32 = 10.0;
-#[cfg(macos_sdk_26)]
-const TOP_STRIP_MACOS_TRAFFIC_LIGHT_PADDING: f32 = 78.0;
-#[cfg(not(macos_sdk_26))]
-const TOP_STRIP_MACOS_TRAFFIC_LIGHT_PADDING: f32 = 71.0;
-const TOP_STRIP_CONTENT_OFFSET_Y: f32 = 0.0;
-const TOP_STRIP_BRAND_TEXT_SIZE: f32 = 13.0;
-const TOP_STRIP_CONTEXT_TEXT_SIZE: f32 = 13.0;
-const TOP_STRIP_TEXT_BASELINE_NUDGE_Y: f32 = 0.0;
-const TAB_HORIZONTAL_PADDING: f32 = 8.0;
-const TAB_ITEM_HEIGHT: f32 = 32.0;
-const TAB_ITEM_GAP: f32 = 0.0;
-const TAB_TEXT_PADDING_X: f32 = 10.0;
-const TAB_TITLE_CHAR_WIDTH: f32 = 7.0;
-const TAB_TITLE_BUDGET_CLOSE_GUARD_PX: f32 = TAB_TITLE_CHAR_WIDTH * 1.5;
-const TAB_TITLE_BUDGET_HIDDEN_CLOSE_GUARD_PX: f32 = TAB_TITLE_CHAR_WIDTH;
-// Adds a small cushion to avoid early clipping from glyph/metrics variance.
-const TAB_TITLE_LAYOUT_SLACK_PX: f32 = 18.0;
-const TAB_MIN_WIDTH: f32 = 96.0;
-const TAB_MAX_WIDTH: f32 = 420.0;
-const TAB_ADAPTIVE_GROWTH_FACTOR: f32 = 0.85;
-const TAB_ADAPTIVE_HARD_CAP_RATIO: f32 = 0.60;
-const TAB_CLOSE_SLOT_WIDTH: f32 = 24.0;
-const TAB_CLOSE_HITBOX: f32 = TAB_CLOSE_SLOT_WIDTH;
-const TAB_STROKE_FOREGROUND_MIX: f32 = 0.12;
-const TAB_STROKE_THICKNESS: f32 = 1.0;
-const TAB_DROP_MARKER_WIDTH: f32 = 2.0;
-const TAB_DROP_MARKER_INSET_Y: f32 = 3.0;
-const TAB_DRAG_AUTOSCROLL_EDGE_WIDTH: f32 = 32.0;
-const TAB_DRAG_AUTOSCROLL_MAX_STEP: f32 = 24.0;
-const TABBAR_ACTION_RAIL_WIDTH: f32 = 40.0;
-const TABBAR_NEW_TAB_BUTTON_SIZE: f32 = 22.0;
-const TABBAR_NEW_TAB_BUTTON_RADIUS: f32 = 2.0;
-const TABBAR_NEW_TAB_ICON_SIZE: f32 = 13.0;
-const TABBAR_NEW_TAB_ICON_BASELINE_NUDGE_Y: f32 = -1.0;
-const TAB_STRIP_LEFT_PADDING_ITEM_OFFSET: usize = 1;
 const MAX_TAB_TITLE_CHARS: usize = 96;
 const DEFAULT_TAB_TITLE: &str = "Terminal";
 const COMMAND_TITLE_DELAY_MS: u64 = 250;
@@ -158,6 +122,8 @@ const SEARCH_BUTTON_TEXT_ALPHA: f32 = 0.70;
 const SEARCH_BUTTON_HOVER_BG_ALPHA: f32 = 0.20;
 const SEARCH_INPUT_SELECTION_ALPHA: f32 = 0.30;
 
+type TabId = u64;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct CellPos {
     col: usize,
@@ -175,12 +141,6 @@ pub(super) struct TerminalViewportGeometry {
 #[derive(Clone, Copy, Debug)]
 struct TerminalScrollbarDragState {
     thumb_grab_offset: f32,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct TabDragState {
-    source_index: usize,
-    drop_slot: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -212,6 +172,7 @@ impl TerminalScrollbarMarkerCache {
 }
 
 struct TerminalTab {
+    id: TabId,
     terminal: Terminal,
     manual_title: Option<String>,
     explicit_title: Option<String>,
@@ -220,12 +181,15 @@ struct TerminalTab {
     pending_command_title: Option<String>,
     pending_command_token: u64,
     title: String,
+    title_text_width: f32,
+    sticky_title_width: f32,
     display_width: f32,
     running_process: bool,
 }
 
 impl TerminalTab {
     fn new(
+        id: TabId,
         terminal: Terminal,
         predicted_prompt_title: Option<String>,
         working_dir: Option<String>,
@@ -234,12 +198,19 @@ impl TerminalTab {
             .as_deref()
             .unwrap_or(DEFAULT_TAB_TITLE)
             .to_string();
-        let display_width = TerminalView::tab_display_width_for_title(&title);
+        let title_text_width = 0.0;
+        let sticky_title_width = TerminalView::tab_display_width_for_text_px_without_close_with_max(
+            title_text_width,
+            TAB_MAX_WIDTH,
+        );
+        let display_width =
+            TerminalView::tab_display_width_for_text_px_with_max(title_text_width, TAB_MAX_WIDTH);
         let working_dir = working_dir
             .map(|cwd| cwd.trim().to_string())
             .filter(|cwd| !cwd.is_empty());
 
         Self {
+            id,
             terminal,
             manual_title: None,
             explicit_title: predicted_prompt_title,
@@ -248,6 +219,8 @@ impl TerminalTab {
             pending_command_title: None,
             pending_command_token: 0,
             title,
+            title_text_width,
+            sticky_title_width,
             display_width,
             running_process: false,
         }
@@ -506,6 +479,7 @@ pub(crate) fn initial_window_background_appearance(
 /// The main terminal view component
 pub struct TerminalView {
     tabs: Vec<TerminalTab>,
+    next_tab_id: TabId,
     active_tab: usize,
     renaming_tab: Option<usize>,
     rename_input: InlineInputState,
@@ -513,10 +487,12 @@ pub struct TerminalView {
     focus_handle: FocusHandle,
     theme_id: String,
     colors: TerminalColors,
-    use_tabs: bool,
     inactive_tab_scrollback: Option<usize>,
     warn_on_quit_with_running_process: bool,
     tab_title: TabTitleConfig,
+    tab_close_visibility: TabCloseVisibility,
+    tab_width_mode: TabWidthMode,
+    show_termy_in_titlebar: bool,
     tab_shell_integration: TabTitleShellIntegration,
     configured_working_dir: Option<String>,
     terminal_runtime: TerminalRuntimeConfig,
@@ -552,7 +528,7 @@ pub struct TerminalView {
     command_palette_filtered_items: Vec<CommandPaletteItem>,
     command_palette_selected: usize,
     command_palette_scroll_handle: UniformListScrollHandle,
-    tab_strip_scroll_handle: ScrollHandle,
+    tab_strip: TabStripState,
     command_palette_scroll_target_y: Option<f32>,
     command_palette_scroll_max_y: f32,
     command_palette_scroll_animating: bool,
@@ -561,12 +537,6 @@ pub struct TerminalView {
     inline_input_selecting: bool,
     terminal_scroll_accumulator_y: f32,
     input_scroll_suppress_until: Option<Instant>,
-    hovered_tab: Option<usize>,
-    hovered_tab_close: Option<usize>,
-    tab_drag: Option<TabDragState>,
-    tab_drag_pointer_x: Option<f32>,
-    tab_drag_viewport_width: f32,
-    tab_drag_autoscroll_animating: bool,
     terminal_scrollbar_visibility: TerminalScrollbarVisibility,
     terminal_scrollbar_style: TerminalScrollbarStyle,
     terminal_scrollbar_visibility_controller: ScrollbarVisibilityController,
@@ -1009,11 +979,8 @@ impl TerminalView {
         .expect("Failed to create terminal");
 
         let mut view = Self {
-            tabs: vec![TerminalTab::new(
-                terminal,
-                startup_predicted_title,
-                configured_working_dir.clone(),
-            )],
+            tabs: vec![TerminalTab::new(1, terminal, startup_predicted_title, configured_working_dir.clone())],
+            next_tab_id: 2,
             active_tab: 0,
             renaming_tab: None,
             rename_input: InlineInputState::new(String::new()),
@@ -1021,10 +988,12 @@ impl TerminalView {
             focus_handle,
             theme_id,
             colors,
-            use_tabs: config.use_tabs,
             inactive_tab_scrollback: config.inactive_tab_scrollback,
             warn_on_quit_with_running_process: config.warn_on_quit_with_running_process,
             tab_title,
+            tab_close_visibility: config.tab_close_visibility,
+            tab_width_mode: config.tab_width_mode,
+            show_termy_in_titlebar: config.show_termy_in_titlebar,
             tab_shell_integration,
             configured_working_dir,
             terminal_runtime,
@@ -1060,7 +1029,7 @@ impl TerminalView {
             command_palette_filtered_items: Vec::new(),
             command_palette_selected: 0,
             command_palette_scroll_handle: UniformListScrollHandle::new(),
-            tab_strip_scroll_handle: ScrollHandle::new(),
+            tab_strip: TabStripState::new(),
             command_palette_scroll_target_y: None,
             command_palette_scroll_max_y: 0.0,
             command_palette_scroll_animating: false,
@@ -1069,12 +1038,6 @@ impl TerminalView {
             inline_input_selecting: false,
             terminal_scroll_accumulator_y: 0.0,
             input_scroll_suppress_until: None,
-            hovered_tab: None,
-            hovered_tab_close: None,
-            tab_drag: None,
-            tab_drag_pointer_x: None,
-            tab_drag_viewport_width: 0.0,
-            tab_drag_autoscroll_animating: false,
             terminal_scrollbar_visibility: config.terminal_scrollbar_visibility,
             terminal_scrollbar_style: config.terminal_scrollbar_style,
             terminal_scrollbar_visibility_controller: ScrollbarVisibilityController::default(),
@@ -1118,12 +1081,20 @@ impl TerminalView {
 
     fn apply_runtime_config(&mut self, config: AppConfig, cx: &mut Context<Self>) -> bool {
         keybindings::install_keybindings(cx, &config);
+        let previous_font_family = self.font_family.clone();
+        let previous_font_size = self.font_size;
         self.theme_id = config.theme.clone();
         self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
-        self.use_tabs = config.use_tabs;
         self.inactive_tab_scrollback = config.inactive_tab_scrollback;
         self.warn_on_quit_with_running_process = config.warn_on_quit_with_running_process;
         self.tab_title = config.tab_title.clone();
+        let tab_close_visibility_changed = self.tab_close_visibility != config.tab_close_visibility;
+        let tab_width_mode_changed = self.tab_width_mode != config.tab_width_mode;
+        let show_termy_in_titlebar_changed =
+            self.show_termy_in_titlebar != config.show_termy_in_titlebar;
+        self.tab_close_visibility = config.tab_close_visibility;
+        self.tab_width_mode = config.tab_width_mode;
+        self.show_termy_in_titlebar = config.show_termy_in_titlebar;
         self.tab_shell_integration = TabTitleShellIntegration {
             enabled: self.tab_title.shell_integration,
             explicit_prefix: self.tab_title.explicit_prefix.clone(),
@@ -1137,6 +1108,10 @@ impl TerminalView {
         self.cursor_blink = config.cursor_blink;
         self.cursor_blink_visible = true;
         self.cell_size = None;
+        if self.font_family != previous_font_family || self.font_size != previous_font_size {
+            self.clear_tab_title_width_cache();
+            self.mark_tab_strip_layout_dirty();
+        }
         self.background_opacity = config.background_opacity;
         self.background_blur = config.background_blur;
         self.padding_x = config.padding_x.max(0.0);
@@ -1154,6 +1129,10 @@ impl TerminalView {
 
         for index in 0..self.tabs.len() {
             self.refresh_tab_title(index);
+        }
+        if tab_close_visibility_changed || tab_width_mode_changed || show_termy_in_titlebar_changed
+        {
+            self.mark_tab_strip_layout_dirty();
         }
 
         if self.command_palette_open {
@@ -1256,16 +1235,12 @@ impl TerminalView {
                         }
                     }
                     TerminalEvent::Title(title) => {
-                        if self.apply_terminal_title(index, &title, cx)
-                            && (index == active_tab || self.show_tab_bar())
-                        {
+                        if self.apply_terminal_title(index, &title, cx) {
                             should_redraw = true;
                         }
                     }
                     TerminalEvent::ResetTitle => {
-                        if self.clear_terminal_titles(index)
-                            && (index == active_tab || self.show_tab_bar())
-                        {
+                        if self.clear_terminal_titles(index) {
                             should_redraw = true;
                         }
                     }
@@ -1280,11 +1255,12 @@ impl TerminalView {
         should_redraw
     }
 
-    fn clear_selection(&mut self) {
-        self.selection_anchor = None;
-        self.selection_head = None;
-        self.selection_dragging = false;
-        self.selection_moved = false;
+    fn clear_selection(&mut self) -> bool {
+        let anchor_changed = self.selection_anchor.take().is_some();
+        let head_changed = self.selection_head.take().is_some();
+        let dragging_changed = std::mem::replace(&mut self.selection_dragging, false);
+        let moved_changed = std::mem::replace(&mut self.selection_moved, false);
+        anchor_changed || head_changed || dragging_changed || moved_changed
     }
 
     fn clear_hovered_link(&mut self) -> bool {
@@ -1293,29 +1269,6 @@ impl TerminalView {
             true
         } else {
             false
-        }
-    }
-
-    fn show_tab_bar(&self) -> bool {
-        self.use_tabs
-    }
-
-    fn active_context_title(&self) -> &str {
-        self.tabs
-            .get(self.active_tab)
-            .map(|tab| tab.title.trim())
-            .filter(|title| !title.is_empty())
-            .unwrap_or_else(|| self.fallback_title())
-    }
-
-    pub(super) fn scroll_active_tab_into_view(&self) {
-        if self.show_tab_bar() && self.active_tab < self.tabs.len() {
-            // render.rs inserts the left padding spacer as child index 0 in the tracked
-            // tab strip, so tab N is rendered at scroll item N + TAB_STRIP_LEFT_PADDING_ITEM_OFFSET.
-            self.tab_strip_scroll_handle.scroll_to_item(
-                self.active_tab
-                    .saturating_add(TAB_STRIP_LEFT_PADDING_ITEM_OFFSET),
-            );
         }
     }
 

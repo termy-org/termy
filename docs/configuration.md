@@ -11,7 +11,6 @@ Most users only need this:
 ```txt
 theme = termy
 term = xterm-256color
-use_tabs = true
 tab_title_mode = smart
 tab_title_shell_integration = true
 warn_on_quit_with_running_process = true
@@ -73,6 +72,23 @@ Mode presets:
 - Default: `true`
 - Values: `true`/`false`
 - What it does: exports `TERMY_*` environment variables for shell hooks.
+
+`tab_close_visibility`
+- Default: `active_hover`
+- Values: `active_hover`, `hover`, `always`
+- What it does: controls when tab close buttons are visible.
+
+`tab_width_mode`
+- Default: `active_grow_sticky`
+- Values: `stable`, `active_grow`, `active_grow_sticky`
+- What it does: controls how tab widths react to active state and close-slot reservation.
+
+`show_termy_in_titlebar`
+- Default: `true`
+- Values: `true`/`false`
+- What it does: shows/hides the `termy` label between macOS traffic lights and tabs.
+- Note: visual effect is macOS-only.
+- Note: uses the terminal font family with a compact fixed size.
 
 `tab_title_fallback`
 - Default: `Terminal`
@@ -136,11 +152,11 @@ Explicit payload examples:
 - Default: `truecolor`
 - Values: string, or `none`/`unset`/`default`/`auto` to disable
 
-`use_tabs`
-- Default: `true`
-- Values: `true`/`false`
-- What it does: shows Termy's compact tab strip. When enabled, the tab strip stays visible even with a single tab.
-- Tab behavior: tab widths are content-based with an adaptive max width when few tabs are open, the row scrolls horizontally when tabs overflow, long path-like titles are middle-squeezed (for example `~/Desktop/.../docs`) when needed, and close buttons appear on the active or hovered tab.
+`tabs`
+- Always enabled (not configurable)
+- Behavior: tab widths are content-based with an adaptive max width when few tabs are open, the row scrolls horizontally when tabs overflow, long path-like titles are middle-squeezed (for example `~/Desktop/.../docs`) when needed, and close visibility/width strategy are controlled by `tab_close_visibility` + `tab_width_mode` (defaults: `active_hover` + `active_grow_sticky`).
+- Layout: tabs are rendered in the unified top/title row on macOS, Windows, and Linux.
+- Unified drag behavior: tab bodies stay dedicated to tab reordering. Window move is available from non-interactive title-row space (outside tab bodies and tab action controls).
 
 `warn_on_quit_with_running_process`
 - Default: `true`
@@ -174,6 +190,18 @@ Explicit payload examples:
 `tab_title_command_format`
 - Default: `{command}`
 - Values: template string
+
+`tab_close_visibility`
+- Default: `active_hover`
+- Values: `active_hover`, `hover`, `always`
+
+`tab_width_mode`
+- Default: `active_grow_sticky`
+- Values: `stable`, `active_grow`, `active_grow_sticky`
+
+`show_termy_in_titlebar`
+- Default: `true`
+- Values: `true`/`false`
 
 `window_width`
 - Default: `1280`

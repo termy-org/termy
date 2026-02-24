@@ -182,13 +182,6 @@ const SETTINGS_METADATA: &[SettingMetadata] = &[
         keywords: &["palette", "keybindings", "shortcuts", "command"],
     },
     SettingMetadata {
-        key: "use-tabs",
-        section: SettingsSection::Tabs,
-        title: "Enable Tabs",
-        description: "Show compact tab strip",
-        keywords: &["tabs", "tab bar", "strip"],
-    },
-    SettingMetadata {
         key: "title-mode",
         section: SettingsSection::Tabs,
         title: "Title Mode",
@@ -2486,11 +2479,8 @@ impl SettingsWindow {
     }
 
     fn render_tabs_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let use_tabs = self.config.use_tabs;
         let shell_integration = self.config.tab_title.shell_integration;
         let fallback = self.config.tab_title.fallback.clone();
-        let use_tabs_meta =
-            Self::setting_metadata("use-tabs").expect("missing metadata for use-tabs");
         let shell_integration_meta = Self::setting_metadata("shell-integration")
             .expect("missing metadata for shell-integration");
         let fallback_meta =
@@ -2501,19 +2491,6 @@ impl SettingsWindow {
             .flex_col()
             .gap_2()
             .child(self.render_section_header("Tabs", "Configure tab behavior and titles"))
-            .child(self.render_group_header("TAB BAR"))
-            .child(self.render_setting_row(
-                "use-tabs",
-                "use-tabs-toggle",
-                use_tabs_meta.title,
-                use_tabs_meta.description,
-                use_tabs,
-                cx,
-                |view, _cx| {
-                    view.config.use_tabs = !view.config.use_tabs;
-                    let _ = set_config_value("use_tabs", &view.config.use_tabs.to_string());
-                },
-            ))
             .child(self.render_group_header("TAB TITLES"))
             .child(self.render_tab_title_mode_row(cx))
             .child(self.render_setting_row(

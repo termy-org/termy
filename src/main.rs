@@ -98,6 +98,10 @@ fn main() {
         let window_width = app_config.window_width;
         let window_height = app_config.window_height;
         let startup_config = app_config;
+        #[cfg(target_os = "macos")]
+        let main_window_is_movable = false;
+        #[cfg(not(target_os = "macos"))]
+        let main_window_is_movable = true;
         #[cfg(target_os = "windows")]
         let (window_width, window_height) = if (window_width - LEGACY_DEFAULT_WINDOW_WIDTH).abs()
             < f32::EPSILON
@@ -135,6 +139,7 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar,
                 window_background,
+                is_movable: main_window_is_movable,
                 ..Default::default()
             },
             move |window, cx| {

@@ -100,7 +100,7 @@ impl TerminalView {
 
     fn command_palette_items(&self) -> Vec<CommandPaletteItem> {
         match self.command_palette_mode {
-            CommandPaletteMode::Commands => CommandAction::palette_entries(self.use_tabs)
+            CommandPaletteMode::Commands => CommandAction::palette_entries()
                 .into_iter()
                 .map(|entry| CommandPaletteItem::command(entry.title, entry.keywords, entry.action))
                 .collect(),
@@ -963,7 +963,10 @@ mod tests {
             "termy",
         );
 
-        assert_eq!(ordered, vec!["termy", "dracula", "nord"]);
+        assert_eq!(
+            ordered,
+            vec!["termy", "dracula", "nord", SHELL_DECIDE_THEME_ID]
+        );
 
         let ordered_with_missing_current = TerminalView::ordered_theme_ids_for_palette(
             vec!["nord".to_string(), "dracula".to_string()],
@@ -972,7 +975,7 @@ mod tests {
 
         assert_eq!(
             ordered_with_missing_current,
-            vec!["tokyo-night", "dracula", "nord", "shell-decide"]
+            vec!["tokyo-night", "dracula", "nord", SHELL_DECIDE_THEME_ID]
         );
     }
 

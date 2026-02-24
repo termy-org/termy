@@ -1,4 +1,4 @@
-use super::*;
+use super::constants::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct StrokeRect {
@@ -136,9 +136,9 @@ pub(super) fn compute_tab_chrome_layout(
         cursor_x = span.right_exclusive + tab_item_gap;
     }
 
-    let content_width = spans.last().map_or(horizontal_padding * 2.0, |span| {
-        snap_px(span.right_exclusive + horizontal_padding)
-    });
+    let content_width = spans
+        .last()
+        .map_or(horizontal_padding, |span| snap_px(span.right_exclusive));
 
     let active_span = input
         .active_index
@@ -355,6 +355,23 @@ mod tests {
             .expect("expected boundary stroke at x")
     }
 
+    fn tab_left_x(layout: &TabChromeLayout, tab_index: usize) -> i32 {
+        layout.top_strokes[tab_index].x as i32
+    }
+
+    fn tab_right_boundary_x(layout: &TabChromeLayout, tab_index: usize) -> i32 {
+        (layout.top_strokes[tab_index].x + layout.top_strokes[tab_index].w - TAB_STROKE_THICKNESS)
+            as i32
+    }
+
+    fn baseline_pixels(layout: &TabChromeLayout) -> HashSet<i32> {
+        layout
+            .baseline_strokes
+            .iter()
+            .flat_map(|stroke| (stroke.x as i32)..((stroke.x + stroke.w) as i32))
+            .collect()
+    }
+
     #[test]
     fn active_middle_has_no_pixel_overlap() {
         let layout = layout_for(&[100.0, 100.0, 100.0], Some(1));
@@ -367,70 +384,64 @@ mod tests {
         let layout = layout_for(&[100.0, 100.0], Some(0));
         let full_height = layout.baseline_y - (layout.tab_top_y + TAB_STROKE_THICKNESS) + 1.0;
         let short_height = full_height - TAB_STROKE_THICKNESS;
+        let first_left = tab_left_x(&layout, 0);
+        let first_right = tab_right_boundary_x(&layout, 0);
+        let second_right = tab_right_boundary_x(&layout, 1);
 
-        assert_eq!(boundary_at_x(&layout, 8).h, full_height);
-        assert_eq!(boundary_at_x(&layout, 107).h, full_height);
-        assert_eq!(boundary_at_x(&layout, 207).h, short_height);
+        assert_eq!(boundary_at_x(&layout, first_left).h, full_height);
+        assert_eq!(boundary_at_x(&layout, first_right).h, full_height);
+        assert_eq!(boundary_at_x(&layout, second_right).h, short_height);
 
-        let baseline_pixels: HashSet<i32> = layout
-            .baseline_strokes
-            .iter()
-            .flat_map(|stroke| (stroke.x as i32)..((stroke.x + stroke.w) as i32))
-            .collect();
-        assert!(!baseline_pixels.contains(&8));
-        assert!(!baseline_pixels.contains(&107));
-        assert!(baseline_pixels.contains(&108));
+        let baseline_pixels = baseline_pixels(&layout);
+        assert!(!baseline_pixels.contains(&first_left));
+        assert!(!baseline_pixels.contains(&first_right));
+        assert!(baseline_pixels.contains(&(first_right + 1)));
     }
 
     #[test]
-    fn active_last_has_correct_right_boundary_and_gap() {
+    fn active_last_has_correct_right_boundary_and_no_trailing_gap() {
         let layout = layout_for(&[100.0, 100.0], Some(1));
         let full_height = layout.baseline_y - (layout.tab_top_y + TAB_STROKE_THICKNESS) + 1.0;
         let short_height = full_height - TAB_STROKE_THICKNESS;
+        let first_left = tab_left_x(&layout, 0);
+        let second_left = tab_left_x(&layout, 1);
+        let second_right = tab_right_boundary_x(&layout, 1);
 
-        assert_eq!(boundary_at_x(&layout, 8).h, short_height);
-        assert_eq!(boundary_at_x(&layout, 108).h, full_height);
-        assert_eq!(boundary_at_x(&layout, 207).h, full_height);
+        assert_eq!(boundary_at_x(&layout, first_left).h, short_height);
+        assert_eq!(boundary_at_x(&layout, second_left).h, full_height);
+        assert_eq!(boundary_at_x(&layout, second_right).h, full_height);
 
-        let baseline_pixels: HashSet<i32> = layout
-            .baseline_strokes
-            .iter()
-            .flat_map(|stroke| (stroke.x as i32)..((stroke.x + stroke.w) as i32))
-            .collect();
-        assert!(baseline_pixels.contains(&107));
-        assert!(!baseline_pixels.contains(&108));
-        assert!(!baseline_pixels.contains(&207));
-        assert!(baseline_pixels.contains(&208));
+        let baseline_pixels = baseline_pixels(&layout);
+        assert!(baseline_pixels.contains(&(second_left - 1)));
+        assert!(!baseline_pixels.contains(&second_left));
+        assert!(!baseline_pixels.contains(&second_right));
+        assert!(!baseline_pixels.contains(&(second_right + 1)));
     }
 
     #[test]
-    fn single_tab_gap_and_outer_edges_are_correct() {
+    fn single_tab_active_with_zero_padding_has_no_baseline_strokes() {
         let layout = layout_for(&[100.0], Some(0));
+        let first_left = tab_left_x(&layout, 0);
+        let first_right = tab_right_boundary_x(&layout, 0);
+
         assert_eq!(layout.boundary_strokes.len(), 2);
-        assert_eq!(boundary_at_x(&layout, 8).h, boundary_at_x(&layout, 107).h);
-        assert_eq!(layout.baseline_strokes.len(), 2);
         assert_eq!(
-            layout.baseline_strokes[0],
-            StrokeRect::new(0.0, 33.0, 8.0, 1.0)
+            boundary_at_x(&layout, first_left).h,
+            boundary_at_x(&layout, first_right).h
         );
-        assert_eq!(
-            layout.baseline_strokes[1],
-            StrokeRect::new(108.0, 33.0, 8.0, 1.0)
-        );
+        assert_eq!(layout.baseline_strokes.len(), 0);
     }
 
     #[test]
     fn baseline_is_continuous_outside_active_span() {
         let layout = layout_for(&[100.0, 100.0, 100.0], Some(1));
-        let baseline_pixels: HashSet<i32> = layout
-            .baseline_strokes
-            .iter()
-            .flat_map(|stroke| (stroke.x as i32)..((stroke.x + stroke.w) as i32))
-            .collect();
+        let active_left = tab_left_x(&layout, 1);
+        let active_right = tab_right_boundary_x(&layout, 1);
+        let baseline_pixels = baseline_pixels(&layout);
 
         let content_width = layout.content_width as i32;
         for x in 0..content_width {
-            if x < 108 || x >= 208 {
+            if x < active_left || x > active_right {
                 assert!(
                     baseline_pixels.contains(&x),
                     "missing baseline pixel at x={x}"
