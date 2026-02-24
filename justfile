@@ -14,10 +14,6 @@ build:
 generate-icon:
     ./scripts/generate-icon.sh
 
-# Generate Windows .ico file from assets/termy_icon@1024px.png
-generate-ico:
-    ./scripts/generate-icon.sh --ico-only
-
 # Build macOS app bundle and DMG
 # Example:
 

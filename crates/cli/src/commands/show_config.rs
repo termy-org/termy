@@ -51,5 +51,4 @@ fn print_defaults() {
     println!("padding_x = 12");
     println!("padding_y = 8");
     println!("scrollback_history = 10000");
-    println!("use_tabs = true");
 }

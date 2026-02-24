@@ -21,7 +21,6 @@ const VALID_KEYS: &[&str] = &[
     "terminal_scrollbar_style",
     "scrollback_history",
     "inactive_tab_scrollback",
-    "use_tabs",
     "warn_on_quit_with_running_process",
     "command_palette_show_keybinds",
     "keybind",
@@ -31,6 +30,8 @@ const VALID_KEYS: &[&str] = &[
     "tab_title_shell_integration",
     "tab_title_prompt_format",
     "tab_title_command_format",
+    "tab_close_visibility",
+    "tab_width_mode",
 ];
 
 const VALID_SECTIONS: &[&str] = &["colors", "tab_title"];

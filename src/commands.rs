@@ -7,15 +7,13 @@ const INLINE_INPUT_CONTEXT: Option<&str> = Some("InlineInput");
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandPaletteVisibility {
     Always,
-    TabsOnly,
     MacOsOnly,
 }
 
 impl CommandPaletteVisibility {
-    fn is_visible(self, use_tabs: bool) -> bool {
+    fn is_visible(self) -> bool {
         match self {
             Self::Always => true,
-            Self::TabsOnly => use_tabs,
             Self::MacOsOnly => cfg!(target_os = "macos"),
         }
     }
@@ -107,12 +105,12 @@ macro_rules! define_commands {
                 COMMAND_SPECS.iter().map(|spec| spec.config_name)
             }
 
-            pub fn palette_entries(use_tabs: bool) -> Vec<CommandPaletteEntry> {
+            pub fn palette_entries() -> Vec<CommandPaletteEntry> {
                 COMMAND_SPECS
                     .iter()
                     .filter_map(|spec| {
                         let palette = spec.palette?;
-                        if !palette.visibility.is_visible(use_tabs) {
+                        if !palette.visibility.is_visible() {
                             return None;
                         }
 
@@ -161,7 +159,7 @@ define_commands!(
         Some(palette(
             "New Tab",
             "create tab",
-            CommandPaletteVisibility::TabsOnly
+            CommandPaletteVisibility::Always
         ))
     ),
     (
@@ -171,7 +169,7 @@ define_commands!(
         Some(palette(
             "Close Tab",
             "remove tab",
-            CommandPaletteVisibility::TabsOnly
+            CommandPaletteVisibility::Always
         ))
     ),
     (MinimizeWindow, "minimize_window", TERMINAL_CONTEXT, None),
@@ -182,7 +180,7 @@ define_commands!(
         Some(palette(
             "Rename Tab",
             "title name",
-            CommandPaletteVisibility::TabsOnly
+            CommandPaletteVisibility::Always
         ))
     ),
     (
@@ -420,26 +418,29 @@ mod tests {
             Some(CommandAction::SwitchTheme)
         );
         assert!(
-            CommandAction::palette_entries(true)
+            CommandAction::palette_entries()
                 .iter()
                 .any(|entry| entry.action == CommandAction::SwitchTheme)
         );
     }
 
     #[test]
-    fn tabs_only_palette_entries_depend_on_tab_mode() {
-        let without_tabs = CommandAction::palette_entries(false);
+    fn tab_actions_are_always_palette_visible() {
+        let entries = CommandAction::palette_entries();
         assert!(
-            without_tabs
-                .iter()
-                .all(|entry| entry.action != CommandAction::NewTab)
-        );
-
-        let with_tabs = CommandAction::palette_entries(true);
-        assert!(
-            with_tabs
+            entries
                 .iter()
                 .any(|entry| entry.action == CommandAction::NewTab)
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.action == CommandAction::CloseTab)
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.action == CommandAction::RenameTab)
         );
     }
 }

@@ -1,5 +1,4 @@
 use super::scrollbar as terminal_scrollbar;
-use super::tabs::TabDropMarkerSide;
 use super::*;
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle};
 
@@ -342,53 +341,6 @@ impl TerminalView {
                 .into_any(),
         )
     }
-
-    fn render_tabbar_new_tab_button(
-        &self,
-        bg: gpui::Rgba,
-        hover_bg: gpui::Rgba,
-        border: gpui::Rgba,
-        hover_border: gpui::Rgba,
-        text: gpui::Rgba,
-        hover_text: gpui::Rgba,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        div()
-            .id("tabbar-new-tab")
-            .w(px(TABBAR_NEW_TAB_BUTTON_SIZE))
-            .h(px(TABBAR_NEW_TAB_BUTTON_SIZE))
-            .rounded(px(TABBAR_NEW_TAB_BUTTON_RADIUS))
-            .bg(bg)
-            .border_1()
-            .border_color(border)
-            .text_color(text)
-            .cursor_pointer()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _event: &MouseDownEvent, _window, cx| {
-                    this.add_tab(cx);
-                    cx.stop_propagation();
-                }),
-            )
-            .hover(move |style| {
-                style
-                    .bg(hover_bg)
-                    .border_color(hover_border)
-                    .text_color(hover_text)
-            })
-            .child(
-                div()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_size(px(TABBAR_NEW_TAB_ICON_SIZE))
-                    .font_weight(FontWeight::MEDIUM)
-                    .mt(px(TABBAR_NEW_TAB_ICON_BASELINE_NUDGE_Y))
-                    .child("+"),
-            )
-            .into_any_element()
-    }
 }
 
 impl Render for TerminalView {
@@ -530,452 +482,19 @@ impl Render for TerminalView {
         });
 
         let focus_handle = self.focus_handle.clone();
-        let show_tab_bar = self.show_tab_bar();
-        let tabbar_action_rail_width = if show_tab_bar {
-            TABBAR_ACTION_RAIL_WIDTH
-        } else {
-            0.0
-        };
-        let tab_strip_viewport_width = self.tab_strip_drag_viewport_width(window);
-        self.sync_tab_display_widths_for_viewport(tab_strip_viewport_width);
-        let titlebar_left_padding = if cfg!(target_os = "macos") {
-            TOP_STRIP_MACOS_TRAFFIC_LIGHT_PADDING
-        } else {
-            TOP_STRIP_SIDE_PADDING
-        };
-        let titlebar_height = self.titlebar_height();
+        let titlebar_height = Self::titlebar_height();
         let mut terminal_surface_bg = colors.background;
         terminal_surface_bg.a = self.scaled_background_alpha(terminal_surface_bg.a);
         let titlebar_bg = terminal_surface_bg;
-        let mut titlebar_brand_text = colors.foreground;
-        titlebar_brand_text.a = 0.9;
-        let mut titlebar_context_text = colors.foreground;
-        titlebar_context_text.a = 0.62;
-        let mut tabbar_bg = terminal_surface_bg;
-        if !show_tab_bar {
-            tabbar_bg.a = 0.0;
-        }
-        let tab_stroke_color = tab_chrome::resolve_tab_stroke_color(
-            tabbar_bg,
-            colors.foreground,
-            TAB_STROKE_FOREGROUND_MIX,
-        );
-        let mut inactive_tab_bg = colors.foreground;
-        inactive_tab_bg.a = self.scaled_chrome_alpha(0.10);
-        let mut active_tab_bg = terminal_surface_bg;
-        active_tab_bg.a = 0.0;
-        let mut hovered_tab_bg = colors.foreground;
-        hovered_tab_bg.a = self.scaled_chrome_alpha(0.13);
-        let mut active_tab_text = colors.foreground;
-        active_tab_text.a = 0.95;
-        let mut inactive_tab_text = colors.foreground;
-        inactive_tab_text.a = 0.7;
-        let mut close_button_hover_bg = colors.foreground;
-        close_button_hover_bg.a = self.scaled_chrome_alpha(0.24);
-        let mut close_button_hover_text = colors.foreground;
-        close_button_hover_text.a = 0.98;
-        let mut tab_drop_marker_color = colors.cursor;
-        tab_drop_marker_color.a = self.scaled_chrome_alpha(0.95);
-        let mut tabbar_new_tab_bg = colors.foreground;
-        tabbar_new_tab_bg.a = self.scaled_chrome_alpha(0.11);
-        let mut tabbar_new_tab_hover_bg = colors.foreground;
-        tabbar_new_tab_hover_bg.a = self.scaled_chrome_alpha(0.2);
-        let mut tabbar_new_tab_border = colors.foreground;
-        tabbar_new_tab_border.a = self.scaled_chrome_alpha(0.24);
-        let mut tabbar_new_tab_hover_border = colors.cursor;
-        tabbar_new_tab_hover_border.a = self.scaled_chrome_alpha(0.76);
-        let mut tabbar_new_tab_text = colors.foreground;
-        tabbar_new_tab_text.a = 0.9;
-        let mut tabbar_new_tab_hover_text = colors.cursor;
-        tabbar_new_tab_hover_text.a = 0.98;
+        let tabbar_bg = terminal_surface_bg;
+        let tabs_row = self.render_tab_strip(window, &colors, &font_family, tabbar_bg, cx);
         let mut selection_bg = colors.cursor;
         selection_bg.a = SELECTION_BG_ALPHA;
         let selection_fg = colors.background;
-        let active_context_label = self.active_context_title().to_string();
         let hovered_link_range = self
             .hovered_link
             .as_ref()
             .map(|link| (link.row, link.start_col, link.end_col));
-        let active_tab_index = (self.active_tab < self.tabs.len()).then_some(self.active_tab);
-        let tab_chrome_layout = show_tab_bar.then(|| {
-            tab_chrome::compute_tab_chrome_layout(
-                self.tabs.iter().map(|tab| tab.display_width),
-                tab_chrome::TabChromeInput {
-                    active_index: active_tab_index,
-                    tabbar_height: TABBAR_HEIGHT,
-                    tab_item_height: TAB_ITEM_HEIGHT,
-                    horizontal_padding: TAB_HORIZONTAL_PADDING,
-                    tab_item_gap: TAB_ITEM_GAP,
-                },
-            )
-        });
-        debug_assert!(
-            tab_chrome_layout
-                .as_ref()
-                .is_none_or(|layout| layout.tab_strokes.len() == self.tabs.len())
-        );
-        let render_tab_stroke = |stroke: tab_chrome::StrokeRect| {
-            div()
-                .absolute()
-                .left(px(stroke.x))
-                .top(px(stroke.y))
-                .w(px(stroke.w))
-                .h(px(stroke.h))
-                .bg(tab_stroke_color)
-        };
-        let mut tabs_scroll_content = div()
-            .id("tabs-scroll-content")
-            .flex_1()
-            .min_w(px(0.0))
-            .h(px(if show_tab_bar { TABBAR_HEIGHT } else { 0.0 }))
-            .flex()
-            .relative()
-            .items_end()
-            .gap(px(TAB_ITEM_GAP))
-            .overflow_x_scroll()
-            .track_scroll(&self.tab_strip_scroll_handle)
-            .on_scroll_wheel(
-                cx.listener(|_this, _event: &ScrollWheelEvent, _window, cx| {
-                    cx.stop_propagation();
-                }),
-            )
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
-                let hovered_changed =
-                    this.hovered_tab.take().is_some() || this.hovered_tab_close.take().is_some();
-                let drag_changed = if event.dragging() {
-                    let viewport_width = this.tab_strip_drag_viewport_width(window);
-                    let pointer_x = Into::<f32>::into(event.position.x).clamp(0.0, viewport_width);
-                    this.update_tab_drag_preview(pointer_x, viewport_width, cx)
-                } else {
-                    if this.tab_drag.is_some() {
-                        this.commit_tab_drag(cx);
-                        return;
-                    }
-                    false
-                };
-                if hovered_changed && !drag_changed {
-                    cx.notify();
-                }
-            }));
-
-        if show_tab_bar {
-            let tab_chrome_layout = tab_chrome_layout
-                .as_ref()
-                .expect("tab chrome layout must exist when tab bar is visible");
-            tabs_scroll_content = tabs_scroll_content.child(
-                div()
-                    .id("tabs-left-padding-spacer")
-                    .flex_none()
-                    .w(px(TAB_HORIZONTAL_PADDING))
-                    .h(px(TABBAR_HEIGHT)),
-            );
-            for (index, tab) in self.tabs.iter().enumerate() {
-                let switch_tab_index = index;
-                let hover_tab_index = index;
-                let close_tab_index = index;
-                let is_active = index == self.active_tab;
-                let is_hovered = self.hovered_tab == Some(index);
-                let show_tab_close = Self::tab_shows_close(
-                    is_active,
-                    self.hovered_tab,
-                    self.hovered_tab_close,
-                    index,
-                );
-                let is_renaming = self.renaming_tab == Some(index);
-                let tab_drop_marker_side = self.tab_drop_marker_side(index);
-                let close_slot_width = if show_tab_close {
-                    TAB_CLOSE_SLOT_WIDTH
-                } else {
-                    0.0
-                };
-                let label = Self::format_tab_label_for_render(
-                    &tab.title,
-                    Self::tab_title_char_budget(tab.display_width, close_slot_width),
-                );
-                let rename_text_color = if is_active {
-                    active_tab_text
-                } else {
-                    inactive_tab_text
-                };
-                let mut rename_selection_color = colors.cursor;
-                rename_selection_color.a = if is_active { 0.34 } else { 0.24 };
-
-                let tab_bg = if is_active {
-                    active_tab_bg
-                } else if is_hovered {
-                    hovered_tab_bg
-                } else {
-                    inactive_tab_bg
-                };
-                let tab_strokes = tab_chrome_layout.tab_strokes[index];
-
-                let mut close_text_color = if is_active {
-                    active_tab_text
-                } else {
-                    inactive_tab_text
-                };
-                if !show_tab_close {
-                    close_text_color.a = 0.0;
-                }
-
-                let close_button = div()
-                    .w(px(close_slot_width))
-                    .h(px(TAB_CLOSE_HITBOX))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(5.0))
-                    .text_color(close_text_color)
-                    .text_size(px(12.0))
-                    .child("×")
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
-                            let is_active = close_tab_index == this.active_tab;
-                            if Self::tab_shows_close(
-                                is_active,
-                                this.hovered_tab,
-                                this.hovered_tab_close,
-                                close_tab_index,
-                            ) {
-                                this.close_tab(close_tab_index, cx);
-                                cx.stop_propagation();
-                            }
-                        }),
-                    )
-                    .on_mouse_move(cx.listener(
-                        move |this, _event: &MouseMoveEvent, _window, cx| {
-                            let mut hover_changed = false;
-                            if this.hovered_tab != Some(hover_tab_index) {
-                                this.hovered_tab = Some(hover_tab_index);
-                                hover_changed = true;
-                            }
-                            if this.hovered_tab_close != Some(hover_tab_index) {
-                                this.hovered_tab_close = Some(hover_tab_index);
-                                hover_changed = true;
-                            }
-                            if hover_changed {
-                                cx.notify();
-                            }
-                            cx.stop_propagation();
-                        },
-                    ))
-                    .hover(move |style| {
-                        style
-                            .bg(close_button_hover_bg)
-                            .text_color(close_button_hover_text)
-                    })
-                    .cursor_pointer();
-
-                let tab_shell = div()
-                    .flex_none()
-                    .relative()
-                    .bg(tab_bg)
-                    .w(px(tab.display_width))
-                    .h(px(TAB_ITEM_HEIGHT))
-                    .px(px(TAB_TEXT_PADDING_X))
-                    .flex()
-                    .items_center()
-                    .cursor_pointer()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
-                            this.switch_tab(switch_tab_index, cx);
-                            this.begin_tab_drag(switch_tab_index);
-                            if event.click_count == 2 {
-                                this.begin_rename_tab(switch_tab_index, cx);
-                            }
-                            cx.stop_propagation();
-                        }),
-                    )
-                    .on_mouse_move(
-                        cx.listener(move |this, event: &MouseMoveEvent, window, cx| {
-                            let mut hovered_changed = if this.hovered_tab != Some(hover_tab_index) {
-                                this.hovered_tab = Some(hover_tab_index);
-                                true
-                            } else {
-                                false
-                            };
-                            if this.hovered_tab_close.take().is_some() {
-                                hovered_changed = true;
-                            }
-                            let drag_changed = if event.dragging() {
-                                let viewport_width = this.tab_strip_drag_viewport_width(window);
-                                let pointer_x =
-                                    Into::<f32>::into(event.position.x).clamp(0.0, viewport_width);
-                                this.update_tab_drag_preview(pointer_x, viewport_width, cx)
-                            } else {
-                                false
-                            };
-                            if hovered_changed && !drag_changed {
-                                cx.notify();
-                            }
-                            cx.stop_propagation();
-                        }),
-                    )
-                    .child(render_tab_stroke(tab_strokes.top))
-                    .children(tab_strokes.left_boundary.map(render_tab_stroke))
-                    .children(tab_strokes.right_boundary.map(render_tab_stroke));
-
-                let drop_marker = tab_drop_marker_side.map(|side| {
-                    let marker_x = match side {
-                        TabDropMarkerSide::Left => 0.0,
-                        TabDropMarkerSide::Right => tab.display_width - TAB_DROP_MARKER_WIDTH,
-                    }
-                    .max(0.0);
-                    let marker_height =
-                        (TAB_ITEM_HEIGHT - (TAB_DROP_MARKER_INSET_Y * 2.0)).max(0.0);
-
-                    div()
-                        .absolute()
-                        .left(px(marker_x))
-                        .top(px(TAB_DROP_MARKER_INSET_Y))
-                        .w(px(TAB_DROP_MARKER_WIDTH))
-                        .h(px(marker_height))
-                        .bg(tab_drop_marker_color)
-                });
-
-                tabs_scroll_content = tabs_scroll_content.child(
-                    tab_shell
-                        .child(div().flex_1().min_w(px(0.0)).h_full().relative().child(
-                            if is_renaming {
-                                self.render_inline_input_layer(
-                                    Font {
-                                        family: font_family.clone(),
-                                        weight: FontWeight::NORMAL,
-                                        ..Default::default()
-                                    },
-                                    px(12.0),
-                                    rename_text_color.into(),
-                                    rename_selection_color.into(),
-                                    InlineInputAlignment::Left,
-                                    cx,
-                                )
-                            } else {
-                                let title_text = div()
-                                    .size_full()
-                                    .flex()
-                                    .items_center()
-                                    .overflow_x_hidden()
-                                    .whitespace_nowrap()
-                                    .font_family(font_family.clone())
-                                    .text_color(rename_text_color)
-                                    .text_size(px(12.0))
-                                    .text_ellipsis();
-                                title_text.child(label).into_any_element()
-                            },
-                        ))
-                        .child(close_button)
-                        .children(drop_marker),
-                );
-            }
-            tabs_scroll_content = tabs_scroll_content.child(
-                div()
-                    .id("tabs-right-padding-spacer")
-                    .flex_none()
-                    .w(px(TAB_HORIZONTAL_PADDING))
-                    .h(px(TABBAR_HEIGHT)),
-            );
-        }
-
-        if let Some(layout) = tab_chrome_layout.as_ref() {
-            for segment in &layout.baseline_strokes {
-                tabs_scroll_content = tabs_scroll_content.child(render_tab_stroke(*segment));
-            }
-            tabs_scroll_content = tabs_scroll_content.child(
-                div()
-                    .id("tabs-baseline-tail-filler")
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .h(px(TABBAR_HEIGHT))
-                    .relative()
-                    .child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .right_0()
-                            .top(px(layout.baseline_y))
-                            .h(px(TAB_STROKE_THICKNESS))
-                            .bg(tab_stroke_color),
-                    ),
-            );
-        }
-        let tab_baseline_y = tab_chrome_layout
-            .as_ref()
-            .map_or(TABBAR_HEIGHT - TAB_STROKE_THICKNESS, |layout| {
-                layout.baseline_y
-            });
-
-        let tabs_row = div()
-            .w_full()
-            .h(px(if show_tab_bar { TABBAR_HEIGHT } else { 0.0 }))
-            .relative()
-            .child(
-                div()
-                    .w_full()
-                    .h_full()
-                    .flex()
-                    .items_end()
-                    .child(
-                        div()
-                            .id("tabs-scroll-viewport")
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .h_full()
-                            .child(tabs_scroll_content),
-                    )
-                    .children(show_tab_bar.then(|| {
-                        div()
-                            .id("tabbar-action-rail")
-                            .relative()
-                            .flex_none()
-                            .w(px(tabbar_action_rail_width))
-                            .h(px(TABBAR_HEIGHT))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .on_mouse_move(cx.listener(
-                                |this, event: &MouseMoveEvent, window, cx| {
-                                    let hovered_changed = this.hovered_tab.take().is_some()
-                                        || this.hovered_tab_close.take().is_some();
-                                    if !event.dragging() {
-                                        if hovered_changed {
-                                            cx.notify();
-                                        }
-                                        return;
-                                    }
-
-                                    let viewport_width = this.tab_strip_drag_viewport_width(window);
-                                    let pointer_x = Into::<f32>::into(event.position.x)
-                                        .clamp(0.0, viewport_width);
-                                    if !this.update_tab_drag_preview(pointer_x, viewport_width, cx)
-                                        && hovered_changed
-                                    {
-                                        cx.notify();
-                                    }
-                                },
-                            ))
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left_0()
-                                    .right_0()
-                                    .top(px(tab_baseline_y))
-                                    .h(px(TAB_STROKE_THICKNESS))
-                                    .bg(tab_stroke_color),
-                            )
-                            .child(self.render_tabbar_new_tab_button(
-                                tabbar_new_tab_bg,
-                                tabbar_new_tab_hover_bg,
-                                tabbar_new_tab_border,
-                                tabbar_new_tab_hover_border,
-                                tabbar_new_tab_text,
-                                tabbar_new_tab_hover_text,
-                                cx,
-                            ))
-                            .into_any_element()
-                    })),
-            );
 
         // Build update banner element (macOS only)
         #[cfg(target_os = "macos")]
@@ -1063,76 +582,38 @@ impl Render for TerminalView {
             "Terminal"
         };
         let titlebar_element: Option<AnyElement> = (titlebar_height > 0.0).then(|| {
-            div()
+            let titlebar_container = div()
                 .id("titlebar")
                 .w_full()
                 .h(px(titlebar_height))
                 .flex_none()
+                .relative()
                 .flex()
                 .items_center()
-                .window_control_area(WindowControlArea::Drag)
+                .on_mouse_move(cx.listener(Self::handle_titlebar_tab_strip_mouse_move))
+                .bg(titlebar_bg);
+
+            titlebar_container
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(Self::handle_titlebar_mouse_down),
+                    cx.listener(Self::handle_unified_titlebar_mouse_down),
                 )
-                .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
-                    let mut changed = false;
-                    if this.hovered_tab.take().is_some() || this.hovered_tab_close.take().is_some()
-                    {
-                        changed = true;
-                    }
-                    if event.dragging() {
-                        let viewport_width = this.tab_strip_drag_viewport_width(window);
-                        let pointer_x =
-                            Into::<f32>::into(event.position.x).clamp(0.0, viewport_width);
-                        if !this.update_tab_drag_preview(pointer_x, viewport_width, cx) && changed {
-                            cx.notify();
-                        }
-                        return;
-                    }
-                    if this.tab_drag.is_some() {
-                        this.commit_tab_drag(cx);
-                    }
-                    if changed {
-                        cx.notify();
-                    }
-                }))
-                .bg(titlebar_bg)
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(Self::handle_unified_titlebar_mouse_up),
+                )
+                .on_mouse_up_out(
+                    MouseButton::Left,
+                    cx.listener(Self::handle_unified_titlebar_mouse_up),
+                )
                 .child(
                     div()
                         .w_full()
+                        .h_full()
                         .flex()
-                        .items_center()
+                        .items_end()
                         .mt(px(TOP_STRIP_CONTENT_OFFSET_Y))
-                        .gap(px(8.0))
-                        .pl(px(titlebar_left_padding))
-                        .pr(px(TOP_STRIP_SIDE_PADDING))
-                        .child(
-                            div()
-                                .flex_1()
-                                .flex()
-                                .items_center()
-                                .gap(px(10.0))
-                                .overflow_x_hidden()
-                                .child(
-                                    div()
-                                        .mt(px(TOP_STRIP_TEXT_BASELINE_NUDGE_Y))
-                                        .text_color(titlebar_brand_text)
-                                        .text_size(px(TOP_STRIP_BRAND_TEXT_SIZE))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child("termy"),
-                                )
-                                .child(
-                                    div()
-                                        .mt(px(TOP_STRIP_TEXT_BASELINE_NUDGE_Y))
-                                        .flex_1()
-                                        .overflow_x_hidden()
-                                        .truncate()
-                                        .text_color(titlebar_context_text)
-                                        .text_size(px(TOP_STRIP_CONTEXT_TEXT_SIZE))
-                                        .child(active_context_label),
-                                ),
-                        ),
+                        .child(tabs_row),
                 )
                 .into_any()
         });
@@ -1379,26 +860,18 @@ impl Render for TerminalView {
             .font_family(font_family.clone())
             .capture_any_mouse_up(cx.listener(|this, event: &MouseUpEvent, _window, cx| {
                 if event.button == MouseButton::Left {
+                    this.disarm_titlebar_window_move();
                     this.commit_tab_drag(cx);
                 }
             }))
             .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
+                    this.disarm_titlebar_window_move();
                     this.commit_tab_drag(cx);
                 }),
             )
             .children(titlebar_element)
-            .child(
-                div()
-                    .id("tabbar")
-                    .w_full()
-                    .h(px(self.tab_bar_height()))
-                    .flex_none()
-                    .overflow_hidden()
-                    .bg(tabbar_bg)
-                    .child(tabs_row),
-            )
             .children(banner_element)
             .child(
                 div()

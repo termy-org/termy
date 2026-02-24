@@ -184,7 +184,6 @@ fn get_show_config_content() -> Vec<String> {
         lines.push("  padding_x = 12".to_string());
         lines.push("  padding_y = 8".to_string());
         lines.push("  scrollback_history = 10000".to_string());
-        lines.push("  use_tabs = true".to_string());
         return lines;
     }
 

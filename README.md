@@ -65,7 +65,6 @@ Config file: `~/.config/termy/config.txt`
 theme = termy
 font_family = "JetBrains Mono"
 font_size = 14
-use_tabs = true
 window_width = 1100
 window_height = 720
 keybind = cmd-p=toggle_command_palette

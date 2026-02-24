@@ -537,6 +537,7 @@ impl TerminalView {
         self.font_size = px(clamped);
         // Force cell size recalc so terminal grid reflows at the new zoom.
         self.cell_size = None;
+        self.clear_tab_title_width_cache();
         cx.notify();
     }
 
@@ -975,10 +976,6 @@ impl TerminalView {
                 }
             },
             CommandAction::RenameTab => {
-                if !self.use_tabs {
-                    return;
-                }
-
                 self.begin_rename_tab(self.active_tab, cx);
                 termy_toast::info("Rename mode enabled");
             }
@@ -1538,12 +1535,12 @@ impl TerminalView {
         self.focus_handle.focus(window, cx);
         self.reset_cursor_blink_phase();
         let mut changed = false;
-        if event.button == MouseButton::Left && self.tab_drag.is_some() {
+        if event.button == MouseButton::Left && self.tab_strip.drag.is_some() {
             self.commit_tab_drag(cx);
-        } else if self.finish_tab_drag() {
+        } else if self.reset_tab_drag_state() {
             changed = true;
         }
-        if self.hovered_tab.take().is_some() || self.hovered_tab_close.take().is_some() {
+        if self.clear_tab_hover_state() {
             changed = true;
         }
         if changed {
@@ -1611,11 +1608,11 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tab_drag.is_some() && !event.dragging() {
+        if self.tab_strip.drag.is_some() && !event.dragging() {
             self.commit_tab_drag(cx);
         }
 
-        if self.hovered_tab.take().is_some() || self.hovered_tab_close.take().is_some() {
+        if self.clear_tab_hover_state() {
             cx.notify();
         }
 
@@ -1696,27 +1693,6 @@ impl TerminalView {
         cx.notify();
     }
 
-    pub(super) fn handle_titlebar_mouse_down(
-        &mut self,
-        event: &MouseDownEvent,
-        window: &mut Window,
-        _cx: &mut Context<Self>,
-    ) {
-        if event.button != MouseButton::Left {
-            return;
-        }
-
-        if event.click_count == 2 {
-            #[cfg(target_os = "macos")]
-            window.titlebar_double_click();
-            #[cfg(not(target_os = "macos"))]
-            window.zoom_window();
-            return;
-        }
-
-        window.start_window_move();
-    }
-
     pub(super) fn handle_terminal_scroll_wheel(
         &mut self,
         event: &ScrollWheelEvent,
@@ -1770,16 +1746,12 @@ impl TerminalView {
         cx.notify();
     }
 
-    pub(super) fn tab_bar_height(&self) -> f32 {
-        if self.show_tab_bar() {
-            TABBAR_HEIGHT
+    pub(super) const fn titlebar_height() -> f32 {
+        if TITLEBAR_HEIGHT > TABBAR_HEIGHT {
+            TITLEBAR_HEIGHT
         } else {
-            0.0
+            TABBAR_HEIGHT
         }
-    }
-
-    pub(super) fn titlebar_height(&self) -> f32 {
-        TITLEBAR_HEIGHT
     }
 
     pub(super) fn update_banner_height(&self) -> f32 {
@@ -1791,7 +1763,7 @@ impl TerminalView {
     }
 
     pub(super) fn chrome_height(&self) -> f32 {
-        self.titlebar_height() + self.tab_bar_height() + self.update_banner_height()
+        Self::titlebar_height() + self.update_banner_height()
     }
 }
 
