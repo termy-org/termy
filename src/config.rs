@@ -3,7 +3,11 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::{LazyLock, Mutex},
 };
+
+static CONFIG_CHANGE_SUBSCRIBERS: LazyLock<Mutex<Vec<flume::Sender<()>>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
 
 const DEFAULT_TAB_TITLE_FALLBACK: &str = "Terminal";
 const DEFAULT_TAB_TITLE_EXPLICIT_PREFIX: &str = "termy:tab:";
@@ -219,7 +223,23 @@ fn update_config_contents<R>(
         fs::read_to_string(&config_path).map_err(|e| format!("Failed to read config: {}", e))?;
     let (updated, result) = updater(&existing)?;
     fs::write(&config_path, updated).map_err(|e| format!("Failed to write config: {}", e))?;
+    notify_config_changed();
     Ok(result)
+}
+
+fn notify_config_changed() {
+    let Ok(mut subscribers) = CONFIG_CHANGE_SUBSCRIBERS.lock() else {
+        return;
+    };
+    subscribers.retain(|tx| tx.send(()).is_ok());
+}
+
+pub fn subscribe_config_changes() -> flume::Receiver<()> {
+    let (tx, rx) = flume::unbounded();
+    if let Ok(mut subscribers) = CONFIG_CHANGE_SUBSCRIBERS.lock() {
+        subscribers.push(tx);
+    }
+    rx
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

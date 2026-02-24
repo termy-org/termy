@@ -10,6 +10,7 @@ use ratatui::{
 use std::io::{self, stdout};
 
 use crate::commands::list_keybinds::KeybindDirective;
+use crate::commands::validate_config;
 use crate::config::{config_path, parse_keybind_lines, parse_theme_id};
 
 #[derive(Clone, Copy, PartialEq)]
@@ -527,46 +528,8 @@ fn get_validate_config_content() -> Vec<String> {
 
     match std::fs::read_to_string(&path) {
         Ok(contents) => {
-            let mut errors = Vec::new();
-            let mut warnings = Vec::new();
-
-            for (line_num, line) in contents.lines().enumerate() {
-                let trimmed = line.trim();
-
-                if trimmed.is_empty() || trimmed.starts_with('#') {
-                    continue;
-                }
-
-                if !trimmed.contains('=') {
-                    errors.push(format!(
-                        "Line {}: Missing '=' in '{}'",
-                        line_num + 1,
-                        trimmed
-                    ));
-                    continue;
-                }
-
-                if let Some((key, _value)) = trimmed.split_once('=') {
-                    let key = key.trim();
-                    let valid_keys = [
-                        "theme",
-                        "font_family",
-                        "font_size",
-                        "term",
-                        "cursor_style",
-                        "cursor_blink",
-                        "background_opacity",
-                        "padding_x",
-                        "padding_y",
-                        "scrollback_history",
-                        "keybind",
-                    ];
-
-                    if !valid_keys.contains(&key) {
-                        warnings.push(format!("Line {}: Unknown key '{}'", line_num + 1, key));
-                    }
-                }
-            }
+            let validate_config::ValidationReport { errors, warnings } =
+                validate_config::validate_contents(&contents);
 
             if errors.is_empty() && warnings.is_empty() {
                 lines.push("Configuration is valid!".to_string());

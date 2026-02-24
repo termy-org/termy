@@ -849,6 +849,7 @@ impl Render for TerminalView {
             .flex_col()
             .size_full()
             .bg(root_bg)
+            .font_family(font_family.clone())
             .capture_any_mouse_up(cx.listener(|this, event: &MouseUpEvent, _window, cx| {
                 if event.button == MouseButton::Left {
                     this.disarm_titlebar_window_move();

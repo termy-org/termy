@@ -1,17 +1,23 @@
 use crate::colors::TerminalColors;
-use crate::config::{AppConfig, CursorStyle, TabTitleMode, set_config_value};
+use crate::config::{self, AppConfig, CursorStyle, TabTitleMode, set_config_value};
 use crate::text_input::{TextInputAlignment, TextInputElement, TextInputProvider, TextInputState};
 use gpui::{
-    AnyElement, Context, FocusHandle, Font, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render, Rgba,
-    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, TextAlign, Window, div,
-    prelude::FluentBuilder, px,
+    AnyElement, AsyncApp, Context, FocusHandle, Font, InteractiveElement, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
+    Rgba, ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, TextAlign,
+    WeakEntity, Window, deferred, div, prelude::FluentBuilder, px,
 };
+use std::collections::hash_map::DefaultHasher;
+use std::fs;
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
+use std::time::Duration;
 
 const SIDEBAR_WIDTH: f32 = 220.0;
 const NUMERIC_INPUT_WIDTH: f32 = 220.0;
 const NUMERIC_INPUT_HEIGHT: f32 = 34.0;
 const NUMERIC_STEP_BUTTON_SIZE: f32 = 24.0;
+const SETTINGS_CONFIG_WATCH_INTERVAL_MS: u64 = 750;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum EditableField {
@@ -60,22 +66,108 @@ enum SettingsSection {
 pub struct SettingsWindow {
     active_section: SettingsSection,
     config: AppConfig,
+    config_path: Option<PathBuf>,
+    config_fingerprint: Option<u64>,
+    available_font_families: Vec<String>,
     focus_handle: FocusHandle,
     active_input: Option<ActiveTextInput>,
     colors: TerminalColors,
 }
 
 impl SettingsWindow {
-    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let config = AppConfig::load_or_create();
+        let config_path = config::ensure_config_file();
+        let config_fingerprint = config_path.as_ref().and_then(Self::config_fingerprint);
+        let config_change_rx = config::subscribe_config_changes();
+        let mut available_font_families = window.text_system().all_font_names();
+        available_font_families.sort_unstable_by_key(|font| font.to_ascii_lowercase());
+        available_font_families.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
         let colors = TerminalColors::from_theme(&config.theme, &config.colors);
-        Self {
+        let view = Self {
             active_section: SettingsSection::Appearance,
             config,
+            config_path,
+            config_fingerprint,
+            available_font_families,
             focus_handle: cx.focus_handle(),
             active_input: None,
             colors,
+        };
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            while config_change_rx.recv_async().await.is_ok() {
+                while config_change_rx.try_recv().is_ok() {}
+                let result = cx.update(|cx| {
+                    this.update(cx, |view, cx| {
+                        if view.reload_config_if_changed(cx) {
+                            cx.notify();
+                        }
+                    })
+                });
+                if result.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            loop {
+                smol::Timer::after(Duration::from_millis(SETTINGS_CONFIG_WATCH_INTERVAL_MS)).await;
+                let result = cx.update(|cx| {
+                    this.update(cx, |view, cx| {
+                        if view.reload_config_if_changed(cx) {
+                            cx.notify();
+                        }
+                    })
+                });
+                if result.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        view
+    }
+
+    fn config_fingerprint(path: &PathBuf) -> Option<u64> {
+        let contents = fs::read(path).ok()?;
+        let mut hasher = DefaultHasher::new();
+        contents.hash(&mut hasher);
+        Some(hasher.finish())
+    }
+
+    fn apply_runtime_config(&mut self, config: AppConfig) -> bool {
+        self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
+        self.config = config;
+        true
+    }
+
+    fn reload_config_if_changed(&mut self, _cx: &mut Context<Self>) -> bool {
+        let path = match self.config_path.clone() {
+            Some(path) => path,
+            None => {
+                self.config_path = config::ensure_config_file();
+                match self.config_path.clone() {
+                    Some(path) => path,
+                    None => return false,
+                }
+            }
+        };
+
+        let Some(fingerprint) = Self::config_fingerprint(&path) else {
+            return false;
+        };
+
+        if self.config_fingerprint == Some(fingerprint) {
+            return false;
         }
+
+        self.config_fingerprint = Some(fingerprint);
+        let config = AppConfig::load_or_create();
+        self.apply_runtime_config(config)
     }
 
     // Color helpers derived from terminal theme
@@ -145,6 +237,57 @@ impl SettingsWindow {
         c
     }
 
+    fn srgb_to_linear(channel: f32) -> f32 {
+        if channel <= 0.04045 {
+            channel / 12.92
+        } else {
+            ((channel + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    fn composite_over(fg: Rgba, bg: Rgba) -> Rgba {
+        let fg_alpha = fg.a.clamp(0.0, 1.0);
+        Rgba {
+            r: (fg_alpha * fg.r + (1.0 - fg_alpha) * bg.r).clamp(0.0, 1.0),
+            g: (fg_alpha * fg.g + (1.0 - fg_alpha) * bg.g).clamp(0.0, 1.0),
+            b: (fg_alpha * fg.b + (1.0 - fg_alpha) * bg.b).clamp(0.0, 1.0),
+            a: 1.0,
+        }
+    }
+
+    fn relative_luminance(color: Rgba, backdrop: Rgba) -> f32 {
+        let composited = Self::composite_over(color, backdrop);
+        let r = Self::srgb_to_linear(composited.r);
+        let g = Self::srgb_to_linear(composited.g);
+        let b = Self::srgb_to_linear(composited.b);
+        0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    fn contrast_ratio(a: Rgba, b: Rgba, backdrop: Rgba) -> f32 {
+        let l1 = Self::relative_luminance(a, backdrop);
+        let l2 = Self::relative_luminance(b, backdrop);
+        let (lighter, darker) = if l1 >= l2 { (l1, l2) } else { (l2, l1) };
+        (lighter + 0.05) / (darker + 0.05)
+    }
+
+    fn contrasting_text_for_fill(&self, fill: Rgba, backdrop: Rgba) -> Rgba {
+        let mut primary = self.text_primary();
+        primary.a = 1.0;
+        let mut dark = self.bg_primary();
+        dark.a = 1.0;
+        let mut backdrop = backdrop;
+        backdrop.a = 1.0;
+        let composited_fill = Self::composite_over(fill, backdrop);
+
+        if Self::contrast_ratio(primary, composited_fill, backdrop)
+            >= Self::contrast_ratio(dark, composited_fill, backdrop)
+        {
+            primary
+        } else {
+            dark
+        }
+    }
+
     fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .w(px(SIDEBAR_WIDTH))
@@ -155,7 +298,7 @@ impl SettingsWindow {
             .flex()
             .flex_col()
             .child(
-                div().px_5().pt_6().pb_4().child(
+                div().px_5().pt_10().pb_4().child(
                     div()
                         .text_xs()
                         .font_weight(gpui::FontWeight::SEMIBOLD)
@@ -436,6 +579,10 @@ impl SettingsWindow {
         )
     }
 
+    fn uses_text_input_for_field(field: EditableField) -> bool {
+        !Self::is_numeric_field(field)
+    }
+
     fn step_numeric_field(&mut self, field: EditableField, delta: i32, cx: &mut Context<Self>) {
         let result = match field {
             EditableField::BackgroundOpacity => {
@@ -505,6 +652,19 @@ impl SettingsWindow {
         theme_ids
     }
 
+    fn ordered_font_families_for_settings(&self) -> Vec<String> {
+        let mut fonts = self.available_font_families.clone();
+        if !fonts
+            .iter()
+            .any(|font| font.eq_ignore_ascii_case(&self.config.font_family))
+        {
+            fonts.push(self.config.font_family.clone());
+        }
+        fonts.sort_unstable_by_key(|font| font.to_ascii_lowercase());
+        fonts.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+        fonts
+    }
+
     fn filtered_theme_suggestions(&self, query: &str) -> Vec<String> {
         let normalized = query.trim().to_ascii_lowercase();
         let themes = self.ordered_theme_ids_for_settings();
@@ -527,8 +687,33 @@ impl SettingsWindow {
         matched.into_iter().take(16).collect()
     }
 
+    fn filtered_font_suggestions(&self, query: &str) -> Vec<String> {
+        let normalized = query.trim().to_ascii_lowercase();
+        let fonts = self.ordered_font_families_for_settings();
+        let selected_font = self.config.font_family.trim().to_ascii_lowercase();
+
+        // When the dropdown first opens, the input text equals the selected font.
+        // Treat that like an empty query so users can browse the full installed list.
+        if normalized.is_empty() || normalized == selected_font {
+            return fonts;
+        }
+
+        fonts
+            .into_iter()
+            .filter(|font| font.to_ascii_lowercase().contains(&normalized))
+            .collect()
+    }
+
     fn apply_theme_selection(&mut self, theme_id: &str, cx: &mut Context<Self>) {
         if let Err(error) = self.apply_editable_field(EditableField::Theme, theme_id) {
+            termy_toast::error(error);
+        }
+        self.active_input = None;
+        cx.notify();
+    }
+
+    fn apply_font_selection(&mut self, font_family: &str, cx: &mut Context<Self>) {
+        if let Err(error) = self.apply_editable_field(EditableField::FontFamily, font_family) {
             termy_toast::error(error);
         }
         self.active_input = None;
@@ -653,19 +838,15 @@ impl SettingsWindow {
         // Off state: use a more visible muted foreground color
         let mut bg_off = self.colors.foreground;
         bg_off.a = 0.25;
-        // Knob: white/light when on, slightly dimmer when off
-        let knob_color = if checked {
-            self.text_primary()
-        } else {
-            self.text_secondary()
-        };
+        let track_color = if checked { accent } else { bg_off };
+        let knob_color = self.contrasting_text_for_fill(track_color, self.bg_card());
 
         div()
             .id(SharedString::from(id))
             .w(px(44.0))
             .h(px(24.0))
             .rounded(px(12.0))
-            .bg(if checked { accent } else { bg_off })
+            .bg(track_color)
             .cursor_pointer()
             .relative()
             .child(
@@ -699,7 +880,8 @@ impl SettingsWindow {
             .as_ref()
             .is_some_and(|input| input.field == field);
         let is_theme_field = field == EditableField::Theme;
-        let accent_inner_border = is_numeric || is_theme_field;
+        let is_font_field = field == EditableField::FontFamily;
+        let accent_inner_border = is_numeric || is_theme_field || is_font_field;
         let theme_suggestions = if is_theme_field && is_active {
             let query = self
                 .active_input
@@ -707,6 +889,23 @@ impl SettingsWindow {
                 .map(|input| input.state.text())
                 .unwrap_or("");
             self.filtered_theme_suggestions(query)
+        } else {
+            Vec::new()
+        };
+        let font_suggestions = if is_font_field && is_active {
+            let query = self
+                .active_input
+                .as_ref()
+                .map(|input| input.state.text())
+                .unwrap_or("");
+            self.filtered_font_suggestions(query)
+        } else {
+            Vec::new()
+        };
+        let dropdown_options = if is_theme_field {
+            theme_suggestions
+        } else if is_font_field {
+            font_suggestions
         } else {
             Vec::new()
         };
@@ -721,62 +920,80 @@ impl SettingsWindow {
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
 
-        let mut theme_dropdown = None;
-        let theme_dropdown_open = is_theme_field && is_active && !theme_suggestions.is_empty();
-        if theme_dropdown_open {
+        let mut dropdown = None;
+        let dropdown_open =
+            is_active && (is_theme_field || is_font_field) && !dropdown_options.is_empty();
+        if dropdown_open {
             let mut list = div().flex().flex_col().py_1();
-            for theme_id in theme_suggestions {
-                let theme_label = theme_id.clone();
+            for (index, option) in dropdown_options.into_iter().enumerate() {
+                let option_label = option.clone();
+                let option_value = option.clone();
                 list = list.child(
                     div()
-                        .id(SharedString::from(format!("theme-option-{theme_label}")))
+                        .id(SharedString::from(if is_theme_field {
+                            format!("theme-option-{index}")
+                        } else {
+                            format!("font-option-{index}")
+                        }))
                         .px_3()
                         .py_1()
                         .text_sm()
                         .text_color(text_secondary)
                         .cursor_pointer()
+                        .when(is_font_field, |s| s.font_family(option_value.clone()))
                         .hover(|this| this.bg(hover_bg))
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
                                 cx.stop_propagation();
-                                view.apply_theme_selection(&theme_id, cx);
+                                if is_theme_field {
+                                    view.apply_theme_selection(&option_value, cx);
+                                } else {
+                                    view.apply_font_selection(&option_value, cx);
+                                }
                             }),
                         )
-                        .child(theme_label),
+                        .child(option_label),
                 );
             }
 
             // Use a fully opaque background for the dropdown so it covers content below
             let dropdown_bg = self.bg_primary();
-            theme_dropdown = Some(
-                div()
-                    .id("theme-suggestions-list")
-                    .occlude()
-                    .absolute()
-                    .top(px(34.0))
-                    .left_0()
-                    .right_0()
-                    .max_h(px(180.0))
-                    .overflow_scroll()
-                    .overflow_x_hidden()
-                    .rounded_md()
-                    .bg(dropdown_bg)
-                    .border_1()
-                    .border_color(border_color)
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
-                            cx.stop_propagation();
-                        }),
-                    )
-                    .on_scroll_wheel(cx.listener(
-                        |_view, _event: &ScrollWheelEvent, _window, cx| {
-                            cx.stop_propagation();
-                        },
-                    ))
-                    .child(list)
-                    .into_any_element(),
+            dropdown = Some(
+                deferred(
+                    div()
+                        .id(if is_theme_field {
+                            "theme-suggestions-list"
+                        } else {
+                            "font-suggestions-list"
+                        })
+                        .occlude()
+                        .absolute()
+                        .top(px(34.0))
+                        .left_0()
+                        .right_0()
+                        .max_h(if is_theme_field { px(180.0) } else { px(240.0) })
+                        .overflow_scroll()
+                        .overflow_x_hidden()
+                        .rounded_md()
+                        .bg(dropdown_bg)
+                        .border_1()
+                        .border_color(border_color)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .on_scroll_wheel(cx.listener(
+                            |_view, _event: &ScrollWheelEvent, _window, cx| {
+                                cx.stop_propagation();
+                            },
+                        ))
+                        .child(list),
+                )
+                .with_priority(10)
+                .into_any_element(),
             );
         }
 
@@ -868,7 +1085,7 @@ impl SettingsWindow {
             .rounded_lg()
             .bg(bg_card)
             .border_1()
-            .border_color(if theme_dropdown_open {
+            .border_color(if dropdown_open {
                 Rgba {
                     r: 0.0,
                     g: 0.0,
@@ -986,7 +1203,7 @@ impl SettingsWindow {
                             })
                             .child(value_element),
                     )
-                    .when_some(theme_dropdown, |s, dropdown| s.child(dropdown)),
+                    .when_some(dropdown, |s, dropdown| s.child(dropdown)),
             )
     }
 
@@ -1010,8 +1227,26 @@ impl SettingsWindow {
             return;
         }
 
+        let active_field = self.active_input.as_ref().map(|input| input.field);
+        let allow_text_editing = active_field.is_some_and(Self::uses_text_input_for_field);
+
         match event.keystroke.key.as_str() {
-            "enter" => self.commit_active_input(cx),
+            "enter" => {
+                if active_field == Some(EditableField::FontFamily) {
+                    if let Some(first) = self
+                        .active_input
+                        .as_ref()
+                        .map(|input| self.filtered_font_suggestions(input.state.text()))
+                        .and_then(|items| items.into_iter().next())
+                    {
+                        self.apply_font_selection(&first, cx);
+                    } else {
+                        self.cancel_active_input(cx);
+                    }
+                } else {
+                    self.commit_active_input(cx);
+                }
+            }
             "escape" => self.cancel_active_input(cx),
             "tab" => {
                 if self
@@ -1026,39 +1261,51 @@ impl SettingsWindow {
                 {
                     self.apply_theme_selection(&first, cx);
                 }
+                if self
+                    .active_input
+                    .as_ref()
+                    .is_some_and(|input| input.field == EditableField::FontFamily)
+                    && let Some(first) = self
+                        .active_input
+                        .as_ref()
+                        .map(|input| self.filtered_font_suggestions(input.state.text()))
+                        .and_then(|items| items.into_iter().next())
+                {
+                    self.apply_font_selection(&first, cx);
+                }
             }
             "backspace" => {
-                if let Some(input) = self.active_input.as_mut() {
+                if allow_text_editing && let Some(input) = self.active_input.as_mut() {
                     input.state.delete_backward();
                 }
                 cx.notify();
             }
             "delete" => {
-                if let Some(input) = self.active_input.as_mut() {
+                if allow_text_editing && let Some(input) = self.active_input.as_mut() {
                     input.state.delete_forward();
                 }
                 cx.notify();
             }
             "left" => {
-                if let Some(input) = self.active_input.as_mut() {
+                if allow_text_editing && let Some(input) = self.active_input.as_mut() {
                     input.state.move_left();
                 }
                 cx.notify();
             }
             "right" => {
-                if let Some(input) = self.active_input.as_mut() {
+                if allow_text_editing && let Some(input) = self.active_input.as_mut() {
                     input.state.move_right();
                 }
                 cx.notify();
             }
             "home" => {
-                if let Some(input) = self.active_input.as_mut() {
+                if allow_text_editing && let Some(input) = self.active_input.as_mut() {
                     input.state.move_to_start();
                 }
                 cx.notify();
             }
             "end" => {
-                if let Some(input) = self.active_input.as_mut() {
+                if allow_text_editing && let Some(input) = self.active_input.as_mut() {
                     input.state.move_to_end();
                 }
                 cx.notify();
@@ -1077,7 +1324,7 @@ impl SettingsWindow {
         let accent = self.accent();
         let hover_bg = self.bg_hover();
         let switch_off_bg = self.bg_input();
-        let white = self.colors.foreground;
+        let selected_text = self.contrasting_text_for_fill(accent, bg_card);
 
         div()
             .flex()
@@ -1129,9 +1376,9 @@ impl SettingsWindow {
                                 switch_off_bg
                             })
                             .text_color(if is_selected {
-                                white
+                                selected_text
                             } else {
-                                text_secondary.into()
+                                text_secondary
                             })
                             .hover(|s| if !is_selected { s.bg(hover_bg) } else { s })
                             .child("Block")
@@ -1157,9 +1404,9 @@ impl SettingsWindow {
                                 switch_off_bg
                             })
                             .text_color(if is_selected {
-                                white
+                                selected_text
                             } else {
-                                text_secondary.into()
+                                text_secondary
                             })
                             .hover(|s| if !is_selected { s.bg(hover_bg) } else { s })
                             .child("Line")
@@ -1182,7 +1429,7 @@ impl SettingsWindow {
         let accent = self.accent();
         let hover_bg = self.bg_hover();
         let switch_off_bg = self.bg_input();
-        let white = self.colors.foreground;
+        let selected_text = self.contrasting_text_for_fill(accent, bg_card);
 
         div()
             .flex()
@@ -1234,9 +1481,9 @@ impl SettingsWindow {
                                 switch_off_bg
                             })
                             .text_color(if is_selected {
-                                white
+                                selected_text
                             } else {
-                                text_secondary.into()
+                                text_secondary
                             })
                             .hover(|s| if !is_selected { s.bg(hover_bg) } else { s })
                             .child("Smart")
@@ -1262,9 +1509,9 @@ impl SettingsWindow {
                                 switch_off_bg
                             })
                             .text_color(if is_selected {
-                                white
+                                selected_text
                             } else {
-                                text_secondary.into()
+                                text_secondary
                             })
                             .hover(|s| if !is_selected { s.bg(hover_bg) } else { s })
                             .child("Shell")
@@ -1290,9 +1537,9 @@ impl SettingsWindow {
                                 switch_off_bg
                             })
                             .text_color(if is_selected {
-                                white
+                                selected_text
                             } else {
-                                text_secondary.into()
+                                text_secondary
                             })
                             .hover(|s| if !is_selected { s.bg(hover_bg) } else { s })
                             .child("Explicit")
@@ -1318,9 +1565,9 @@ impl SettingsWindow {
                                 switch_off_bg
                             })
                             .text_color(if is_selected {
-                                white
+                                selected_text
                             } else {
-                                text_secondary.into()
+                                text_secondary
                             })
                             .hover(|s| if !is_selected { s.bg(hover_bg) } else { s })
                             .child("Static")
@@ -1547,8 +1794,9 @@ impl SettingsWindow {
         let text_muted = self.text_muted();
         let text_secondary = self.text_secondary();
         let accent = self.accent();
-        let white = self.colors.foreground;
         let accent_hover = self.accent_with_alpha(0.8);
+        let button_text = self.contrasting_text_for_fill(accent, bg_card);
+        let button_hover_text = self.contrasting_text_for_fill(accent_hover, bg_card);
 
         div()
             .flex()
@@ -1613,9 +1861,9 @@ impl SettingsWindow {
                             .bg(accent)
                             .text_sm()
                             .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(white)
+                            .text_color(button_text)
                             .cursor_pointer()
-                            .hover(|s| s.bg(accent_hover))
+                            .hover(move |s| s.bg(accent_hover).text_color(button_hover_text))
                             .child("Open Config File")
                             .on_click(cx.listener(|_view, _, _, cx| {
                                 crate::config::open_config_file();
@@ -1628,11 +1876,15 @@ impl SettingsWindow {
 
 impl TextInputProvider for SettingsWindow {
     fn text_input_state(&self) -> Option<&TextInputState> {
-        self.active_input.as_ref().map(|input| &input.state)
+        self.active_input
+            .as_ref()
+            .and_then(|input| Self::uses_text_input_for_field(input.field).then_some(&input.state))
     }
 
     fn text_input_state_mut(&mut self) -> Option<&mut TextInputState> {
-        self.active_input.as_mut().map(|input| &mut input.state)
+        self.active_input.as_mut().and_then(|input| {
+            Self::uses_text_input_for_field(input.field).then_some(&mut input.state)
+        })
     }
 }
 
@@ -1653,6 +1905,7 @@ impl Render for SettingsWindow {
             .flex()
             .size_full()
             .bg(bg)
+            .font_family(self.config.font_family.clone())
             .child(self.render_sidebar(cx))
             .child(
                 div()

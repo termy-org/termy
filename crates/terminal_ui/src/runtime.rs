@@ -72,6 +72,28 @@ impl Default for TerminalRuntimeConfig {
     }
 }
 
+/// On Windows, `CreateProcessW` splits `lpCommandLine` on spaces to find the
+/// executable name when `lpApplicationName` is `NULL`.  A shell path that contains
+/// spaces (e.g. `C:\Program Files\PowerShell\7\pwsh.exe`) must therefore be
+/// wrapped in double-quotes so the entire path is treated as a single token.
+///
+/// This function is a no-op on non-Windows platforms.
+#[cfg(target_os = "windows")]
+fn quote_shell_program_if_needed(shell_path: &str) -> String {
+    // Already fully quoted (starts and ends with a double-quote): leave unchanged.
+    if shell_path.starts_with('"') && shell_path.ends_with('"') && shell_path.len() >= 2 {
+        return shell_path.to_string();
+    }
+    // No quoting required when the path contains no spaces.
+    if !shell_path.contains(' ') {
+        return shell_path.to_string();
+    }
+    // Escape any embedded double-quotes inside the path, then wrap in outer quotes.
+    // (Windows file names cannot legally contain '"', but we handle it defensively.)
+    let escaped = shell_path.replace('"', "\\\"");
+    format!("\"{}\"", escaped)
+}
+
 fn login_shell_args(shell_path: &str) -> Vec<String> {
     #[cfg(target_os = "windows")]
     {
@@ -400,7 +422,17 @@ impl Terminal {
 
         // Get shell from config/env or default to an OS-appropriate shell.
         let shell_path = resolve_shell_path(runtime_config.shell.as_deref());
-        let shell = Shell::new(shell_path.clone(), login_shell_args(&shell_path));
+
+        // On Windows, CreateProcessW parses lpCommandLine by splitting on spaces, so a shell
+        // path that contains spaces (e.g. "C:\Program Files\PowerShell\7\pwsh.exe") must be
+        // wrapped in double-quotes.  We quote here rather than relying on escape_args because
+        // escape_args only applies to the argument list, not to the program name itself.
+        #[cfg(target_os = "windows")]
+        let shell_program = quote_shell_program_if_needed(&shell_path);
+        #[cfg(not(target_os = "windows"))]
+        let shell_program = shell_path.clone();
+
+        let shell = Shell::new(shell_program, login_shell_args(&shell_path));
 
         // Get working directory
         let working_directory = resolve_working_directory(configured_working_dir).or_else(|| {
@@ -414,7 +446,7 @@ impl Terminal {
             env: pty_env_overrides(tab_title_shell_integration, &runtime_config),
             drain_on_exit: true,
             #[cfg(target_os = "windows")]
-            escape_args: false,
+            escape_args: true,
         };
 
         // Create terminal config with configurable scrollback history
@@ -621,6 +653,8 @@ pub fn keystroke_to_input(keystroke: &Keystroke) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::{DEFAULT_TERM, TerminalRuntimeConfig, pty_env_overrides, resolve_shell_path};
+    #[cfg(target_os = "windows")]
+    use super::quote_shell_program_if_needed;
 
     #[test]
     fn env_overrides_set_term_by_default() {
@@ -641,5 +675,37 @@ mod tests {
     #[test]
     fn explicit_shell_path_wins() {
         assert_eq!(resolve_shell_path(Some("/bin/custom")), "/bin/custom");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn shell_program_with_spaces_is_quoted() {
+        let path = r"C:\Program Files\PowerShell\7\pwsh.exe";
+        let quoted = quote_shell_program_if_needed(path);
+        assert_eq!(quoted, r#""C:\Program Files\PowerShell\7\pwsh.exe""#);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn shell_program_without_spaces_is_unchanged() {
+        let path = r"C:\Windows\System32\cmd.exe";
+        assert_eq!(quote_shell_program_if_needed(path), path);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn already_quoted_shell_program_is_not_double_quoted() {
+        let path = r#""C:\Program Files\PowerShell\7\pwsh.exe""#;
+        assert_eq!(quote_shell_program_if_needed(path), path);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn shell_program_with_embedded_quotes_is_escaped() {
+        // Defensively handle a path that (illegally on Windows) contains a
+        // double-quote character alongside spaces.
+        let path = "C:\\weird \\path\"\\pwsh.exe";
+        let quoted = quote_shell_program_if_needed(path);
+        assert_eq!(quoted, r#""C:\weird \path\"\pwsh.exe""#);
     }
 }

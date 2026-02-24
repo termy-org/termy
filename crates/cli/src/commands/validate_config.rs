@@ -62,6 +62,7 @@ const VALID_ACTIONS: &[&str] = &[
     "search_previous",
     "toggle_search_case_sensitive",
     "toggle_search_regex",
+    "install_cli",
     "unbind",
     "clear",
 ];
@@ -108,6 +109,44 @@ pub fn run() {
         }
     };
 
+    let ValidationReport { errors, warnings } = validate_contents(&contents);
+
+    // Print results
+    if errors.is_empty() && warnings.is_empty() {
+        println!("Status: Valid");
+    } else {
+        if !errors.is_empty() {
+            println!();
+            println!("Errors:");
+            for error in &errors {
+                println!("  {}", error);
+            }
+        }
+
+        if !warnings.is_empty() {
+            println!();
+            println!("Warnings:");
+            for warning in &warnings {
+                println!("  {}", warning);
+            }
+        }
+
+        println!();
+        if errors.is_empty() {
+            println!("Result: Valid (with warnings)");
+        } else {
+            println!("Result: Invalid");
+            std::process::exit(1);
+        }
+    }
+}
+
+pub struct ValidationReport {
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+pub fn validate_contents(contents: &str) -> ValidationReport {
     let mut errors: Vec<String> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
     let mut in_section: Option<&str> = None;
@@ -213,6 +252,7 @@ pub fn run() {
                 }
                 "cursor_blink"
                 | "background_blur"
+                | "use_tabs"
                 | "warn_on_quit_with_running_process"
                 | "command_palette_show_keybinds"
                 | "tab_title_shell_integration" => {
@@ -220,40 +260,6 @@ pub fn run() {
                         errors.push(format!(
                             "Line {}: {} must be 'true' or 'false'",
                             line_num, key
-                        ));
-                    }
-                }
-                "tab_close_visibility" => {
-                    if ![
-                        "active_hover",
-                        "activehover",
-                        "active+hover",
-                        "hover",
-                        "always",
-                    ]
-                    .contains(&value.to_lowercase().as_str())
-                    {
-                        errors.push(format!(
-                            "Line {}: tab_close_visibility must be 'active_hover', 'hover', or 'always'",
-                            line_num
-                        ));
-                    }
-                }
-                "tab_width_mode" => {
-                    if ![
-                        "stable",
-                        "active_grow",
-                        "activegrow",
-                        "active-grow",
-                        "active_grow_sticky",
-                        "activegrowsticky",
-                        "active-grow-sticky",
-                    ]
-                    .contains(&value.to_lowercase().as_str())
-                    {
-                        errors.push(format!(
-                            "Line {}: tab_width_mode must be 'stable', 'active_grow', or 'active_grow_sticky'",
-                            line_num
                         ));
                     }
                 }
@@ -275,32 +281,5 @@ pub fn run() {
         }
     }
 
-    // Print results
-    if errors.is_empty() && warnings.is_empty() {
-        println!("Status: Valid");
-    } else {
-        if !errors.is_empty() {
-            println!();
-            println!("Errors:");
-            for error in &errors {
-                println!("  {}", error);
-            }
-        }
-
-        if !warnings.is_empty() {
-            println!();
-            println!("Warnings:");
-            for warning in &warnings {
-                println!("  {}", warning);
-            }
-        }
-
-        println!();
-        if errors.is_empty() {
-            println!("Result: Valid (with warnings)");
-        } else {
-            println!("Result: Invalid");
-            std::process::exit(1);
-        }
-    }
+    ValidationReport { errors, warnings }
 }

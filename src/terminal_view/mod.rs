@@ -862,6 +862,7 @@ impl TerminalView {
     pub fn new(window: &mut Window, cx: &mut Context<Self>, config: AppConfig) -> Self {
         let focus_handle = cx.focus_handle();
         let (event_wakeup_tx, event_wakeup_rx) = bounded(1);
+        let config_change_rx = config::subscribe_config_changes();
 
         // Focus the terminal immediately
         focus_handle.focus(window, cx);
@@ -875,6 +876,23 @@ impl TerminalView {
                         if view.process_terminal_events(cx) {
                             cx.notify();
                         }
+                    })
+                });
+                if result.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        // Reload immediately when config is updated in-process (e.g. settings/theme actions).
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            while config_change_rx.recv_async().await.is_ok() {
+                while config_change_rx.try_recv().is_ok() {}
+                let result = cx.update(|cx| {
+                    this.update(cx, |view, cx| {
+                        view.reload_config(cx);
+                        cx.notify();
                     })
                 });
                 if result.is_err() {
