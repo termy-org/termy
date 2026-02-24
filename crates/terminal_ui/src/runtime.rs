@@ -101,12 +101,29 @@ fn login_shell_args(shell_path: &str) -> Vec<String> {
         Vec::new()
     }
 
-    #[cfg(not(target_os = "windows"))]
+    // On macOS, terminals conventionally launch login shells so that the user's
+    // PATH and environment (set up in ~/.bash_profile, ~/.zprofile, etc.) are
+    // available.  Pass both -i (interactive) and -l (login).
+    #[cfg(target_os = "macos")]
     match Path::new(shell_path)
         .file_name()
         .and_then(|name| name.to_str())
     {
         Some("bash" | "zsh" | "fish") => vec!["-i".to_string(), "-l".to_string()],
+        _ => Vec::new(),
+    }
+
+    // On Linux (and other non-macOS Unix), the user is already in a login
+    // session, so sourcing all login scripts on every terminal open adds
+    // unnecessary startup latency.  Launch an interactive non-login shell
+    // instead, which is the convention used by alacritty and other Linux
+    // terminal emulators.
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    match Path::new(shell_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+    {
+        Some("bash" | "zsh" | "fish") => vec!["-i".to_string()],
         _ => Vec::new(),
     }
 }
