@@ -5,7 +5,7 @@ use gpui::{
     AnyElement, AsyncApp, Context, FocusHandle, Font, InteractiveElement, IntoElement,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
     Rgba, ScrollAnchor, ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
-    Styled, TextAlign, WeakEntity, Window, deferred, div, prelude::FluentBuilder, px,
+    Styled, TextAlign, WeakEntity, Window, deferred, div, point, prelude::FluentBuilder, px,
 };
 use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::fs;
@@ -18,9 +18,9 @@ const NUMERIC_INPUT_WIDTH: f32 = 220.0;
 const NUMERIC_INPUT_HEIGHT: f32 = 34.0;
 const NUMERIC_STEP_BUTTON_SIZE: f32 = 24.0;
 const SETTINGS_CONFIG_WATCH_INTERVAL_MS: u64 = 750;
-const SETTINGS_SEARCH_NAV_THROTTLE_MS: u64 = 110;
-const SETTING_HIGHLIGHT_DURATION_MS: u64 = 900;
-const SETTING_HIGHLIGHT_TICK_MS: u64 = 16;
+const SETTINGS_SEARCH_NAV_THROTTLE_MS: u64 = 70;
+const SETTINGS_SCROLL_ANIMATION_DURATION_MS: u64 = 170;
+const SETTINGS_SCROLL_ANIMATION_TICK_MS: u64 = 16;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum EditableField {
@@ -67,7 +67,7 @@ enum SettingsSection {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct SearchableSetting {
+struct SettingMetadata {
     key: &'static str,
     section: SettingsSection,
     title: &'static str,
@@ -75,120 +75,120 @@ struct SearchableSetting {
     keywords: &'static [&'static str],
 }
 
-const SEARCHABLE_SETTINGS: &[SearchableSetting] = &[
-    SearchableSetting {
+const SETTINGS_METADATA: &[SettingMetadata] = &[
+    SettingMetadata {
         key: "theme",
         section: SettingsSection::Appearance,
         title: "Theme",
         description: "Current color scheme name",
         keywords: &["color", "scheme", "appearance"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "background-blur",
         section: SettingsSection::Appearance,
         title: "Background Blur",
         description: "Enable blur effect for transparent backgrounds",
         keywords: &["blur", "transparent", "window"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "background-opacity",
         section: SettingsSection::Appearance,
         title: "Background Opacity",
         description: "Window transparency (0-100%)",
         keywords: &["opacity", "transparency", "window"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "font-family",
         section: SettingsSection::Appearance,
         title: "Font Family",
         description: "Font family used in terminal UI",
         keywords: &["font", "typeface", "text"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "font-size",
         section: SettingsSection::Appearance,
         title: "Font Size",
         description: "Terminal font size in pixels",
         keywords: &["font", "size", "text", "zoom"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "padding-x",
         section: SettingsSection::Appearance,
         title: "Horizontal Padding",
         description: "Left and right terminal padding",
         keywords: &["padding", "spacing", "left", "right"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "padding-y",
         section: SettingsSection::Appearance,
         title: "Vertical Padding",
         description: "Top and bottom terminal padding",
         keywords: &["padding", "spacing", "top", "bottom"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "cursor-blink",
         section: SettingsSection::Terminal,
         title: "Cursor Blink",
         description: "Enable blinking cursor animation",
         keywords: &["cursor", "blink", "animation"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "cursor-style",
         section: SettingsSection::Terminal,
         title: "Cursor Style",
         description: "Shape of the terminal cursor",
         keywords: &["cursor", "block", "line"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "shell",
         section: SettingsSection::Terminal,
         title: "Shell",
         description: "Executable for new sessions",
         keywords: &["shell", "bash", "zsh", "fish"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "term",
         section: SettingsSection::Terminal,
         title: "TERM",
         description: "Terminal type for child apps",
         keywords: &["term", "terminal type", "env"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "colorterm",
         section: SettingsSection::Terminal,
         title: "COLORTERM",
         description: "Color support advertisement",
         keywords: &["colorterm", "color", "env"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "scrollback-history",
         section: SettingsSection::Terminal,
         title: "Scrollback History",
         description: "Lines to keep in buffer",
         keywords: &["scrollback", "history", "buffer", "lines"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "scroll-multiplier",
         section: SettingsSection::Terminal,
         title: "Scroll Multiplier",
         description: "Mouse wheel scroll speed",
         keywords: &["scroll", "speed", "mouse", "wheel"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "palette-keybinds",
         section: SettingsSection::Terminal,
         title: "Show Keybindings in Palette",
         description: "Display keyboard shortcuts in command palette",
         keywords: &["palette", "keybindings", "shortcuts", "command"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "use-tabs",
         section: SettingsSection::Tabs,
         title: "Enable Tabs",
         description: "Show compact tab strip",
         keywords: &["tabs", "tab bar", "strip"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "title-mode",
         section: SettingsSection::Tabs,
         title: "Title Mode",
@@ -197,35 +197,35 @@ const SEARCHABLE_SETTINGS: &[SearchableSetting] = &[
             "tab", "title", "mode", "smart", "shell", "explicit", "static",
         ],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "shell-integration",
         section: SettingsSection::Tabs,
         title: "Shell Integration",
         description: "Export TERMY_* env vars for shell hooks",
         keywords: &["shell", "integration", "env", "hooks", "tab"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "fallback-title",
         section: SettingsSection::Tabs,
         title: "Fallback Title",
         description: "Default when no other source available",
         keywords: &["fallback", "title", "tab"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "working-directory",
         section: SettingsSection::Advanced,
         title: "Working Directory",
         description: "Initial directory for new sessions",
         keywords: &["working directory", "cwd", "startup", "path"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "window-width",
         section: SettingsSection::Advanced,
         title: "Default Width",
         description: "Window width on startup",
         keywords: &["window", "width", "startup", "size"],
     },
-    SearchableSetting {
+    SettingMetadata {
         key: "window-height",
         section: SettingsSection::Advanced,
         title: "Default Height",
@@ -233,6 +233,16 @@ const SEARCHABLE_SETTINGS: &[SearchableSetting] = &[
         keywords: &["window", "height", "startup", "size"],
     },
 ];
+
+#[derive(Clone, Debug)]
+struct SearchableSetting {
+    metadata: &'static SettingMetadata,
+    title_lower: String,
+    description_lower: String,
+    section_lower: String,
+    keywords_lower: String,
+    haystack_lower: String,
+}
 
 pub struct SettingsWindow {
     active_section: SettingsSection,
@@ -244,14 +254,14 @@ pub struct SettingsWindow {
     active_input: Option<ActiveTextInput>,
     content_scroll_handle: ScrollHandle,
     setting_scroll_anchors: HashMap<&'static str, ScrollAnchor>,
+    searchable_settings: Vec<SearchableSetting>,
+    searchable_setting_indices: HashMap<&'static str, usize>,
     sidebar_search_state: TextInputState,
     sidebar_search_active: bool,
     sidebar_search_selecting: bool,
     search_navigation_last_target: Option<&'static str>,
     search_navigation_last_jump_at: Option<Instant>,
-    setting_highlight_key: Option<&'static str>,
-    setting_highlight_started_at: Option<Instant>,
-    setting_highlight_token: u64,
+    scroll_animation_token: u64,
     colors: TerminalColors,
 }
 
@@ -265,6 +275,9 @@ impl SettingsWindow {
         available_font_families.sort_unstable_by_key(|font| font.to_ascii_lowercase());
         available_font_families.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
         let colors = TerminalColors::from_theme(&config.theme, &config.colors);
+        let searchable_settings = Self::build_searchable_settings();
+        let searchable_setting_indices =
+            Self::build_searchable_setting_indices(&searchable_settings);
         let content_scroll_handle = ScrollHandle::new();
         let setting_scroll_anchors = Self::build_setting_scroll_anchors(&content_scroll_handle);
         let view = Self {
@@ -277,16 +290,17 @@ impl SettingsWindow {
             active_input: None,
             content_scroll_handle,
             setting_scroll_anchors,
+            searchable_settings,
+            searchable_setting_indices,
             sidebar_search_state: TextInputState::new(String::new()),
-            sidebar_search_active: false,
+            sidebar_search_active: true,
             sidebar_search_selecting: false,
             search_navigation_last_target: None,
             search_navigation_last_jump_at: None,
-            setting_highlight_key: None,
-            setting_highlight_started_at: None,
-            setting_highlight_token: 0,
+            scroll_animation_token: 0,
             colors,
         };
+        view.focus_handle.focus(window, cx);
 
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             while config_change_rx.recv_async().await.is_ok() {
@@ -332,10 +346,55 @@ impl SettingsWindow {
         Some(hasher.finish())
     }
 
+    fn settings_section_label(section: SettingsSection) -> &'static str {
+        match section {
+            SettingsSection::Appearance => "Appearance",
+            SettingsSection::Terminal => "Terminal",
+            SettingsSection::Tabs => "Tabs",
+            SettingsSection::Advanced => "Advanced",
+        }
+    }
+
+    fn build_searchable_settings() -> Vec<SearchableSetting> {
+        SETTINGS_METADATA
+            .iter()
+            .map(|metadata| {
+                let title_lower = metadata.title.to_ascii_lowercase();
+                let description_lower = metadata.description.to_ascii_lowercase();
+                let section_lower =
+                    Self::settings_section_label(metadata.section).to_ascii_lowercase();
+                let keywords_lower = metadata.keywords.join(" ").to_ascii_lowercase();
+                let haystack_lower = format!(
+                    "{} {} {} {}",
+                    title_lower, description_lower, section_lower, keywords_lower
+                );
+
+                SearchableSetting {
+                    metadata,
+                    title_lower,
+                    description_lower,
+                    section_lower,
+                    keywords_lower,
+                    haystack_lower,
+                }
+            })
+            .collect()
+    }
+
+    fn build_searchable_setting_indices(
+        searchable_settings: &[SearchableSetting],
+    ) -> HashMap<&'static str, usize> {
+        searchable_settings
+            .iter()
+            .enumerate()
+            .map(|(index, setting)| (setting.metadata.key, index))
+            .collect()
+    }
+
     fn build_setting_scroll_anchors(
         content_scroll_handle: &ScrollHandle,
     ) -> HashMap<&'static str, ScrollAnchor> {
-        SEARCHABLE_SETTINGS
+        SETTINGS_METADATA
             .iter()
             .map(|setting| {
                 (
@@ -346,19 +405,13 @@ impl SettingsWindow {
             .collect()
     }
 
-    fn settings_section_label(section: SettingsSection) -> &'static str {
-        match section {
-            SettingsSection::Appearance => "Appearance",
-            SettingsSection::Terminal => "Terminal",
-            SettingsSection::Tabs => "Tabs",
-            SettingsSection::Advanced => "Advanced",
-        }
+    fn searchable_setting_by_key(&self, key: &'static str) -> Option<&SearchableSetting> {
+        let index = self.searchable_setting_indices.get(key).copied()?;
+        self.searchable_settings.get(index)
     }
 
-    fn searchable_setting_by_key(key: &'static str) -> Option<&'static SearchableSetting> {
-        SEARCHABLE_SETTINGS
-            .iter()
-            .find(|setting| setting.key == key)
+    fn setting_metadata(key: &'static str) -> Option<&'static SettingMetadata> {
+        SETTINGS_METADATA.iter().find(|setting| setting.key == key)
     }
 
     fn setting_search_score(
@@ -366,42 +419,39 @@ impl SettingsWindow {
         query: &str,
         terms: &[&str],
     ) -> Option<i32> {
-        let title = setting.title.to_ascii_lowercase();
-        let description = setting.description.to_ascii_lowercase();
-        let section = Self::settings_section_label(setting.section).to_ascii_lowercase();
-        let keywords = setting.keywords.join(" ").to_ascii_lowercase();
-        let haystack = format!("{title} {description} {section} {keywords}");
-
-        if !terms.iter().all(|term| haystack.contains(term)) {
+        if !terms
+            .iter()
+            .all(|term| setting.haystack_lower.contains(term))
+        {
             return None;
         }
 
         let mut score = 0;
-        if title == query {
+        if setting.title_lower == query {
             score += 150;
         }
-        if title.starts_with(query) {
+        if setting.title_lower.starts_with(query) {
             score += 95;
-        } else if title.contains(query) {
+        } else if setting.title_lower.contains(query) {
             score += 60;
         }
-        if description.contains(query) {
+        if setting.description_lower.contains(query) {
             score += 24;
         }
-        if section.contains(query) {
+        if setting.section_lower.contains(query) {
             score += 18;
         }
-        if keywords.contains(query) {
+        if setting.keywords_lower.contains(query) {
             score += 30;
         }
 
         for term in terms {
-            if title.starts_with(term) {
+            if setting.title_lower.starts_with(term) {
                 score += 20;
-            } else if title.contains(term) {
+            } else if setting.title_lower.contains(term) {
                 score += 10;
             }
-            if keywords.contains(term) {
+            if setting.keywords_lower.contains(term) {
                 score += 8;
             }
         }
@@ -409,14 +459,15 @@ impl SettingsWindow {
         Some(score.max(1))
     }
 
-    fn sidebar_search_results(&self, limit: usize) -> Vec<&'static SearchableSetting> {
+    fn sidebar_search_results(&self, limit: usize) -> Vec<&SearchableSetting> {
         let query = self.sidebar_search_state.text().trim().to_ascii_lowercase();
         if query.is_empty() {
             return Vec::new();
         }
 
         let terms: Vec<&str> = query.split_whitespace().collect();
-        let mut matches: Vec<(i32, &'static SearchableSetting)> = SEARCHABLE_SETTINGS
+        let mut matches: Vec<(i32, &SearchableSetting)> = self
+            .searchable_settings
             .iter()
             .filter_map(|setting| {
                 Self::setting_search_score(setting, &query, &terms).map(|score| (score, setting))
@@ -424,9 +475,12 @@ impl SettingsWindow {
             .collect();
 
         matches.sort_by(|(left_score, left_setting), (right_score, right_setting)| {
-            right_score
-                .cmp(left_score)
-                .then_with(|| left_setting.title.cmp(right_setting.title))
+            right_score.cmp(left_score).then_with(|| {
+                left_setting
+                    .metadata
+                    .title
+                    .cmp(right_setting.metadata.title)
+            })
         });
 
         matches
@@ -455,85 +509,57 @@ impl SettingsWindow {
         self.search_navigation_last_jump_at = None;
     }
 
-    fn start_setting_highlight(&mut self, setting_key: &'static str, cx: &mut Context<Self>) {
-        self.setting_highlight_key = Some(setting_key);
-        self.setting_highlight_started_at = Some(Instant::now());
-        self.setting_highlight_token = self.setting_highlight_token.wrapping_add(1);
-        let token = self.setting_highlight_token;
+    fn start_smooth_scroll_animation(
+        &mut self,
+        start_offset: gpui::Point<gpui::Pixels>,
+        target_offset: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let start_x: f32 = start_offset.x.into();
+        let start_y: f32 = start_offset.y.into();
+        let target_x: f32 = target_offset.x.into();
+        let target_y: f32 = target_offset.y.into();
+        if (start_x - target_x).abs() < 0.5 && (start_y - target_y).abs() < 0.5 {
+            self.content_scroll_handle.set_offset(target_offset);
+            cx.notify();
+            return;
+        }
+
+        self.scroll_animation_token = self.scroll_animation_token.wrapping_add(1);
+        let token = self.scroll_animation_token;
+        let scroll_handle = self.content_scroll_handle.clone();
+        let duration = Duration::from_millis(SETTINGS_SCROLL_ANIMATION_DURATION_MS);
 
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-            loop {
-                smol::Timer::after(Duration::from_millis(SETTING_HIGHLIGHT_TICK_MS)).await;
+            let started_at = Instant::now();
 
-                let keep_animating = cx.update(|cx| {
+            loop {
+                smol::Timer::after(Duration::from_millis(SETTINGS_SCROLL_ANIMATION_TICK_MS)).await;
+
+                let continue_animating = cx.update(|cx| {
                     this.update(cx, |view, cx| {
-                        if view.setting_highlight_token != token {
+                        if view.scroll_animation_token != token {
                             return false;
                         }
 
-                        let done = match view.setting_highlight_started_at {
-                            Some(started_at) => {
-                                started_at.elapsed()
-                                    >= Duration::from_millis(SETTING_HIGHLIGHT_DURATION_MS)
-                            }
-                            None => true,
-                        };
-
-                        if done {
-                            view.setting_highlight_key = None;
-                            view.setting_highlight_started_at = None;
-                        }
-
+                        let t = (started_at.elapsed().as_secs_f32() / duration.as_secs_f32())
+                            .clamp(0.0, 1.0);
+                        let eased = t * t * (3.0 - 2.0 * t);
+                        let x = start_x + (target_x - start_x) * eased;
+                        let y = start_y + (target_y - start_y) * eased;
+                        scroll_handle.set_offset(point(px(x), px(y)));
                         cx.notify();
-                        !done
+                        t < 1.0
                     })
                     .unwrap_or(false)
                 });
 
-                if !keep_animating {
+                if !continue_animating {
                     break;
                 }
             }
         })
         .detach();
-    }
-
-    fn setting_highlight_intensity(&self, setting_key: &'static str) -> f32 {
-        if self.setting_highlight_key != Some(setting_key) {
-            return 0.0;
-        }
-        let Some(started_at) = self.setting_highlight_started_at else {
-            return 0.0;
-        };
-
-        let elapsed = started_at.elapsed().as_secs_f32();
-        let duration = Duration::from_millis(SETTING_HIGHLIGHT_DURATION_MS).as_secs_f32();
-        if duration <= f32::EPSILON {
-            return 0.0;
-        }
-
-        let t = (elapsed / duration).clamp(0.0, 1.0);
-        (1.0 - t).powf(2.0)
-    }
-
-    fn apply_setting_highlight_bg(&self, base: Rgba, intensity: f32) -> Rgba {
-        if intensity <= f32::EPSILON {
-            return base;
-        }
-
-        let mut overlay = self.accent();
-        overlay.a = (0.22 * intensity).clamp(0.0, 1.0);
-        Self::composite_over(overlay, base)
-    }
-
-    fn apply_setting_highlight_border(&self, base: Rgba, intensity: f32) -> Rgba {
-        if intensity <= f32::EPSILON {
-            return base;
-        }
-
-        let mut overlay = self.accent();
-        overlay.a = (0.82 * intensity).clamp(0.0, 1.0);
-        Self::composite_over(overlay, base)
     }
 
     fn jump_to_setting(
@@ -542,23 +568,30 @@ impl SettingsWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(setting) = Self::searchable_setting_by_key(setting_key) else {
+        let Some(setting) = self.searchable_setting_by_key(setting_key) else {
             return;
         };
 
-        self.active_section = setting.section;
+        self.active_section = setting.metadata.section;
         self.active_input = None;
         self.sidebar_search_active = true;
         self.sidebar_search_selecting = false;
-        self.start_setting_highlight(setting_key, cx);
         if !self.focus_handle.is_focused(window) {
             self.focus_handle.focus(window, cx);
         }
 
         if let Some(anchor) = self.setting_scroll_anchors.get(setting_key).cloned() {
-            cx.on_next_frame(window, move |_, window, cx| {
-                anchor.scroll_to(window, cx);
-                cx.notify();
+            let this = cx.entity().downgrade();
+            let scroll_handle = self.content_scroll_handle.clone();
+            let start_offset = scroll_handle.offset();
+            anchor.scroll_to(window, cx);
+
+            window.on_next_frame(move |_window, cx| {
+                let target_offset = scroll_handle.offset();
+                scroll_handle.set_offset(start_offset);
+                let _ = this.update(cx, |view, cx| {
+                    view.start_smooth_scroll_animation(start_offset, target_offset, cx);
+                });
             });
         }
 
@@ -566,8 +599,13 @@ impl SettingsWindow {
     }
 
     fn jump_to_first_search_result(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(first) = self.sidebar_search_results(1).into_iter().next() {
-            self.jump_to_setting(first.key, window, cx);
+        if let Some(first_key) = self
+            .sidebar_search_results(1)
+            .into_iter()
+            .next()
+            .map(|setting| setting.metadata.key)
+        {
+            self.jump_to_setting(first_key, window, cx);
         }
     }
 
@@ -576,7 +614,12 @@ impl SettingsWindow {
             && self.active_input.is_none()
             && !self.sidebar_search_state.text().trim().is_empty()
         {
-            let Some(first) = self.sidebar_search_results(1).into_iter().next() else {
+            let first_key = self
+                .sidebar_search_results(1)
+                .into_iter()
+                .next()
+                .map(|setting| setting.metadata.key);
+            let Some(first_key) = first_key else {
                 self.search_navigation_last_target = None;
                 self.search_navigation_last_jump_at = None;
                 cx.notify();
@@ -587,14 +630,18 @@ impl SettingsWindow {
             let within_throttle = self.search_navigation_last_jump_at.is_some_and(|last| {
                 now.duration_since(last) < Duration::from_millis(SETTINGS_SEARCH_NAV_THROTTLE_MS)
             });
-            if self.search_navigation_last_target == Some(first.key) && within_throttle {
+            if self.search_navigation_last_target == Some(first_key) {
+                cx.notify();
+                return;
+            }
+            if within_throttle {
                 cx.notify();
                 return;
             }
 
-            self.search_navigation_last_target = Some(first.key);
+            self.search_navigation_last_target = Some(first_key);
             self.search_navigation_last_jump_at = Some(now);
-            self.jump_to_setting(first.key, window, cx);
+            self.jump_to_setting(first_key, window, cx);
         } else {
             self.search_navigation_last_target = None;
             self.search_navigation_last_jump_at = None;
@@ -862,6 +909,7 @@ impl SettingsWindow {
                             view.sidebar_search_state.set_cursor_utf16(index);
                         }
                         view.sidebar_search_selecting = true;
+                        view.refresh_search_navigation(window, cx);
                         view.focus_handle.focus(window, cx);
                         cx.notify();
                     }),
@@ -1379,11 +1427,6 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
         on_toggle: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> AnyElement {
-        let highlight_intensity = self.setting_highlight_intensity(search_key);
-        let bg_card = self.apply_setting_highlight_bg(self.bg_card(), highlight_intensity);
-        let border_color =
-            self.apply_setting_highlight_border(self.border_color(), highlight_intensity);
-
         let row = div()
             .flex()
             .items_center()
@@ -1391,9 +1434,9 @@ impl SettingsWindow {
             .py_3()
             .px_4()
             .rounded_lg()
-            .bg(bg_card)
+            .bg(self.bg_card())
             .border_1()
-            .border_color(border_color)
+            .border_color(self.border_color())
             .child(
                 div()
                     .flex()
@@ -1474,7 +1517,6 @@ impl SettingsWindow {
         let is_theme_field = field == EditableField::Theme;
         let is_font_field = field == EditableField::FontFamily;
         let accent_inner_border = is_numeric || is_theme_field || is_font_field;
-        let highlight_intensity = self.setting_highlight_intensity(search_key);
         let theme_suggestions = if is_theme_field && is_active {
             let query = self
                 .active_input
@@ -1507,10 +1549,9 @@ impl SettingsWindow {
         let text_secondary = self.text_secondary();
         let hover_bg = self.bg_hover();
         let input_bg = self.bg_input();
-        let border_color =
-            self.apply_setting_highlight_border(self.border_color(), highlight_intensity);
+        let border_color = self.border_color();
         let accent = self.accent();
-        let bg_card = self.apply_setting_highlight_bg(self.bg_card(), highlight_intensity);
+        let bg_card = self.bg_card();
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
 
@@ -1969,10 +2010,10 @@ impl SettingsWindow {
 
     fn render_cursor_style_row(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let current = self.config.cursor_style;
-        let highlight_intensity = self.setting_highlight_intensity("cursor-style");
-        let bg_card = self.apply_setting_highlight_bg(self.bg_card(), highlight_intensity);
-        let border_color =
-            self.apply_setting_highlight_border(self.border_color(), highlight_intensity);
+        let meta =
+            Self::setting_metadata("cursor-style").expect("missing metadata for cursor-style");
+        let bg_card = self.bg_card();
+        let border_color = self.border_color();
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
         let text_secondary = self.text_secondary();
@@ -2001,13 +2042,13 @@ impl SettingsWindow {
                             .text_sm()
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(text_primary)
-                            .child("Cursor Style"),
+                            .child(meta.title),
                     )
                     .child(
                         div()
                             .text_xs()
                             .text_color(text_muted)
-                            .child("Shape of the terminal cursor"),
+                            .child(meta.description),
                     ),
             )
             .child(
@@ -2078,10 +2119,9 @@ impl SettingsWindow {
 
     fn render_tab_title_mode_row(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let current = self.config.tab_title.mode;
-        let highlight_intensity = self.setting_highlight_intensity("title-mode");
-        let bg_card = self.apply_setting_highlight_bg(self.bg_card(), highlight_intensity);
-        let border_color =
-            self.apply_setting_highlight_border(self.border_color(), highlight_intensity);
+        let meta = Self::setting_metadata("title-mode").expect("missing metadata for title-mode");
+        let bg_card = self.bg_card();
+        let border_color = self.border_color();
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
         let text_secondary = self.text_secondary();
@@ -2110,13 +2150,13 @@ impl SettingsWindow {
                             .text_sm()
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(text_primary)
-                            .child("Title Mode"),
+                            .child(meta.title),
                     )
                     .child(
                         div()
                             .text_xs()
                             .text_color(text_muted)
-                            .child("How tab titles are determined"),
+                            .child(meta.description),
                     ),
             )
             .child(
@@ -2249,6 +2289,19 @@ impl SettingsWindow {
         let font_size = self.config.font_size;
         let padding_x = self.config.padding_x;
         let padding_y = self.config.padding_y;
+        let theme_meta = Self::setting_metadata("theme").expect("missing metadata for theme");
+        let blur_meta = Self::setting_metadata("background-blur")
+            .expect("missing metadata for background-blur");
+        let opacity_meta = Self::setting_metadata("background-opacity")
+            .expect("missing metadata for background-opacity");
+        let font_family_meta =
+            Self::setting_metadata("font-family").expect("missing metadata for font-family");
+        let font_size_meta =
+            Self::setting_metadata("font-size").expect("missing metadata for font-size");
+        let padding_x_meta =
+            Self::setting_metadata("padding-x").expect("missing metadata for padding-x");
+        let padding_y_meta =
+            Self::setting_metadata("padding-y").expect("missing metadata for padding-y");
 
         div()
             .flex()
@@ -2259,8 +2312,8 @@ impl SettingsWindow {
             .child(self.render_editable_row(
                 "theme",
                 EditableField::Theme,
-                "Theme",
-                "Current color scheme name",
+                theme_meta.title,
+                theme_meta.description,
                 theme,
                 cx,
             ))
@@ -2268,8 +2321,8 @@ impl SettingsWindow {
             .child(self.render_setting_row(
                 "background-blur",
                 "blur-toggle",
-                "Background Blur",
-                "Enable blur effect for transparent backgrounds",
+                blur_meta.title,
+                blur_meta.description,
                 background_blur,
                 cx,
                 |view, _cx| {
@@ -2283,8 +2336,8 @@ impl SettingsWindow {
             .child(self.render_editable_row(
                 "background-opacity",
                 EditableField::BackgroundOpacity,
-                "Background Opacity",
-                "Window transparency (0-100%)",
+                opacity_meta.title,
+                opacity_meta.description,
                 format!("{}%", (background_opacity * 100.0) as i32),
                 cx,
             ))
@@ -2292,16 +2345,16 @@ impl SettingsWindow {
             .child(self.render_editable_row(
                 "font-family",
                 EditableField::FontFamily,
-                "Font Family",
-                "Font family used in terminal UI",
+                font_family_meta.title,
+                font_family_meta.description,
                 font_family,
                 cx,
             ))
             .child(self.render_editable_row(
                 "font-size",
                 EditableField::FontSize,
-                "Font Size",
-                "Terminal font size in pixels",
+                font_size_meta.title,
+                font_size_meta.description,
                 format!("{}px", font_size as i32),
                 cx,
             ))
@@ -2309,16 +2362,16 @@ impl SettingsWindow {
             .child(self.render_editable_row(
                 "padding-x",
                 EditableField::PaddingX,
-                "Horizontal Padding",
-                "Left and right terminal padding",
+                padding_x_meta.title,
+                padding_x_meta.description,
                 format!("{}px", padding_x as i32),
                 cx,
             ))
             .child(self.render_editable_row(
                 "padding-y",
                 EditableField::PaddingY,
-                "Vertical Padding",
-                "Top and bottom terminal padding",
+                padding_y_meta.title,
+                padding_y_meta.description,
                 format!("{}px", padding_y as i32),
                 cx,
             ))
@@ -2340,6 +2393,18 @@ impl SettingsWindow {
         let scrollback = self.config.scrollback_history;
         let scroll_mult = self.config.mouse_scroll_multiplier;
         let command_palette_show_keybinds = self.config.command_palette_show_keybinds;
+        let cursor_blink_meta =
+            Self::setting_metadata("cursor-blink").expect("missing metadata for cursor-blink");
+        let shell_meta = Self::setting_metadata("shell").expect("missing metadata for shell");
+        let term_meta = Self::setting_metadata("term").expect("missing metadata for term");
+        let colorterm_meta =
+            Self::setting_metadata("colorterm").expect("missing metadata for colorterm");
+        let scrollback_meta = Self::setting_metadata("scrollback-history")
+            .expect("missing metadata for scrollback-history");
+        let scroll_mult_meta = Self::setting_metadata("scroll-multiplier")
+            .expect("missing metadata for scroll-multiplier");
+        let palette_meta = Self::setting_metadata("palette-keybinds")
+            .expect("missing metadata for palette-keybinds");
 
         div()
             .flex()
@@ -2350,8 +2415,8 @@ impl SettingsWindow {
             .child(self.render_setting_row(
                 "cursor-blink",
                 "cursor-blink-toggle",
-                "Cursor Blink",
-                "Enable blinking cursor animation",
+                cursor_blink_meta.title,
+                cursor_blink_meta.description,
                 cursor_blink,
                 cx,
                 |view, _cx| {
@@ -2364,24 +2429,24 @@ impl SettingsWindow {
             .child(self.render_editable_row(
                 "shell",
                 EditableField::Shell,
-                "Shell",
-                "Executable for new sessions",
+                shell_meta.title,
+                shell_meta.description,
                 shell,
                 cx,
             ))
             .child(self.render_editable_row(
                 "term",
                 EditableField::Term,
-                "TERM",
-                "Terminal type for child apps",
+                term_meta.title,
+                term_meta.description,
                 term,
                 cx,
             ))
             .child(self.render_editable_row(
                 "colorterm",
                 EditableField::Colorterm,
-                "COLORTERM",
-                "Color support advertisement",
+                colorterm_meta.title,
+                colorterm_meta.description,
                 colorterm,
                 cx,
             ))
@@ -2389,16 +2454,16 @@ impl SettingsWindow {
             .child(self.render_editable_row(
                 "scrollback-history",
                 EditableField::ScrollbackHistory,
-                "Scrollback History",
-                "Lines to keep in buffer",
+                scrollback_meta.title,
+                scrollback_meta.description,
                 format!("{} lines", scrollback),
                 cx,
             ))
             .child(self.render_editable_row(
                 "scroll-multiplier",
                 EditableField::ScrollMultiplier,
-                "Scroll Multiplier",
-                "Mouse wheel scroll speed",
+                scroll_mult_meta.title,
+                scroll_mult_meta.description,
                 format!("{}x", scroll_mult),
                 cx,
             ))
@@ -2406,8 +2471,8 @@ impl SettingsWindow {
             .child(self.render_setting_row(
                 "palette-keybinds",
                 "palette-keybinds-toggle",
-                "Show Keybindings in Palette",
-                "Display keyboard shortcuts in command palette",
+                palette_meta.title,
+                palette_meta.description,
                 command_palette_show_keybinds,
                 cx,
                 |view, _cx| {
@@ -2425,6 +2490,12 @@ impl SettingsWindow {
         let use_tabs = self.config.use_tabs;
         let shell_integration = self.config.tab_title.shell_integration;
         let fallback = self.config.tab_title.fallback.clone();
+        let use_tabs_meta =
+            Self::setting_metadata("use-tabs").expect("missing metadata for use-tabs");
+        let shell_integration_meta = Self::setting_metadata("shell-integration")
+            .expect("missing metadata for shell-integration");
+        let fallback_meta =
+            Self::setting_metadata("fallback-title").expect("missing metadata for fallback-title");
 
         div()
             .flex()
@@ -2435,8 +2506,8 @@ impl SettingsWindow {
             .child(self.render_setting_row(
                 "use-tabs",
                 "use-tabs-toggle",
-                "Enable Tabs",
-                "Show compact tab strip",
+                use_tabs_meta.title,
+                use_tabs_meta.description,
                 use_tabs,
                 cx,
                 |view, _cx| {
@@ -2449,8 +2520,8 @@ impl SettingsWindow {
             .child(self.render_setting_row(
                 "shell-integration",
                 "shell-integration-toggle",
-                "Shell Integration",
-                "Export TERMY_* env vars for shell hooks",
+                shell_integration_meta.title,
+                shell_integration_meta.description,
                 shell_integration,
                 cx,
                 |view, _cx| {
@@ -2465,8 +2536,8 @@ impl SettingsWindow {
             .child(self.render_editable_row(
                 "fallback-title",
                 EditableField::TabFallbackTitle,
-                "Fallback Title",
-                "Default when no other source available",
+                fallback_meta.title,
+                fallback_meta.description,
                 fallback,
                 cx,
             ))
@@ -2488,6 +2559,12 @@ impl SettingsWindow {
         let accent_hover = self.accent_with_alpha(0.8);
         let button_text = self.contrasting_text_for_fill(accent, bg_card);
         let button_hover_text = self.contrasting_text_for_fill(accent_hover, bg_card);
+        let working_dir_meta = Self::setting_metadata("working-directory")
+            .expect("missing metadata for working-directory");
+        let window_width_meta =
+            Self::setting_metadata("window-width").expect("missing metadata for window-width");
+        let window_height_meta =
+            Self::setting_metadata("window-height").expect("missing metadata for window-height");
 
         div()
             .flex()
@@ -2498,8 +2575,8 @@ impl SettingsWindow {
             .child(self.render_editable_row(
                 "working-directory",
                 EditableField::WorkingDirectory,
-                "Working Directory",
-                "Initial directory for new sessions",
+                working_dir_meta.title,
+                working_dir_meta.description,
                 working_dir,
                 cx,
             ))
@@ -2507,16 +2584,16 @@ impl SettingsWindow {
             .child(self.render_editable_row(
                 "window-width",
                 EditableField::WindowWidth,
-                "Default Width",
-                "Window width on startup",
+                window_width_meta.title,
+                window_width_meta.description,
                 format!("{}px", window_width as i32),
                 cx,
             ))
             .child(self.render_editable_row(
                 "window-height",
                 EditableField::WindowHeight,
-                "Default Height",
-                "Window height on startup",
+                window_height_meta.title,
+                window_height_meta.description,
                 format!("{}px", window_height as i32),
                 cx,
             ))
