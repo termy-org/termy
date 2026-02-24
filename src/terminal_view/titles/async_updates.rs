@@ -55,7 +55,9 @@ impl TerminalView {
     }
 
     fn activate_pending_command_title_for_id(&mut self, tab_id: TabId, token: u64) -> bool {
-        let Some(index) = Self::tab_index_for_id_in_order(self.tabs.iter().map(|tab| tab.id), tab_id) else {
+        let Some(index) =
+            Self::tab_index_for_id_in_order(self.tabs.iter().map(|tab| tab.id), tab_id)
+        else {
             return false;
         };
 
@@ -92,17 +94,29 @@ mod tests {
     #[test]
     fn delayed_title_target_index_tracks_tab_reorder() {
         let initial: [TabId; 3] = [11, 13, 17];
-        assert_eq!(TerminalView::tab_index_for_id_in_order(initial, 13), Some(1));
+        assert_eq!(
+            TerminalView::tab_index_for_id_in_order(initial, 13),
+            Some(1)
+        );
 
         let reordered: [TabId; 3] = [11, 17, 13];
-        assert_eq!(TerminalView::tab_index_for_id_in_order(reordered, 13), Some(2));
+        assert_eq!(
+            TerminalView::tab_index_for_id_in_order(reordered, 13),
+            Some(2)
+        );
     }
 
     #[test]
     fn delayed_title_target_index_returns_none_after_tab_close() {
         let initial: [TabId; 3] = [11, 13, 17];
         let after_close: [TabId; 2] = [11, 17];
-        assert_eq!(TerminalView::tab_index_for_id_in_order(initial, 13), Some(1));
-        assert_eq!(TerminalView::tab_index_for_id_in_order(after_close, 13), None);
+        assert_eq!(
+            TerminalView::tab_index_for_id_in_order(initial, 13),
+            Some(1)
+        );
+        assert_eq!(
+            TerminalView::tab_index_for_id_in_order(after_close, 13),
+            None
+        );
     }
 }

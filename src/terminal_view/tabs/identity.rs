@@ -37,18 +37,30 @@ mod tests {
     #[test]
     fn tab_index_for_id_follows_reordered_tab_sequence() {
         let tab_ids: [TabId; 4] = [11, 13, 17, 19];
-        assert_eq!(TerminalView::tab_index_for_id_in_order(tab_ids, 17), Some(2));
+        assert_eq!(
+            TerminalView::tab_index_for_id_in_order(tab_ids, 17),
+            Some(2)
+        );
 
         // Simulate drag reorder 17 -> slot 1
         let reordered: [TabId; 4] = [11, 17, 13, 19];
-        assert_eq!(TerminalView::tab_index_for_id_in_order(reordered, 17), Some(1));
+        assert_eq!(
+            TerminalView::tab_index_for_id_in_order(reordered, 17),
+            Some(1)
+        );
     }
 
     #[test]
     fn tab_index_for_id_returns_none_after_tab_close() {
         let tab_ids: [TabId; 4] = [11, 13, 17, 19];
         let after_close: [TabId; 3] = [11, 13, 19];
-        assert_eq!(TerminalView::tab_index_for_id_in_order(tab_ids, 17), Some(2));
-        assert_eq!(TerminalView::tab_index_for_id_in_order(after_close, 17), None);
+        assert_eq!(
+            TerminalView::tab_index_for_id_in_order(tab_ids, 17),
+            Some(2)
+        );
+        assert_eq!(
+            TerminalView::tab_index_for_id_in_order(after_close, 17),
+            None
+        );
     }
 }

@@ -1,7 +1,7 @@
-use super::chrome;
-use super::state::{TabDropMarkerSide, TabStripOverflowState};
 use super::super::*;
+use super::chrome;
 use super::layout::TabStripGeometry;
+use super::state::{TabDropMarkerSide, TabStripOverflowState};
 use gpui::{Hsla, TextRun};
 
 #[derive(Clone, Copy)]
@@ -213,7 +213,9 @@ impl TerminalView {
             let boundary_end_col =
                 ((boundary_left + TAB_STROKE_THICKNESS).ceil() as i32).max(boundary_start_col + 1);
 
-            if boundary_start_col < left_divider_end_col && boundary_end_col > left_divider_start_col {
+            if boundary_start_col < left_divider_end_col
+                && boundary_end_col > left_divider_start_col
+            {
                 collisions.left = true;
             }
             if boundary_start_col < right_divider_end_col
@@ -271,9 +273,12 @@ impl TerminalView {
             underline: None,
             strikethrough: None,
         };
-        let shaped = window
-            .text_system()
-            .shape_line(text.to_string().into(), px(font_size_px), &[run], None);
+        let shaped = window.text_system().shape_line(
+            text.to_string().into(),
+            px(font_size_px),
+            &[run],
+            None,
+        );
         let width: f32 = shaped.x_for_index(text.len()).into();
         let width = width.max(0.0);
         self.tab_strip
@@ -330,7 +335,11 @@ impl TerminalView {
         text_width + (TOP_STRIP_TERMY_BRANDING_SIDE_PADDING * 2.0)
     }
 
-    fn resolve_tab_strip_palette(&self, colors: &TerminalColors, tabbar_bg: gpui::Rgba) -> TabStripPalette {
+    fn resolve_tab_strip_palette(
+        &self,
+        colors: &TerminalColors,
+        tabbar_bg: gpui::Rgba,
+    ) -> TabStripPalette {
         let tab_stroke_color = chrome::resolve_tab_stroke_color(
             tabbar_bg,
             colors.foreground,
@@ -719,34 +728,39 @@ impl TerminalView {
         });
 
         tab_shell
-            .child(div().flex_1().min_w(px(0.0)).h_full().relative().child(
-                if input.is_renaming {
-                    self.render_inline_input_layer(
-                        Font {
-                            family: font_family.clone(),
-                            weight: FontWeight::NORMAL,
-                            ..Default::default()
-                        },
-                        px(12.0),
-                        rename_text_color.into(),
-                        rename_selection_color.into(),
-                        InlineInputAlignment::Left,
-                        cx,
-                    )
-                } else {
-                    let title_text = div()
-                        .size_full()
-                        .flex()
-                        .items_center()
-                        .overflow_x_hidden()
-                        .whitespace_nowrap()
-                        .font_family(font_family.clone())
-                        .text_color(rename_text_color)
-                        .text_size(px(12.0))
-                        .text_ellipsis();
-                    title_text.child(input.label).into_any_element()
-                },
-            ))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .h_full()
+                    .relative()
+                    .child(if input.is_renaming {
+                        self.render_inline_input_layer(
+                            Font {
+                                family: font_family.clone(),
+                                weight: FontWeight::NORMAL,
+                                ..Default::default()
+                            },
+                            px(12.0),
+                            rename_text_color.into(),
+                            rename_selection_color.into(),
+                            InlineInputAlignment::Left,
+                            cx,
+                        )
+                    } else {
+                        let title_text = div()
+                            .size_full()
+                            .flex()
+                            .items_center()
+                            .overflow_x_hidden()
+                            .whitespace_nowrap()
+                            .font_family(font_family.clone())
+                            .text_color(rename_text_color)
+                            .text_size(px(12.0))
+                            .text_ellipsis();
+                        title_text.child(input.label).into_any_element()
+                    }),
+            )
             .child(close_button)
             .children(drop_marker)
             .into_any_element()
@@ -835,7 +849,9 @@ impl TerminalView {
             tabs_scroll_content = tabs_scroll_content.child(tab_item);
         }
 
-        for element in Self::render_baseline_segments(&state.chrome_layout, palette.tab_stroke_color) {
+        for element in
+            Self::render_baseline_segments(&state.chrome_layout, palette.tab_stroke_color)
+        {
             tabs_scroll_content = tabs_scroll_content.child(element);
         }
 
@@ -965,8 +981,10 @@ impl TerminalView {
             base_left_inset_width + termy_branding_reserved_width + termy_branding_tab_gap,
         );
         let palette = self.resolve_tab_strip_palette(colors, tabbar_bg);
-        let termy_branding_slot_start_x = base_left_inset_width.min(state.geometry.left_inset_width);
-        let termy_branding_slot_width = (state.geometry.left_inset_width - termy_branding_slot_start_x)
+        let termy_branding_slot_start_x =
+            base_left_inset_width.min(state.geometry.left_inset_width);
+        let termy_branding_slot_width = (state.geometry.left_inset_width
+            - termy_branding_slot_start_x)
             .max(0.0)
             .min(termy_branding_reserved_width.max(0.0));
         let mut termy_branding_text_color = palette.inactive_tab_text;
@@ -989,10 +1007,8 @@ impl TerminalView {
 
         let show_gutter_divider =
             Self::should_render_gutter_divider(state.overflow_state, divider_collisions.right);
-        let show_left_inset_divider = Self::should_render_left_inset_divider(
-            state.overflow_state,
-            divider_collisions.left,
-        );
+        let show_left_inset_divider =
+            Self::should_render_left_inset_divider(state.overflow_state, divider_collisions.left);
 
         div()
             .w_full()
@@ -1047,9 +1063,10 @@ impl TerminalView {
                     show_gutter_divider,
                 )
             }))
-            .children((state.geometry.action_rail_width > 0.0).then(|| {
-                self.render_action_rail(&state, &palette, cx)
-            }))
+            .children(
+                (state.geometry.action_rail_width > 0.0)
+                    .then(|| self.render_action_rail(&state, &palette, cx)),
+            )
             .children((state.geometry.right_inset_width > 0.0).then(|| {
                 Self::render_inset_lane(
                     "tabbar-right-inset",
@@ -1060,5 +1077,4 @@ impl TerminalView {
             }))
             .into_any_element()
     }
-
 }

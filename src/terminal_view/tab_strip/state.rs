@@ -56,7 +56,8 @@ impl TabTitleWidthCache {
             self.widths.clear();
         }
 
-        if self.widths.len() >= TAB_TITLE_WIDTH_CACHE_MAX_ENTRIES && !self.widths.contains_key(title)
+        if self.widths.len() >= TAB_TITLE_WIDTH_CACHE_MAX_ENTRIES
+            && !self.widths.contains_key(title)
         {
             self.widths.clear();
         }

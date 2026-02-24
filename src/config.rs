@@ -1158,7 +1158,10 @@ mod tests {
     #[test]
     fn tab_close_visibility_and_width_mode_parse_and_default() {
         let defaults = AppConfig::from_contents("");
-        assert_eq!(defaults.tab_close_visibility, TabCloseVisibility::ActiveHover);
+        assert_eq!(
+            defaults.tab_close_visibility,
+            TabCloseVisibility::ActiveHover
+        );
         assert_eq!(defaults.tab_width_mode, TabWidthMode::ActiveGrowSticky);
 
         let configured = AppConfig::from_contents(
@@ -1182,7 +1185,10 @@ mod tests {
             "tab_close_visibility = invalid\n\
              tab_width_mode = invalid\n",
         );
-        assert_eq!(invalid.tab_close_visibility, TabCloseVisibility::ActiveHover);
+        assert_eq!(
+            invalid.tab_close_visibility,
+            TabCloseVisibility::ActiveHover
+        );
         assert_eq!(invalid.tab_width_mode, TabWidthMode::ActiveGrowSticky);
     }
 

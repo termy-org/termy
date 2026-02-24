@@ -11,9 +11,9 @@ use flume::{Sender, bounded};
 use gpui::{
     AnyElement, App, AsyncApp, ClipboardItem, Context, Element, ExternalPaths, FocusHandle,
     Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render,
-    ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase,
-    UniformListScrollHandle, WeakEntity, Window, WindowBackgroundAppearance, div, point, px,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, ScrollWheelEvent,
+    SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase, UniformListScrollHandle,
+    WeakEntity, Window, WindowBackgroundAppearance, div, point, px,
 };
 use std::{
     env, fs,
@@ -193,8 +193,10 @@ impl TerminalTab {
             .unwrap_or(DEFAULT_TAB_TITLE)
             .to_string();
         let title_text_width = 0.0;
-        let sticky_title_width =
-            TerminalView::tab_display_width_for_text_px_without_close_with_max(title_text_width, TAB_MAX_WIDTH);
+        let sticky_title_width = TerminalView::tab_display_width_for_text_px_without_close_with_max(
+            title_text_width,
+            TAB_MAX_WIDTH,
+        );
         let display_width =
             TerminalView::tab_display_width_for_text_px_with_max(title_text_width, TAB_MAX_WIDTH);
 
@@ -1099,7 +1101,8 @@ impl TerminalView {
         for index in 0..self.tabs.len() {
             self.refresh_tab_title(index);
         }
-        if tab_close_visibility_changed || tab_width_mode_changed || show_termy_in_titlebar_changed {
+        if tab_close_visibility_changed || tab_width_mode_changed || show_termy_in_titlebar_changed
+        {
             self.mark_tab_strip_layout_dirty();
         }
 

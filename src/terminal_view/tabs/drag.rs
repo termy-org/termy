@@ -18,7 +18,8 @@ impl TerminalView {
                 smol::Timer::after(Duration::from_millis(16)).await;
                 let keep_animating = match cx.update(|cx| {
                     this.update(cx, |view, cx| {
-                        if !view.tab_strip.drag_autoscroll_animating || view.tab_strip.drag.is_none()
+                        if !view.tab_strip.drag_autoscroll_animating
+                            || view.tab_strip.drag.is_none()
                         {
                             view.tab_strip.drag_autoscroll_animating = false;
                             return false;

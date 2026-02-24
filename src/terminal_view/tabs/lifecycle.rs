@@ -62,7 +62,8 @@ impl TerminalView {
             Self::predicted_prompt_seed_title(&self.tab_title, predicted_prompt_cwd.as_deref());
 
         let tab_id = self.allocate_tab_id();
-        self.tabs.push(TerminalTab::new(tab_id, terminal, predicted_title));
+        self.tabs
+            .push(TerminalTab::new(tab_id, terminal, predicted_title));
         self.active_tab = self.tabs.len() - 1;
         self.refresh_tab_title(self.active_tab);
         self.mark_tab_strip_layout_dirty();

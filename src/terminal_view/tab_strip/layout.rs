@@ -102,9 +102,11 @@ impl TerminalView {
         let action_rail_start_x = gutter_start_x + gutter_width;
         // Optical balance: center the button against the terminal edge lane (rail + trailing inset),
         // then clamp to keep the button fully inside the interactive action rail.
-        let button_center_x = action_rail_start_x + (action_rail_width * 0.5) + (right_inset_width * 0.5);
-        let max_button_start_x =
-            (action_rail_start_x + action_rail_width - TABBAR_NEW_TAB_BUTTON_SIZE).max(action_rail_start_x);
+        let button_center_x =
+            action_rail_start_x + (action_rail_width * 0.5) + (right_inset_width * 0.5);
+        let max_button_start_x = (action_rail_start_x + action_rail_width
+            - TABBAR_NEW_TAB_BUTTON_SIZE)
+            .max(action_rail_start_x);
         let button_start_x = (button_center_x - (TABBAR_NEW_TAB_BUTTON_SIZE * 0.5))
             .clamp(action_rail_start_x, max_button_start_x);
         let button_start_y = TOP_STRIP_CONTENT_OFFSET_Y
@@ -140,7 +142,9 @@ impl TerminalView {
         debug_assert!(
             geometry.gutter_end_x() <= geometry.action_rail_start_x + TAB_STRIP_LAYOUT_EPSILON
         );
-        debug_assert!(geometry.action_rail_end_x() <= geometry.row_end_x + TAB_STRIP_LAYOUT_EPSILON);
+        debug_assert!(
+            geometry.action_rail_end_x() <= geometry.row_end_x + TAB_STRIP_LAYOUT_EPSILON
+        );
         debug_assert!(geometry.row_end_x <= geometry.window_width + TAB_STRIP_LAYOUT_EPSILON);
         debug_assert!(
             (geometry.row_end_x + geometry.right_inset_width - geometry.window_width).abs()
@@ -153,7 +157,9 @@ impl TerminalView {
         TabStripLayoutSnapshot { geometry }
     }
 
-    pub(crate) fn tab_strip_layout_for_viewport_width(viewport_width: f32) -> TabStripLayoutSnapshot {
+    pub(crate) fn tab_strip_layout_for_viewport_width(
+        viewport_width: f32,
+    ) -> TabStripLayoutSnapshot {
         Self::tab_strip_layout_for_viewport_with_left_inset(
             viewport_width,
             Self::titlebar_left_padding_for_platform(),
@@ -271,7 +277,10 @@ mod tests {
         assert_float_eq(geometry.gutter_end_x(), geometry.action_rail_start_x);
         assert_float_eq(geometry.action_rail_end_x(), geometry.row_end_x);
         assert_float_eq(geometry.right_inset_start_x(), geometry.row_end_x);
-        assert_float_eq(geometry.row_end_x + geometry.right_inset_width, geometry.window_width);
+        assert_float_eq(
+            geometry.row_end_x + geometry.right_inset_width,
+            geometry.window_width,
+        );
     }
 
     #[test]
@@ -292,7 +301,10 @@ mod tests {
     fn baseline_segments_are_continuous_across_row_contract() {
         let snapshot = TerminalView::tab_strip_layout_for_viewport_width(1280.0);
         let geometry = snapshot.geometry;
-        assert_float_eq(geometry.row_start_x + geometry.row_width, geometry.row_end_x);
+        assert_float_eq(
+            geometry.row_start_x + geometry.row_width,
+            geometry.row_end_x,
+        );
         assert_float_eq(geometry.action_rail_end_x(), geometry.row_end_x);
         assert_float_eq(
             geometry.tabs_viewport_width + geometry.gutter_width + geometry.action_rail_width,
@@ -309,6 +321,9 @@ mod tests {
         assert_float_eq(geometry.tabs_viewport_end_x(), geometry.gutter_start_x);
         assert_float_eq(geometry.gutter_end_x(), geometry.action_rail_start_x);
         assert_float_eq(geometry.action_rail_end_x(), geometry.row_end_x);
-        assert_float_eq(geometry.row_end_x + geometry.right_inset_width, geometry.window_width);
+        assert_float_eq(
+            geometry.row_end_x + geometry.right_inset_width,
+            geometry.window_width,
+        );
     }
 }

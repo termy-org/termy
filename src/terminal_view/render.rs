@@ -341,7 +341,6 @@ impl TerminalView {
                 .into_any(),
         )
     }
-
 }
 
 impl Render for TerminalView {

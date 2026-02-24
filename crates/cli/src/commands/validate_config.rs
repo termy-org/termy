@@ -224,8 +224,14 @@ pub fn run() {
                     }
                 }
                 "tab_close_visibility" => {
-                    if !["active_hover", "activehover", "active+hover", "hover", "always"]
-                        .contains(&value.to_lowercase().as_str())
+                    if ![
+                        "active_hover",
+                        "activehover",
+                        "active+hover",
+                        "hover",
+                        "always",
+                    ]
+                    .contains(&value.to_lowercase().as_str())
                     {
                         errors.push(format!(
                             "Line {}: tab_close_visibility must be 'active_hover', 'hover', or 'always'",

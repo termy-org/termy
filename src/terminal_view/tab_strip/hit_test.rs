@@ -52,12 +52,8 @@ impl TerminalView {
     ) -> bool {
         if geometry.contains_tabs_viewport_x(x) {
             let pointer_x = (x - geometry.row_start_x).clamp(0.0, geometry.tabs_viewport_width);
-            if Self::unified_titlebar_tab_shell_hit_test(
-                pointer_x,
-                y,
-                tab_widths,
-                scroll_offset_x,
-            ) {
+            if Self::unified_titlebar_tab_shell_hit_test(pointer_x, y, tab_widths, scroll_offset_x)
+            {
                 return true;
             }
         }
@@ -108,13 +104,15 @@ mod tests {
     fn interactive_hit_test_detects_tab_shell() {
         let geometry = TerminalView::tab_strip_geometry_for_viewport_width(1280.0);
         let x = geometry.row_start_x + TAB_HORIZONTAL_PADDING + 12.0;
-        assert!(TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
-            x,
-            tab_hit_test_y(),
-            geometry,
-            [120.0, 120.0],
-            0.0,
-        ));
+        assert!(
+            TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
+                x,
+                tab_hit_test_y(),
+                geometry,
+                [120.0, 120.0],
+                0.0,
+            )
+        );
     }
 
     #[test]
@@ -122,13 +120,15 @@ mod tests {
         let geometry = TerminalView::tab_strip_geometry_for_viewport_width(1280.0);
         let center_x = (geometry.button_start_x + geometry.button_end_x) * 0.5;
         let center_y = (geometry.button_start_y + geometry.button_end_y) * 0.5;
-        assert!(TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
-            center_x,
-            center_y,
-            geometry,
-            [120.0, 120.0],
-            0.0,
-        ));
+        assert!(
+            TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
+                center_x,
+                center_y,
+                geometry,
+                [120.0, 120.0],
+                0.0,
+            )
+        );
     }
 
     #[test]
@@ -138,13 +138,15 @@ mod tests {
         let y = (geometry.button_start_y + geometry.button_end_y) * 0.5;
         assert!(!geometry.new_tab_button_contains(x, y));
         assert!(geometry.contains_action_rail_x(x));
-        assert!(!TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
-            x,
-            y,
-            geometry,
-            [120.0, 120.0],
-            0.0,
-        ));
+        assert!(
+            !TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
+                x,
+                y,
+                geometry,
+                [120.0, 120.0],
+                0.0,
+            )
+        );
     }
 
     #[test]
@@ -152,28 +154,34 @@ mod tests {
         let geometry = TerminalView::tab_strip_geometry_for_viewport_width(1280.0);
         let x = geometry.gutter_start_x + (geometry.gutter_width * 0.5);
         assert!(geometry.contains_gutter_x(x));
-        assert!(!TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
-            x,
-            tab_hit_test_y(),
-            geometry,
-            [120.0, 120.0],
-            0.0,
-        ));
+        assert!(
+            !TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
+                x,
+                tab_hit_test_y(),
+                geometry,
+                [120.0, 120.0],
+                0.0,
+            )
+        );
     }
 
     #[test]
     fn interactive_hit_test_excludes_expanded_left_inset_branding_space() {
         let base_left_inset = TerminalView::titlebar_left_padding_for_platform();
-        let geometry =
-            TerminalView::tab_strip_geometry_for_viewport_with_left_inset(1280.0, base_left_inset + 64.0);
+        let geometry = TerminalView::tab_strip_geometry_for_viewport_with_left_inset(
+            1280.0,
+            base_left_inset + 64.0,
+        );
         let x = geometry.left_inset_width - 1.0;
-        assert!(!TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
-            x,
-            tab_hit_test_y(),
-            geometry,
-            [120.0, 120.0],
-            0.0,
-        ));
+        assert!(
+            !TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
+                x,
+                tab_hit_test_y(),
+                geometry,
+                [120.0, 120.0],
+                0.0,
+            )
+        );
     }
 
     #[test]
@@ -184,22 +192,26 @@ mod tests {
 
         let action_start = geometry.gutter_end_x();
         assert!(geometry.contains_action_rail_x(action_start));
-        assert!(!TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
-            action_start,
-            tab_hit_test_y(),
-            geometry,
-            [120.0, 120.0],
-            0.0,
-        ));
+        assert!(
+            !TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
+                action_start,
+                tab_hit_test_y(),
+                geometry,
+                [120.0, 120.0],
+                0.0,
+            )
+        );
 
         let action_end = geometry.action_rail_end_x();
         assert!(!geometry.contains_action_rail_x(action_end));
-        assert!(!TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
-            action_end,
-            tab_hit_test_y(),
-            geometry,
-            [120.0, 120.0],
-            0.0,
-        ));
+        assert!(
+            !TerminalView::unified_titlebar_tab_interactive_hit_test_for_geometry(
+                action_end,
+                tab_hit_test_y(),
+                geometry,
+                [120.0, 120.0],
+                0.0,
+            )
+        );
     }
 }
