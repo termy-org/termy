@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Documentation - Termy</title>
+    <link rel="icon" type="image/png"
+        href="https://raw.githubusercontent.com/lassejlv/termy/refs/heads/main/assets/termy_icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&family=Geist+Mono:wght@400;600&display=swap"
+        rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+        @theme {
+        --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+        --font-mono:
+          "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+    </style>
+    <style>
+        #page-body,
+        #page-backdrop {
+            transition: background 220ms ease, color 220ms ease;
+        }
+
+        #theme-toggle {
+            transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+        }
+
+        body.light-mode {
+            background: #f9fbff !important;
+            color: #1f2d46 !important;
+        }
+
+        body.light-mode #page-backdrop {
+            background: #f9fbff !important;
+        }
+
+        body.light-mode h1,
+        body.light-mode h2,
+        body.light-mode h3 {
+            color: #13213a !important;
+        }
+
+        body.light-mode nav a,
+        body.light-mode .doc-section p,
+        body.light-mode .doc-section li,
+        body.light-mode aside a {
+            color: #2a3a59 !important;
+        }
+
+        body.light-mode .doc-section code {
+            background: #eef2f9 !important;
+            color: #1e293b !important;
+            border-color: #cbd5e1 !important;
+        }
+
+        body.light-mode aside a:hover,
+        body.light-mode aside a.active {
+            background: #e2e8f0 !important;
+            color: #0f172a !important;
+        }
+
+        body.light-mode #theme-toggle {
+            border-color: #c0cde6 !important;
+            color: #1a2842 !important;
+            background: rgba(255, 255, 255, 0.8) !important;
+        }
+
+        .doc-section code {
+            background: rgba(30, 41, 59, 0.5);
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.375rem;
+            font-family: var(--font-mono);
+            font-size: 0.875em;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+
+<body id="page-body" class="min-h-screen bg-[#090d1a] text-[#e7ebf5] selection:bg-[#a7e9a3] selection:text-[#0b1020]">
+    <div id="page-backdrop"
+        class="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_18%_12%,rgba(102,130,198,0.22),transparent_34%),radial-gradient(circle_at_76%_16%,rgba(77,174,247,0.14),transparent_28%),radial-gradient(circle_at_62%_78%,rgba(241,163,178,0.10),transparent_34%),linear-gradient(to_bottom,#090d1a,#0b1020,#0a0f1d)]">
+    </div>
+
+    <header class="mx-auto w-full max-w-6xl px-6 py-6 border-b border-white/5">
+        <nav class="flex items-center justify-between">
+            <a href="./index.html" class="flex items-center gap-3 text-sm font-bold tracking-[0.2em] text-[#dce2f3]">
+                <img src="https://raw.githubusercontent.com/lassejlv/termy/refs/heads/main/assets/termy_icon.png"
+                    alt="Termy icon" class="h-7 w-7 rounded-md" />
+                TERMY
+            </a>
+            <div class="flex items-center gap-4 text-sm text-[#b3bdd6]">
+                <a href="./index.html#features" class="hover:text-white">Features</a>
+                <a href="./Documentation.html" class="text-white font-medium">Docs</a>
+                <a href="./index.html#download" class="hover:text-white">Download</a>
+                <a href="https://github.com/lassejlv/termy" target="_blank" rel="noreferrer"
+                    class="hover:text-white">GitHub</a>
+
+                <button id="theme-toggle" type="button"
+                    class="rounded-lg border border-[#3a4568] px-3 py-1.5 text-sm font-medium text-[#d0d8eb] hover:border-[#69b4f2] hover:text-white">
+                    Light
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="mx-auto w-full max-w-6xl px-6 py-12">
+        <div class="flex flex-col md:flex-row gap-12">
+            <!-- Sidebar -->
+            <aside class="w-full md:w-64 flex-shrink-0">
+                <nav class="sticky top-12 space-y-1">
+                    <p class="px-3 mb-4 text-xs font-bold uppercase tracking-widest text-[#5e6d8a]">Getting Started</p>
+                    <a href="#introduction"
+                        class="block px-3 py-2 rounded-lg text-sm text-[#b3bdd6] hover:bg-white/5 hover:text-white active">Introduction</a>
+                    <a href="#installation"
+                        class="block px-3 py-2 rounded-lg text-sm text-[#b3bdd6] hover:bg-white/5 hover:text-white">Installation</a>
+                    <a href="#configuration"
+                        class="block px-3 py-2 rounded-lg text-sm text-[#b3bdd6] hover:bg-white/5 hover:text-white">Configuration</a>
+
+                    <p class="px-3 mt-8 mb-4 text-xs font-bold uppercase tracking-widest text-[#5e6d8a]">Features</p>
+                    <a href="#themes"
+                        class="block px-3 py-2 rounded-lg text-sm text-[#b3bdd6] hover:bg-white/5 hover:text-white">Themes</a>
+                    <a href="#shortcuts"
+                        class="block px-3 py-2 rounded-lg text-sm text-[#b3bdd6] hover:bg-white/5 hover:text-white">Shortcuts</a>
+                </nav>
+            </aside>
+
+            <!-- Content -->
+            <div class="flex-1 max-w-3xl space-y-16">
+                <section id="introduction" class="doc-section">
+                    <h1 class="text-4xl font-bold text-white mb-6">Introduction</h1>
+                    <p class="text-lg text-[#bcc6dd] leading-relaxed">
+                        Termy is a modern, lightweight terminal emulator built from the ground up in Rust. It
+                        prioritizes speed, minimalism, and a great out-of-the-box experience.
+                    </p>
+                    <div class="mt-8 p-6 rounded-2xl border border-[#30385a] bg-[#161d34]/40">
+                        <h3 class="text-lg font-semibold text-white mb-2">Key Highlights</h3>
+                        <ul class="list-disc list-inside text-[#b7c1d8] space-y-2">
+                            <li>GPU-accelerated rendering for smooth performance.</li>
+                            <li>Minimal resource footprint.</li>
+                            <li>Fully customizable via a simple configuration file.</li>
+                            <li>Native support for Windows, macOS, and Linux.</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="installation" class="doc-section">
+                    <h2 class="text-3xl font-bold text-white mb-6">Installation</h2>
+                    <p class="text-[#bcc6dd] mb-4">Choose the installation method that fits your operating system.</p>
+
+                    <div class="space-y-6">
+                        <div>
+                            <h3 class="text-xl font-semibold text-[#8cbef2] mb-2">Windows</h3>
+                            <p class="text-[#b7c1d8]">Download the <code>.exe</code> or <code>.msi</code> installer from
+                                the <a href="./index.html#download"
+                                    class="text-white border-b border-white/20 hover:border-white transition">download
+                                    section</a>.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold text-[#8cbef2] mb-2">macOS</h3>
+                            <p class="text-[#b7c1d8]">Use the <code>.dmg</code> file provided in our releases. Support
+                                for Homebrew is coming soon.</p>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-semibold text-[#8cbef2] mb-2">Linux</h3>
+                            <p class="text-[#b7c1d8] mb-4">Run the following command in your current terminal to install
+                                Termy instantly:</p>
+                            <div class="bg-[#0a0f1d] p-4 rounded-xl border border-[#30385a]">
+                                <code
+                                    class="text-white break-all">curl -fsSL https://raw.githubusercontent.com/lassejlv/termy/main/scripts/install-linux.sh | bash</code>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="configuration" class="doc-section">
+                    <h2 class="text-3xl font-bold text-white mb-6">Configuration</h2>
+                    <p class="text-[#bcc6dd] leading-relaxed">
+                        Termy uses a single configuration file located at <code>~/.config/termy/config.toml</code> (or
+                        environment specific path). Here you can adjust everything from font family to background
+                        opacity.
+                    </p>
+                    <div class="mt-6 bg-[#0a0f1d] p-6 rounded-xl border border-[#30385a] font-mono text-sm">
+                        <pre class="text-[#b3bdd6]">
+<span class="text-[#8cbef2]">[window]</span>
+opacity = <span class="text-[#a7e9a3]">0.9</span>
+blur = <span class="text-[#a7e9a3]">true</span>
+
+<span class="text-[#8cbef2]">[font]</span>
+family = <span class="text-[#a7e9a3]">"Geist Mono"</span>
+size = <span class="text-[#a7e9a3]">14.0</span> 
+</pre>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <footer class="mx-auto w-full max-w-6xl px-6 py-12 border-t border-white/5">
+        <div class="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="flex items-center gap-3 text-sm font-bold tracking-[0.2em] text-[#5e6d8a]">
+                TERMY &copy; 2026
+            </div>
+            <div class="flex gap-8 text-sm text-[#5e6d8a]">
+                <a href="https://github.com/lassejlv/termy" class="hover:text-white">GitHub</a>
+                <a href="https://twitter.com/lassejlv" class="hover:text-white">Twitter</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        const THEME_KEY = "termy_site_theme_v1";
+        const pageBodyEl = document.getElementById("page-body");
+        const themeToggleEl = document.getElementById("theme-toggle");
+
+        function getPreferredTheme() {
+            try {
+                const stored = localStorage.getItem(THEME_KEY);
+                if (stored === "light" || stored === "dark") return stored;
+            } catch { }
+            return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        }
+
+        function applyTheme(theme) {
+            const isLight = theme === "light";
+            pageBodyEl.classList.toggle("light-mode", isLight);
+            themeToggleEl.textContent = isLight ? "Dark" : "Light";
+        }
+
+        function setupThemeToggle() {
+            applyTheme(getPreferredTheme());
+            themeToggleEl.addEventListener("click", () => {
+                const next = pageBodyEl.classList.contains("light-mode") ? "dark" : "light";
+                applyTheme(next);
+                try {
+                    localStorage.setItem(THEME_KEY, next);
+                } catch { }
+            });
+        }
+
+        setupThemeToggle();
+
+        // Simple active state for sidebar links
+        const sidebarLinks = document.querySelectorAll('aside nav a');
+        const sections = document.querySelectorAll('.doc-section');
+
+        window.addEventListener('scroll', () => {
+            let current = "";
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.clientHeight;
+                if (pageYOffset >= sectionTop - 150) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            sidebarLinks.forEach(link => {
+                link.classList.remove('text-white', 'bg-white/5', 'font-medium');
+                if (link.getAttribute('href').slice(1) === current) {
+                    link.classList.add('text-white', 'bg-white/5', 'font-medium');
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>

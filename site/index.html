@@ -1,555 +1,498 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Termy</title>
-    <link
-      rel="icon"
-      type="image/png"
-      href="https://raw.githubusercontent.com/lassejlv/termy/refs/heads/main/assets/termy_icon.png"
-    />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&family=Geist+Mono:wght@400;600&display=swap"
-      rel="stylesheet"
-    />
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <style type="text/tailwindcss">
-      @theme {
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Termy</title>
+  <link rel="icon" type="image/png"
+    href="https://raw.githubusercontent.com/lassejlv/termy/refs/heads/main/assets/termy_icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&family=Geist+Mono:wght@400;600&display=swap"
+    rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style type="text/tailwindcss">
+    @theme {
         --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
         --font-mono:
           "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
       }
     </style>
-    <style>
-      #page-body,
-      #page-backdrop {
-        transition: background 220ms ease, color 220ms ease;
-      }
+  <style>
+    #page-body,
+    #page-backdrop {
+      transition: background 220ms ease, color 220ms ease;
+    }
 
-      #theme-toggle {
-        transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
-      }
+    #theme-toggle {
+      transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+    }
 
-      body.light-mode {
-        background: #f9fbff !important;
-        color: #1f2d46 !important;
-      }
+    body.light-mode {
+      background: #f9fbff !important;
+      color: #1f2d46 !important;
+    }
 
-      body.light-mode #page-backdrop {
-        background: #f9fbff !important;
-      }
+    body.light-mode #page-backdrop {
+      background: #f9fbff !important;
+    }
 
-      body.light-mode h1,
-      body.light-mode h2,
-      body.light-mode h3 {
-        color: #13213a !important;
-      }
+    body.light-mode h1,
+    body.light-mode h2,
+    body.light-mode h3 {
+      color: #13213a !important;
+    }
 
-      body.light-mode nav a,
-      body.light-mode #published,
-      body.light-mode #status,
-      body.light-mode #release-link,
-      body.light-mode #asset-groups a div,
-      body.light-mode #asset-groups h3,
-      body.light-mode #download p,
-      body.light-mode #features p,
-      body.light-mode .pb-14 p {
-        color: #2a3a59 !important;
-      }
+    body.light-mode nav a,
+    body.light-mode #published,
+    body.light-mode #status,
+    body.light-mode #release-link,
+    body.light-mode #asset-groups a div,
+    body.light-mode #asset-groups h3,
+    body.light-mode #download p,
+    body.light-mode #features p,
+    body.light-mode .pb-14 p {
+      color: #2a3a59 !important;
+    }
 
-      body.light-mode #download > div,
-      body.light-mode #features article,
-      body.light-mode #quick-actions a,
-      body.light-mode #asset-groups section,
-      body.light-mode #asset-groups a,
-      body.light-mode #hero-release-link {
-        border-color: #c8d4ea !important;
-        background: rgba(255, 255, 255, 0.9) !important;
-      }
+    body.light-mode #download>div,
+    body.light-mode #features article,
+    body.light-mode #quick-actions a,
+    body.light-mode #asset-groups section,
+    body.light-mode #asset-groups a,
+    body.light-mode #hero-release-link {
+      border-color: #c8d4ea !important;
+      background: rgba(255, 255, 255, 0.9) !important;
+    }
 
-      body.light-mode #tag {
-        background: #e2e9f8 !important;
-        color: #223452 !important;
-      }
+    body.light-mode #tag {
+      background: #e2e9f8 !important;
+      color: #223452 !important;
+    }
 
-      body.light-mode #status {
-        border-color: #c8d4ea !important;
-        background: rgba(255, 255, 255, 0.94) !important;
-      }
+    body.light-mode #status {
+      border-color: #c8d4ea !important;
+      background: rgba(255, 255, 255, 0.94) !important;
+    }
 
-      body.light-mode #release-link {
-        border-color: #c8d4ea !important;
-        color: #1f3150 !important;
-      }
+    body.light-mode #release-link {
+      border-color: #c8d4ea !important;
+      color: #1f3150 !important;
+    }
 
-      body.light-mode #release-link:hover,
-      body.light-mode #hero-release-link:hover,
-      body.light-mode #quick-actions a:hover,
-      body.light-mode #asset-groups a:hover,
-      body.light-mode nav a:hover {
-        color: #0f1d33 !important;
-        border-color: #9db2d6 !important;
-      }
+    body.light-mode #release-link:hover,
+    body.light-mode #hero-release-link:hover,
+    body.light-mode #quick-actions a:hover,
+    body.light-mode #asset-groups a:hover,
+    body.light-mode nav a:hover {
+      color: #0f1d33 !important;
+      border-color: #9db2d6 !important;
+    }
 
-      body.light-mode #theme-toggle {
-        border-color: #c0cde6 !important;
-        color: #1a2842 !important;
-        background: rgba(255, 255, 255, 0.8) !important;
-      }
+    body.light-mode #theme-toggle {
+      border-color: #c0cde6 !important;
+      color: #1a2842 !important;
+      background: rgba(255, 255, 255, 0.8) !important;
+    }
 
-      body.light-mode #primary-download {
-        background: #97dda6 !important;
-        color: #10243a !important;
-      }
-    </style>
-  </head>
-  <body
-    id="page-body"
-    class="min-h-screen bg-[#090d1a] text-[#e7ebf5] selection:bg-[#a7e9a3] selection:text-[#0b1020]"
-  >
-    <div
-      id="page-backdrop"
-      class="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_18%_12%,rgba(102,130,198,0.22),transparent_34%),radial-gradient(circle_at_76%_16%,rgba(77,174,247,0.14),transparent_28%),radial-gradient(circle_at_62%_78%,rgba(241,163,178,0.10),transparent_34%),linear-gradient(to_bottom,#090d1a,#0b1020,#0a0f1d)]"
-    ></div>
+    body.light-mode #primary-download {
+      background: #97dda6 !important;
+      color: #10243a !important;
+    }
+  </style>
+</head>
 
-    <header class="mx-auto w-full max-w-6xl px-6 py-6">
-      <nav class="flex items-center justify-between">
-        <a
-          href="#"
-          class="flex items-center gap-3 text-sm font-bold tracking-[0.2em] text-[#dce2f3]"
-        >
-          <img
-            src="https://raw.githubusercontent.com/lassejlv/termy/refs/heads/main/assets/termy_icon.png"
-            alt="Termy icon"
-            class="h-7 w-7 rounded-md"
-          />
-          TERMY
-        </a>
-        <div class="flex items-center gap-4 text-sm text-[#b3bdd6]">
-          <a href="#features" class="hover:text-white">Features</a>
-          <a href="#download" class="hover:text-white">Download</a>
-          <a
-            href="https://github.com/lassejlv/termy"
-            target="_blank"
-            rel="noreferrer"
-            class="hover:text-white"
-            >GitHub</a
-          >
-          <button
-            id="theme-toggle"
-            type="button"
-            class="rounded-lg border border-[#3a4568] px-3 py-1.5 text-sm font-medium text-[#d0d8eb] hover:border-[#69b4f2] hover:text-white"
-          >
-            Light
-          </button>
+<body id="page-body" class="min-h-screen bg-[#090d1a] text-[#e7ebf5] selection:bg-[#a7e9a3] selection:text-[#0b1020]">
+  <div id="page-backdrop"
+    class="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_18%_12%,rgba(102,130,198,0.22),transparent_34%),radial-gradient(circle_at_76%_16%,rgba(77,174,247,0.14),transparent_28%),radial-gradient(circle_at_62%_78%,rgba(241,163,178,0.10),transparent_34%),linear-gradient(to_bottom,#090d1a,#0b1020,#0a0f1d)]">
+  </div>
+
+  <header class="mx-auto w-full max-w-6xl px-6 py-6">
+    <nav class="flex items-center justify-between">
+      <a href="./index.html" class="flex items-center gap-3 text-sm font-bold tracking-[0.2em] text-[#dce2f3]">
+        <img src="https://raw.githubusercontent.com/lassejlv/termy/refs/heads/main/assets/termy_icon.png"
+          alt="Termy icon" class="h-7 w-7 rounded-md" />
+        TERMY
+      </a>
+      <div class="flex items-center gap-4 text-sm text-[#b3bdd6]">
+        <a href="#features" class="hover:text-white">Features</a>
+        <a href="./Documentation.html" class="hover:text-white">Docs</a>
+        <a href="#download" class="hover:text-white">Download</a>
+        <a href="https://github.com/lassejlv/termy" target="_blank" rel="noreferrer" class="hover:text-white">GitHub</a>
+
+        <button id="theme-toggle" type="button"
+          class="rounded-lg border border-[#3a4568] px-3 py-1.5 text-sm font-medium text-[#d0d8eb] hover:border-[#69b4f2] hover:text-white">
+          Light
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <main class="mx-auto w-full max-w-6xl px-6 pb-20">
+    <section class="pb-14 pt-10">
+      <div class="grid items-center gap-8 md:grid-cols-2">
+        <div>
+          <h1 class="mt-5 text-4xl font-bold leading-tight text-white md:text-6xl">
+            Fast terminal.
+            <span class="text-[#8cbef2]">No bloat.</span>
+          </h1>
+          <p class="mt-4 max-w-xl text-base text-[#bcc6dd] md:text-lg">
+            Termy is a lightweight terminal emulator built in Rust with GPU
+            rendering and built-in themes.
+          </p>
+
+          <div class="mt-8 flex flex-wrap items-center gap-3">
+            <a id="primary-download" href="#download"
+              class="rounded-xl bg-[#a7e9a3] px-5 py-3 text-sm font-semibold text-[#0b1020] transition hover:bg-[#93dc8f]">
+              Download Latest
+            </a>
+            <a id="hero-release-link" href="https://github.com/lassejlv/termy/releases/latest" target="_blank"
+              rel="noreferrer"
+              class="rounded-xl border border-[#3a4568] px-5 py-3 text-sm font-semibold text-[#d0d8eb] transition hover:border-[#69b4f2] hover:text-white">
+              View Release
+            </a>
+          </div>
         </div>
-      </nav>
-    </header>
 
-    <main class="mx-auto w-full max-w-6xl px-6 pb-20">
-      <section class="pb-14 pt-10">
-        <div class="grid items-center gap-8 md:grid-cols-2">
+        <div class="md:justify-self-end">
+          <img src="./termy-example.png" alt="Termy terminal preview"
+            class="w-full max-w-4xl rounded-2xl md:scale-110" />
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="grid gap-4 py-10 md:grid-cols-3">
+      <article class="rounded-2xl border border-[#30385a] bg-[#161d34]/70 p-5">
+        <h2 class="text-lg font-semibold text-white">Fast Rendering</h2>
+        <p class="mt-2 text-sm text-[#b7c1d8]">
+          GPU-accelerated UI with smooth text rendering and low overhead.
+        </p>
+      </article>
+      <article class="rounded-2xl border border-[#30385a] bg-[#161d34]/70 p-5">
+        <h2 class="text-lg font-semibold text-white">Simple Config</h2>
+        <p class="mt-2 text-sm text-[#b7c1d8]">
+          Edit one config file for theme, font, size, padding, and startup
+          dir.
+        </p>
+      </article>
+      <article class="rounded-2xl border border-[#30385a] bg-[#161d34]/70 p-5">
+        <h2 class="text-lg font-semibold text-white">Cross-Platform</h2>
+        <p class="mt-2 text-sm text-[#b7c1d8]">
+          Native builds for macOS (Intel & Apple Silicon), Windows, and Linux.
+        </p>
+      </article>
+    </section>
+
+    <section id="download" class="py-8">
+      <div class="rounded-2xl border border-[#30385a] bg-[#161d34]/72 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1
-              class="mt-5 text-4xl font-bold leading-tight text-white md:text-6xl"
-            >
-              Fast terminal.
-              <span class="text-[#8cbef2]">No bloat.</span>
-            </h1>
-            <p class="mt-4 max-w-xl text-base text-[#bcc6dd] md:text-lg">
-              Termy is a lightweight terminal emulator built in Rust with GPU
-              rendering and built-in themes.
+            <p class="text-xs uppercase tracking-[0.2em] text-[#9eabc7]">
+              Download
             </p>
-
-            <div class="mt-8 flex flex-wrap items-center gap-3">
-              <a
-                id="primary-download"
-                href="#download"
-                class="rounded-xl bg-[#a7e9a3] px-5 py-3 text-sm font-semibold text-[#0b1020] transition hover:bg-[#93dc8f]"
-              >
-                Download Latest
-              </a>
-              <a
-                id="hero-release-link"
-                href="https://github.com/lassejlv/termy/releases/latest"
-                target="_blank"
-                rel="noreferrer"
-                class="rounded-xl border border-[#3a4568] px-5 py-3 text-sm font-semibold text-[#d0d8eb] transition hover:border-[#69b4f2] hover:text-white"
-              >
-                View Release
-              </a>
-            </div>
+            <h2 class="mt-1 text-2xl font-semibold text-white">
+              Latest Release
+            </h2>
           </div>
-
-          <div class="md:justify-self-end">
-            <img
-              src="./termy-example.png"
-              alt="Termy terminal preview"
-              class="w-full max-w-4xl rounded-2xl md:scale-110"
-            />
+          <div class="flex flex-wrap items-center gap-2">
+            <span id="tag"
+              class="rounded-full bg-[#202948] px-3 py-1 text-sm font-medium text-[#dbe4f6]">Loading...</span>
+            <span id="published" class="text-sm text-[#9eabc7]"></span>
           </div>
         </div>
-      </section>
 
-      <section id="features" class="grid gap-4 py-10 md:grid-cols-3">
-        <article
-          class="rounded-2xl border border-[#30385a] bg-[#161d34]/70 p-5"
-        >
-          <h2 class="text-lg font-semibold text-white">Fast Rendering</h2>
-          <p class="mt-2 text-sm text-[#b7c1d8]">
-            GPU-accelerated UI with smooth text rendering and low overhead.
-          </p>
-        </article>
-        <article
-          class="rounded-2xl border border-[#30385a] bg-[#161d34]/70 p-5"
-        >
-          <h2 class="text-lg font-semibold text-white">Simple Config</h2>
-          <p class="mt-2 text-sm text-[#b7c1d8]">
-            Edit one config file for theme, font, size, padding, and startup
-            dir.
-          </p>
-        </article>
-        <article
-          class="rounded-2xl border border-[#30385a] bg-[#161d34]/70 p-5"
-        >
-          <h2 class="text-lg font-semibold text-white">Cross-Platform</h2>
-          <p class="mt-2 text-sm text-[#b7c1d8]">
-            Native builds for macOS (Intel & Apple Silicon), Windows, and Linux.
-          </p>
-        </article>
-      </section>
+        <p id="status" class="mt-4 rounded-lg border border-[#30385a] bg-[#131a2f] px-3 py-2 text-sm text-[#bcc7df]">
+          Fetching latest release...
+        </p>
 
-      <section id="download" class="py-8">
-        <div class="rounded-2xl border border-[#30385a] bg-[#161d34]/72 p-6">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="text-xs uppercase tracking-[0.2em] text-[#9eabc7]">
-                Download
-              </p>
-              <h2 class="mt-1 text-2xl font-semibold text-white">
-                Latest Release
-              </h2>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <span
-                id="tag"
-                class="rounded-full bg-[#202948] px-3 py-1 text-sm font-medium text-[#dbe4f6]"
-                >Loading...</span
-              >
-              <span id="published" class="text-sm text-[#9eabc7]"></span>
-            </div>
-          </div>
-
-          <p
-            id="status"
-            class="mt-4 rounded-lg border border-[#30385a] bg-[#131a2f] px-3 py-2 text-sm text-[#bcc7df]"
-          >
-            Fetching latest release...
-          </p>
-
-          <div class="mt-4 flex flex-wrap items-center gap-3">
-            <a
-              id="release-link"
-              class="rounded-lg border border-[#3a4568] px-3 py-2 text-sm text-[#d0d8eb] transition hover:border-[#69b4f2] hover:text-white"
-              target="_blank"
-              rel="noreferrer"
-            >
-              View release notes
-            </a>
-          </div>
-
-          <div id="quick-actions" class="mt-4 hidden grid gap-3 sm:grid-cols-3">
-            <a
-              id="mac-download"
-              class="rounded-xl border border-[#30385a] bg-[#11182d]/80 px-4 py-3 text-sm font-medium text-[#dbe4f6] transition hover:border-[#69b4f2] hover:text-white"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Download for macOS
-            </a>
-            <a
-              id="windows-download"
-              class="rounded-xl border border-[#30385a] bg-[#11182d]/80 px-4 py-3 text-sm font-medium text-[#dbe4f6] transition hover:border-[#69b4f2] hover:text-white"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Download for Windows
-            </a>
-            <a
-              id="linux-download"
-              class="rounded-xl border border-[#30385a] bg-[#11182d]/80 px-4 py-3 text-sm font-medium text-[#dbe4f6] transition hover:border-[#69b4f2] hover:text-white"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Download for Linux
-            </a>
-          </div>
-
-          <div id="asset-groups" class="mt-5 grid gap-4 md:grid-cols-2"></div>
+        <div class="mt-4 flex flex-wrap items-center gap-3">
+          <a id="release-link"
+            class="rounded-lg border border-[#3a4568] px-3 py-2 text-sm text-[#d0d8eb] transition hover:border-[#69b4f2] hover:text-white"
+            target="_blank" rel="noreferrer">
+            View release notes
+          </a>
         </div>
-      </section>
-    </main>
 
-    <script
-      defer
-      src="https://analytics.lassejlv.dk/script.js"
-      data-website-id="e7d3ed1c-80ec-4d81-91f4-79da987aea91"
-    ></script>
-    <script>
-      const owner = "lassejlv";
-      const repo = "termy";
-      const api = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
-      const THEME_KEY = "termy_site_theme_v1";
+        <div id="quick-actions" class="mt-4 hidden grid gap-3 sm:grid-cols-3">
+          <a id="mac-download"
+            class="rounded-xl border border-[#30385a] bg-[#11182d]/80 px-4 py-3 text-sm font-medium text-[#dbe4f6] transition hover:border-[#69b4f2] hover:text-white"
+            target="_blank" rel="noreferrer">
+            Download for macOS
+          </a>
+          <a id="windows-download"
+            class="rounded-xl border border-[#30385a] bg-[#11182d]/80 px-4 py-3 text-sm font-medium text-[#dbe4f6] transition hover:border-[#69b4f2] hover:text-white"
+            target="_blank" rel="noreferrer">
+            Download for Windows
+          </a>
+          <a id="linux-download"
+            class="rounded-xl border border-[#30385a] bg-[#11182d]/80 px-4 py-3 text-sm font-medium text-[#dbe4f6] transition hover:border-[#69b4f2] hover:text-white"
+            target="_blank" rel="noreferrer">
+            Download for Linux
+          </a>
+        </div>
 
-      const pageBodyEl = document.getElementById("page-body");
-      const themeToggleEl = document.getElementById("theme-toggle");
-      const primaryDownloadEl = document.getElementById("primary-download");
-      const heroReleaseLinkEl = document.getElementById("hero-release-link");
-      const statusEl = document.getElementById("status");
-      const tagEl = document.getElementById("tag");
-      const publishedEl = document.getElementById("published");
-      const releaseLinkEl = document.getElementById("release-link");
-      const quickActionsEl = document.getElementById("quick-actions");
-      const macDownloadEl = document.getElementById("mac-download");
-      const windowsDownloadEl = document.getElementById("windows-download");
-      const linuxDownloadEl = document.getElementById("linux-download");
-      const assetGroupsEl = document.getElementById("asset-groups");
+        <div id="asset-groups" class="mt-5 grid gap-4 md:grid-cols-2"></div>
+      </div>
+    </section>
+  </main>
 
-      function getPreferredTheme() {
+  <script defer src="https://analytics.lassejlv.dk/script.js"
+    data-website-id="e7d3ed1c-80ec-4d81-91f4-79da987aea91"></script>
+  <script>
+    const owner = "lassejlv";
+    const repo = "termy";
+    const api = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
+    const THEME_KEY = "termy_site_theme_v1";
+
+    const pageBodyEl = document.getElementById("page-body");
+    const themeToggleEl = document.getElementById("theme-toggle");
+    const primaryDownloadEl = document.getElementById("primary-download");
+    const heroReleaseLinkEl = document.getElementById("hero-release-link");
+    const statusEl = document.getElementById("status");
+    const tagEl = document.getElementById("tag");
+    const publishedEl = document.getElementById("published");
+    const releaseLinkEl = document.getElementById("release-link");
+    const quickActionsEl = document.getElementById("quick-actions");
+    const macDownloadEl = document.getElementById("mac-download");
+    const windowsDownloadEl = document.getElementById("windows-download");
+    const linuxDownloadEl = document.getElementById("linux-download");
+    const assetGroupsEl = document.getElementById("asset-groups");
+
+    function getPreferredTheme() {
+      try {
+        const stored = localStorage.getItem(THEME_KEY);
+        if (stored === "light" || stored === "dark") return stored;
+      } catch {
+        // Ignore storage failures.
+      }
+      return window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark";
+    }
+
+    function applyTheme(theme) {
+      const isLight = theme === "light";
+      pageBodyEl.classList.toggle("light-mode", isLight);
+      themeToggleEl.textContent = isLight ? "Dark" : "Light";
+    }
+
+    function setupThemeToggle() {
+      applyTheme(getPreferredTheme());
+      themeToggleEl.addEventListener("click", () => {
+        const next = pageBodyEl.classList.contains("light-mode")
+          ? "dark"
+          : "light";
+        applyTheme(next);
         try {
-          const stored = localStorage.getItem(THEME_KEY);
-          if (stored === "light" || stored === "dark") return stored;
+          localStorage.setItem(THEME_KEY, next);
         } catch {
           // Ignore storage failures.
         }
-        return window.matchMedia("(prefers-color-scheme: light)").matches
-          ? "light"
-          : "dark";
+      });
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) return "";
+      const units = ["B", "KB", "MB", "GB"];
+      let value = bytes;
+      let unit = 0;
+      while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit += 1;
+      }
+      return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+    }
+
+    function setError(message) {
+      statusEl.textContent = message;
+      statusEl.className =
+        "mt-4 rounded-lg border border-[#5b3c53] bg-[#2a1b2a] px-3 py-2 text-sm text-[#f1b8c5]";
+    }
+
+    function renderRelease(release) {
+      assetGroupsEl.innerHTML = "";
+      quickActionsEl.classList.add("hidden");
+
+      tagEl.textContent = release.tag_name || "Unknown tag";
+      const date = release.published_at
+        ? new Date(release.published_at).toLocaleDateString()
+        : "Unknown date";
+      publishedEl.textContent = `Published ${date}`;
+      statusEl.classList.add("hidden");
+      releaseLinkEl.href = release.html_url;
+      releaseLinkEl.textContent = release.html_url || "Open release";
+      heroReleaseLinkEl.href = release.html_url || heroReleaseLinkEl.href;
+
+      if (!Array.isArray(release.assets) || release.assets.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "text-sm text-[#9eabc7]";
+        empty.textContent = "No assets found for this release.";
+        assetGroupsEl.appendChild(empty);
+        return;
       }
 
-      function applyTheme(theme) {
-        const isLight = theme === "light";
-        pageBodyEl.classList.toggle("light-mode", isLight);
-        themeToggleEl.textContent = isLight ? "Dark" : "Light";
+      const isMacAsset = (asset) => asset.name.toLowerCase().endsWith(".dmg");
+      const isWindowsAsset = (asset) => {
+        const name = asset.name.toLowerCase();
+        return (
+          name.endsWith(".exe") ||
+          name.endsWith(".msi") ||
+          name.includes("windows") ||
+          name.includes("win64") ||
+          name.includes("win32") ||
+          name.includes("pc-windows")
+        );
+      };
+      const isLinuxAsset = (asset) => {
+        const name = asset.name.toLowerCase();
+        return (
+          (name.includes("linux") && name.endsWith(".tar.gz")) ||
+          name.endsWith(".appimage") ||
+          name.endsWith(".deb") ||
+          name.endsWith(".rpm")
+        );
+      };
+      const macAssets = release.assets.filter(isMacAsset);
+      const windowsAssets = release.assets.filter(isWindowsAsset);
+      const linuxAssets = release.assets.filter(isLinuxAsset);
+
+      if (macAssets[0]?.browser_download_url) {
+        macDownloadEl.href = macAssets[0].browser_download_url;
+        macDownloadEl.classList.remove("hidden");
+      } else {
+        macDownloadEl.classList.add("hidden");
       }
 
-      function setupThemeToggle() {
-        applyTheme(getPreferredTheme());
-        themeToggleEl.addEventListener("click", () => {
-          const next = pageBodyEl.classList.contains("light-mode")
-            ? "dark"
-            : "light";
-          applyTheme(next);
-          try {
-            localStorage.setItem(THEME_KEY, next);
-          } catch {
-            // Ignore storage failures.
-          }
-        });
+      if (windowsAssets[0]?.browser_download_url) {
+        windowsDownloadEl.href = windowsAssets[0].browser_download_url;
+        windowsDownloadEl.classList.remove("hidden");
+      } else {
+        windowsDownloadEl.classList.add("hidden");
       }
 
-      function formatBytes(bytes) {
-        if (!Number.isFinite(bytes) || bytes <= 0) return "";
-        const units = ["B", "KB", "MB", "GB"];
-        let value = bytes;
-        let unit = 0;
-        while (value >= 1024 && unit < units.length - 1) {
-          value /= 1024;
-          unit += 1;
-        }
-        return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+      if (linuxAssets[0]?.browser_download_url) {
+        linuxDownloadEl.href = linuxAssets[0].browser_download_url;
+        linuxDownloadEl.classList.remove("hidden");
+      } else {
+        linuxDownloadEl.classList.add("hidden");
       }
 
-      function setError(message) {
-        statusEl.textContent = message;
-        statusEl.className =
-          "mt-4 rounded-lg border border-[#5b3c53] bg-[#2a1b2a] px-3 py-2 text-sm text-[#f1b8c5]";
+      if (macAssets.length || windowsAssets.length || linuxAssets.length) {
+        quickActionsEl.classList.remove("hidden");
       }
 
-      function renderRelease(release) {
-        assetGroupsEl.innerHTML = "";
-        quickActionsEl.classList.add("hidden");
-
-        tagEl.textContent = release.tag_name || "Unknown tag";
-        const date = release.published_at
-          ? new Date(release.published_at).toLocaleDateString()
-          : "Unknown date";
-        publishedEl.textContent = `Published ${date}`;
-        statusEl.classList.add("hidden");
-        releaseLinkEl.href = release.html_url;
-        releaseLinkEl.textContent = release.html_url || "Open release";
-        heroReleaseLinkEl.href = release.html_url || heroReleaseLinkEl.href;
-
-        if (!Array.isArray(release.assets) || release.assets.length === 0) {
-          const empty = document.createElement("p");
-          empty.className = "text-sm text-[#9eabc7]";
-          empty.textContent = "No assets found for this release.";
-          assetGroupsEl.appendChild(empty);
-          return;
-        }
-
-        const isMacAsset = (asset) => asset.name.toLowerCase().endsWith(".dmg");
-        const isWindowsAsset = (asset) => {
-          const name = asset.name.toLowerCase();
+      const platformAssets = [...macAssets, ...windowsAssets, ...linuxAssets];
+      const preferredByPlatform = () => {
+        const agent = navigator.userAgent.toLowerCase();
+        if (agent.includes("win")) return windowsAssets[0];
+        if (agent.includes("mac")) {
           return (
-            name.endsWith(".exe") ||
-            name.endsWith(".msi") ||
-            name.includes("windows") ||
-            name.includes("win64") ||
-            name.includes("win32") ||
-            name.includes("pc-windows")
+            macAssets.find((asset) => asset.name.toLowerCase().includes("arm64")) ||
+            macAssets[0]
           );
-        };
-        const isLinuxAsset = (asset) => {
-          const name = asset.name.toLowerCase();
+        }
+        if (agent.includes("linux")) {
           return (
-            (name.includes("linux") && name.endsWith(".tar.gz")) ||
-            name.endsWith(".appimage") ||
-            name.endsWith(".deb") ||
-            name.endsWith(".rpm")
+            linuxAssets.find((asset) => asset.name.toLowerCase().includes("x86_64")) ||
+            linuxAssets[0]
           );
-        };
-        const macAssets = release.assets.filter(isMacAsset);
-        const windowsAssets = release.assets.filter(isWindowsAsset);
-        const linuxAssets = release.assets.filter(isLinuxAsset);
-
-        if (macAssets[0]?.browser_download_url) {
-          macDownloadEl.href = macAssets[0].browser_download_url;
-          macDownloadEl.classList.remove("hidden");
-        } else {
-          macDownloadEl.classList.add("hidden");
         }
+        return platformAssets[0];
+      };
 
-        if (windowsAssets[0]?.browser_download_url) {
-          windowsDownloadEl.href = windowsAssets[0].browser_download_url;
-          windowsDownloadEl.classList.remove("hidden");
-        } else {
-          windowsDownloadEl.classList.add("hidden");
-        }
+      const preferred =
+        preferredByPlatform() ||
+        macAssets.find((asset) => asset.name.toLowerCase().includes("arm64")) ||
+        release.assets[0];
+      if (preferred?.browser_download_url) {
+        primaryDownloadEl.href = preferred.browser_download_url;
+      }
 
-        if (linuxAssets[0]?.browser_download_url) {
-          linuxDownloadEl.href = linuxAssets[0].browser_download_url;
-          linuxDownloadEl.classList.remove("hidden");
-        } else {
-          linuxDownloadEl.classList.add("hidden");
-        }
+      const groups = [
+        { title: "macOS", assets: macAssets },
+        { title: "Windows", assets: windowsAssets },
+        { title: "Linux", assets: linuxAssets, showInstallScript: true },
+      ].filter((group) => group.assets.length > 0);
 
-        if (macAssets.length || windowsAssets.length || linuxAssets.length) {
-          quickActionsEl.classList.remove("hidden");
-        }
+      if (groups.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "text-sm text-[#9eabc7]";
+        empty.textContent =
+          "No platform assets found for this release.";
+        assetGroupsEl.appendChild(empty);
+        return;
+      }
 
-        const platformAssets = [...macAssets, ...windowsAssets, ...linuxAssets];
-        const preferredByPlatform = () => {
-          const agent = navigator.userAgent.toLowerCase();
-          if (agent.includes("win")) return windowsAssets[0];
-          if (agent.includes("mac")) {
-            return (
-              macAssets.find((asset) => asset.name.toLowerCase().includes("arm64")) ||
-              macAssets[0]
-            );
-          }
-          if (agent.includes("linux")) {
-            return (
-              linuxAssets.find((asset) => asset.name.toLowerCase().includes("x86_64")) ||
-              linuxAssets[0]
-            );
-          }
-          return platformAssets[0];
-        };
+      for (const group of groups) {
+        const section = document.createElement("section");
+        section.className =
+          "rounded-xl border border-[#30385a] bg-[#11182d]/70 p-4";
 
-        const preferred =
-          preferredByPlatform() ||
-          macAssets.find((asset) => asset.name.toLowerCase().includes("arm64")) ||
-          release.assets[0];
-        if (preferred?.browser_download_url) {
-          primaryDownloadEl.href = preferred.browser_download_url;
-        }
+        const heading = document.createElement("h3");
+        heading.className = "text-sm font-semibold text-white";
+        heading.textContent = `${group.title} (${group.assets.length})`;
+        section.appendChild(heading);
 
-        const groups = [
-          { title: "macOS", assets: macAssets },
-          { title: "Windows", assets: windowsAssets },
-          { title: "Linux", assets: linuxAssets, showInstallScript: true },
-        ].filter((group) => group.assets.length > 0);
-
-        if (groups.length === 0) {
-          const empty = document.createElement("p");
-          empty.className = "text-sm text-[#9eabc7]";
-          empty.textContent =
-            "No platform assets found for this release.";
-          assetGroupsEl.appendChild(empty);
-          return;
-        }
-
-        for (const group of groups) {
-          const section = document.createElement("section");
-          section.className =
-            "rounded-xl border border-[#30385a] bg-[#11182d]/70 p-4";
-
-          const heading = document.createElement("h3");
-          heading.className = "text-sm font-semibold text-white";
-          heading.textContent = `${group.title} (${group.assets.length})`;
-          section.appendChild(heading);
-
-          // Add install script for Linux
-          if (group.showInstallScript) {
-            const scriptBox = document.createElement("div");
-            scriptBox.className = "mt-3 rounded-lg border border-[#30385a] bg-[#0a0f1d] p-3";
-            scriptBox.innerHTML = `
+        // Add install script for Linux
+        if (group.showInstallScript) {
+          const scriptBox = document.createElement("div");
+          scriptBox.className = "mt-3 rounded-lg border border-[#30385a] bg-[#0a0f1d] p-3";
+          scriptBox.innerHTML = `
               <p class="text-xs text-[#9eabc7] mb-2">Or install with one command:</p>
               <code class="block text-xs text-[#a7e9a3] font-mono break-all select-all">curl -fsSL https://raw.githubusercontent.com/lassejlv/termy/main/scripts/install-linux.sh | bash</code>
             `;
-            section.appendChild(scriptBox);
-          }
+          section.appendChild(scriptBox);
+        }
 
-          const list = document.createElement("ul");
-          list.className = "mt-3 grid gap-2";
+        const list = document.createElement("ul");
+        list.className = "mt-3 grid gap-2";
 
-          for (const asset of group.assets) {
-            const li = document.createElement("li");
-            const link = document.createElement("a");
-            link.href = asset.browser_download_url;
-            link.target = "_blank";
-            link.rel = "noreferrer";
-            link.className =
-              "block rounded-lg border border-[#30385a] px-3 py-2 text-sm transition hover:border-[#69b4f2]";
-            link.innerHTML = `
+        for (const asset of group.assets) {
+          const li = document.createElement("li");
+          const link = document.createElement("a");
+          link.href = asset.browser_download_url;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+          link.className =
+            "block rounded-lg border border-[#30385a] px-3 py-2 text-sm transition hover:border-[#69b4f2]";
+          link.innerHTML = `
               <div class="font-medium text-[#dbe4f6]">${asset.name}</div>
               <div class="mt-1 text-xs text-[#9eabc7]">${formatBytes(asset.size)}</div>
             `;
-            li.appendChild(link);
-            list.appendChild(li);
-          }
-
-          section.appendChild(list);
-          assetGroupsEl.appendChild(section);
+          li.appendChild(link);
+          list.appendChild(li);
         }
+
+        section.appendChild(list);
+        assetGroupsEl.appendChild(section);
       }
+    }
 
-      async function loadLatestRelease() {
-        try {
-          const response = await fetch(api, {
-            headers: {
-              Accept: "application/vnd.github+json",
-            },
-          });
+    async function loadLatestRelease() {
+      try {
+        const response = await fetch(api, {
+          headers: {
+            Accept: "application/vnd.github+json",
+          },
+        });
 
-          if (!response.ok) {
-            throw new Error(`GitHub API returned ${response.status}`);
-          }
-
-          const release = await response.json();
-          renderRelease(release);
-        } catch (error) {
-          setError("Could not fetch latest release. Try again in a moment.");
-          console.error(error);
+        if (!response.ok) {
+          throw new Error(`GitHub API returned ${response.status}`);
         }
-      }
 
-      setupThemeToggle();
-      loadLatestRelease();
-    </script>
-  </body>
+        const release = await response.json();
+        renderRelease(release);
+      } catch (error) {
+        setError("Could not fetch latest release. Try again in a moment.");
+        console.error(error);
+      }
+    }
+
+    setupThemeToggle();
+    loadLatestRelease();
+  </script>
+</body>
+
 </html>
