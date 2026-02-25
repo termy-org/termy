@@ -16,6 +16,14 @@ enum TerminalSelectionCharClass {
     Other,
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InstallShell {
+    Zsh,
+    Bash,
+    Fish,
+}
+
 impl TerminalView {
     fn command_palette_mode_for_action(action: CommandAction) -> Option<CommandPaletteMode> {
         match action {
@@ -1088,13 +1096,28 @@ impl TerminalView {
                 let path_str = path.display().to_string();
                 #[cfg(any(target_os = "macos", target_os = "linux"))]
                 {
-                    if path_str.contains(".local/bin") {
-                        termy_toast::success(format!(
-                            "CLI installed to {}. Add ~/.local/bin to PATH if needed.",
-                            path_str
-                        ));
-                    } else {
-                        termy_toast::success(format!("CLI installed to {}", path_str));
+                    match self.configure_install_cli_shell_path(&path, cx) {
+                        Ok((profile_path, profile_updated)) => {
+                            if profile_updated {
+                                termy_toast::success(format!(
+                                    "CLI installed to {}. Updated {} and activated PATH in this shell.",
+                                    path_str,
+                                    profile_path.display()
+                                ));
+                            } else {
+                                termy_toast::success(format!(
+                                    "CLI installed to {}. {} already configures Termy PATH; activated PATH in this shell.",
+                                    path_str,
+                                    profile_path.display()
+                                ));
+                            }
+                        }
+                        Err(error) => {
+                            termy_toast::error(format!(
+                                "CLI installed to {} but automated PATH setup failed: {}",
+                                path_str, error
+                            ));
+                        }
                     }
                 }
                 #[cfg(target_os = "windows")]
@@ -1124,12 +1147,223 @@ impl TerminalView {
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn configure_install_cli_shell_path(
+        &mut self,
+        install_path: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) -> Result<(std::path::PathBuf, bool), String> {
+        let install_dir = install_path.parent().ok_or_else(|| {
+            format!(
+                "Installed CLI path {} does not have a parent directory",
+                install_path.display()
+            )
+        })?;
+        let install_dir = install_dir.to_string_lossy().into_owned();
+        let shell = self.install_cli_shell()?;
+        let profile_path = Self::install_cli_profile_path(shell)?;
+        let block = Self::install_cli_profile_block(shell, &install_dir);
+        let profile_updated = Self::ensure_install_cli_profile_block(&profile_path, &block)?;
+        let session_command = Self::install_cli_session_command(shell, &install_dir);
+        self.write_terminal_input(format!("{session_command}\n").as_bytes(), cx);
+        Ok((profile_path, profile_updated))
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn install_cli_shell(&self) -> Result<InstallShell, String> {
+        let env_shell = std::env::var("SHELL").ok();
+        Self::resolve_install_cli_shell(self.terminal_runtime.shell.as_deref(), env_shell.as_deref())
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn resolve_install_cli_shell(
+        configured_shell: Option<&str>,
+        env_shell: Option<&str>,
+    ) -> Result<InstallShell, String> {
+        let candidate = configured_shell
+            .map(str::trim)
+            .filter(|shell| !shell.is_empty())
+            .or_else(|| env_shell.map(str::trim).filter(|shell| !shell.is_empty()))
+            .unwrap_or(Self::default_install_cli_shell_path());
+
+        Self::parse_install_cli_shell(candidate).ok_or_else(|| {
+            format!(
+                "Unsupported shell '{}' for automated PATH setup. Supported shells: zsh, bash, fish.",
+                candidate
+            )
+        })
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn default_install_cli_shell_path() -> &'static str {
+        #[cfg(target_os = "macos")]
+        {
+            "/bin/zsh"
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            "/bin/bash"
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn parse_install_cli_shell(shell: &str) -> Option<InstallShell> {
+        let shell = shell.trim().trim_matches('"').trim_matches('\'');
+        if shell.is_empty() {
+            return None;
+        }
+
+        let shell_program = shell.split_whitespace().next()?;
+        let shell_name = std::path::Path::new(shell_program)
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or(shell_program);
+
+        match shell_name {
+            "zsh" => Some(InstallShell::Zsh),
+            "bash" => Some(InstallShell::Bash),
+            "fish" => Some(InstallShell::Fish),
+            _ => None,
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn install_cli_profile_path(shell: InstallShell) -> Result<std::path::PathBuf, String> {
+        let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
+        Ok(home.join(Self::install_cli_profile_relative_path(shell)))
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn install_cli_profile_relative_path(shell: InstallShell) -> &'static str {
+        match shell {
+            InstallShell::Zsh => ".zshrc",
+            InstallShell::Bash => {
+                if cfg!(target_os = "macos") {
+                    ".bash_profile"
+                } else {
+                    ".bashrc"
+                }
+            }
+            InstallShell::Fish => ".config/fish/config.fish",
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn install_cli_profile_block(shell: InstallShell, install_dir: &str) -> String {
+        const START: &str = "# >>> termy cli path >>>";
+        const END: &str = "# <<< termy cli path <<<";
+
+        match shell {
+            InstallShell::Zsh | InstallShell::Bash => format!(
+                "{START}\n# Added by Termy Install CLI\nTERMY_CLI_PATH={}\ncase \":$PATH:\" in\n  *\":$TERMY_CLI_PATH:\"*) ;;\n  *) export PATH=\"$TERMY_CLI_PATH:$PATH\" ;;\nesac\n{END}",
+                Self::single_quote_shell_value(install_dir)
+            ),
+            InstallShell::Fish => format!(
+                "{START}\n# Added by Termy Install CLI\nset -l termy_cli_path {}\nif not contains -- $termy_cli_path $PATH\n    set -gx PATH $termy_cli_path $PATH\nend\n{END}",
+                Self::double_quote_fish_value(install_dir)
+            ),
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn install_cli_session_command(shell: InstallShell, install_dir: &str) -> String {
+        match shell {
+            InstallShell::Zsh | InstallShell::Bash => format!(
+                "TERMY_CLI_PATH={}; case \":$PATH:\" in *\":$TERMY_CLI_PATH:\"*) ;; *) export PATH=\"$TERMY_CLI_PATH:$PATH\" ;; esac",
+                Self::single_quote_shell_value(install_dir)
+            ),
+            InstallShell::Fish => format!(
+                "set -l termy_cli_path {}; if not contains -- $termy_cli_path $PATH; set -gx PATH $termy_cli_path $PATH; end",
+                Self::double_quote_fish_value(install_dir)
+            ),
+        }
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn ensure_install_cli_profile_block(
+        profile_path: &std::path::Path,
+        block: &str,
+    ) -> Result<bool, String> {
+        const START: &str = "# >>> termy cli path >>>";
+
+        if let Some(parent) = profile_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                format!("Failed to create shell config directory {}: {}", parent.display(), e)
+            })?;
+        }
+
+        let existing = match std::fs::read_to_string(profile_path) {
+            Ok(content) => content,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(error) => {
+                return Err(format!(
+                    "Failed to read shell config {}: {}",
+                    profile_path.display(),
+                    error
+                ));
+            }
+        };
+
+        let Some(updated) = Self::append_install_cli_profile_block_if_missing(&existing, START, block)
+        else {
+            return Ok(false);
+        };
+
+        std::fs::write(profile_path, updated).map_err(|error| {
+            format!(
+                "Failed to write shell config {}: {}",
+                profile_path.display(),
+                error
+            )
+        })?;
+        Ok(true)
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn append_install_cli_profile_block_if_missing(
+        existing: &str,
+        marker: &str,
+        block: &str,
+    ) -> Option<String> {
+        if existing.contains(marker) {
+            return None;
+        }
+
+        let mut updated = existing.to_string();
+        if !updated.is_empty() && !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        updated.push_str(block);
+        if !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        Some(updated)
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn single_quote_shell_value(value: &str) -> String {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn double_quote_fish_value(value: &str) -> String {
+        format!(
+            "\"{}\"",
+            value
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('$', "\\$")
+        )
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn install_cli_binary() -> Result<std::path::PathBuf, String> {
         use std::os::unix::fs::symlink;
         use std::path::PathBuf;
 
         // Get the CLI binary path from the app bundle or build directory
         let cli_source = Self::find_cli_binary()?;
+        let cli_source = Self::absolute_install_cli_source_path(&cli_source)?;
 
         // Try ~/.local/bin first (user-writable), fall back to /usr/local/bin
         let home_bin = dirs::home_dir().map(|h| h.join(".local").join("bin").join("termy"));
@@ -1182,6 +1416,17 @@ impl TerminalView {
             .map_err(|e| format!("Failed to create symlink at {}: {}", target.display(), e))?;
 
         Ok(target)
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn absolute_install_cli_source_path(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+        if path.is_absolute() {
+            return Ok(path.to_path_buf());
+        }
+
+        let cwd = std::env::current_dir()
+            .map_err(|e| format!("Failed to resolve current directory: {}", e))?;
+        Ok(cwd.join(path))
     }
 
     #[cfg(target_os = "windows")]
@@ -1846,5 +2091,142 @@ mod tests {
             TerminalView::command_palette_mode_for_action(CommandAction::OpenConfig),
             None
         );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_parse_shell_detects_supported_shells() {
+        assert_eq!(
+            TerminalView::parse_install_cli_shell("/bin/zsh"),
+            Some(InstallShell::Zsh)
+        );
+        assert_eq!(
+            TerminalView::parse_install_cli_shell("\"/bin/bash\""),
+            Some(InstallShell::Bash)
+        );
+        assert_eq!(
+            TerminalView::parse_install_cli_shell("/opt/homebrew/bin/fish"),
+            Some(InstallShell::Fish)
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_resolve_shell_uses_source_order() {
+        assert_eq!(
+            TerminalView::resolve_install_cli_shell(Some("/bin/fish"), Some("/bin/zsh")).unwrap(),
+            InstallShell::Fish
+        );
+        assert_eq!(
+            TerminalView::resolve_install_cli_shell(Some("   "), Some("/bin/zsh")).unwrap(),
+            InstallShell::Zsh
+        );
+        assert_eq!(
+            TerminalView::resolve_install_cli_shell(None, Some("/bin/bash")).unwrap(),
+            InstallShell::Bash
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_resolve_shell_errors_for_unsupported_configured_shell() {
+        let error =
+            TerminalView::resolve_install_cli_shell(Some("/bin/tcsh"), Some("/bin/zsh"))
+                .unwrap_err();
+        assert!(error.contains("Unsupported shell '/bin/tcsh'"));
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_resolve_shell_defaults_when_sources_missing() {
+        let shell = TerminalView::resolve_install_cli_shell(None, None).unwrap();
+        #[cfg(target_os = "macos")]
+        assert_eq!(shell, InstallShell::Zsh);
+        #[cfg(target_os = "linux")]
+        assert_eq!(shell, InstallShell::Bash);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_profile_relative_paths_match_shell() {
+        assert_eq!(
+            TerminalView::install_cli_profile_relative_path(InstallShell::Zsh),
+            ".zshrc"
+        );
+        assert_eq!(
+            TerminalView::install_cli_profile_relative_path(InstallShell::Fish),
+            ".config/fish/config.fish"
+        );
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            TerminalView::install_cli_profile_relative_path(InstallShell::Bash),
+            ".bash_profile"
+        );
+        #[cfg(target_os = "linux")]
+        assert_eq!(
+            TerminalView::install_cli_profile_relative_path(InstallShell::Bash),
+            ".bashrc"
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_profile_append_is_idempotent() {
+        let marker = "# >>> termy cli path >>>";
+        let block = TerminalView::install_cli_profile_block(InstallShell::Zsh, "/tmp/bin");
+        let once =
+            TerminalView::append_install_cli_profile_block_if_missing("", marker, &block).unwrap();
+        assert!(once.contains(marker));
+        assert!(
+            TerminalView::append_install_cli_profile_block_if_missing(&once, marker, &block)
+                .is_none()
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_profile_blocks_include_guarded_path_logic() {
+        let sh_block = TerminalView::install_cli_profile_block(InstallShell::Bash, "/tmp/bin");
+        assert!(sh_block.contains("case \":$PATH:\" in"));
+        assert!(sh_block.contains("export PATH=\"$TERMY_CLI_PATH:$PATH\""));
+
+        let fish_block = TerminalView::install_cli_profile_block(InstallShell::Fish, "/tmp/bin");
+        assert!(fish_block.contains("if not contains -- $termy_cli_path $PATH"));
+        assert!(fish_block.contains("set -gx PATH $termy_cli_path $PATH"));
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_session_commands_match_shell_syntax() {
+        let sh_command = TerminalView::install_cli_session_command(InstallShell::Zsh, "/tmp/my bin");
+        assert!(sh_command.contains("TERMY_CLI_PATH='/tmp/my bin'"));
+        assert!(sh_command.contains("case \":$PATH:\" in"));
+
+        let fish_command =
+            TerminalView::install_cli_session_command(InstallShell::Fish, "/tmp/my bin");
+        assert!(fish_command.contains("set -l termy_cli_path \"/tmp/my bin\""));
+        assert!(fish_command.contains("if not contains -- $termy_cli_path $PATH"));
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_shell_value_escaping_handles_quotes() {
+        assert_eq!(
+            TerminalView::single_quote_shell_value("a'b"),
+            "'a'\\''b'"
+        );
+        assert_eq!(
+            TerminalView::double_quote_fish_value("a\"b$c"),
+            "\"a\\\"b\\$c\""
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn install_cli_source_path_is_absolutized_for_relative_paths() {
+        let rel = std::path::Path::new("target/debug/termy-cli");
+        let abs = TerminalView::absolute_install_cli_source_path(rel).unwrap();
+        assert!(abs.is_absolute());
+        assert!(abs.ends_with(rel));
     }
 }
