@@ -1015,6 +1015,12 @@ impl TerminalView {
             CommandAction::MoveTabRight => {
                 self.move_active_tab_right(cx);
             }
+            CommandAction::SwitchTabLeft => {
+                self.switch_active_tab_left(cx);
+            }
+            CommandAction::SwitchTabRight => {
+                self.switch_active_tab_right(cx);
+            }
             CommandAction::MinimizeWindow => {}
             CommandAction::Copy => {
                 if let Some(selected) = self.selected_text() {
@@ -1622,6 +1628,24 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::MoveTabRight, true, window, cx);
+    }
+
+    pub(super) fn handle_switch_tab_left_action(
+        &mut self,
+        _: &commands::SwitchTabLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchTabLeft, true, window, cx);
+    }
+
+    pub(super) fn handle_switch_tab_right_action(
+        &mut self,
+        _: &commands::SwitchTabRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchTabRight, true, window, cx);
     }
 
     pub(super) fn handle_minimize_window_action(

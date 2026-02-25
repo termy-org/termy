@@ -888,6 +888,8 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_close_tab_action))
                     .on_action(cx.listener(Self::handle_move_tab_left_action))
                     .on_action(cx.listener(Self::handle_move_tab_right_action))
+                    .on_action(cx.listener(Self::handle_switch_tab_left_action))
+                    .on_action(cx.listener(Self::handle_switch_tab_right_action))
                     .on_action(cx.listener(Self::handle_minimize_window_action))
                     .on_action(cx.listener(Self::handle_copy_action))
                     .on_action(cx.listener(Self::handle_paste_action))

@@ -525,6 +525,8 @@ impl TerminalView {
             | CommandAction::RenameTab
             | CommandAction::MoveTabLeft
             | CommandAction::MoveTabRight
+            | CommandAction::SwitchTabLeft
+            | CommandAction::SwitchTabRight
             | CommandAction::CheckForUpdates
             | CommandAction::ToggleCommandPalette
             | CommandAction::Copy

@@ -1,7 +1,7 @@
 use super::*;
 
 impl TerminalView {
-    fn adjacent_tab_reorder_target(
+    fn adjacent_tab_index(
         active_tab: usize,
         tab_count: usize,
         to_right: bool,
@@ -61,8 +61,7 @@ impl TerminalView {
     }
 
     pub(crate) fn move_active_tab_left(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(target_index) =
-            Self::adjacent_tab_reorder_target(self.active_tab, self.tabs.len(), false)
+        let Some(target_index) = Self::adjacent_tab_index(self.active_tab, self.tabs.len(), false)
         else {
             return false;
         };
@@ -71,13 +70,32 @@ impl TerminalView {
     }
 
     pub(crate) fn move_active_tab_right(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(target_index) =
-            Self::adjacent_tab_reorder_target(self.active_tab, self.tabs.len(), true)
+        let Some(target_index) = Self::adjacent_tab_index(self.active_tab, self.tabs.len(), true)
         else {
             return false;
         };
 
         self.reorder_tab(self.active_tab, target_index, cx)
+    }
+
+    pub(crate) fn switch_active_tab_left(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(target_index) = Self::adjacent_tab_index(self.active_tab, self.tabs.len(), false)
+        else {
+            return false;
+        };
+
+        self.switch_tab(target_index, cx);
+        true
+    }
+
+    pub(crate) fn switch_active_tab_right(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(target_index) = Self::adjacent_tab_index(self.active_tab, self.tabs.len(), true)
+        else {
+            return false;
+        };
+
+        self.switch_tab(target_index, cx);
+        true
     }
 
     pub(crate) fn add_tab(&mut self, cx: &mut Context<Self>) {
@@ -243,22 +261,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn adjacent_tab_reorder_target_moves_middle_tab_left_and_right() {
-        assert_eq!(TerminalView::adjacent_tab_reorder_target(2, 5, false), Some(1));
-        assert_eq!(TerminalView::adjacent_tab_reorder_target(2, 5, true), Some(3));
+    fn adjacent_tab_index_moves_middle_tab_left_and_right() {
+        assert_eq!(TerminalView::adjacent_tab_index(2, 5, false), Some(1));
+        assert_eq!(TerminalView::adjacent_tab_index(2, 5, true), Some(3));
     }
 
     #[test]
-    fn adjacent_tab_reorder_target_is_none_for_edges() {
-        assert_eq!(TerminalView::adjacent_tab_reorder_target(0, 5, false), None);
-        assert_eq!(TerminalView::adjacent_tab_reorder_target(4, 5, true), None);
+    fn adjacent_tab_index_is_none_for_edges() {
+        assert_eq!(TerminalView::adjacent_tab_index(0, 5, false), None);
+        assert_eq!(TerminalView::adjacent_tab_index(4, 5, true), None);
     }
 
     #[test]
-    fn adjacent_tab_reorder_target_is_none_for_invalid_or_singleton_state() {
-        assert_eq!(TerminalView::adjacent_tab_reorder_target(0, 0, false), None);
-        assert_eq!(TerminalView::adjacent_tab_reorder_target(0, 1, true), None);
-        assert_eq!(TerminalView::adjacent_tab_reorder_target(5, 3, true), None);
+    fn adjacent_tab_index_is_none_for_invalid_or_singleton_state() {
+        assert_eq!(TerminalView::adjacent_tab_index(0, 0, false), None);
+        assert_eq!(TerminalView::adjacent_tab_index(0, 1, true), None);
+        assert_eq!(TerminalView::adjacent_tab_index(5, 3, true), None);
     }
 
     #[test]
