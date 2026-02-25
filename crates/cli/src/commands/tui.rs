@@ -457,7 +457,8 @@ fn get_list_keybinds_content() -> Vec<String> {
     if let Some(path) = config_path() {
         if let Ok(contents) = std::fs::read_to_string(&path) {
             let config = AppConfig::from_contents(&contents);
-            let directives = crate::commands::list_keybinds::parse_keybind_lines(&config.keybind_lines);
+            let directives =
+                crate::commands::list_keybinds::parse_keybind_lines(&config.keybind_lines);
             for directive in directives {
                 match directive {
                     KeybindDirective::Clear => keybinds.clear(),

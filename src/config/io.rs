@@ -98,7 +98,11 @@ pub fn open_config_file() -> Result<(), ConfigIoError> {
     Ok(())
 }
 
-fn run_open_command(command: &'static str, args: &[&str], path: &Path) -> Result<(), ConfigIoError> {
+fn run_open_command(
+    command: &'static str,
+    args: &[&str],
+    path: &Path,
+) -> Result<(), ConfigIoError> {
     let path = path.to_path_buf();
     let status = Command::new(command)
         .args(args)

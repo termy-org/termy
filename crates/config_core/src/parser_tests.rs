@@ -27,12 +27,30 @@ fn from_contents_with_report_captures_diagnostics() {
 
     assert_eq!(report.config.font_size, 12.0);
     assert_eq!(report.diagnostics.len(), 6);
-    assert_eq!(report.diagnostics[0].kind, ConfigDiagnosticKind::InvalidSyntax);
-    assert_eq!(report.diagnostics[1].kind, ConfigDiagnosticKind::UnknownRootKey);
-    assert_eq!(report.diagnostics[2].kind, ConfigDiagnosticKind::UnknownColorKey);
-    assert_eq!(report.diagnostics[3].kind, ConfigDiagnosticKind::InvalidValue);
-    assert_eq!(report.diagnostics[4].kind, ConfigDiagnosticKind::InvalidValue);
-    assert_eq!(report.diagnostics[5].kind, ConfigDiagnosticKind::DuplicateRootKey);
+    assert_eq!(
+        report.diagnostics[0].kind,
+        ConfigDiagnosticKind::InvalidSyntax
+    );
+    assert_eq!(
+        report.diagnostics[1].kind,
+        ConfigDiagnosticKind::UnknownRootKey
+    );
+    assert_eq!(
+        report.diagnostics[2].kind,
+        ConfigDiagnosticKind::UnknownColorKey
+    );
+    assert_eq!(
+        report.diagnostics[3].kind,
+        ConfigDiagnosticKind::InvalidValue
+    );
+    assert_eq!(
+        report.diagnostics[4].kind,
+        ConfigDiagnosticKind::InvalidValue
+    );
+    assert_eq!(
+        report.diagnostics[5].kind,
+        ConfigDiagnosticKind::DuplicateRootKey
+    );
 }
 
 #[test]
@@ -41,7 +59,10 @@ fn duplicate_root_key_diagnostics_use_canonical_key_groups() {
         "working_dir_fallback = home\n\
          default_working_dir = process\n",
     );
-    assert_eq!(report.config.working_dir_fallback, WorkingDirFallback::Process);
+    assert_eq!(
+        report.config.working_dir_fallback,
+        WorkingDirFallback::Process
+    );
     assert_eq!(report.diagnostics.len(), 1);
     assert_eq!(
         report.diagnostics[0].kind,
@@ -127,7 +148,10 @@ fn enum_keys_parse_table_driven() {
         let config = parse(&format!("cursor_style = {}\n", input));
         assert_eq!(config.cursor_style, expected);
     }
-    assert_eq!(parse("cursor_style = block\n").cursor_style, CursorStyle::Block);
+    assert_eq!(
+        parse("cursor_style = block\n").cursor_style,
+        CursorStyle::Block
+    );
 
     let scrollbar_visibility_cases = [
         ("off", TerminalScrollbarVisibility::Off),
@@ -301,10 +325,7 @@ fn numeric_keys_parse_table_driven() {
         assert_eq!(parsed, default_value);
     }
 
-    assert_eq!(
-        parse("background_opacity = -0.5\n").background_opacity,
-        0.0
-    );
+    assert_eq!(parse("background_opacity = -0.5\n").background_opacity, 0.0);
     assert_eq!(parse("background_opacity = 4\n").background_opacity, 1.0);
     assert_eq!(
         parse("transparent_background_opacity = 0.2\n").background_opacity,
@@ -320,7 +341,10 @@ fn numeric_keys_parse_table_driven() {
         1_000.0
     );
 
-    assert_eq!(parse("scrollback_history = 5000\n").scrollback_history, 5000);
+    assert_eq!(
+        parse("scrollback_history = 5000\n").scrollback_history,
+        5000
+    );
     assert_eq!(parse("scrollback = 3000\n").scrollback_history, 3000);
     assert_eq!(
         parse("scrollback_history = 200000\n").scrollback_history,
@@ -355,7 +379,10 @@ fn keybind_lines_are_collected_in_order_with_line_numbers() {
 
     assert_eq!(config.keybind_lines.len(), 4);
     assert_eq!(config.keybind_lines[0].line_number, 2);
-    assert_eq!(config.keybind_lines[0].value, "cmd-p=toggle_command_palette");
+    assert_eq!(
+        config.keybind_lines[0].value,
+        "cmd-p=toggle_command_palette"
+    );
     assert_eq!(config.keybind_lines[1].line_number, 3);
     assert_eq!(config.keybind_lines[1].value, "cmd-c=copy");
     assert_eq!(config.keybind_lines[2].line_number, 4);

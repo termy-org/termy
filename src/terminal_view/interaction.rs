@@ -406,9 +406,7 @@ impl TerminalView {
         }
 
         let mut start_col = cell.col;
-        while start_col > 0
-            && Self::terminal_selection_char_class(line[start_col - 1]) == class
-        {
+        while start_col > 0 && Self::terminal_selection_char_class(line[start_col - 1]) == class {
             start_col -= 1;
         }
 
@@ -944,7 +942,13 @@ impl TerminalView {
                 self.request_quit(QuitRequestTarget::Application, window, cx);
             }
             _ if shortcuts_suspended => {}
-            CommandAction::OpenConfig => config::open_config_file(),
+            CommandAction::OpenConfig => {
+                if let Err(error) = config::open_config_file() {
+                    log::error!("Failed to open config file from command action: {}", error);
+                    termy_toast::error(error.to_string());
+                    cx.notify();
+                }
+            }
             CommandAction::ImportColors => self.import_colors_action(cx),
             CommandAction::AppInfo => {
                 let config_path = self

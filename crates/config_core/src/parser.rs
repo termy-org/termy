@@ -8,8 +8,7 @@ use crate::constants::{
 use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 use crate::types::{
     AppConfig, CursorStyle, KeybindConfigLine, TabCloseVisibility, TabTitleMode, TabTitleSource,
-    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId,
-    WorkingDirFallback,
+    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
