@@ -1,9 +1,9 @@
 use super::super::*;
-use super::*;
 use super::style::{
     COMMAND_PALETTE_INPUT_RADIUS, COMMAND_PALETTE_PANEL_RADIUS, COMMAND_PALETTE_ROW_RADIUS,
     COMMAND_PALETTE_SHORTCUT_RADIUS, CommandPaletteStyle,
 };
+use super::*;
 use crate::ui::scrollbar::{self, ScrollbarPaintStyle, ScrollbarRange};
 use gpui::uniform_list;
 use std::ops::Range;
@@ -37,27 +37,24 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
-        let items = self.filtered_command_palette_items();
-        let selected = if items.is_empty() {
-            0
-        } else {
-            self.command_palette.selected.min(items.len() - 1)
-        };
+        let selected = self.command_palette.selected_filtered_index().unwrap_or(0);
         let style = CommandPaletteStyle::resolve(self);
         let transparent = self.overlay_style().transparent_background();
 
         let mut rows = Vec::with_capacity(range.len());
         for index in range {
-            let Some(item) = items.get(index).cloned() else {
+            let Some(item) = self.command_palette.filtered_item(index) else {
                 continue;
             };
 
             let is_selected = index == selected;
-            let shortcut = match item.kind {
-                CommandPaletteItemKind::Command(action) => self.command_palette_shortcut(action, window),
+            let shortcut = match &item.kind {
+                CommandPaletteItemKind::Command(action) => {
+                    self.command_palette_shortcut(*action, window)
+                }
                 CommandPaletteItemKind::Theme(_) => None,
             };
-            let item_kind = item.kind.clone();
+            let title = item.title.clone();
 
             rows.push(
                 div()
@@ -75,16 +72,14 @@ impl TerminalView {
                     })
                     .cursor_pointer()
                     .on_mouse_move(cx.listener(move |this, _event, _window, cx| {
-                        if this.command_palette.selected != index {
-                            this.command_palette.selected = index;
+                        if this.command_palette.set_selected_filtered_index(index) {
                             cx.notify();
                         }
                     }))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _event, window, cx| {
-                            this.command_palette.selected = index;
-                            this.execute_command_palette_item(item_kind.clone(), window, cx);
+                            this.execute_command_palette_filtered_index(index, window, cx);
                             cx.stop_propagation();
                         }),
                     )
@@ -97,7 +92,7 @@ impl TerminalView {
                             .items_center()
                             .justify_between()
                             .gap(px(8.0))
-                            .child(div().flex_1().truncate().child(item.title.clone()))
+                            .child(div().flex_1().truncate().child(title))
                             .children(shortcut.map(|label| {
                                 div()
                                     .flex_none()
@@ -125,13 +120,13 @@ impl TerminalView {
         &mut self,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let items = self.filtered_command_palette_items();
+        let item_count = self.command_palette.filtered_len();
         let list_height = COMMAND_PALETTE_MAX_ITEMS as f32 * COMMAND_PALETTE_ROW_HEIGHT;
-        let mode_title = match self.command_palette.mode {
+        let mode_title = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Commands".to_string(),
             CommandPaletteMode::Themes => format!("Theme: {}", self.theme_id),
         };
-        let footer_hint = match self.command_palette.mode {
+        let footer_hint = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Enter: Run  Esc: Close  Up/Down: Navigate",
             CommandPaletteMode::Themes => "Enter: Apply Theme  Esc: Back  Up/Down: Navigate",
         };
@@ -141,7 +136,7 @@ impl TerminalView {
             ..Font::default()
         };
 
-        let list = if items.is_empty() {
+        let list = if item_count == 0 {
             div()
                 .w_full()
                 .child(
@@ -156,12 +151,12 @@ impl TerminalView {
         } else {
             let list = uniform_list(
                 "command-palette-list",
-                items.len(),
+                item_count,
                 cx.processor(Self::render_command_palette_rows),
             )
             .flex_1()
             .h(px(list_height))
-            .track_scroll(&self.command_palette.scroll_handle)
+            .track_scroll(self.command_palette.scroll_handle())
             .into_any_element();
             let mut list_container = div()
                 .w_full()
@@ -170,7 +165,7 @@ impl TerminalView {
                 .items_start()
                 .child(list);
 
-            if let Some(metrics) = self.command_palette_scrollbar_metrics(list_height, items.len()) {
+            if let Some(metrics) = self.command_palette_scrollbar_metrics(list_height, item_count) {
                 let paint_style = ScrollbarPaintStyle {
                     width: COMMAND_PALETTE_SCROLLBAR_WIDTH,
                     track_radius: 0.0,

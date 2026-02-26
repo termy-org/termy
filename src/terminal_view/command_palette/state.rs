@@ -9,20 +9,20 @@ pub(in super::super) enum CommandPaletteMode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(in super::super) enum CommandPaletteItemKind {
+pub(super) enum CommandPaletteItemKind {
     Command(CommandAction),
     Theme(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(in super::super) struct CommandPaletteItem {
-    pub(in super::super) title: String,
-    pub(in super::super) keywords: String,
-    pub(in super::super) kind: CommandPaletteItemKind,
+pub(super) struct CommandPaletteItem {
+    pub(super) title: String,
+    pub(super) keywords: String,
+    pub(super) kind: CommandPaletteItemKind,
 }
 
 impl CommandPaletteItem {
-    pub(in super::super) fn command(title: &str, keywords: &str, action: CommandAction) -> Self {
+    pub(super) fn command(title: &str, keywords: &str, action: CommandAction) -> Self {
         Self {
             title: title.to_string(),
             keywords: keywords.to_string(),
@@ -30,7 +30,7 @@ impl CommandPaletteItem {
         }
     }
 
-    pub(in super::super) fn theme(theme_id: String, is_active: bool) -> Self {
+    pub(super) fn theme(theme_id: String, is_active: bool) -> Self {
         let title = if is_active {
             format!("\u{2713} {}", theme_id)
         } else {
@@ -48,17 +48,18 @@ impl CommandPaletteItem {
 
 #[derive(Clone, Debug)]
 pub(in super::super) struct CommandPaletteState {
-    pub(in super::super) open: bool,
-    pub(in super::super) mode: CommandPaletteMode,
-    pub(in super::super) input: InlineInputState,
-    pub(in super::super) filtered_items: Vec<CommandPaletteItem>,
-    pub(in super::super) selected: usize,
-    pub(in super::super) scroll_handle: UniformListScrollHandle,
-    pub(in super::super) scroll_target_y: Option<f32>,
-    pub(in super::super) scroll_max_y: f32,
-    pub(in super::super) scroll_animating: bool,
-    pub(in super::super) scroll_last_tick: Option<Instant>,
-    pub(in super::super) show_keybinds: bool,
+    open: bool,
+    mode: CommandPaletteMode,
+    input: InlineInputState,
+    items: Vec<CommandPaletteItem>,
+    filtered_indices: Vec<usize>,
+    selected_filtered_index: usize,
+    scroll_handle: UniformListScrollHandle,
+    scroll_target_y: Option<f32>,
+    scroll_max_y: f32,
+    scroll_animating: bool,
+    scroll_last_tick: Option<Instant>,
+    show_keybinds: bool,
 }
 
 impl CommandPaletteState {
@@ -67,8 +68,9 @@ impl CommandPaletteState {
             open: false,
             mode: CommandPaletteMode::Commands,
             input: InlineInputState::new(String::new()),
-            filtered_items: Vec::new(),
-            selected: 0,
+            items: Vec::new(),
+            filtered_indices: Vec::new(),
+            selected_filtered_index: 0,
             scroll_handle: UniformListScrollHandle::new(),
             scroll_target_y: None,
             scroll_max_y: 0.0,
@@ -78,35 +80,189 @@ impl CommandPaletteState {
         }
     }
 
-    pub(in super::super) fn base_scroll_handle(&self) -> gpui::ScrollHandle {
+    pub(super) fn is_open(&self) -> bool {
+        self.open
+    }
+
+    pub(super) fn mode(&self) -> CommandPaletteMode {
+        self.mode
+    }
+
+    pub(super) fn open(&mut self, mode: CommandPaletteMode) {
+        self.open = true;
+        self.set_mode(mode);
+    }
+
+    pub(super) fn close(&mut self) {
+        self.open = false;
+        self.mode = CommandPaletteMode::Commands;
+        self.reset_for_mode();
+    }
+
+    pub(super) fn set_mode(&mut self, mode: CommandPaletteMode) {
+        self.mode = mode;
+        self.reset_for_mode();
+    }
+
+    pub(super) fn set_show_keybinds(&mut self, show_keybinds: bool) {
+        self.show_keybinds = show_keybinds;
+    }
+
+    pub(super) fn show_keybinds(&self) -> bool {
+        self.show_keybinds
+    }
+
+    pub(super) fn input(&self) -> &InlineInputState {
+        &self.input
+    }
+
+    pub(super) fn input_mut(&mut self) -> &mut InlineInputState {
+        &mut self.input
+    }
+
+    pub(super) fn set_items(&mut self, items: Vec<CommandPaletteItem>) {
+        self.items = items;
+        let query = self.input.text().to_string();
+        self.refilter(&query);
+    }
+
+    pub(super) fn refilter(&mut self, query: &str) {
+        self.filtered_indices = filter_command_palette_item_indices_by_query(&self.items, query);
+        self.clamp_selection();
+    }
+
+    pub(super) fn filtered_len(&self) -> usize {
+        self.filtered_indices.len()
+    }
+
+    pub(super) fn filtered_item(&self, filtered_index: usize) -> Option<&CommandPaletteItem> {
+        let item_index = *self.filtered_indices.get(filtered_index)?;
+        self.items.get(item_index)
+    }
+
+    pub(super) fn filtered_item_kind(
+        &self,
+        filtered_index: usize,
+    ) -> Option<CommandPaletteItemKind> {
+        self.filtered_item(filtered_index)
+            .map(|item| item.kind.clone())
+    }
+
+    pub(super) fn selected_filtered_index(&self) -> Option<usize> {
+        let len = self.filtered_len();
+        if len == 0 {
+            None
+        } else {
+            Some(self.selected_filtered_index.min(len - 1))
+        }
+    }
+
+    pub(super) fn selected_item_kind(&self) -> Option<CommandPaletteItemKind> {
+        self.selected_filtered_index()
+            .and_then(|index| self.filtered_item_kind(index))
+    }
+
+    pub(super) fn set_selected_filtered_index(&mut self, index: usize) -> bool {
+        let len = self.filtered_len();
+        if len == 0 {
+            self.selected_filtered_index = 0;
+            return false;
+        }
+
+        let clamped = index.min(len - 1);
+        let changed = self.selected_filtered_index != clamped;
+        self.selected_filtered_index = clamped;
+        changed
+    }
+
+    pub(super) fn move_selection_up(&mut self) -> bool {
+        let Some(selected) = self.selected_filtered_index() else {
+            return false;
+        };
+        if selected == 0 {
+            return false;
+        }
+        self.set_selected_filtered_index(selected - 1)
+    }
+
+    pub(super) fn move_selection_down(&mut self) -> bool {
+        let Some(selected) = self.selected_filtered_index() else {
+            return false;
+        };
+        let len = self.filtered_len();
+        if selected + 1 >= len {
+            return false;
+        }
+        self.set_selected_filtered_index(selected + 1)
+    }
+
+    pub(super) fn base_scroll_handle(&self) -> gpui::ScrollHandle {
         self.scroll_handle.0.borrow().base_handle.clone()
     }
 
-    pub(in super::super) fn reset_scroll_animation_state(&mut self) {
+    pub(super) fn scroll_handle(&self) -> &UniformListScrollHandle {
+        &self.scroll_handle
+    }
+
+    pub(super) fn scroll_target_y(&self) -> Option<f32> {
+        self.scroll_target_y
+    }
+
+    pub(super) fn set_scroll_target_y(&mut self, target: Option<f32>) {
+        self.scroll_target_y = target;
+    }
+
+    pub(super) fn scroll_max_y(&self) -> f32 {
+        self.scroll_max_y
+    }
+
+    pub(super) fn set_scroll_max_y(&mut self, max: f32) {
+        self.scroll_max_y = max;
+    }
+
+    pub(super) fn is_scroll_animating(&self) -> bool {
+        self.scroll_animating
+    }
+
+    pub(super) fn set_scroll_animating(&mut self, animating: bool) {
+        self.scroll_animating = animating;
+    }
+
+    pub(super) fn scroll_last_tick(&self) -> Option<Instant> {
+        self.scroll_last_tick
+    }
+
+    pub(super) fn set_scroll_last_tick(&mut self, tick: Option<Instant>) {
+        self.scroll_last_tick = tick;
+    }
+
+    pub(super) fn reset_scroll_animation_state(&mut self) {
         self.scroll_target_y = None;
         self.scroll_max_y = 0.0;
         self.scroll_animating = false;
         self.scroll_last_tick = None;
     }
 
-    pub(in super::super) fn reset(&mut self) {
+    pub(super) fn clamp_selection(&mut self) {
+        let len = self.filtered_len();
+        if len == 0 {
+            self.selected_filtered_index = 0;
+        } else if self.selected_filtered_index >= len {
+            self.selected_filtered_index = len - 1;
+        }
+    }
+
+    fn reset_for_mode(&mut self) {
         self.input.clear();
-        self.filtered_items.clear();
-        self.selected = 0;
+        self.items.clear();
+        self.filtered_indices.clear();
+        self.selected_filtered_index = 0;
         self.scroll_handle = UniformListScrollHandle::new();
         self.reset_scroll_animation_state();
     }
-
-    pub(in super::super) fn clamp_selection(&mut self) {
-        if self.filtered_items.is_empty() {
-            self.selected = 0;
-        } else if self.selected >= self.filtered_items.len() {
-            self.selected = self.filtered_items.len() - 1;
-        }
-    }
 }
 
-pub(in super::super) fn ordered_theme_ids_for_palette(
+pub(super) fn ordered_theme_ids_for_palette(
     mut theme_ids: Vec<String>,
     current_theme: &str,
 ) -> Vec<String> {
@@ -129,10 +285,10 @@ pub(in super::super) fn ordered_theme_ids_for_palette(
     theme_ids
 }
 
-pub(in super::super) fn filter_command_palette_items_by_query(
-    items: Vec<CommandPaletteItem>,
+pub(super) fn filter_command_palette_item_indices_by_query(
+    items: &[CommandPaletteItem],
     query: &str,
-) -> Vec<CommandPaletteItem> {
+) -> Vec<usize> {
     let query = query.trim().to_ascii_lowercase();
     let query_terms: Vec<String> = query
         .split_whitespace()
@@ -141,7 +297,7 @@ pub(in super::super) fn filter_command_palette_items_by_query(
         .collect();
 
     if query_terms.is_empty() {
-        return items;
+        return (0..items.len()).collect();
     }
 
     let has_title_matches = items
@@ -149,14 +305,16 @@ pub(in super::super) fn filter_command_palette_items_by_query(
         .any(|item| command_palette_text_matches_terms(&item.title, &query_terms));
 
     items
-        .into_iter()
-        .filter(|item| {
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
             let title_match = command_palette_text_matches_terms(&item.title, &query_terms);
-            if has_title_matches {
+            let matches = if has_title_matches {
                 title_match
             } else {
                 title_match || command_palette_text_matches_terms(&item.keywords, &query_terms)
-            }
+            };
+            matches.then_some(index)
         })
         .collect()
 }
@@ -173,15 +331,15 @@ fn command_palette_text_matches_terms(text: &str, query_terms: &[String]) -> boo
         .all(|term| words.iter().any(|word| word.starts_with(term)))
 }
 
-pub(in super::super) fn command_palette_viewport_height() -> f32 {
+pub(super) fn command_palette_viewport_height() -> f32 {
     COMMAND_PALETTE_MAX_ITEMS as f32 * COMMAND_PALETTE_ROW_HEIGHT
 }
 
-pub(in super::super) fn command_palette_max_scroll_for_count(item_count: usize) -> f32 {
+pub(super) fn command_palette_max_scroll_for_count(item_count: usize) -> f32 {
     (item_count as f32 * COMMAND_PALETTE_ROW_HEIGHT - command_palette_viewport_height()).max(0.0)
 }
 
-pub(in super::super) fn command_palette_target_scroll_y(
+pub(super) fn command_palette_target_scroll_y(
     current_y: f32,
     selected_index: usize,
     item_count: usize,
@@ -206,7 +364,7 @@ pub(in super::super) fn command_palette_target_scroll_y(
     Some(target.clamp(0.0, max_scroll))
 }
 
-pub(in super::super) fn command_palette_next_scroll_y(
+pub(super) fn command_palette_next_scroll_y(
     current_y: f32,
     target_y: f32,
     max_scroll: f32,
@@ -258,10 +416,10 @@ mod tests {
             ),
         ];
 
-        let filtered = filter_command_palette_items_by_query(items, "re");
-        let actions: Vec<CommandAction> = filtered
+        let filtered_indices = filter_command_palette_item_indices_by_query(&items, "re");
+        let actions: Vec<CommandAction> = filtered_indices
             .into_iter()
-            .filter_map(|item| match item.kind {
+            .filter_map(|index| match items[index].kind {
                 CommandPaletteItemKind::Command(action) => Some(action),
                 CommandPaletteItemKind::Theme(_) => None,
             })
@@ -285,10 +443,10 @@ mod tests {
             command_item("Reset Zoom", "font default", CommandAction::ZoomReset),
         ];
 
-        let filtered = filter_command_palette_items_by_query(items, "font");
-        let actions: Vec<CommandAction> = filtered
+        let filtered_indices = filter_command_palette_item_indices_by_query(&items, "font");
+        let actions: Vec<CommandAction> = filtered_indices
             .into_iter()
-            .filter_map(|item| match item.kind {
+            .filter_map(|index| match items[index].kind {
                 CommandPaletteItemKind::Command(action) => Some(action),
                 CommandPaletteItemKind::Theme(_) => None,
             })
@@ -302,6 +460,42 @@ mod tests {
                 CommandAction::ZoomReset
             ]
         );
+    }
+
+    #[test]
+    fn filtered_index_selection_clamps_after_query_change() {
+        let mut state = CommandPaletteState::new(true);
+        state.set_items(vec![
+            command_item("New Tab", "tab", CommandAction::NewTab),
+            command_item("Close Tab", "tab", CommandAction::CloseTab),
+            command_item("Switch Theme", "theme", CommandAction::SwitchTheme),
+        ]);
+        assert!(state.set_selected_filtered_index(2));
+
+        state.refilter("close");
+        assert_eq!(state.filtered_len(), 1);
+        assert_eq!(state.selected_filtered_index(), Some(0));
+
+        state.refilter("");
+        assert_eq!(state.filtered_len(), 3);
+        assert_eq!(state.selected_filtered_index(), Some(0));
+    }
+
+    #[test]
+    fn move_selection_handles_empty_and_bounds_without_panics() {
+        let mut state = CommandPaletteState::new(true);
+        assert!(!state.move_selection_up());
+        assert!(!state.move_selection_down());
+
+        state.set_items(vec![
+            command_item("New Tab", "tab", CommandAction::NewTab),
+            command_item("Close Tab", "tab", CommandAction::CloseTab),
+        ]);
+
+        assert!(!state.move_selection_up());
+        assert!(state.move_selection_down());
+        assert!(!state.move_selection_down());
+        assert!(state.move_selection_up());
     }
 
     #[test]
@@ -343,8 +537,10 @@ mod tests {
             vec!["termy", "dracula", "nord", SHELL_DECIDE_THEME_ID]
         );
 
-        let ordered_with_missing_current =
-            ordered_theme_ids_for_palette(vec!["nord".to_string(), "dracula".to_string()], "tokyo-night");
+        let ordered_with_missing_current = ordered_theme_ids_for_palette(
+            vec!["nord".to_string(), "dracula".to_string()],
+            "tokyo-night",
+        );
 
         assert_eq!(
             ordered_with_missing_current,
@@ -353,28 +549,28 @@ mod tests {
     }
 
     #[test]
-    fn state_reset_clears_transient_fields() {
+    fn close_resets_to_command_mode_and_clears_transient_state() {
         let mut state = CommandPaletteState::new(false);
-        state.open = true;
-        state.mode = CommandPaletteMode::Themes;
-        state.input.set_text("theme".to_string());
-        state.filtered_items = vec![CommandPaletteItem::command(
+        state.open(CommandPaletteMode::Themes);
+        state.input_mut().set_text("theme".to_string());
+        state.set_items(vec![CommandPaletteItem::command(
             "New Tab",
             "tab",
             CommandAction::NewTab,
-        )];
-        state.selected = 99;
-        state.scroll_target_y = Some(12.0);
-        state.scroll_max_y = 40.0;
-        state.scroll_animating = true;
+        )]);
+        state.set_selected_filtered_index(999);
+        state.set_scroll_target_y(Some(12.0));
+        state.set_scroll_max_y(40.0);
+        state.set_scroll_animating(true);
 
-        state.reset();
+        state.close();
 
-        assert!(state.input.text().is_empty());
-        assert!(state.filtered_items.is_empty());
-        assert_eq!(state.selected, 0);
-        assert!(state.scroll_target_y.is_none());
-        assert_eq!(state.scroll_max_y, 0.0);
-        assert!(!state.scroll_animating);
+        assert!(!state.is_open());
+        assert_eq!(state.mode(), CommandPaletteMode::Commands);
+        assert!(state.input().text().is_empty());
+        assert_eq!(state.filtered_len(), 0);
+        assert!(state.scroll_target_y().is_none());
+        assert_eq!(state.scroll_max_y(), 0.0);
+        assert!(!state.is_scroll_animating());
     }
 }

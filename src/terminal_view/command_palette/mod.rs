@@ -2,17 +2,15 @@ use super::*;
 use gpui::point;
 use state::{
     command_palette_max_scroll_for_count, command_palette_next_scroll_y,
-    command_palette_target_scroll_y, filter_command_palette_items_by_query,
-    ordered_theme_ids_for_palette,
+    command_palette_target_scroll_y, ordered_theme_ids_for_palette, CommandPaletteItem,
+    CommandPaletteItemKind,
 };
 
 mod render;
 mod state;
 mod style;
 
-pub(super) use state::{
-    CommandPaletteItem, CommandPaletteItemKind, CommandPaletteMode, CommandPaletteState,
-};
+pub(super) use state::{CommandPaletteMode, CommandPaletteState};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CommandPaletteEscapeAction {
@@ -20,53 +18,53 @@ enum CommandPaletteEscapeAction {
     BackToCommands,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommandPaletteNavKey {
+    Escape,
+    Enter,
+    Up,
+    Down,
+}
+
+impl CommandPaletteNavKey {
+    fn parse(key: &str) -> Option<Self> {
+        match key {
+            "escape" => Some(Self::Escape),
+            "enter" => Some(Self::Enter),
+            "up" => Some(Self::Up),
+            "down" => Some(Self::Down),
+            _ => None,
+        }
+    }
+}
+
 impl TerminalView {
     pub(super) fn is_command_palette_open(&self) -> bool {
-        self.command_palette.open
+        self.command_palette.is_open()
+    }
+
+    pub(super) fn set_command_palette_show_keybinds(&mut self, show_keybinds: bool) {
+        self.command_palette.set_show_keybinds(show_keybinds);
+    }
+
+    pub(super) fn command_palette_input(&self) -> &InlineInputState {
+        self.command_palette.input()
+    }
+
+    pub(super) fn command_palette_input_mut(&mut self) -> &mut InlineInputState {
+        self.command_palette.input_mut()
     }
 
     fn command_palette_shortcut(&self, action: CommandAction, window: &Window) -> Option<String> {
-        if !self.command_palette.show_keybinds {
+        if !self.command_palette.show_keybinds() {
             return None;
         }
 
         action.keybinding_label(window, &self.focus_handle)
     }
 
-    pub(super) fn set_command_palette_mode(
-        &mut self,
-        mode: CommandPaletteMode,
-        animate_selection: bool,
-        cx: &mut Context<Self>,
-    ) {
-        self.command_palette.mode = mode;
-        self.command_palette.reset();
-        self.inline_input_selecting = false;
-        self.refresh_command_palette_matches(animate_selection, cx);
-        self.reset_cursor_blink_phase();
-
-        cx.notify();
-    }
-
-    pub(super) fn open_command_palette(&mut self, cx: &mut Context<Self>) {
-        self.command_palette.open = true;
-        self.set_command_palette_mode(CommandPaletteMode::Commands, false, cx);
-    }
-
-    pub(super) fn close_command_palette(&mut self, cx: &mut Context<Self>) {
-        if !self.command_palette.open {
-            return;
-        }
-
-        self.command_palette.open = false;
-        self.command_palette.mode = CommandPaletteMode::Commands;
-        self.command_palette.reset();
-        self.inline_input_selecting = false;
-        cx.notify();
-    }
-
-    fn command_palette_items(&self) -> Vec<CommandPaletteItem> {
-        match self.command_palette.mode {
+    fn command_palette_items_for_mode(&self, mode: CommandPaletteMode) -> Vec<CommandPaletteItem> {
+        match mode {
             CommandPaletteMode::Commands => CommandAction::palette_entries()
                 .into_iter()
                 .map(|entry| CommandPaletteItem::command(entry.title, entry.keywords, entry.action))
@@ -90,8 +88,62 @@ impl TerminalView {
             .collect()
     }
 
-    pub(super) fn filtered_command_palette_items(&self) -> &[CommandPaletteItem] {
-        &self.command_palette.filtered_items
+    fn initialize_command_palette_mode(
+        &mut self,
+        mode: CommandPaletteMode,
+        animate_selection: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.command_palette.set_mode(mode);
+        let items = self.command_palette_items_for_mode(mode);
+        self.command_palette.set_items(items);
+        self.inline_input_selecting = false;
+
+        let len = self.command_palette.filtered_len();
+        if len == 0 {
+            self.command_palette.reset_scroll_animation_state();
+        } else if animate_selection {
+            self.animate_command_palette_to_selected(len, cx);
+        }
+
+        self.reset_cursor_blink_phase();
+        cx.notify();
+    }
+
+    pub(super) fn set_command_palette_mode(
+        &mut self,
+        mode: CommandPaletteMode,
+        animate_selection: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.initialize_command_palette_mode(mode, animate_selection, cx);
+    }
+
+    pub(super) fn open_command_palette_in_mode(
+        &mut self,
+        mode: CommandPaletteMode,
+        cx: &mut Context<Self>,
+    ) {
+        self.command_palette.open(mode);
+        let items = self.command_palette_items_for_mode(mode);
+        self.command_palette.set_items(items);
+        self.inline_input_selecting = false;
+        self.reset_cursor_blink_phase();
+        cx.notify();
+    }
+
+    pub(super) fn open_command_palette(&mut self, cx: &mut Context<Self>) {
+        self.open_command_palette_in_mode(CommandPaletteMode::Commands, cx);
+    }
+
+    pub(super) fn close_command_palette(&mut self, cx: &mut Context<Self>) {
+        if !self.command_palette.is_open() {
+            return;
+        }
+
+        self.command_palette.close();
+        self.inline_input_selecting = false;
+        cx.notify();
     }
 
     pub(super) fn refresh_command_palette_matches(
@@ -99,19 +151,17 @@ impl TerminalView {
         animate_selection: bool,
         cx: &mut Context<Self>,
     ) {
-        self.command_palette.filtered_items = filter_command_palette_items_by_query(
-            self.command_palette_items(),
-            self.command_palette_query(),
-        );
-        self.command_palette.clamp_selection();
+        let query = self.command_palette_query().to_string();
+        self.command_palette.refilter(&query);
+        let len = self.command_palette.filtered_len();
 
-        if self.command_palette.filtered_items.is_empty() {
+        if len == 0 {
             self.command_palette.reset_scroll_animation_state();
             return;
         }
 
         if animate_selection {
-            self.animate_command_palette_to_selected(self.command_palette.filtered_items.len(), cx);
+            self.animate_command_palette_to_selected(len, cx);
         }
     }
 
@@ -125,38 +175,36 @@ impl TerminalView {
             return;
         }
 
-        let max_scroll = command_palette_max_scroll_for_count(item_count);
-        self.command_palette.scroll_max_y = max_scroll;
+        self.command_palette
+            .set_scroll_max_y(command_palette_max_scroll_for_count(item_count));
 
         let scroll_handle = self.command_palette.base_scroll_handle();
         let offset = scroll_handle.offset();
         let current_y = -Into::<f32>::into(offset.y);
-        let Some(target_y) = command_palette_target_scroll_y(
-            current_y,
-            self.command_palette.selected,
-            item_count,
-        ) else {
+        let selected_index = self.command_palette.selected_filtered_index().unwrap_or(0);
+        let Some(target_y) = command_palette_target_scroll_y(current_y, selected_index, item_count)
+        else {
             self.command_palette.reset_scroll_animation_state();
             return;
         };
 
         if (target_y - current_y).abs() <= f32::EPSILON {
-            self.command_palette.scroll_target_y = None;
-            self.command_palette.scroll_animating = false;
-            self.command_palette.scroll_last_tick = None;
+            self.command_palette.set_scroll_target_y(None);
+            self.command_palette.set_scroll_animating(false);
+            self.command_palette.set_scroll_last_tick(None);
             return;
         }
 
-        self.command_palette.scroll_target_y = Some(target_y);
+        self.command_palette.set_scroll_target_y(Some(target_y));
         self.start_command_palette_scroll_animation(cx);
     }
 
     fn start_command_palette_scroll_animation(&mut self, cx: &mut Context<Self>) {
-        if self.command_palette.scroll_animating {
+        if self.command_palette.is_scroll_animating() {
             return;
         }
-        self.command_palette.scroll_animating = true;
-        self.command_palette.scroll_last_tick = Some(Instant::now());
+        self.command_palette.set_scroll_animating(true);
+        self.command_palette.set_scroll_last_tick(Some(Instant::now()));
 
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             loop {
@@ -167,7 +215,7 @@ impl TerminalView {
                         if changed {
                             cx.notify();
                         }
-                        view.command_palette.scroll_animating
+                        view.command_palette.is_scroll_animating()
                     })
                 }) {
                     Ok(keep_animating) => keep_animating,
@@ -183,14 +231,14 @@ impl TerminalView {
     }
 
     fn tick_command_palette_scroll_animation(&mut self) -> bool {
-        if !self.command_palette.open {
+        if !self.command_palette.is_open() {
             self.command_palette.reset_scroll_animation_state();
             return false;
         }
 
-        let Some(target_y) = self.command_palette.scroll_target_y else {
-            self.command_palette.scroll_animating = false;
-            self.command_palette.scroll_last_tick = None;
+        let Some(target_y) = self.command_palette.scroll_target_y() else {
+            self.command_palette.set_scroll_animating(false);
+            self.command_palette.set_scroll_last_tick(None);
             return false;
         };
 
@@ -198,22 +246,24 @@ impl TerminalView {
         let offset = scroll_handle.offset();
         let current_y = -Into::<f32>::into(offset.y);
         let max_offset_from_handle: f32 = scroll_handle.max_offset().height.into();
-        let max_scroll = max_offset_from_handle.max(self.command_palette.scroll_max_y).max(0.0);
+        let max_scroll = max_offset_from_handle
+            .max(self.command_palette.scroll_max_y())
+            .max(0.0);
         let now = Instant::now();
         let dt = self
             .command_palette
-            .scroll_last_tick
-            .map(|last| (now - last).as_secs_f32())
+            .scroll_last_tick()
+            .map(|last: Instant| (now - last).as_secs_f32())
             .unwrap_or(1.0 / 60.0);
-        self.command_palette.scroll_last_tick = Some(now);
+        self.command_palette.set_scroll_last_tick(Some(now));
 
         let next_y = command_palette_next_scroll_y(current_y, target_y, max_scroll, dt);
         scroll_handle.set_offset(point(offset.x, px(-next_y)));
 
         if (target_y - next_y).abs() <= 0.5 {
-            self.command_palette.scroll_target_y = None;
-            self.command_palette.scroll_animating = false;
-            self.command_palette.scroll_last_tick = None;
+            self.command_palette.set_scroll_target_y(None);
+            self.command_palette.set_scroll_animating(false);
+            self.command_palette.set_scroll_last_tick(None);
             return true;
         }
 
@@ -226,39 +276,36 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match key {
-            "escape" => {
-                match Self::command_palette_escape_action(self.command_palette.mode) {
+        let Some(nav_key) = CommandPaletteNavKey::parse(key) else {
+            return;
+        };
+
+        match nav_key {
+            CommandPaletteNavKey::Escape => {
+                match Self::command_palette_escape_action(self.command_palette.mode()) {
                     CommandPaletteEscapeAction::ClosePalette => self.close_command_palette(cx),
                     CommandPaletteEscapeAction::BackToCommands => {
                         self.set_command_palette_mode(CommandPaletteMode::Commands, false, cx);
                     }
                 }
-                return;
             }
-            "enter" => {
+            CommandPaletteNavKey::Enter => {
                 self.execute_command_palette_selection(window, cx);
-                return;
             }
-            "up" => {
-                let len = self.filtered_command_palette_items().len();
-                if len > 0 && self.command_palette.selected > 0 {
-                    self.command_palette.selected -= 1;
+            CommandPaletteNavKey::Up => {
+                let len = self.command_palette.filtered_len();
+                if self.command_palette.move_selection_up() {
                     self.animate_command_palette_to_selected(len, cx);
                     cx.notify();
                 }
-                return;
             }
-            "down" => {
-                let len = self.filtered_command_palette_items().len();
-                if len > 0 && self.command_palette.selected + 1 < len {
-                    self.command_palette.selected += 1;
+            CommandPaletteNavKey::Down => {
+                let len = self.command_palette.filtered_len();
+                if self.command_palette.move_selection_down() {
                     self.animate_command_palette_to_selected(len, cx);
                     cx.notify();
                 }
-                return;
             }
-            _ => {}
         }
     }
 
@@ -270,14 +317,24 @@ impl TerminalView {
     }
 
     fn execute_command_palette_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let items = self.filtered_command_palette_items();
-        if items.is_empty() {
+        let Some(item_kind) = self.command_palette.selected_item_kind() else {
             return;
-        }
+        };
 
-        let index = self.command_palette.selected.min(items.len() - 1);
-        let item_kind = items[index].kind.clone();
+        self.execute_command_palette_item(item_kind, window, cx);
+    }
 
+    fn execute_command_palette_filtered_index(
+        &mut self,
+        filtered_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(item_kind) = self.command_palette.filtered_item_kind(filtered_index) else {
+            return;
+        };
+
+        self.command_palette.set_selected_filtered_index(filtered_index);
         self.execute_command_palette_item(item_kind, window, cx);
     }
 
@@ -291,7 +348,9 @@ impl TerminalView {
             CommandPaletteItemKind::Command(action) => {
                 self.execute_command_palette_action(action, window, cx)
             }
-            CommandPaletteItemKind::Theme(theme_id) => self.select_theme_from_palette(&theme_id, cx),
+            CommandPaletteItemKind::Theme(theme_id) => {
+                self.select_theme_from_palette(theme_id.as_str(), cx)
+            }
         }
     }
 
@@ -319,11 +378,9 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let keep_open = action == CommandAction::SwitchTheme;
+        let keep_open = Self::command_palette_should_stay_open(action);
         if !keep_open {
-            self.command_palette.open = false;
-            self.command_palette.mode = CommandPaletteMode::Commands;
-            self.command_palette.reset();
+            self.command_palette.close();
             self.inline_input_selecting = false;
         }
 
@@ -369,6 +426,10 @@ impl TerminalView {
             | CommandAction::InstallCli => {}
         }
     }
+
+    fn command_palette_should_stay_open(action: CommandAction) -> bool {
+        action == CommandAction::SwitchTheme
+    }
 }
 
 #[cfg(test)]
@@ -385,5 +446,33 @@ mod tests {
             TerminalView::command_palette_escape_action(CommandPaletteMode::Themes),
             CommandPaletteEscapeAction::BackToCommands
         );
+    }
+
+    #[test]
+    fn nav_key_parser_maps_expected_keys() {
+        assert_eq!(
+            CommandPaletteNavKey::parse("escape"),
+            Some(CommandPaletteNavKey::Escape)
+        );
+        assert_eq!(
+            CommandPaletteNavKey::parse("enter"),
+            Some(CommandPaletteNavKey::Enter)
+        );
+        assert_eq!(CommandPaletteNavKey::parse("up"), Some(CommandPaletteNavKey::Up));
+        assert_eq!(
+            CommandPaletteNavKey::parse("down"),
+            Some(CommandPaletteNavKey::Down)
+        );
+        assert_eq!(CommandPaletteNavKey::parse("left"), None);
+    }
+
+    #[test]
+    fn switch_theme_is_the_only_action_that_keeps_palette_open() {
+        assert!(TerminalView::command_palette_should_stay_open(
+            CommandAction::SwitchTheme
+        ));
+        assert!(!TerminalView::command_palette_should_stay_open(
+            CommandAction::NewTab
+        ));
     }
 }

@@ -1096,7 +1096,7 @@ impl TerminalView {
             self.clear_terminal_scrollbar_marker_cache();
         }
         self.terminal_scrollbar_style = config.terminal_scrollbar_style;
-        self.command_palette.show_keybinds = config.command_palette_show_keybinds;
+        self.set_command_palette_show_keybinds(config.command_palette_show_keybinds);
 
         for index in 0..self.tabs.len() {
             self.refresh_tab_title(index);
@@ -1106,7 +1106,7 @@ impl TerminalView {
             self.mark_tab_strip_layout_dirty();
         }
 
-        if self.command_palette.open {
+        if self.is_command_palette_open() {
             self.refresh_command_palette_matches(true, cx);
         }
 
