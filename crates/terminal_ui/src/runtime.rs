@@ -28,6 +28,10 @@ pub struct TabTitleShellIntegration {
 
 const DEFAULT_TERM: &str = "xterm-256color";
 const DEFAULT_COLORTERM: &str = "truecolor";
+#[cfg(target_os = "macos")]
+const DEFAULT_UTF8_LOCALE: &str = "en_US.UTF-8";
+#[cfg(all(unix, not(target_os = "macos")))]
+const DEFAULT_UTF8_LOCALE: &str = "C.UTF-8";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkingDirFallback {
@@ -239,6 +243,11 @@ fn pty_env_overrides(
 
     env_overrides.insert("TERM_PROGRAM".to_string(), "termy".to_string());
 
+    #[cfg(unix)]
+    {
+        apply_utf8_locale_overrides(&mut env_overrides);
+    }
+
     let shell_integration_enabled = shell_integration.map(|cfg| cfg.enabled).unwrap_or(false);
     env_overrides.insert(
         "TERMY_SHELL_INTEGRATION".to_string(),
@@ -256,6 +265,105 @@ fn pty_env_overrides(
     }
 
     env_overrides
+}
+
+#[cfg(unix)]
+fn locale_has_utf8_tag(locale: &str) -> bool {
+    let normalized = locale.trim().to_ascii_lowercase();
+    normalized.contains("utf-8") || normalized.contains("utf8")
+}
+
+#[cfg(unix)]
+fn locale_is_c_or_posix(locale: &str) -> bool {
+    matches!(locale.trim().to_ascii_lowercase().as_str(), "c" | "posix")
+}
+
+#[cfg(unix)]
+fn utf8_locale_from_candidate(locale: &str) -> Option<String> {
+    let locale = locale.trim();
+    if locale.is_empty() || locale_is_c_or_posix(locale) {
+        return None;
+    }
+
+    let (without_modifier, modifier) = locale
+        .split_once('@')
+        .map_or((locale, None), |(base, modifier)| (base, Some(modifier)));
+    let base = without_modifier
+        .split_once('.')
+        .map_or(without_modifier, |(base, _)| base)
+        .trim();
+    if base.is_empty() {
+        return None;
+    }
+
+    let mut utf8_locale = String::with_capacity(base.len() + ".UTF-8".len() + modifier.map_or(0, |m| m.len() + 1));
+    utf8_locale.push_str(base);
+    utf8_locale.push_str(".UTF-8");
+    if let Some(modifier) = modifier {
+        utf8_locale.push('@');
+        utf8_locale.push_str(modifier);
+    }
+    Some(utf8_locale)
+}
+
+#[cfg(unix)]
+fn preferred_utf8_locale(lc_all: Option<&str>, lc_ctype: Option<&str>, lang: Option<&str>) -> String {
+    [lc_all, lc_ctype, lang]
+        .into_iter()
+        .flatten()
+        .find_map(utf8_locale_from_candidate)
+        .unwrap_or_else(|| DEFAULT_UTF8_LOCALE.to_string())
+}
+
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Utf8LocaleOverridePlan {
+    None,
+    LcCtypeOnly,
+    LcAllAndLcCtype,
+}
+
+#[cfg(unix)]
+fn utf8_locale_override_plan(
+    lc_all: Option<&str>,
+    lc_ctype: Option<&str>,
+    lang: Option<&str>,
+) -> Utf8LocaleOverridePlan {
+    let has_utf8_locale = [lc_all, lc_ctype, lang]
+        .into_iter()
+        .flatten()
+        .any(locale_has_utf8_tag);
+    if has_utf8_locale {
+        return Utf8LocaleOverridePlan::None;
+    }
+
+    if lc_all.is_some_and(|value| !value.trim().is_empty()) {
+        Utf8LocaleOverridePlan::LcAllAndLcCtype
+    } else {
+        Utf8LocaleOverridePlan::LcCtypeOnly
+    }
+}
+
+#[cfg(unix)]
+fn apply_utf8_locale_overrides(env_overrides: &mut HashMap<String, String>) {
+    let lc_all = env::var("LC_ALL").ok();
+    let lc_ctype = env::var("LC_CTYPE").ok();
+    let lang = env::var("LANG").ok();
+    let target_utf8_locale = preferred_utf8_locale(lc_all.as_deref(), lc_ctype.as_deref(), lang.as_deref());
+
+    // zsh prompt width calculations rely on libc wcwidth + locale. If the shell
+    // starts in C/POSIX/non-UTF-8 locale, multibyte prompt glyphs (e.g. U+276F)
+    // can be counted by byte-length, drifting completion rendering.
+    match utf8_locale_override_plan(lc_all.as_deref(), lc_ctype.as_deref(), lang.as_deref()) {
+        Utf8LocaleOverridePlan::None => {}
+        Utf8LocaleOverridePlan::LcCtypeOnly => {
+            env_overrides.insert("LC_CTYPE".to_string(), target_utf8_locale);
+        }
+        Utf8LocaleOverridePlan::LcAllAndLcCtype => {
+            env_overrides.insert("LC_ALL".to_string(), target_utf8_locale.clone());
+            env_overrides.insert("LC_CTYPE".to_string(), target_utf8_locale);
+        }
+    }
 }
 
 fn resolve_working_directory(configured: Option<&str>) -> Option<std::path::PathBuf> {
@@ -681,9 +789,31 @@ pub fn keystroke_to_input(keystroke: &Keystroke) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use alacritty_terminal::{
+        event::VoidListener,
+        term::{Config as TermConfig, Term},
+        vte::ansi,
+    };
+    use gpui::px;
     #[cfg(target_os = "windows")]
     use super::quote_shell_program_if_needed;
-    use super::{DEFAULT_TERM, TerminalRuntimeConfig, pty_env_overrides, resolve_shell_path};
+    use super::{
+        DEFAULT_TERM, TerminalRuntimeConfig, TerminalSize, pty_env_overrides, resolve_shell_path,
+    };
+
+    fn cursor_after_bytes(input: &[u8]) -> (usize, i32) {
+        let size = TerminalSize {
+            cols: 32,
+            rows: 4,
+            cell_width: px(9.0),
+            cell_height: px(18.0),
+        };
+        let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, input);
+        let point = term.grid().cursor.point;
+        (point.column.0, point.line.0)
+    }
 
     #[test]
     fn env_overrides_set_term_by_default() {
@@ -736,5 +866,87 @@ mod tests {
         let path = "C:\\weird \\path\"\\pwsh.exe";
         let quoted = quote_shell_program_if_needed(path);
         assert_eq!(quoted, r#""C:\weird \path\"\pwsh.exe""#);
+    }
+
+    #[test]
+    fn core_cursor_advance_matches_for_ascii_and_starship_glyph() {
+        let ascii = cursor_after_bytes(b"> ");
+        let starship = cursor_after_bytes("❯ ".as_bytes());
+        assert_eq!(ascii, starship);
+    }
+
+    #[test]
+    fn core_cursor_advance_ignores_ansi_sequences_for_ascii_and_starship_glyph() {
+        let ascii = cursor_after_bytes(b"\x1b[1;32m>\x1b[0m ");
+        let starship = cursor_after_bytes("\x1b[1;32m❯\x1b[0m ".as_bytes());
+        assert_eq!(ascii, starship);
+    }
+
+    #[test]
+    fn core_cursor_advance_matches_after_osc_title_with_bel_terminator() {
+        let ascii = cursor_after_bytes(b"\x1b]2;termy:tab:prompt:/tmp\x07> ");
+        let starship = cursor_after_bytes("\x1b]2;termy:tab:prompt:/tmp\x07❯ ".as_bytes());
+        assert_eq!(ascii, starship);
+    }
+
+    #[test]
+    fn core_cursor_advance_matches_after_osc_title_with_st_terminator() {
+        let ascii = cursor_after_bytes(b"\x1b]2;termy:tab:prompt:/tmp\x1b\\> ");
+        let starship = cursor_after_bytes("\x1b]2;termy:tab:prompt:/tmp\x1b\\❯ ".as_bytes());
+        assert_eq!(ascii, starship);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locale_override_plan_forces_lc_ctype_when_no_utf8_and_no_lc_all() {
+        assert_eq!(
+            super::utf8_locale_override_plan(None, Some("C"), Some("")),
+            super::Utf8LocaleOverridePlan::LcCtypeOnly
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locale_override_plan_forces_lc_all_when_lc_all_is_non_utf8() {
+        assert_eq!(
+            super::utf8_locale_override_plan(Some("C"), Some("C"), Some("")),
+            super::Utf8LocaleOverridePlan::LcAllAndLcCtype
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locale_override_plan_skips_when_utf8_present() {
+        assert_eq!(
+            super::utf8_locale_override_plan(Some("en_US.UTF-8"), Some("C"), Some("")),
+            super::Utf8LocaleOverridePlan::None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preferred_utf8_locale_preserves_lang_region_from_lc_all() {
+        assert_eq!(
+            super::preferred_utf8_locale(Some("fr_FR.ISO8859-1"), Some("C"), Some("en_US.ISO8859-1")),
+            "fr_FR.UTF-8"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preferred_utf8_locale_preserves_locale_modifier() {
+        assert_eq!(
+            super::preferred_utf8_locale(None, Some("sr_RS@latin"), Some("")),
+            "sr_RS.UTF-8@latin"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preferred_utf8_locale_falls_back_for_c_or_posix() {
+        assert_eq!(
+            super::preferred_utf8_locale(Some("C"), Some("POSIX"), Some("")),
+            super::DEFAULT_UTF8_LOCALE
+        );
     }
 }
