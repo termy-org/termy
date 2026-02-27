@@ -153,7 +153,8 @@ impl TerminalView {
             }
         }
 
-        if let Some(input) = keystroke_to_input(&event.keystroke) {
+        let prompt_shortcuts_enabled = !self.active_terminal().alternate_screen_mode();
+        if let Some(input) = keystroke_to_input(&event.keystroke, prompt_shortcuts_enabled) {
             self.write_terminal_input(&input, cx);
             self.clear_selection();
             // Request a redraw to show the typed character
