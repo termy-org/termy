@@ -1,5 +1,6 @@
 use crate::config;
 use crate::settings_view::SettingsWindow;
+use crate::terminal_view::initial_window_background_appearance;
 use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 
 pub(crate) fn open_config_file() -> Result<(), String> {
@@ -7,7 +8,14 @@ pub(crate) fn open_config_file() -> Result<(), String> {
 }
 
 pub(crate) fn open_settings_window(cx: &mut App) -> Result<(), String> {
-    let bounds = Bounds::centered(None, size(px(800.0), px(600.0)), cx);
+    let initial_window_size = size(px(800.0), px(600.0));
+    let bounds = Bounds::centered(None, initial_window_size, cx);
+    let mut settings_config_error = None;
+    let settings_load = config::load_runtime_config(
+        &mut settings_config_error,
+        "Failed to load config for settings window",
+    );
+    let window_background = initial_window_background_appearance(&settings_load.config);
 
     #[cfg(target_os = "macos")]
     let titlebar = Some(gpui::TitlebarOptions {
@@ -32,6 +40,8 @@ pub(crate) fn open_settings_window(cx: &mut App) -> Result<(), String> {
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar,
+            window_background,
+            window_min_size: Some(initial_window_size),
             ..Default::default()
         },
         |window, cx| cx.new(|cx| SettingsWindow::new(window, cx)),

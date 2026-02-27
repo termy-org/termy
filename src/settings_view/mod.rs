@@ -6,7 +6,8 @@ use gpui::{
     AnyElement, AsyncApp, Context, FocusHandle, Font, InteractiveElement, IntoElement,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Render,
     Rgba, ScrollAnchor, ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
-    Styled, TextAlign, WeakEntity, Window, deferred, div, point, prelude::FluentBuilder, px,
+    Styled, TextAlign, WeakEntity, Window, WindowBackgroundAppearance, deferred, div, point,
+    prelude::FluentBuilder, px,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -38,6 +39,7 @@ const SETTINGS_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 18.0;
 const SETTINGS_SCROLLBAR_TRACK_ALPHA: f32 = 0.10;
 const SETTINGS_SCROLLBAR_THUMB_ALPHA: f32 = 0.42;
 const SETTINGS_SCROLLBAR_THUMB_ACTIVE_ALPHA: f32 = 0.58;
+const SETTINGS_OVERLAY_PANEL_ALPHA_FLOOR_RATIO: f32 = 0.72;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum EditableField {
@@ -203,6 +205,7 @@ pub struct SettingsWindow {
     search_navigation_last_jump_at: Option<Instant>,
     scroll_animation_token: u64,
     colors: TerminalColors,
+    last_window_background_appearance: Option<WindowBackgroundAppearance>,
 }
 
 impl SettingsWindow {
@@ -309,6 +312,7 @@ impl SettingsWindow {
             search_navigation_last_jump_at: None,
             scroll_animation_token: 0,
             colors,
+            last_window_background_appearance: None,
         };
         view.focus_handle.focus(window, cx);
 
@@ -700,25 +704,50 @@ impl SettingsWindow {
     }
 
     // Color helpers derived from terminal theme
+    fn background_opacity_factor(&self) -> f32 {
+        self.config.background_opacity.clamp(0.0, 1.0)
+    }
+
+    fn scaled_background_alpha(&self, base_alpha: f32) -> f32 {
+        (base_alpha * self.background_opacity_factor()).clamp(0.0, 1.0)
+    }
+
+    fn adaptive_panel_alpha(&self, base_alpha: f32) -> f32 {
+        let floor = base_alpha * SETTINGS_OVERLAY_PANEL_ALPHA_FLOOR_RATIO;
+        self.scaled_background_alpha(base_alpha)
+            .max(floor)
+            .clamp(0.0, 1.0)
+    }
+
+    fn sync_window_background_appearance(&mut self, window: &mut Window) {
+        let appearance = crate::terminal_view::initial_window_background_appearance(&self.config);
+        if self.last_window_background_appearance != Some(appearance) {
+            window.set_background_appearance(appearance);
+            self.last_window_background_appearance = Some(appearance);
+        }
+    }
+
     fn bg_primary(&self) -> Rgba {
-        self.colors.background
+        let mut c = self.colors.background;
+        c.a = self.scaled_background_alpha(c.a);
+        c
     }
 
     fn bg_secondary(&self) -> Rgba {
         let mut c = self.colors.background;
-        c.a = 0.7;
+        c.a = self.adaptive_panel_alpha(0.7);
         c
     }
 
     fn bg_card(&self) -> Rgba {
         let mut c = self.colors.background;
-        c.a = 0.5;
+        c.a = self.adaptive_panel_alpha(0.5);
         c
     }
 
     fn bg_input(&self) -> Rgba {
         let mut c = self.colors.background;
-        c.a = 0.3;
+        c.a = self.adaptive_panel_alpha(0.3);
         c
     }
 
@@ -768,13 +797,13 @@ impl SettingsWindow {
 
     fn settings_scrollbar_style(&self) -> ScrollbarPaintStyle {
         let mut track = self.colors.foreground;
-        track.a = SETTINGS_SCROLLBAR_TRACK_ALPHA;
+        track.a = self.adaptive_panel_alpha(SETTINGS_SCROLLBAR_TRACK_ALPHA);
 
         let mut thumb = self.colors.foreground;
-        thumb.a = SETTINGS_SCROLLBAR_THUMB_ALPHA;
+        thumb.a = self.adaptive_panel_alpha(SETTINGS_SCROLLBAR_THUMB_ALPHA);
 
         let mut active_thumb = self.colors.foreground;
-        active_thumb.a = SETTINGS_SCROLLBAR_THUMB_ACTIVE_ALPHA;
+        active_thumb.a = self.adaptive_panel_alpha(SETTINGS_SCROLLBAR_THUMB_ACTIVE_ALPHA);
 
         ScrollbarPaintStyle {
             width: SETTINGS_SCROLLBAR_WIDTH,
@@ -792,7 +821,7 @@ impl SettingsWindow {
     }
 
     fn settings_scrollbar_metrics(&self, window: &Window) -> Option<ui_scrollbar::ScrollbarMetrics> {
-        let viewport_height: f32 = window.bounds().size.height.into();
+        let viewport_height: f32 = window.viewport_size().height.into();
         let max_offset: f32 = self.content_scroll_handle.max_offset().height.into();
         let offset_y: f32 = self.content_scroll_handle.offset().y.into();
         let offset = (-offset_y).max(0.0);
@@ -1994,12 +2023,14 @@ impl SettingsWindow {
                             .text_sm()
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(self.text_primary())
+                            .truncate()
                             .child(title),
                     )
                     .child(
                         div()
                             .text_xs()
                             .text_color(self.text_muted())
+                            .truncate()
                             .child(description),
                     ),
             )
@@ -2334,9 +2365,16 @@ impl SettingsWindow {
                             .text_sm()
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(text_primary)
+                            .truncate()
                             .child(title),
                     )
-                    .child(div().text_xs().text_color(text_muted).child(description)),
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(text_muted)
+                            .truncate()
+                            .child(description),
+                    ),
             )
             .child(
                 div()
@@ -3175,6 +3213,7 @@ impl gpui::EntityInputHandler for SettingsWindow {
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_window_background_appearance(window);
         let bg = self.bg_primary();
         let settings_scrollbar = self.settings_scrollbar_metrics(window).map(|metrics| {
             div()
