@@ -5,6 +5,7 @@ use super::style::{
 };
 use super::*;
 use crate::ui::scrollbar::{self, ScrollbarPaintStyle, ScrollbarRange};
+use gpui::prelude::FluentBuilder;
 use gpui::uniform_list;
 use std::ops::Range;
 
@@ -48,6 +49,7 @@ impl TerminalView {
             };
 
             let is_selected = index == selected;
+            let is_enabled = item.enabled;
             let shortcut = match &item.kind {
                 CommandPaletteItemKind::Command(action) => {
                     self.command_palette_shortcut(*action, window)
@@ -55,6 +57,17 @@ impl TerminalView {
                 CommandPaletteItemKind::Theme(_) => None,
             };
             let title = item.title.clone();
+            let status_hint = item.status_hint.clone();
+            let text_color = if is_enabled {
+                style.primary_text
+            } else {
+                style.muted_text
+            };
+            let shortcut_text = if is_enabled {
+                style.shortcut_text
+            } else {
+                style.muted_text
+            };
 
             rows.push(
                 div()
@@ -70,7 +83,7 @@ impl TerminalView {
                     } else {
                         transparent
                     })
-                    .cursor_pointer()
+                    .when(is_enabled, |row| row.cursor_pointer())
                     .on_mouse_move(cx.listener(move |this, _event, _window, cx| {
                         if this.command_palette.set_selected_filtered_index(index) {
                             cx.notify();
@@ -84,7 +97,7 @@ impl TerminalView {
                         }),
                     )
                     .text_size(px(12.0))
-                    .text_color(style.primary_text)
+                    .text_color(text_color)
                     .child(
                         div()
                             .size_full()
@@ -93,22 +106,44 @@ impl TerminalView {
                             .justify_between()
                             .gap(px(8.0))
                             .child(div().flex_1().truncate().child(title))
-                            .children(shortcut.map(|label| {
+                            .child(
                                 div()
-                                    .flex_none()
-                                    .h(px(20.0))
-                                    .px(px(6.0))
                                     .flex()
                                     .items_center()
-                                    .justify_center()
-                                    .rounded(px(COMMAND_PALETTE_SHORTCUT_RADIUS))
-                                    .bg(style.shortcut_bg)
-                                    .border_1()
-                                    .border_color(style.shortcut_border)
-                                    .text_size(px(10.0))
-                                    .text_color(style.shortcut_text)
-                                    .child(label)
-                            })),
+                                    .gap(px(6.0))
+                                    .children(status_hint.map(|label| {
+                                        div()
+                                            .flex_none()
+                                            .h(px(20.0))
+                                            .px(px(6.0))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .rounded(px(COMMAND_PALETTE_SHORTCUT_RADIUS))
+                                            .bg(style.shortcut_bg)
+                                            .border_1()
+                                            .border_color(style.shortcut_border)
+                                            .text_size(px(10.0))
+                                            .text_color(style.muted_text)
+                                            .child(label)
+                                    }))
+                                    .children(shortcut.map(|label| {
+                                        div()
+                                            .flex_none()
+                                            .h(px(20.0))
+                                            .px(px(6.0))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .rounded(px(COMMAND_PALETTE_SHORTCUT_RADIUS))
+                                            .bg(style.shortcut_bg)
+                                            .border_1()
+                                            .border_color(style.shortcut_border)
+                                            .text_size(px(10.0))
+                                            .text_color(shortcut_text)
+                                            .child(label)
+                                    })),
+                            ),
                     )
                     .into_any_element(),
             );

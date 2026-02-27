@@ -287,7 +287,7 @@ macro_rules! define_commands {
                 focus_handle: &FocusHandle,
             ) -> Option<String> {
                 let binding = match self {
-                    $(Self::$variant => window.highest_precedence_binding_for_action_in(&$variant, focus_handle),)+
+                    $(Self::$variant => window.bindings_for_action_in(&$variant, focus_handle).into_iter().next(),)+
                 };
 
                 binding.map(|binding| {

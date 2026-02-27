@@ -16,6 +16,12 @@ impl TerminalView {
     }
 
     pub(in super::super) fn install_cli_action(&mut self, cx: &mut Context<Self>) {
+        if !self.install_cli_available() {
+            termy_toast::info("CLI is already installed");
+            cx.notify();
+            return;
+        }
+
         match termy_cli_install_core::install_cli(self.terminal_runtime.shell.as_deref()) {
             Ok(result) => {
                 let install_path = result.install_path;
@@ -56,6 +62,9 @@ impl TerminalView {
                     }
                 }
 
+                if self.refresh_install_cli_availability() {
+                    self.refresh_command_palette_items_for_current_mode(cx);
+                }
                 cx.notify();
             }
             Err(error) => {

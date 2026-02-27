@@ -18,14 +18,24 @@ pub(super) enum CommandPaletteItemKind {
 pub(super) struct CommandPaletteItem {
     pub(super) title: String,
     pub(super) keywords: String,
+    pub(super) enabled: bool,
+    pub(super) status_hint: Option<String>,
     pub(super) kind: CommandPaletteItemKind,
 }
 
 impl CommandPaletteItem {
-    pub(super) fn command(title: &str, keywords: &str, action: CommandAction) -> Self {
+    pub(super) fn command_with_state(
+        title: &str,
+        keywords: &str,
+        action: CommandAction,
+        enabled: bool,
+        status_hint: Option<&str>,
+    ) -> Self {
         Self {
             title: title.to_string(),
             keywords: keywords.to_string(),
+            enabled,
+            status_hint: status_hint.map(ToOwned::to_owned),
             kind: CommandPaletteItemKind::Command(action),
         }
     }
@@ -41,6 +51,8 @@ impl CommandPaletteItem {
         Self {
             title,
             keywords,
+            enabled: true,
+            status_hint: None,
             kind: CommandPaletteItemKind::Theme(theme_id),
         }
     }
@@ -139,14 +151,6 @@ impl CommandPaletteState {
     pub(super) fn filtered_item(&self, filtered_index: usize) -> Option<&CommandPaletteItem> {
         let item_index = *self.filtered_indices.get(filtered_index)?;
         self.items.get(item_index)
-    }
-
-    pub(super) fn filtered_item_kind(
-        &self,
-        filtered_index: usize,
-    ) -> Option<CommandPaletteItemKind> {
-        self.filtered_item(filtered_index)
-            .map(|item| item.kind.clone())
     }
 
     pub(super) fn selected_filtered_index(&self) -> Option<usize> {
@@ -401,7 +405,7 @@ mod tests {
     use super::*;
 
     fn command_item(title: &str, keywords: &str, action: CommandAction) -> CommandPaletteItem {
-        CommandPaletteItem::command(title, keywords, action)
+        CommandPaletteItem::command_with_state(title, keywords, action, true, None)
     }
 
     #[test]
@@ -578,10 +582,12 @@ mod tests {
         let mut state = CommandPaletteState::new(false);
         state.open(CommandPaletteMode::Themes);
         state.input_mut().set_text("theme".to_string());
-        state.set_items(vec![CommandPaletteItem::command(
+        state.set_items(vec![CommandPaletteItem::command_with_state(
             "New Tab",
             "tab",
             CommandAction::NewTab,
+            true,
+            None,
         )]);
         state.set_selected_filtered_index(999);
         state.set_scroll_target_y(12.0);

@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -21,6 +22,31 @@ pub struct ShellSetup {
     pub profile_path: PathBuf,
     pub profile_updated: bool,
     pub session_command: String,
+}
+
+pub fn is_cli_installed() -> bool {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let path_env = std::env::var_os("PATH");
+        let (target, _) = resolve_install_cli_target_for_unix(dirs::home_dir().as_deref());
+        return managed_target_binary_exists(&target)
+            && managed_target_dir_in_path(&target, path_env.as_deref());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let path_env = std::env::var_os("PATH");
+        let target = resolve_install_cli_target_for_windows(dirs::data_local_dir().as_deref());
+        return target.as_deref().is_some_and(|target| {
+            managed_target_binary_exists(target)
+                && managed_target_dir_in_path(target, path_env.as_deref())
+        });
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        false
+    }
 }
 
 pub fn install_cli(configured_shell: Option<&str>) -> Result<InstallCliResult, String> {
@@ -291,6 +317,53 @@ fn double_quote_fish_value(value: &str) -> String {
     )
 }
 
+fn path_exists_or_symlink(path: &Path) -> bool {
+    path.exists() || path.symlink_metadata().is_ok()
+}
+
+fn managed_target_binary_exists(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|metadata| metadata.is_file())
+        .unwrap_or(false)
+}
+
+fn managed_target_dir_in_path(target_path: &Path, path_env: Option<&OsStr>) -> bool {
+    let Some(target_dir) = target_path.parent() else {
+        return false;
+    };
+    let Some(path_env) = path_env else {
+        return false;
+    };
+
+    std::env::split_paths(path_env)
+        .any(|path_entry| paths_match_with_canonicalization(&path_entry, target_dir))
+}
+
+fn paths_match_with_canonicalization(path_a: &Path, path_b: &Path) -> bool {
+    if path_a == path_b {
+        return true;
+    }
+
+    match (path_a.canonicalize(), path_b.canonicalize()) {
+        (Ok(path_a), Ok(path_b)) => path_a == path_b,
+        _ => false,
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn resolve_install_cli_target_for_unix(home_dir: Option<&Path>) -> (PathBuf, bool) {
+    if let Some(home_dir) = home_dir {
+        (home_dir.join(".local").join("bin").join("termy"), false)
+    } else {
+        (PathBuf::from("/usr/local/bin/termy"), true)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_install_cli_target_for_windows(local_app_data: Option<&Path>) -> Option<PathBuf> {
+    local_app_data.map(|path| path.join("Termy").join("bin").join("termy.exe"))
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn install_cli_binary() -> Result<PathBuf, String> {
     use std::os::unix::fs::symlink;
@@ -298,14 +371,7 @@ fn install_cli_binary() -> Result<PathBuf, String> {
     let cli_source = find_cli_binary()?;
     let cli_source = absolute_install_cli_source_path(&cli_source)?;
 
-    let home_bin = dirs::home_dir().map(|home| home.join(".local").join("bin").join("termy"));
-
-    let using_fallback = home_bin.is_none();
-    let target = if let Some(ref local_bin) = home_bin {
-        local_bin.clone()
-    } else {
-        PathBuf::from("/usr/local/bin/termy")
-    };
+    let (target, using_fallback) = resolve_install_cli_target_for_unix(dirs::home_dir().as_deref());
 
     if let Some(parent) = target.parent()
         && !parent.exists()
@@ -328,7 +394,7 @@ fn install_cli_binary() -> Result<PathBuf, String> {
         })?;
     }
 
-    if target.exists() || target.symlink_metadata().is_ok() {
+    if path_exists_or_symlink(&target) {
         std::fs::remove_file(&target).map_err(|error| {
             format!(
                 "Failed to remove existing file at {}: {}",
@@ -359,11 +425,8 @@ fn absolute_install_cli_source_path(path: &Path) -> Result<PathBuf, String> {
 fn install_cli_binary() -> Result<PathBuf, String> {
     let cli_source = find_cli_binary()?;
 
-    let target = if let Some(local_app_data) = dirs::data_local_dir() {
-        local_app_data.join("Termy").join("bin").join("termy.exe")
-    } else {
-        return Err("Could not determine local app data directory".to_string());
-    };
+    let target = resolve_install_cli_target_for_windows(dirs::data_local_dir().as_deref())
+        .ok_or_else(|| "Could not determine local app data directory".to_string())?;
 
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)
@@ -430,6 +493,7 @@ fn fallback_cli_binary_paths() -> [PathBuf; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
@@ -555,5 +619,110 @@ mod tests {
             paths[1],
             PathBuf::from(format!("./target/debug/termy-cli{exe_suffix}"))
         );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn unix_install_target_prefers_home_local_bin() {
+        let home = Path::new("/tmp/termy-home");
+        let (target, using_fallback) = resolve_install_cli_target_for_unix(Some(home));
+        assert_eq!(target, home.join(".local").join("bin").join("termy"));
+        assert!(!using_fallback);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn unix_install_target_uses_system_fallback_without_home() {
+        let (target, using_fallback) = resolve_install_cli_target_for_unix(None);
+        assert_eq!(target, PathBuf::from("/usr/local/bin/termy"));
+        assert!(using_fallback);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_install_target_uses_local_app_data() {
+        let base = Path::new("C:/Users/Test/AppData/Local");
+        let target = resolve_install_cli_target_for_windows(Some(base)).unwrap();
+        assert_eq!(target, base.join("Termy").join("bin").join("termy.exe"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_install_target_missing_app_data_returns_none() {
+        assert!(resolve_install_cli_target_for_windows(None).is_none());
+    }
+
+    #[test]
+    fn managed_target_binary_exists_detects_existing_file() {
+        let temp = TempDir::new().unwrap();
+        let file = temp.path().join("termy");
+        std::fs::write(&file, b"test").unwrap();
+        assert!(managed_target_binary_exists(&file));
+    }
+
+    #[test]
+    fn managed_target_binary_exists_reports_missing_path() {
+        let temp = TempDir::new().unwrap();
+        let missing = temp.path().join("missing");
+        assert!(!managed_target_binary_exists(&missing));
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn managed_target_binary_exists_treats_broken_symlink_as_missing() {
+        use std::os::unix::fs::symlink;
+
+        let temp = TempDir::new().unwrap();
+        let broken_link = temp.path().join("termy");
+        symlink(temp.path().join("does-not-exist"), &broken_link).unwrap();
+        assert!(!managed_target_binary_exists(&broken_link));
+    }
+
+    #[test]
+    fn managed_target_dir_in_path_requires_parent_directory() {
+        let temp = TempDir::new().unwrap();
+        let bin_dir = temp.path().join("bin");
+        let other_dir = temp.path().join("other");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        std::fs::create_dir_all(&other_dir).unwrap();
+
+        let target = bin_dir.join(format!("termy{}", std::env::consts::EXE_SUFFIX));
+        let path_env = std::env::join_paths([bin_dir.as_path()]).unwrap();
+        assert!(managed_target_dir_in_path(&target, Some(path_env.as_os_str())));
+
+        let other_path_env = std::env::join_paths([other_dir.as_path()]).unwrap();
+        assert!(!managed_target_dir_in_path(
+            &target,
+            Some(other_path_env.as_os_str())
+        ));
+        assert!(!managed_target_dir_in_path(&target, None));
+    }
+
+    #[test]
+    fn managed_target_dir_in_path_matches_after_canonicalization() {
+        let temp = TempDir::new().unwrap();
+        let bin_dir = temp.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+
+        let target = bin_dir.join(format!("termy{}", std::env::consts::EXE_SUFFIX));
+        let normalized_via_parent = bin_dir.join("..").join("bin");
+        let path_env = std::env::join_paths([normalized_via_parent]).unwrap();
+
+        assert!(managed_target_dir_in_path(&target, Some(path_env.as_os_str())));
+    }
+
+    #[test]
+    fn path_exists_or_symlink_detects_existing_file() {
+        let temp = TempDir::new().unwrap();
+        let file = temp.path().join("termy");
+        std::fs::write(&file, b"test").unwrap();
+        assert!(path_exists_or_symlink(&file));
+    }
+
+    #[test]
+    fn path_exists_or_symlink_reports_missing_path() {
+        let temp = TempDir::new().unwrap();
+        let missing = temp.path().join("missing");
+        assert!(!path_exists_or_symlink(&missing));
     }
 }

@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 dirs = "6.0"
+
+[dev-dependencies]
+tempfile = "3"

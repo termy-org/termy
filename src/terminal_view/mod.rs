@@ -509,6 +509,7 @@ pub struct TerminalView {
     toast_animation_scheduled: bool,
     toast_manager: ToastManager,
     command_palette: CommandPaletteState,
+    install_cli_available: bool,
     tab_strip: TabStripState,
     inline_input_selecting: bool,
     terminal_scroll_accumulator_y: f32,
@@ -541,6 +542,35 @@ pub struct TerminalView {
 }
 
 impl TerminalView {
+    fn install_cli_availability_from_probe(is_cli_installed: bool) -> bool {
+        !is_cli_installed
+    }
+
+    fn install_cli_available_from_system() -> bool {
+        Self::install_cli_availability_from_probe(termy_cli_install_core::is_cli_installed())
+    }
+
+    fn refreshed_install_cli_availability(
+        current_available: bool,
+        is_cli_installed: bool,
+    ) -> (bool, bool) {
+        let next_available = Self::install_cli_availability_from_probe(is_cli_installed);
+        (next_available, next_available != current_available)
+    }
+
+    pub(super) fn install_cli_available(&self) -> bool {
+        self.install_cli_available
+    }
+
+    pub(super) fn refresh_install_cli_availability(&mut self) -> bool {
+        let (next_available, changed) = Self::refreshed_install_cli_availability(
+            self.install_cli_available,
+            termy_cli_install_core::is_cli_installed(),
+        );
+        self.install_cli_available = next_available;
+        changed
+    }
+
     fn runtime_config_from_app_config(config: &AppConfig) -> TerminalRuntimeConfig {
         let working_dir_fallback = match config.working_dir_fallback {
             config::WorkingDirFallback::Home => RuntimeWorkingDirFallback::Home,
@@ -887,7 +917,12 @@ impl TerminalView {
                 smol::Timer::after(Duration::from_millis(CONFIG_WATCH_INTERVAL_MS)).await;
                 let result = cx.update(|cx| {
                     this.update(cx, |view, cx| {
-                        if view.reload_config_if_changed(cx) {
+                        let config_changed = view.reload_config_if_changed(cx);
+                        let availability_changed = view.refresh_install_cli_availability();
+                        if availability_changed {
+                            view.refresh_command_palette_items_for_current_mode(cx);
+                        }
+                        if config_changed || availability_changed {
                             cx.notify();
                         }
                     })
@@ -1005,6 +1040,7 @@ impl TerminalView {
             toast_animation_scheduled: false,
             toast_manager: ToastManager::new(),
             command_palette: CommandPaletteState::new(config.command_palette_show_keybinds),
+            install_cli_available: Self::install_cli_available_from_system(),
             tab_strip: TabStripState::new(),
             inline_input_selecting: false,
             terminal_scroll_accumulator_y: 0.0,
@@ -1366,5 +1402,24 @@ mod tests {
         let opaque = adaptive_overlay_panel_alpha_with_floor_for_opacity(base, 1.0, floor);
         assert!(translucent >= floor);
         assert!(opaque < floor);
+    }
+
+    #[test]
+    fn install_cli_availability_is_inverse_of_installed_probe() {
+        assert!(TerminalView::install_cli_availability_from_probe(false));
+        assert!(!TerminalView::install_cli_availability_from_probe(true));
+    }
+
+    #[test]
+    fn refresh_install_cli_availability_reports_state_changes() {
+        let (next_available, changed) =
+            TerminalView::refreshed_install_cli_availability(true, true);
+        assert!(!next_available);
+        assert!(changed);
+
+        let (next_available, changed) =
+            TerminalView::refreshed_install_cli_availability(false, true);
+        assert!(!next_available);
+        assert!(!changed);
     }
 }
