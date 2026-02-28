@@ -1,0 +1,246 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+/* Original Termy dark theme */
+:root {
+  --radius: 0.75rem;
+  --background: #090d1a;
+  --foreground: #e7ebf5;
+  --card: #161d34;
+  --card-foreground: #dbe4f6;
+  --popover: #161d34;
+  --popover-foreground: #dbe4f6;
+  --primary: #a7e9a3;
+  --primary-foreground: #0b1020;
+  --secondary: #202948;
+  --secondary-foreground: #dbe4f6;
+  --muted: #1a2340;
+  --muted-foreground: #9eabc7;
+  --accent: #8cbef2;
+  --accent-foreground: #0b1020;
+  --destructive: #f1b8c5;
+  --border: #30385a;
+  --input: #30385a;
+  --ring: #69b4f2;
+}
+
+/* Original Termy light theme */
+.light {
+  --background: #f9fbff;
+  --foreground: #1f2d46;
+  --card: rgba(255, 255, 255, 0.9);
+  --card-foreground: #223452;
+  --popover: rgba(255, 255, 255, 0.95);
+  --popover-foreground: #223452;
+  --primary: #97dda6;
+  --primary-foreground: #10243a;
+  --secondary: #e2e9f8;
+  --secondary-foreground: #223452;
+  --muted: #edf2fc;
+  --muted-foreground: #5a6b8a;
+  --accent: #69b4f2;
+  --accent-foreground: #10243a;
+  --destructive: #d85050;
+  --border: #c8d4ea;
+  --input: #c8d4ea;
+  --ring: #9db2d6;
+}
+
+@layer base {
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+
+  * {
+    @apply border-border;
+  }
+}
+
+/* Gradient text - using original accent colors */
+.gradient-text {
+  @apply bg-clip-text text-transparent;
+  background-image: linear-gradient(135deg, #a7e9a3 0%, #8cbef2 100%);
+}
+
+.light .gradient-text {
+  background-image: linear-gradient(135deg, #97dda6 0%, #69b4f2 100%);
+}
+
+/* Glow effects - using original primary */
+.glow-sm {
+  box-shadow: 0 0 30px -10px rgba(167, 233, 163, 0.5);
+}
+
+.glow {
+  box-shadow: 0 0 80px -20px rgba(167, 233, 163, 0.4);
+}
+
+.light .glow-sm {
+  box-shadow: 0 0 30px -10px rgba(151, 221, 166, 0.4);
+}
+
+.light .glow {
+  box-shadow: 0 0 80px -20px rgba(151, 221, 166, 0.3);
+}
+
+/* Grid background */
+.grid-bg {
+  background-size: 80px 80px;
+  background-image:
+    linear-gradient(to right, rgba(140, 190, 242, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(140, 190, 242, 0.03) 1px, transparent 1px);
+}
+
+.light .grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(105, 180, 242, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(105, 180, 242, 0.06) 1px, transparent 1px);
+}
+
+/* Radial fade - original gradient style */
+.radial-fade {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(102, 130, 198, 0.2), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 10%, rgba(77, 174, 247, 0.12), transparent),
+    radial-gradient(ellipse 50% 30% at 20% 20%, rgba(167, 233, 163, 0.08), transparent);
+}
+
+.light .radial-fade {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(105, 180, 242, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 10%, rgba(151, 221, 166, 0.1), transparent);
+}
+
+/* Animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer 8s linear infinite;
+  background-size: 200% 100%;
+}
+
+.animate-fade-up {
+  animation: fade-up 0.6s ease-out forwards;
+}
+
+/* Terminal window styling */
+.terminal-window {
+  @apply rounded-2xl border border-border/50 bg-card overflow-hidden;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 30px 60px -15px rgba(0, 0, 0, 0.5),
+    0 0 100px -30px rgba(140, 190, 242, 0.15);
+}
+
+.light .terminal-window {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.03),
+    0 30px 60px -15px rgba(0, 0, 0, 0.1),
+    0 0 100px -30px rgba(105, 180, 242, 0.1);
+}
+
+.terminal-header {
+  @apply flex items-center gap-2 px-4 py-3 bg-secondary/30 border-b border-border/50;
+}
+
+.terminal-dot {
+  @apply w-3 h-3 rounded-full;
+}
+
+/* Card hover effect */
+.card-hover {
+  @apply transition-all duration-300;
+}
+
+.card-hover:hover {
+  @apply border-accent/50;
+  box-shadow: 0 0 40px -15px rgba(140, 190, 242, 0.3);
+  transform: translateY(-2px);
+}
+
+.light .card-hover:hover {
+  box-shadow: 0 0 40px -15px rgba(105, 180, 242, 0.25);
+}
+
+/* Badge styles */
+.badge-glow {
+  @apply relative;
+}
+
+.badge-glow::before {
+  content: "";
+  @apply absolute inset-0 rounded-full;
+  background: inherit;
+  filter: blur(8px);
+  opacity: 0.5;
+  z-index: -1;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Selection */
+::selection {
+  @apply bg-primary/30 text-foreground;
+}
