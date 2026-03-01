@@ -1599,17 +1599,16 @@ fn managed_session_name() -> String {
     format!("termy-{}-{}", std::process::id(), now_ns)
 }
 
-fn capture_full_pane_args<'a>(pane_id: &'a str) -> [&'a str; 10] {
-    // Do not pass `-J` here. Joined wrapped lines desynchronize tmux's raw
-    // cursor coordinates (`cursor_x`, `cursor_y`) from reconstructed pane rows
-    // during session attach/switch hydration.
-    // Keep full-pane capture at `-S -`; explicit helper naming avoids stringly
-    // capture modes and keeps call sites self-documenting.
+fn capture_full_pane_args<'a>(pane_id: &'a str) -> [&'a str; 11] {
+    // Full-history hydration does not rely on tmux viewport cursor coordinates.
+    // Use `-J` here so soft-wrapped rows are rejoined and do not become hard
+    // line breaks after restart when pane width differs at attach time.
     [
         "capture-pane",
         "-p",
         "-e",
         "-C",
+        "-J",
         "-S",
         "-",
         "-E",
@@ -2983,7 +2982,7 @@ mod tests {
     }
 
     #[test]
-    fn capture_full_pane_args_match_expected_shape_without_joined_wraps() {
+    fn capture_full_pane_args_match_expected_shape_with_joined_wraps() {
         let args = capture_full_pane_args("%1");
         assert_eq!(
             args,
@@ -2992,6 +2991,7 @@ mod tests {
                 "-p",
                 "-e",
                 "-C",
+                "-J",
                 "-S",
                 "-",
                 "-E",

@@ -5,6 +5,8 @@ theme = termy
 tmux_enabled = false
 # Reuse tmux tabs and panes across app restarts
 tmux_persistence = false
+# When tmux persistence is enabled, restore tmux pane scrollback on restart
+tmux_persist_scrollback = true
 # tmux executable path or binary name
 tmux_binary = tmux
 # Show active tmux pane border highlight in managed sessions

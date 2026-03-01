@@ -4,6 +4,7 @@ use crate::constants::{
     DEFAULT_TAB_TITLE_COMMAND_FORMAT, DEFAULT_TAB_TITLE_EXPLICIT_PREFIX,
     DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT, DEFAULT_TERM,
     DEFAULT_TMUX_BINARY, DEFAULT_TMUX_ENABLED, DEFAULT_TMUX_PERSISTENCE,
+    DEFAULT_TMUX_PERSIST_SCROLLBACK,
     DEFAULT_TMUX_SHOW_ACTIVE_PANE_BORDER,
     DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
 };
@@ -251,6 +252,7 @@ pub struct AppConfig {
     pub theme: ThemeId,
     pub tmux_enabled: bool,
     pub tmux_persistence: bool,
+    pub tmux_persist_scrollback: bool,
     pub tmux_binary: String,
     pub tmux_show_active_pane_border: bool,
     pub working_dir: Option<String>,
@@ -297,6 +299,7 @@ impl Default for AppConfig {
             theme: "termy".to_string(),
             tmux_enabled: DEFAULT_TMUX_ENABLED,
             tmux_persistence: DEFAULT_TMUX_PERSISTENCE,
+            tmux_persist_scrollback: DEFAULT_TMUX_PERSIST_SCROLLBACK,
             tmux_binary: DEFAULT_TMUX_BINARY.to_string(),
             tmux_show_active_pane_border: DEFAULT_TMUX_SHOW_ACTIVE_PANE_BORDER,
             working_dir: None,

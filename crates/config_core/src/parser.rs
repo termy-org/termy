@@ -143,6 +143,13 @@ impl AppConfig {
                         config.tmux_persistence = parsed;
                     }
                 }
+                RootSettingId::TmuxPersistScrollback => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.tmux_persist_scrollback = parsed;
+                    }
+                }
                 RootSettingId::TmuxBinary => {
                     if let Some(parsed) = parse_string_field(
                         &mut diagnostics,
