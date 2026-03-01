@@ -3,6 +3,10 @@ use super::*;
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle};
 use gpui::prelude::FluentBuilder;
 
+fn cell_ranges_overlap(start_a: u32, end_a: u32, start_b: u32, end_b: u32) -> bool {
+    start_a < end_b && start_b < end_a
+}
+
 impl Focusable for TerminalView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -10,6 +14,64 @@ impl Focusable for TerminalView {
 }
 
 impl TerminalView {
+    fn pane_right_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> u32 {
+        let pane_right = u32::from(pane.left) + u32::from(pane.width);
+        let pane_top = u32::from(pane.top);
+        let pane_bottom = pane_top + u32::from(pane.height);
+
+        panes
+            .iter()
+            .filter_map(|candidate| {
+                if candidate.id == pane.id {
+                    return None;
+                }
+
+                let candidate_left = u32::from(candidate.left);
+                if candidate_left < pane_right {
+                    return None;
+                }
+
+                let candidate_top = u32::from(candidate.top);
+                let candidate_bottom = candidate_top + u32::from(candidate.height);
+                if !cell_ranges_overlap(pane_top, pane_bottom, candidate_top, candidate_bottom) {
+                    return None;
+                }
+
+                Some(candidate_left.saturating_sub(pane_right))
+            })
+            .min()
+            .unwrap_or(0)
+    }
+
+    fn pane_bottom_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> u32 {
+        let pane_left = u32::from(pane.left);
+        let pane_right = pane_left + u32::from(pane.width);
+        let pane_bottom = u32::from(pane.top) + u32::from(pane.height);
+
+        panes
+            .iter()
+            .filter_map(|candidate| {
+                if candidate.id == pane.id {
+                    return None;
+                }
+
+                let candidate_top = u32::from(candidate.top);
+                if candidate_top < pane_bottom {
+                    return None;
+                }
+
+                let candidate_left = u32::from(candidate.left);
+                let candidate_right = candidate_left + u32::from(candidate.width);
+                if !cell_ranges_overlap(pane_left, pane_right, candidate_left, candidate_right) {
+                    return None;
+                }
+
+                Some(candidate_top.saturating_sub(pane_bottom))
+            })
+            .min()
+            .unwrap_or(0)
+    }
+
     fn refresh_terminal_scrollbar_marker_cache(
         &mut self,
         layout: terminal_scrollbar::TerminalScrollbarLayout,
@@ -401,101 +463,232 @@ impl Render for TerminalView {
         self.sync_window_background_appearance(window);
         let effective_background_opacity = self.background_opacity_factor();
         let (effective_padding_x, effective_padding_y) = self.effective_terminal_padding();
+        let mut terminal_surface_bg = colors.background;
+        terminal_surface_bg.a = self.scaled_background_alpha(terminal_surface_bg.a);
 
         self.sync_terminal_size(window, cell_size);
 
-        // Collect cells to render - pre-allocate based on terminal size to avoid reallocations
-        let terminal_size = self.active_terminal().size();
-        let estimated_cells = (terminal_size.cols as usize) * (terminal_size.rows as usize);
-        let mut cells_to_render: Vec<CellRenderInfo> = Vec::with_capacity(estimated_cells);
-        let (cursor_col, cursor_row) = self.active_terminal().cursor_position();
+        let active_pane_id = self.active_pane_id().map(ToOwned::to_owned);
         let terminal_cursor_active =
             !self.is_command_palette_open() && self.renaming_tab.is_none() && !self.search_open;
         let cursor_visible = terminal_cursor_active
             && self.cursor_visible_for_focus(self.focus_handle.is_focused(window));
 
-        // Pre-compute search match info
+        // Pre-compute search match info for active pane.
         let search_active = self.search_open;
-        let search_results = if search_active {
-            Some(self.search_state.results())
-        } else {
-            None
-        };
         let mut terminal_display_offset = 0usize;
+        let divider_rgba = pane_divider_color(terminal_surface_bg, colors.foreground);
+        let divider_color: gpui::Hsla = divider_rgba.into();
+        let mut pane_layers = Vec::<AnyElement>::new();
+        let mut pane_dividers = Vec::<AnyElement>::new();
 
-        self.active_terminal().with_term(|term| {
-            let content = term.renderable_content();
-            terminal_display_offset = content.display_offset;
-            let show_cursor = content.display_offset == 0 && cursor_visible;
-            for cell in content.display_iter {
-                let point = cell.point;
-                let cell_content = &cell.cell;
-                let term_line = point.line.0;
-                let Some(row) =
-                    Self::viewport_row_from_term_line(term_line, content.display_offset)
-                else {
+        if let Some(active_tab) = self.tabs.get(self.active_tab) {
+            let multi_pane = active_tab.panes.len() > 1;
+            let max_right_cells = active_tab
+                .panes
+                .iter()
+                .map(|pane| u32::from(pane.left).saturating_add(u32::from(pane.width)))
+                .max()
+                .unwrap_or(0);
+            let max_bottom_cells = active_tab
+                .panes
+                .iter()
+                .map(|pane| u32::from(pane.top).saturating_add(u32::from(pane.height)))
+                .max()
+                .unwrap_or(0);
+
+            for pane in &active_tab.panes {
+                let terminal = &pane.terminal;
+                let terminal_size = terminal.size();
+                let cols = terminal_size.cols as usize;
+                let rows = terminal_size.rows as usize;
+                if cols == 0 || rows == 0 {
                     continue;
-                };
-                let col = point.column.0;
-
-                // Get foreground and background colors
-                let mut fg = colors.convert(cell_content.fg);
-                let mut bg = colors.convert(cell_content.bg);
-                if cell_content.flags.contains(Flags::INVERSE) {
-                    std::mem::swap(&mut fg, &mut bg);
                 }
-                if cell_content.flags.contains(Flags::DIM) {
-                    fg.r *= DIM_TEXT_FACTOR;
-                    fg.g *= DIM_TEXT_FACTOR;
-                    fg.b *= DIM_TEXT_FACTOR;
-                }
-                bg.a *= effective_background_opacity;
-
-                let c = cell_content.c;
-                let is_cursor = show_cursor && col == cursor_col && row == cursor_row;
-                let selected = self.cell_is_selected(col, row);
-
-                // Check search matches
-                let (search_current, search_match) = if let Some(results) = &search_results {
-                    let is_current = results.is_current_match(term_line, col);
-                    let is_any = results.is_any_match(term_line, col);
-                    (is_current, is_any && !is_current)
+                let is_active_pane = active_pane_id.as_deref() == Some(pane.id.as_str());
+                let estimated_cells = cols.saturating_mul(rows);
+                let mut cells_to_render: Vec<CellRenderInfo> = Vec::with_capacity(estimated_cells);
+                let (cursor_col, cursor_row) = terminal.cursor_position();
+                let mut pane_display_offset = 0usize;
+                let pane_search_results = if search_active && is_active_pane {
+                    Some(self.search_state.results())
                 } else {
-                    (false, false)
+                    None
                 };
 
-                cells_to_render.push(CellRenderInfo {
-                    col,
-                    row,
-                    char: c,
-                    fg: fg.into(),
-                    bg: bg.into(),
-                    bold: cell_content.flags.contains(Flags::BOLD),
-                    render_text: !cell_content.flags.intersects(
-                        Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN,
-                    ),
-                    is_cursor,
-                    selected,
-                    search_current,
-                    search_match,
+                terminal.with_term(|term| {
+                    let content = term.renderable_content();
+                    pane_display_offset = content.display_offset;
+                    let show_cursor = content.display_offset == 0 && cursor_visible && is_active_pane;
+                    for cell in content.display_iter {
+                        let point = cell.point;
+                        let cell_content = &cell.cell;
+                        let term_line = point.line.0;
+                        let Some(row) =
+                            Self::viewport_row_from_term_line(term_line, content.display_offset)
+                        else {
+                            continue;
+                        };
+                        let col = point.column.0;
+
+                        let mut fg = colors.convert(cell_content.fg);
+                        let mut bg = colors.convert(cell_content.bg);
+                        if cell_content.flags.contains(Flags::INVERSE) {
+                            std::mem::swap(&mut fg, &mut bg);
+                        }
+                        if cell_content.flags.contains(Flags::DIM) {
+                            fg.r *= DIM_TEXT_FACTOR;
+                            fg.g *= DIM_TEXT_FACTOR;
+                            fg.b *= DIM_TEXT_FACTOR;
+                        }
+                        bg.a *= effective_background_opacity;
+
+                        let c = cell_content.c;
+                        let is_cursor = show_cursor && col == cursor_col && row == cursor_row;
+                        let selected = is_active_pane && self.cell_is_selected(col, row);
+
+                        let (search_current, search_match) =
+                            if let Some(results) = &pane_search_results {
+                                let is_current = results.is_current_match(term_line, col);
+                                let is_any = results.is_any_match(term_line, col);
+                                (is_current, is_any && !is_current)
+                            } else {
+                                (false, false)
+                            };
+
+                        cells_to_render.push(CellRenderInfo {
+                            col,
+                            row,
+                            char: c,
+                            fg: fg.into(),
+                            bg: bg.into(),
+                            bold: cell_content.flags.contains(Flags::BOLD),
+                            render_text: !cell_content.flags.intersects(
+                                Flags::WIDE_CHAR_SPACER
+                                    | Flags::LEADING_WIDE_CHAR_SPACER
+                                    | Flags::HIDDEN,
+                            ),
+                            is_cursor,
+                            selected,
+                            search_current,
+                            search_match,
+                        });
+                    }
                 });
+
+                if is_active_pane {
+                    terminal_display_offset = pane_display_offset;
+                }
+
+                let mut selection_bg = colors.cursor;
+                selection_bg.a = SELECTION_BG_ALPHA;
+                let selection_fg = colors.background;
+                let hovered_link_range = if is_active_pane {
+                    self.hovered_link
+                        .as_ref()
+                        .map(|link| (link.row, link.start_col, link.end_col))
+                } else {
+                    None
+                };
+
+                let default_cell_bg: gpui::Hsla = {
+                    let mut bg = colors.background;
+                    bg.a = self.scaled_background_alpha(bg.a);
+                    bg.into()
+                };
+
+                let terminal_grid = TerminalGrid {
+                    cells: cells_to_render,
+                    cell_size,
+                    cols,
+                    rows,
+                    clear_bg: gpui::Hsla::transparent_black(),
+                    default_bg: default_cell_bg,
+                    cursor_color: colors.cursor.into(),
+                    selection_bg: selection_bg.into(),
+                    selection_fg: selection_fg.into(),
+                    // Search highlight colors tuned for strong contrast on dark terminal themes.
+                    search_match_bg: gpui::Hsla {
+                        h: 0.14,
+                        s: 0.92,
+                        l: 0.62,
+                        a: 0.62,
+                    },
+                    search_current_bg: gpui::Hsla {
+                        h: 0.09,
+                        s: 0.98,
+                        l: 0.56,
+                        a: 0.86,
+                    },
+                    hovered_link_range,
+                    font_family: font_family.clone(),
+                    font_size,
+                    cursor_style: self.terminal_cursor_style(),
+                };
+
+                let cell_width: f32 = cell_size.width.into();
+                let cell_height: f32 = cell_size.height.into();
+                let pane_left = effective_padding_x + (f32::from(pane.left) * cell_width);
+                let pane_top = effective_padding_y + (f32::from(pane.top) * cell_height);
+                let pane_width = f32::from(terminal_size.cols) * cell_width;
+                let pane_height = f32::from(terminal_size.rows) * cell_height;
+                if pane_width <= f32::EPSILON || pane_height <= f32::EPSILON {
+                    continue;
+                }
+
+                let pane_right_cells = u32::from(pane.left) + u32::from(pane.width);
+                let pane_bottom_cells = u32::from(pane.top) + u32::from(pane.height);
+
+                if multi_pane && pane_right_cells < max_right_cells {
+                    let gap_cells = Self::pane_right_gap_cells(pane, &active_tab.panes);
+                    let gap_px = (gap_cells as f32) * cell_width;
+                    let divider_left = pane_left + pane_width + (gap_px * 0.5) - 0.5;
+                    pane_dividers.push(
+                        div()
+                            .absolute()
+                            .left(px(divider_left))
+                            .top(px(pane_top))
+                            .w(px(1.0))
+                            .h(px(pane_height))
+                            .bg(divider_color)
+                            .into_any_element(),
+                    );
+                }
+                if multi_pane && pane_bottom_cells < max_bottom_cells {
+                    let gap_cells = Self::pane_bottom_gap_cells(pane, &active_tab.panes);
+                    let gap_px = (gap_cells as f32) * cell_height;
+                    let divider_top = pane_top + pane_height + (gap_px * 0.5) - 0.5;
+                    pane_dividers.push(
+                        div()
+                            .absolute()
+                            .left(px(pane_left))
+                            .top(px(divider_top))
+                            .w(px(pane_width))
+                            .h(px(1.0))
+                            .bg(divider_color)
+                            .into_any_element(),
+                    );
+                }
+
+                pane_layers.push(
+                    div()
+                        .id(SharedString::from(format!("pane-{}", pane.id)))
+                        .absolute()
+                        .left(px(pane_left))
+                        .top(px(pane_top))
+                        .w(px(pane_width))
+                        .h(px(pane_height))
+                        .child(terminal_grid)
+                        .into_any_element(),
+                );
             }
-        });
+        }
 
         let focus_handle = self.focus_handle.clone();
         let titlebar_height = Self::titlebar_height();
-        let mut terminal_surface_bg = colors.background;
-        terminal_surface_bg.a = self.scaled_background_alpha(terminal_surface_bg.a);
         let titlebar_bg = terminal_surface_bg;
         let tabbar_bg = terminal_surface_bg;
         let tabs_row = self.render_tab_strip(window, &colors, &font_family, tabbar_bg, cx);
-        let mut selection_bg = colors.cursor;
-        selection_bg.a = SELECTION_BG_ALPHA;
-        let selection_fg = colors.background;
-        let hovered_link_range = self
-            .hovered_link
-            .as_ref()
-            .map(|link| (link.row, link.start_col, link.end_col));
 
         // Build update banner element (macOS only)
         #[cfg(target_os = "macos")]
@@ -505,38 +698,6 @@ impl Render for TerminalView {
         #[cfg(not(target_os = "macos"))]
         let banner_element: Option<AnyElement> = None;
         let terminal_surface_bg_hsla: gpui::Hsla = terminal_surface_bg.into();
-
-        // Search highlight colors tuned for strong contrast on dark terminal themes.
-        let search_match_bg = gpui::Hsla {
-            h: 0.14,
-            s: 0.92,
-            l: 0.62,
-            a: 0.62,
-        };
-        let search_current_bg = gpui::Hsla {
-            h: 0.09,
-            s: 0.98,
-            l: 0.56,
-            a: 0.86,
-        };
-
-        let terminal_grid = TerminalGrid {
-            cells: cells_to_render,
-            cell_size,
-            cols: terminal_size.cols as usize,
-            rows: terminal_size.rows as usize,
-            clear_bg: gpui::Hsla::transparent_black(),
-            default_bg: terminal_surface_bg_hsla,
-            cursor_color: colors.cursor.into(),
-            selection_bg: selection_bg.into(),
-            selection_fg: selection_fg.into(),
-            search_match_bg,
-            search_current_bg,
-            hovered_link_range,
-            font_family: font_family.clone(),
-            font_size,
-            cursor_style: self.terminal_cursor_style(),
-        };
         if self.terminal_scrollbar_mode() == ui_scrollbar::ScrollbarVisibilityMode::OnScroll
             && !self.terminal_scrollbar_animation_active
             && self.terminal_scrollbar_needs_animation(Instant::now())
@@ -555,16 +716,13 @@ impl Render for TerminalView {
         let terminal_scrollbar_overlay = terminal_scrollbar_layout.and_then(|layout| {
             self.render_terminal_scrollbar_overlay(layout, terminal_display_offset > 0)
         });
-        let terminal_grid_layer = if let Some(viewport) = self.terminal_viewport_geometry() {
-            div()
-                .relative()
-                .w(px(viewport.width))
-                .h(px(viewport.height))
-                .child(terminal_grid)
-                .into_any_element()
-        } else {
-            div().child(terminal_grid).into_any_element()
-        };
+        let terminal_grid_layer = div()
+            .relative()
+            .w_full()
+            .h_full()
+            .children(pane_layers)
+            .children(pane_dividers)
+            .into_any_element();
         let command_palette_overlay = if self.is_command_palette_open() {
             Some(self.render_command_palette_modal(cx))
         } else {
@@ -891,6 +1049,18 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_move_tab_right_action))
                     .on_action(cx.listener(Self::handle_switch_tab_left_action))
                     .on_action(cx.listener(Self::handle_switch_tab_right_action))
+                    .on_action(cx.listener(Self::handle_split_pane_vertical_action))
+                    .on_action(cx.listener(Self::handle_split_pane_horizontal_action))
+                    .on_action(cx.listener(Self::handle_close_pane_action))
+                    .on_action(cx.listener(Self::handle_focus_pane_left_action))
+                    .on_action(cx.listener(Self::handle_focus_pane_right_action))
+                    .on_action(cx.listener(Self::handle_focus_pane_up_action))
+                    .on_action(cx.listener(Self::handle_focus_pane_down_action))
+                    .on_action(cx.listener(Self::handle_resize_pane_left_action))
+                    .on_action(cx.listener(Self::handle_resize_pane_right_action))
+                    .on_action(cx.listener(Self::handle_resize_pane_up_action))
+                    .on_action(cx.listener(Self::handle_resize_pane_down_action))
+                    .on_action(cx.listener(Self::handle_toggle_pane_zoom_action))
                     .on_action(cx.listener(Self::handle_minimize_window_action))
                     .on_action(cx.listener(Self::handle_copy_action))
                     .on_action(cx.listener(Self::handle_paste_action))
@@ -929,8 +1099,6 @@ impl Render for TerminalView {
                     .relative()
                     .flex_1()
                     .w_full()
-                    .px(px(effective_padding_x))
-                    .py(px(effective_padding_y))
                     .overflow_hidden()
                     .bg(terminal_surface_bg_hsla)
                     .font_family(font_family.clone())

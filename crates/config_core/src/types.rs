@@ -1,8 +1,9 @@
 use crate::constants::{
-    DEFAULT_COLORTERM, DEFAULT_CURSOR_BLINK, DEFAULT_INACTIVE_TAB_SCROLLBACK,
+    DEFAULT_CURSOR_BLINK, DEFAULT_INACTIVE_TAB_SCROLLBACK, DEFAULT_TMUX_BINARY,
+    DEFAULT_TMUX_PERSISTENCE,
     DEFAULT_MOUSE_SCROLL_MULTIPLIER, DEFAULT_SCROLLBACK_HISTORY, DEFAULT_TAB_TITLE_COMMAND_FORMAT,
     DEFAULT_TAB_TITLE_EXPLICIT_PREFIX, DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT,
-    DEFAULT_TERM, DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
+    DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
 };
 
 pub type ThemeId = String;
@@ -225,6 +226,8 @@ pub struct CustomColors {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppConfig {
     pub theme: ThemeId,
+    pub tmux_persistence: bool,
+    pub tmux_binary: String,
     pub working_dir: Option<String>,
     pub working_dir_fallback: WorkingDirFallback,
     pub warn_on_quit_with_running_process: bool,
@@ -232,9 +235,6 @@ pub struct AppConfig {
     pub tab_close_visibility: TabCloseVisibility,
     pub tab_width_mode: TabWidthMode,
     pub show_termy_in_titlebar: bool,
-    pub shell: Option<String>,
-    pub term: String,
-    pub colorterm: Option<String>,
     pub window_width: f32,
     pub window_height: f32,
     pub font_family: String,
@@ -265,6 +265,8 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             theme: "termy".to_string(),
+            tmux_persistence: DEFAULT_TMUX_PERSISTENCE,
+            tmux_binary: DEFAULT_TMUX_BINARY.to_string(),
             working_dir: None,
             working_dir_fallback: WorkingDirFallback::default(),
             warn_on_quit_with_running_process: DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
@@ -272,9 +274,6 @@ impl Default for AppConfig {
             tab_close_visibility: TabCloseVisibility::default(),
             tab_width_mode: TabWidthMode::default(),
             show_termy_in_titlebar: true,
-            shell: None,
-            term: DEFAULT_TERM.to_string(),
-            colorterm: Some(DEFAULT_COLORTERM.to_string()),
             window_width: 1280.0,
             window_height: 820.0,
             font_family: "JetBrains Mono".to_string(),

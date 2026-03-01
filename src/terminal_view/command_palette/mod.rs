@@ -474,6 +474,18 @@ impl TerminalView {
             | CommandAction::MoveTabRight
             | CommandAction::SwitchTabLeft
             | CommandAction::SwitchTabRight
+            | CommandAction::SplitPaneVertical
+            | CommandAction::SplitPaneHorizontal
+            | CommandAction::ClosePane
+            | CommandAction::FocusPaneLeft
+            | CommandAction::FocusPaneRight
+            | CommandAction::FocusPaneUp
+            | CommandAction::FocusPaneDown
+            | CommandAction::ResizePaneLeft
+            | CommandAction::ResizePaneRight
+            | CommandAction::ResizePaneUp
+            | CommandAction::ResizePaneDown
+            | CommandAction::TogglePaneZoom
             | CommandAction::CheckForUpdates
             | CommandAction::ToggleCommandPalette
             | CommandAction::Copy

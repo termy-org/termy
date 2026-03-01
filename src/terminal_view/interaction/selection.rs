@@ -9,6 +9,75 @@ enum TerminalSelectionCharClass {
 
 
 impl TerminalView {
+    pub(in super::super) fn position_to_pane_cell(
+        &self,
+        position: gpui::Point<Pixels>,
+        clamp: bool,
+    ) -> Option<(String, CellPos)> {
+        let tab = self.tabs.get(self.active_tab)?;
+        let (padding_x, padding_y) = self.effective_terminal_padding();
+        let x: f32 = position.x.into();
+        let y: f32 = position.y.into();
+        let active_pane_id = tab.active_pane_id();
+
+        for pane in &tab.panes {
+            let size = pane.terminal.size();
+            if size.cols == 0 || size.rows == 0 {
+                continue;
+            }
+            let cell_width: f32 = size.cell_width.into();
+            let cell_height: f32 = size.cell_height.into();
+            if cell_width <= f32::EPSILON || cell_height <= f32::EPSILON {
+                continue;
+            }
+
+            let origin_x = padding_x + (f32::from(pane.left) * cell_width);
+            let origin_y = padding_y + (f32::from(pane.top) * cell_height);
+            let width = f32::from(size.cols) * cell_width;
+            let height = f32::from(size.rows) * cell_height;
+            if width <= f32::EPSILON || height <= f32::EPSILON {
+                continue;
+            }
+
+            let mut local_x = x - origin_x;
+            let mut local_y = y - origin_y;
+            let is_inside =
+                local_x >= 0.0 && local_x < width && local_y >= 0.0 && local_y < height;
+            if !is_inside {
+                if !clamp || active_pane_id != Some(pane.id.as_str()) {
+                    continue;
+                }
+                local_x = local_x.clamp(0.0, width - f32::EPSILON);
+                local_y = local_y.clamp(0.0, height - f32::EPSILON);
+            }
+
+            let max_col = i32::from(size.cols) - 1;
+            let max_row = i32::from(size.rows) - 1;
+            if max_col < 0 || max_row < 0 {
+                continue;
+            }
+
+            let mut col = (local_x / cell_width).floor() as i32;
+            let mut row = (local_y / cell_height).floor() as i32;
+            if clamp {
+                col = col.clamp(0, max_col);
+                row = row.clamp(0, max_row);
+            } else if col < 0 || col > max_col || row < 0 || row > max_row {
+                continue;
+            }
+
+            return Some((
+                pane.id.clone(),
+                CellPos {
+                    col: col as usize,
+                    row: row as usize,
+                },
+            ));
+        }
+
+        None
+    }
+
     pub(in super::super) fn has_selection(&self) -> bool {
         matches!((self.selection_anchor, self.selection_head), (Some(anchor), Some(head)) if self.selection_moved || anchor != head)
     }
@@ -47,43 +116,8 @@ impl TerminalView {
         position: gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<CellPos> {
-        let (padding_x, padding_y) = self.effective_terminal_padding();
-        let size = self.active_terminal().size();
-        if size.cols == 0 || size.rows == 0 {
-            return None;
-        }
-
-        let mut x: f32 = position.x.into();
-        let mut y: f32 = position.y.into();
-        x -= padding_x;
-        y -= self.chrome_height() + padding_y;
-
-        let cell_width: f32 = size.cell_width.into();
-        let cell_height: f32 = size.cell_height.into();
-        if cell_width <= 0.0 || cell_height <= 0.0 {
-            return None;
-        }
-
-        let mut col = (x / cell_width).floor() as i32;
-        let mut row = (y / cell_height).floor() as i32;
-
-        let max_col = i32::from(size.cols) - 1;
-        let max_row = i32::from(size.rows) - 1;
-        if max_col < 0 || max_row < 0 {
-            return None;
-        }
-
-        if clamp {
-            col = col.clamp(0, max_col);
-            row = row.clamp(0, max_row);
-        } else if col < 0 || col > max_col || row < 0 || row > max_row {
-            return None;
-        }
-
-        Some(CellPos {
-            col: col as usize,
-            row: row as usize,
-        })
+        let (pane_id, cell) = self.position_to_pane_cell(position, clamp)?;
+        self.is_active_pane_id(&pane_id).then_some(cell)
     }
 
     pub(in super::super) fn selected_text(&self) -> Option<String> {

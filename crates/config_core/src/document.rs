@@ -259,8 +259,8 @@ mod tests {
 
     #[test]
     fn remove_root_setting_removes_all_matching_root_entries() {
-        let input = "theme = termy\nshell = /bin/zsh\nshell = /bin/bash\n[colors]\nforeground = #fff\n";
-        let output = remove_root_setting(input, RootSettingId::Shell);
+        let input = "theme = termy\ntmux_binary = tmux\ntmux_binary = /usr/local/bin/tmux\n[colors]\nforeground = #fff\n";
+        let output = remove_root_setting(input, RootSettingId::TmuxBinary);
         assert_eq!(output, "theme = termy\n[colors]\nforeground = #fff\n");
     }
 

@@ -43,20 +43,15 @@ Termy reads configuration from `~/.config/termy/config.txt`.
 
 ## Terminal
 
-`shell`
-- Default: unset
-- Executable used for new sessions
-- Group: `SHELL`
+`tmux_persistence`
+- Default: `false`
+- Reuse tmux tabs and panes across app restarts
+- Group: `TMUX`
 
-`term`
-- Default: `xterm-256color`
-- TERM value exposed to child applications
-- Group: `SHELL`
-
-`colorterm`
-- Default: `truecolor`
-- COLORTERM value exposed to child applications
-- Group: `SHELL`
+`tmux_binary`
+- Default: `tmux`
+- tmux executable path or binary name
+- Group: `TMUX`
 
 `cursor_style`
 - Default: `block`

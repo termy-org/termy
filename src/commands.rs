@@ -420,6 +420,150 @@ define_commands!(
         ))
     ),
     (
+        SplitPaneVertical,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Split Pane Vertical",
+            "split pane vertical right",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::Window,
+            2,
+            "Split Pane Vertical",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
+    ),
+    (
+        SplitPaneHorizontal,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Split Pane Horizontal",
+            "split pane horizontal down",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::Window,
+            2,
+            "Split Pane Horizontal",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
+    ),
+    (
+        ClosePane,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Close Pane",
+            "kill close pane",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::Window,
+            2,
+            "Close Pane",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
+    ),
+    (
+        FocusPaneLeft,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Focus Pane Left",
+            "focus pane left",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        FocusPaneRight,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Focus Pane Right",
+            "focus pane right",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        FocusPaneUp,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Focus Pane Up",
+            "focus pane up",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        FocusPaneDown,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Focus Pane Down",
+            "focus pane down",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        ResizePaneLeft,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Resize Pane Left",
+            "resize pane left",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        ResizePaneRight,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Resize Pane Right",
+            "resize pane right",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        ResizePaneUp,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Resize Pane Up",
+            "resize pane up",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        ResizePaneDown,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Resize Pane Down",
+            "resize pane down",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        TogglePaneZoom,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Toggle Pane Zoom",
+            "zoom pane maximize",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::View,
+            1,
+            "Toggle Pane Zoom",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
+    ),
+    (
         MinimizeWindow,
         TERMINAL_CONTEXT,
         None,

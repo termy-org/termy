@@ -278,6 +278,8 @@ pub const WORKING_DIR_FALLBACK_ENUM_CHOICES: &[EnumChoice] = &[
 
 define_root_settings! {
     (Theme, "theme", [], Appearance, "THEME", "Theme", "Current color scheme name", ["color", "scheme", "appearance"], RootSettingValueKind::Special, false),
+    (TmuxPersistence, "tmux_persistence", [], Terminal, "TMUX", "tmux Persistence", "Reuse tmux tabs and panes across app restarts", ["tmux", "session", "persistence", "restart"], RootSettingValueKind::Boolean, false),
+    (TmuxBinary, "tmux_binary", [], Terminal, "TMUX", "tmux Binary", "tmux executable path or binary name", ["tmux", "binary", "path"], RootSettingValueKind::Text, false),
     (WorkingDir, "working_dir", [], Advanced, "STARTUP", "Working Directory", "Initial directory for new sessions", ["working directory", "cwd", "startup", "path"], RootSettingValueKind::Text, false),
     (WorkingDirFallback, "working_dir_fallback", ["default_working_dir"], Advanced, "STARTUP", "Working Directory Fallback", "Directory used when working_dir is unset", ["working directory", "fallback", "cwd", "startup"], RootSettingValueKind::Enum, false),
     (WarnOnQuitWithRunningProcess, "warn_on_quit_with_running_process", [], Advanced, "SAFETY", "Warn On Quit", "Warn before quitting when a tab has an active process", ["quit", "warning", "safety", "process"], RootSettingValueKind::Boolean, false),
@@ -291,9 +293,6 @@ define_root_settings! {
     (TabCloseVisibility, "tab_close_visibility", [], Tabs, "TAB STRIP", "Close Button Visibility", "When tab close buttons are visible", ["tab", "close", "visibility", "hover"], RootSettingValueKind::Enum, false),
     (TabWidthMode, "tab_width_mode", [], Tabs, "TAB STRIP", "Tab Width Mode", "How tab widths react to active state", ["tab", "width", "layout", "active"], RootSettingValueKind::Enum, false),
     (ShowTermyInTitlebar, "show_termy_in_titlebar", [], Tabs, "TITLE BAR", "Show Termy In Titlebar", "Show or hide the termy branding in the titlebar", ["titlebar", "branding", "tabs"], RootSettingValueKind::Boolean, false),
-    (Shell, "shell", [], Terminal, "SHELL", "Shell", "Executable used for new sessions", ["shell", "bash", "zsh", "fish"], RootSettingValueKind::Text, false),
-    (Term, "term", [], Terminal, "SHELL", "TERM", "TERM value exposed to child applications", ["term", "terminal", "env"], RootSettingValueKind::Text, false),
-    (Colorterm, "colorterm", [], Terminal, "SHELL", "COLORTERM", "COLORTERM value exposed to child applications", ["colorterm", "color", "env"], RootSettingValueKind::Text, false),
     (WindowWidth, "window_width", [], Advanced, "WINDOW", "Window Width", "Default startup window width in pixels", ["window", "width", "startup", "size"], RootSettingValueKind::Numeric, false),
     (WindowHeight, "window_height", [], Advanced, "WINDOW", "Window Height", "Default startup window height in pixels", ["window", "height", "startup", "size"], RootSettingValueKind::Numeric, false),
     (FontFamily, "font_family", [], Appearance, "FONT", "Font Family", "Font family used in terminal UI", ["font", "typeface", "text"], RootSettingValueKind::Special, false),
@@ -363,6 +362,8 @@ pub fn root_setting_enum_choices(id: RootSettingId) -> Option<&'static [EnumChoi
 pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Option<String> {
     match id {
         RootSettingId::Theme => Some(config.theme.clone()),
+        RootSettingId::TmuxPersistence => Some(config.tmux_persistence.to_string()),
+        RootSettingId::TmuxBinary => Some(config.tmux_binary.clone()),
         RootSettingId::WorkingDir => config.working_dir.clone(),
         RootSettingId::WorkingDirFallback => Some(match config.working_dir_fallback {
             WorkingDirFallback::Home => "home".to_string(),
@@ -407,9 +408,6 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
             TabWidthMode::ActiveGrowSticky => "active_grow_sticky".to_string(),
         }),
         RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar.to_string()),
-        RootSettingId::Shell => config.shell.clone(),
-        RootSettingId::Term => Some(config.term.clone()),
-        RootSettingId::Colorterm => config.colorterm.clone(),
         RootSettingId::WindowWidth => Some(config.window_width.to_string()),
         RootSettingId::WindowHeight => Some(config.window_height.to_string()),
         RootSettingId::FontFamily => Some(config.font_family.clone()),

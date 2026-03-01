@@ -1,6 +1,19 @@
 use super::*;
 
 impl TerminalView {
+    fn send_input_to_active_pane(&self, input: &[u8]) -> bool {
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        match self.tmux_client.send_input(pane_id, input) {
+            Ok(()) => true,
+            Err(error) => {
+                termy_toast::error(format!("Input write failed: {error}"));
+                false
+            }
+        }
+    }
+
     fn prepare_terminal_input_write(&mut self, cx: &mut Context<Self>) {
         self.terminal_scroll_accumulator_y = 0.0;
         self.input_scroll_suppress_until =
@@ -15,7 +28,7 @@ impl TerminalView {
         }
 
         self.prepare_terminal_input_write(cx);
-        self.active_terminal().write(input);
+        let _ = self.send_input_to_active_pane(input);
     }
 
     fn sanitize_bracketed_paste_input(input: &[u8]) -> Option<Vec<u8>> {
@@ -59,17 +72,16 @@ impl TerminalView {
         }
 
         self.prepare_terminal_input_write(cx);
-        let terminal = self.active_terminal();
-        if terminal.bracketed_paste_mode() {
-            terminal.write(b"\x1b[200~");
+        if self.active_terminal().bracketed_paste_mode() {
+            let _ = self.send_input_to_active_pane(b"\x1b[200~");
             if let Some(sanitized) = Self::sanitize_bracketed_paste_input(input) {
-                terminal.write(&sanitized);
+                let _ = self.send_input_to_active_pane(&sanitized);
             } else {
-                terminal.write(input);
+                let _ = self.send_input_to_active_pane(input);
             }
-            terminal.write(b"\x1b[201~");
+            let _ = self.send_input_to_active_pane(b"\x1b[201~");
         } else {
-            terminal.write(input);
+            let _ = self.send_input_to_active_pane(input);
         }
     }
 

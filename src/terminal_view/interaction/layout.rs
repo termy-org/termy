@@ -83,35 +83,38 @@ impl TerminalView {
         let terminal_width = (viewport_width - (padding_x * 2.0)).max(cell_width * 2.0);
         let terminal_height =
             (viewport_height - self.chrome_height() - (padding_y * 2.0)).max(cell_height);
-        // In alternate-screen UIs (e.g. fullscreen TUIs), use edge-to-edge sizing
-        // so partial-cell remainders don't leave a visible strip on the right/bottom.
-        let edge_to_edge_grid = self.active_terminal().alternate_screen_mode();
-        let cols = if edge_to_edge_grid {
-            (terminal_width / cell_width).ceil()
-        } else {
-            (terminal_width / cell_width).floor()
-        }
-        .max(2.0) as u16;
-        let rows = if edge_to_edge_grid {
-            (terminal_height / cell_height).ceil()
-        } else {
-            (terminal_height / cell_height).floor()
-        }
-        .max(1.0) as u16;
+        let cols = (terminal_width / cell_width).floor().max(2.0) as u16;
+        let rows = (terminal_height / cell_height).floor().max(1.0) as u16;
 
-        for tab in &mut self.tabs {
-            let current = tab.terminal.size();
-            if current.cols != cols
-                || current.rows != rows
-                || current.cell_width != cell_size.width
-                || current.cell_height != cell_size.height
-            {
-                tab.terminal.resize(TerminalSize {
-                    cols,
-                    rows,
+        if self.tmux_client_cols != cols || self.tmux_client_rows != rows {
+            match self.tmux_client.set_client_size(cols, rows) {
+                Ok(()) => {
+                    self.tmux_client_cols = cols;
+                    self.tmux_client_rows = rows;
+                    let _ = self.refresh_tmux_snapshot_for_client_size(cols, rows);
+                }
+                Err(error) => {
+                    termy_toast::error(format!("tmux resize failed: {error}"));
+                }
+            }
+        }
+
+        for tab in &self.tabs {
+            for pane in &tab.panes {
+                let next_size = TerminalSize {
+                    cols: pane.width.max(1),
+                    rows: pane.height.max(1),
                     cell_width: cell_size.width,
                     cell_height: cell_size.height,
-                });
+                };
+                let current = pane.terminal.size();
+                if current.cols != next_size.cols
+                    || current.rows != next_size.rows
+                    || current.cell_width != next_size.cell_width
+                    || current.cell_height != next_size.cell_height
+                {
+                    pane.terminal.resize(next_size);
+                }
             }
         }
     }

@@ -156,7 +156,7 @@ impl SettingsWindow {
                 cx,
             ))
             .child(self.render_terminal_cursor_group(cx))
-            .child(self.render_terminal_shell_group(cx))
+            .child(self.render_terminal_tmux_group(cx))
             .child(self.render_terminal_scrolling_group(cx))
             .child(self.render_terminal_ui_group(cx))
     }
@@ -199,47 +199,39 @@ impl SettingsWindow {
             .into_any_element()
     }
 
-    pub(super) fn render_terminal_shell_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let shell_meta = Self::setting_metadata_or_fallback("shell");
-        let term_meta = Self::setting_metadata_or_fallback("term");
-        let colorterm_meta =
-            Self::setting_metadata_or_fallback("colorterm");
-        let shell = self
-            .config
-            .shell
-            .clone()
-            .unwrap_or_else(|| "System default".to_string());
-        let term = self.config.term.clone();
-        let colorterm = self
-            .config
-            .colorterm
-            .clone()
-            .unwrap_or_else(|| "Disabled".to_string());
+    pub(super) fn render_terminal_tmux_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let persistence_meta = Self::setting_metadata_or_fallback("tmux_persistence");
+        let binary_meta = Self::setting_metadata_or_fallback("tmux_binary");
+        let tmux_persistence = self.config.tmux_persistence;
+        let binary = self.config.tmux_binary.clone();
 
         div()
-            .child(self.render_group_header("SHELL"))
-            .child(self.render_editable_row(
-                "shell",
-                EditableField::Shell,
-                shell_meta.title,
-                shell_meta.description,
-                shell,
+            .child(self.render_group_header("TMUX"))
+            .child(self.render_setting_row(
+                "tmux_persistence",
+                "tmux_persistence-toggle",
+                persistence_meta.title,
+                persistence_meta.description,
+                tmux_persistence,
                 cx,
+                |view, _cx| {
+                    let next = !view.config.tmux_persistence;
+                    match config::set_root_setting(RootSettingId::TmuxPersistence, &next.to_string())
+                    {
+                        Ok(()) => {
+                            view.config.tmux_persistence = next;
+                            termy_toast::success("Saved");
+                        }
+                        Err(error) => termy_toast::error(error),
+                    }
+                },
             ))
             .child(self.render_editable_row(
-                "term",
-                EditableField::Term,
-                term_meta.title,
-                term_meta.description,
-                term,
-                cx,
-            ))
-            .child(self.render_editable_row(
-                "colorterm",
-                EditableField::Colorterm,
-                colorterm_meta.title,
-                colorterm_meta.description,
-                colorterm,
+                "tmux_binary",
+                EditableField::TmuxBinary,
+                binary_meta.title,
+                binary_meta.description,
+                binary,
                 cx,
             ))
             .into_any_element()

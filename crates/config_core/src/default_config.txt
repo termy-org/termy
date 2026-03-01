@@ -1,6 +1,10 @@
 # Main settings
 # Current color scheme name
 theme = termy
+# Reuse tmux tabs and panes across app restarts
+tmux_persistence = false
+# tmux executable path or binary name
+tmux_binary = tmux
 # Initial directory for new sessions
 # working_dir = none
 # Directory used when working_dir is unset
@@ -27,12 +31,6 @@ tab_close_visibility = active_hover
 tab_width_mode = active_grow_sticky
 # Show or hide the termy branding in the titlebar
 show_termy_in_titlebar = true
-# Executable used for new sessions
-# shell = none
-# TERM value exposed to child applications
-term = xterm-256color
-# COLORTERM value exposed to child applications
-colorterm = truecolor
 # Default startup window width in pixels
 window_width = 1280
 # Default startup window height in pixels

@@ -55,7 +55,19 @@ impl TerminalView {
             | CommandAction::MoveTabLeft
             | CommandAction::MoveTabRight
             | CommandAction::SwitchTabLeft
-            | CommandAction::SwitchTabRight => {
+            | CommandAction::SwitchTabRight
+            | CommandAction::SplitPaneVertical
+            | CommandAction::SplitPaneHorizontal
+            | CommandAction::ClosePane
+            | CommandAction::FocusPaneLeft
+            | CommandAction::FocusPaneRight
+            | CommandAction::FocusPaneUp
+            | CommandAction::FocusPaneDown
+            | CommandAction::ResizePaneLeft
+            | CommandAction::ResizePaneRight
+            | CommandAction::ResizePaneUp
+            | CommandAction::ResizePaneDown
+            | CommandAction::TogglePaneZoom => {
                 self.execute_tab_command_action(action, window, cx);
             }
             CommandAction::MinimizeWindow => {
@@ -205,6 +217,114 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::SwitchTabRight, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_split_pane_vertical_action(
+        &mut self,
+        _: &commands::SplitPaneVertical,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SplitPaneVertical, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_split_pane_horizontal_action(
+        &mut self,
+        _: &commands::SplitPaneHorizontal,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SplitPaneHorizontal, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_close_pane_action(
+        &mut self,
+        _: &commands::ClosePane,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ClosePane, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_focus_pane_left_action(
+        &mut self,
+        _: &commands::FocusPaneLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::FocusPaneLeft, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_focus_pane_right_action(
+        &mut self,
+        _: &commands::FocusPaneRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::FocusPaneRight, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_focus_pane_up_action(
+        &mut self,
+        _: &commands::FocusPaneUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::FocusPaneUp, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_focus_pane_down_action(
+        &mut self,
+        _: &commands::FocusPaneDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::FocusPaneDown, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_resize_pane_left_action(
+        &mut self,
+        _: &commands::ResizePaneLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ResizePaneLeft, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_resize_pane_right_action(
+        &mut self,
+        _: &commands::ResizePaneRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ResizePaneRight, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_resize_pane_up_action(
+        &mut self,
+        _: &commands::ResizePaneUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ResizePaneUp, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_resize_pane_down_action(
+        &mut self,
+        _: &commands::ResizePaneDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ResizePaneDown, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_toggle_pane_zoom_action(
+        &mut self,
+        _: &commands::TogglePaneZoom,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::TogglePaneZoom, true, window, cx);
     }
 
     pub(in super::super) fn handle_minimize_window_action(

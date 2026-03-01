@@ -72,7 +72,11 @@ impl TerminalView {
     }
 
     fn tab_is_busy(tab: &TerminalTab) -> bool {
-        tab.running_process || tab.terminal.alternate_screen_mode()
+        tab.running_process
+            || tab
+                .panes
+                .iter()
+                .any(|pane| pane.terminal.alternate_screen_mode())
     }
 
     fn tab_title_for_warning(&self, index: usize, tab: &TerminalTab, fallback_title: &str) -> String {

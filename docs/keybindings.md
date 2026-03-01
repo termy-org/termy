@@ -13,6 +13,18 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_tab`
+- `secondary-d` -> `split_pane_vertical`
+- `secondary-shift-d` -> `split_pane_horizontal`
+- `secondary-shift-w` -> `close_pane`
+- `secondary-alt-left` -> `focus_pane_left`
+- `secondary-alt-right` -> `focus_pane_right`
+- `secondary-alt-up` -> `focus_pane_up`
+- `secondary-alt-down` -> `focus_pane_down`
+- `secondary-alt-shift-left` -> `resize_pane_left`
+- `secondary-alt-shift-right` -> `resize_pane_right`
+- `secondary-alt-shift-up` -> `resize_pane_up`
+- `secondary-alt-shift-down` -> `resize_pane_down`
+- `secondary-enter` -> `toggle_pane_zoom`
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -31,6 +43,18 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_tab`
+- `secondary-d` -> `split_pane_vertical`
+- `secondary-shift-d` -> `split_pane_horizontal`
+- `secondary-shift-w` -> `close_pane`
+- `secondary-alt-left` -> `focus_pane_left`
+- `secondary-alt-right` -> `focus_pane_right`
+- `secondary-alt-up` -> `focus_pane_up`
+- `secondary-alt-down` -> `focus_pane_down`
+- `secondary-alt-shift-left` -> `resize_pane_left`
+- `secondary-alt-shift-right` -> `resize_pane_right`
+- `secondary-alt-shift-up` -> `resize_pane_up`
+- `secondary-alt-shift-down` -> `resize_pane_down`
+- `secondary-enter` -> `toggle_pane_zoom`
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -48,6 +72,18 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_tab`
+- `secondary-d` -> `split_pane_vertical`
+- `secondary-shift-d` -> `split_pane_horizontal`
+- `secondary-shift-w` -> `close_pane`
+- `secondary-alt-left` -> `focus_pane_left`
+- `secondary-alt-right` -> `focus_pane_right`
+- `secondary-alt-up` -> `focus_pane_up`
+- `secondary-alt-down` -> `focus_pane_down`
+- `secondary-alt-shift-left` -> `resize_pane_left`
+- `secondary-alt-shift-right` -> `resize_pane_right`
+- `secondary-alt-shift-up` -> `resize_pane_up`
+- `secondary-alt-shift-down` -> `resize_pane_down`
+- `secondary-enter` -> `toggle_pane_zoom`
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -65,6 +101,18 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_tab`
+- `secondary-d` -> `split_pane_vertical`
+- `secondary-shift-d` -> `split_pane_horizontal`
+- `secondary-shift-w` -> `close_pane`
+- `secondary-alt-left` -> `focus_pane_left`
+- `secondary-alt-right` -> `focus_pane_right`
+- `secondary-alt-up` -> `focus_pane_up`
+- `secondary-alt-down` -> `focus_pane_down`
+- `secondary-alt-shift-left` -> `resize_pane_left`
+- `secondary-alt-shift-right` -> `resize_pane_right`
+- `secondary-alt-shift-up` -> `resize_pane_up`
+- `secondary-alt-shift-down` -> `resize_pane_down`
+- `secondary-enter` -> `toggle_pane_zoom`
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -105,6 +153,18 @@ Related UI option:
 - `move_tab_right`
 - `switch_tab_left`
 - `switch_tab_right`
+- `split_pane_vertical`
+- `split_pane_horizontal`
+- `close_pane`
+- `focus_pane_left`
+- `focus_pane_right`
+- `focus_pane_up`
+- `focus_pane_down`
+- `resize_pane_left`
+- `resize_pane_right`
+- `resize_pane_up`
+- `resize_pane_down`
+- `toggle_pane_zoom`
 - `minimize_window`
 - `rename_tab`
 - `app_info`

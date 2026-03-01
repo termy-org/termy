@@ -386,18 +386,39 @@ fn numeric_keys_parse_table_driven() {
 }
 
 #[test]
-fn runtime_env_options_parse() {
+fn tmux_runtime_options_parse() {
     let config = parse(
-        "term = screen-256color\n\
-         shell = /bin/zsh\n\
-         working_dir_fallback = process\n\
-         colorterm = none\n",
+        "tmux_persistence = true\n\
+         tmux_binary = /opt/homebrew/bin/tmux\n\
+         working_dir_fallback = process\n",
     );
 
-    assert_eq!(config.term, "screen-256color");
-    assert_eq!(config.shell.as_deref(), Some("/bin/zsh"));
+    assert!(config.tmux_persistence);
+    assert_eq!(config.tmux_binary, "/opt/homebrew/bin/tmux");
     assert_eq!(config.working_dir_fallback, WorkingDirFallback::Process);
-    assert!(config.colorterm.is_none());
+}
+
+#[test]
+fn removed_tmux_session_name_key_produces_unknown_root_key_diagnostic() {
+    let report = parse_report("tmux_session_name = work\n");
+    assert_eq!(report.diagnostics.len(), 1);
+    assert_eq!(report.diagnostics[0].kind, ConfigDiagnosticKind::UnknownRootKey);
+}
+
+#[test]
+fn removed_shell_runtime_keys_produce_unknown_root_key_diagnostics() {
+    let report = parse_report(
+        "shell = /bin/zsh\n\
+         term = xterm-256color\n\
+         colorterm = truecolor\n",
+    );
+
+    let unknown_root_key_count = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.kind == ConfigDiagnosticKind::UnknownRootKey)
+        .count();
+    assert_eq!(unknown_root_key_count, 3);
 }
 
 #[test]

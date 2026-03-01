@@ -102,8 +102,7 @@ impl TerminalView {
             return;
         };
 
-        let active_tab = self.active_tab;
-        let terminal = &self.tabs[active_tab].terminal;
+        let terminal = self.active_terminal();
         let size = terminal.size();
         let rows = size.rows as i32;
 
@@ -149,23 +148,24 @@ impl TerminalView {
             return;
         }
 
-        let active_tab = self.active_tab;
-        let terminal = &self.tabs[active_tab].terminal;
+        let terminal = self.active_terminal();
         let (display_offset, history_size) = terminal.scroll_state();
         let rows = terminal.size().rows as i32;
-
-        // Search range: from deepest history to current viewport
         let start_line = -(history_size as i32);
         let end_line = rows - 1;
-        let search_state = &mut self.search_state;
 
-        // Search directly against terminal grid lines to avoid duplicating
-        // the entire visible + scrollback range in a temporary map.
+        let mut line_texts = Vec::with_capacity((end_line - start_line + 1).max(0) as usize);
         terminal.with_term(|term| {
             let grid = term.grid();
-            search_state.search(start_line, end_line, |line_idx| {
-                extract_line_text(grid, line_idx, display_offset)
-            });
+            for line_idx in start_line..=end_line {
+                line_texts.push(extract_line_text(grid, line_idx, display_offset));
+            }
+        });
+
+        let search_state = &mut self.search_state;
+        search_state.search(start_line, end_line, |line_idx| {
+            let offset = (line_idx - start_line) as usize;
+            line_texts.get(offset).cloned().unwrap_or_default()
         });
 
         // Start from the bottommost (newest) match, which is now index 0.

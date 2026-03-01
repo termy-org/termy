@@ -69,6 +69,54 @@ pub fn default_keybinds_for_platform(platform: KeybindPlatform) -> Vec<DefaultKe
             action: CommandId::CloseTab,
         },
         DefaultKeybind {
+            trigger: "secondary-d",
+            action: CommandId::SplitPaneVertical,
+        },
+        DefaultKeybind {
+            trigger: "secondary-shift-d",
+            action: CommandId::SplitPaneHorizontal,
+        },
+        DefaultKeybind {
+            trigger: "secondary-shift-w",
+            action: CommandId::ClosePane,
+        },
+        DefaultKeybind {
+            trigger: "secondary-alt-left",
+            action: CommandId::FocusPaneLeft,
+        },
+        DefaultKeybind {
+            trigger: "secondary-alt-right",
+            action: CommandId::FocusPaneRight,
+        },
+        DefaultKeybind {
+            trigger: "secondary-alt-up",
+            action: CommandId::FocusPaneUp,
+        },
+        DefaultKeybind {
+            trigger: "secondary-alt-down",
+            action: CommandId::FocusPaneDown,
+        },
+        DefaultKeybind {
+            trigger: "secondary-alt-shift-left",
+            action: CommandId::ResizePaneLeft,
+        },
+        DefaultKeybind {
+            trigger: "secondary-alt-shift-right",
+            action: CommandId::ResizePaneRight,
+        },
+        DefaultKeybind {
+            trigger: "secondary-alt-shift-up",
+            action: CommandId::ResizePaneUp,
+        },
+        DefaultKeybind {
+            trigger: "secondary-alt-shift-down",
+            action: CommandId::ResizePaneDown,
+        },
+        DefaultKeybind {
+            trigger: "secondary-enter",
+            action: CommandId::TogglePaneZoom,
+        },
+        DefaultKeybind {
             trigger: "secondary-=",
             action: CommandId::ZoomIn,
         },

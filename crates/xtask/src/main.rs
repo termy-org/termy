@@ -227,7 +227,6 @@ fn render_default_config_template() -> String {
             spec.id,
             RootSettingId::WorkingDir
                 | RootSettingId::WorkingDirFallback
-                | RootSettingId::Shell
                 | RootSettingId::InactiveTabScrollback
         );
 
