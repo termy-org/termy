@@ -1,4 +1,5 @@
 use super::*;
+use termy_command_core::{CommandCapabilities, CommandUnavailableReason};
 
 impl TerminalView {
     fn command_palette_mode_for_action(action: CommandAction) -> Option<CommandPaletteMode> {
@@ -19,10 +20,26 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if action.requires_tmux() && !self.runtime_uses_tmux() {
-            termy_toast::info("Enable tmux integration and restart to use this command");
-            cx.notify();
-            return;
+        // Keep runtime command gating aligned with command_core so every UI surface
+        // and execution path applies the same capability rules.
+        let availability = action.availability(CommandCapabilities {
+            tmux_runtime_active: self.runtime_uses_tmux(),
+            install_cli_available: self.install_cli_available(),
+        });
+        if !availability.enabled {
+            match availability.reason {
+                Some(CommandUnavailableReason::RequiresTmuxRuntime) => {
+                    termy_toast::info("Enable tmux integration and restart to use this command");
+                    cx.notify();
+                    return;
+                }
+                Some(CommandUnavailableReason::InstallCliAlreadyInstalled) => {
+                    termy_toast::info("CLI is already installed");
+                    cx.notify();
+                    return;
+                }
+                None => unreachable!("disabled command must include an unavailable reason"),
+            }
         }
 
         let shortcuts_suspended = respect_shortcut_suspend && self.command_shortcuts_suspended();

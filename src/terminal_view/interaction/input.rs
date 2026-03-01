@@ -2,23 +2,15 @@ use super::*;
 
 impl TerminalView {
     fn send_input_to_active_pane(&self, input: &[u8]) -> bool {
-        if self.runtime_uses_tmux() {
-            let Some(pane_id) = self.active_pane_id() else {
-                return false;
-            };
-            let Some(tmux_client) = self.tmux_client() else {
-                return false;
-            };
-            match tmux_client.send_input(pane_id, input) {
-                Ok(()) => true,
-                Err(error) => {
-                    termy_toast::error(format!("Input write failed: {error}"));
-                    false
-                }
+        match self
+            .runtime_backend()
+            .send_input(self.active_terminal(), self.active_pane_id(), input)
+        {
+            Ok(wrote) => wrote,
+            Err(error) => {
+                termy_toast::error(format!("Input write failed: {error}"));
+                false
             }
-        } else {
-            self.active_terminal().write_input(input);
-            true
         }
     }
 
@@ -37,7 +29,7 @@ impl TerminalView {
 
         self.prepare_terminal_input_write(cx);
         if self.send_input_to_active_pane(input) {
-            if self.runtime_uses_tmux() {
+            if self.runtime_backend_mode().uses_tmux() {
                 self.schedule_tmux_title_refresh();
             }
         }
@@ -78,27 +70,38 @@ impl TerminalView {
         sanitized
     }
 
+    fn framed_bracketed_paste_input(input: &[u8]) -> Vec<u8> {
+        const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
+        const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
+
+        let sanitized = Self::sanitize_bracketed_paste_input(input);
+        let payload = sanitized.as_deref().unwrap_or(input);
+
+        // Send one framed payload so start/content/end ordering is atomic and
+        // tmux can pick an efficient high-volume path for large pastes.
+        let mut framed =
+            Vec::with_capacity(BRACKETED_PASTE_START.len() + payload.len() + BRACKETED_PASTE_END.len());
+        framed.extend_from_slice(BRACKETED_PASTE_START);
+        framed.extend_from_slice(payload);
+        framed.extend_from_slice(BRACKETED_PASTE_END);
+        framed
+    }
+
     pub(in super::super) fn write_terminal_paste_input(&mut self, input: &[u8], cx: &mut Context<Self>) {
         if input.is_empty() {
             return;
         }
 
         self.prepare_terminal_input_write(cx);
-        let mut wrote_input = false;
-        if self.active_terminal().bracketed_paste_mode() {
-            wrote_input |= self.send_input_to_active_pane(b"\x1b[200~");
-            if let Some(sanitized) = Self::sanitize_bracketed_paste_input(input) {
-                wrote_input |= self.send_input_to_active_pane(&sanitized);
-            } else {
-                wrote_input |= self.send_input_to_active_pane(input);
-            }
-            wrote_input |= self.send_input_to_active_pane(b"\x1b[201~");
+        let wrote_input = if self.active_terminal().bracketed_paste_mode() {
+            let framed = Self::framed_bracketed_paste_input(input);
+            self.send_input_to_active_pane(&framed)
         } else {
-            wrote_input = self.send_input_to_active_pane(input);
-        }
+            self.send_input_to_active_pane(input)
+        };
 
         if wrote_input {
-            if self.runtime_uses_tmux() {
+            if self.runtime_backend_mode().uses_tmux() {
                 self.schedule_tmux_title_refresh();
             }
         }

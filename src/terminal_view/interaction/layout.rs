@@ -83,8 +83,9 @@ impl TerminalView {
         let terminal_width = (viewport_width - (padding_x * 2.0)).max(cell_width * 2.0);
         let terminal_height =
             (viewport_height - self.chrome_height() - (padding_y * 2.0)).max(cell_height);
+        let backend_mode = self.runtime_backend_mode();
         let edge_to_edge_grid =
-            !self.runtime_uses_tmux() && self.active_terminal().alternate_screen_mode();
+            !backend_mode.uses_tmux() && self.active_terminal().alternate_screen_mode();
         let cols = if edge_to_edge_grid {
             (terminal_width / cell_width).ceil()
         } else {
@@ -98,32 +99,35 @@ impl TerminalView {
         }
         .max(1.0) as u16;
 
-        if self.runtime_uses_tmux() {
-            if self.tmux_client_cols != cols || self.tmux_client_rows != rows {
-                let Some(tmux_client) = self.tmux_client() else {
-                    return;
-                };
-                match tmux_client.set_client_size(cols, rows) {
-                    Ok(()) => {
-                        self.tmux_client_cols = cols;
-                        self.tmux_client_rows = rows;
-                        let _ = self.refresh_tmux_snapshot_for_client_size(cols, rows);
-                    }
-                    Err(error) => {
-                        termy_toast::error(format!("tmux resize failed: {error}"));
+        match backend_mode {
+            RuntimeBackendMode::Tmux => {
+                if self.tmux_client_cols != cols || self.tmux_client_rows != rows {
+                    match self.runtime_backend().set_client_size(cols, rows) {
+                        Ok(true) => {
+                            self.tmux_client_cols = cols;
+                            self.tmux_client_rows = rows;
+                            // Snapshot convergence is scheduled asynchronously so UI resize never blocks.
+                            self.request_tmux_resize_convergence(cols, rows);
+                        }
+                        Ok(false) => return,
+                        Err(error) => {
+                            termy_toast::error(format!("tmux resize failed: {error}"));
+                        }
                     }
                 }
             }
-        } else {
-            self.tmux_client_cols = cols;
-            self.tmux_client_rows = rows;
-            for tab in &mut self.tabs {
-                if let Some(pane) = tab.panes.get_mut(0) {
-                    pane.left = 0;
-                    pane.top = 0;
-                    pane.width = cols.max(1);
-                    pane.height = rows.max(1);
-                    tab.active_pane_id = pane.id.clone();
+            RuntimeBackendMode::Native => {
+                self.clear_tmux_resize_convergence();
+                self.tmux_client_cols = cols;
+                self.tmux_client_rows = rows;
+                for tab in &mut self.tabs {
+                    if let Some(pane) = tab.panes.get_mut(0) {
+                        pane.left = 0;
+                        pane.top = 0;
+                        pane.width = cols.max(1);
+                        pane.height = rows.max(1);
+                        tab.active_pane_id = pane.id.clone();
+                    }
                 }
             }
         }

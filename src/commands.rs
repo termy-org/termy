@@ -1,5 +1,5 @@
 use gpui::{FocusHandle, KeyBinding, MenuItem, OsAction, Window, actions};
-use termy_command_core::CommandId;
+use termy_command_core::{CommandAvailability, CommandCapabilities, CommandId};
 
 const GLOBAL_CONTEXT: Option<&str> = None;
 const TERMINAL_CONTEXT: Option<&str> = Some("Terminal");
@@ -264,6 +264,10 @@ macro_rules! define_commands {
 
             pub fn requires_tmux(self) -> bool {
                 self.to_command_id().is_tmux_only()
+            }
+
+            pub fn availability(self, caps: CommandCapabilities) -> CommandAvailability {
+                self.to_command_id().availability(caps)
             }
 
             pub fn to_menu_item(self, title: &'static str, role: MenuActionRole) -> MenuItem {
@@ -956,7 +960,7 @@ pub fn inline_input_keybindings() -> Vec<KeyBinding> {
 mod tests {
     use super::{CommandAction, MenuActionRole, MenuRoot, MenuVisibility};
     use std::collections::HashSet;
-    use termy_command_core::CommandId;
+    use termy_command_core::{CommandCapabilities, CommandId, CommandUnavailableReason};
 
     #[test]
     fn command_catalog_contains_unique_actions() {
@@ -1123,6 +1127,20 @@ mod tests {
     #[test]
     fn command_action_count_matches_core_catalog() {
         assert_eq!(CommandAction::all().count(), CommandId::all().count());
+    }
+
+    #[test]
+    fn command_action_availability_reason_matches_command_core() {
+        let caps = CommandCapabilities {
+            tmux_runtime_active: false,
+            install_cli_available: true,
+        };
+        let availability = CommandAction::SplitPaneVertical.availability(caps);
+        assert!(!availability.enabled);
+        assert_eq!(
+            availability.reason,
+            Some(CommandUnavailableReason::RequiresTmuxRuntime)
+        );
     }
 
     #[test]

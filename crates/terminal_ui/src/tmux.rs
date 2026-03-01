@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, anyhow};
-use flume::{Receiver, Sender, unbounded};
+use flume::{Receiver, Sender, TrySendError, bounded};
 use std::collections::{HashMap, VecDeque};
 #[cfg(unix)]
 use std::fs::File;
@@ -142,12 +142,192 @@ struct ControlRequest {
 struct PendingCommand {
     command: String,
     response_tx: Option<Sender<std::result::Result<ControlCommandResult, TmuxControlError>>>,
+    completion_tx: Sender<()>,
 }
 
 #[derive(Debug)]
 struct ControlCommandBlock {
-    pending: PendingCommand,
+    command_tag: String,
     output: String,
+}
+
+#[derive(Debug)]
+struct NotificationCoalescer {
+    queued: VecDeque<TmuxNotification>,
+    has_refresh_queued: bool,
+    queued_output_bytes: usize,
+    max_output_bytes: usize,
+}
+
+impl Default for NotificationCoalescer {
+    fn default() -> Self {
+        Self::with_output_byte_limit(NOTIFICATION_COALESCER_OUTPUT_BYTES_BOUND)
+    }
+}
+
+impl NotificationCoalescer {
+    fn with_output_byte_limit(max_output_bytes: usize) -> Self {
+        Self {
+            queued: VecDeque::new(),
+            has_refresh_queued: false,
+            queued_output_bytes: 0,
+            max_output_bytes,
+        }
+    }
+
+    fn push(&mut self, notification: TmuxNotification) -> std::result::Result<(), TmuxControlError> {
+        match notification {
+            TmuxNotification::NeedsRefresh => {
+                if !self.has_refresh_queued {
+                    self.has_refresh_queued = true;
+                    self.queued.push_back(TmuxNotification::NeedsRefresh);
+                }
+            }
+            TmuxNotification::Output { pane_id, bytes } => {
+                if bytes.is_empty() {
+                    return Ok(());
+                }
+
+                let queued_output_bytes = self.queued_output_bytes.checked_add(bytes.len()).ok_or_else(|| {
+                    TmuxControlError::channel("tmux notification output backlog byte-count overflowed")
+                })?;
+                if queued_output_bytes > self.max_output_bytes {
+                    return Err(TmuxControlError::channel(format!(
+                        "tmux notification output backlog exceeded {} bytes",
+                        self.max_output_bytes
+                    )));
+                }
+
+                if let Some(TmuxNotification::Output {
+                    pane_id: tail_pane_id,
+                    bytes: tail_bytes,
+                }) = self.queued.back_mut()
+                {
+                    if *tail_pane_id == pane_id {
+                        tail_bytes.extend_from_slice(&bytes);
+                        self.queued_output_bytes = queued_output_bytes;
+                        return Ok(());
+                    }
+                }
+
+                self.queued.push_back(TmuxNotification::Output { pane_id, bytes });
+                self.queued_output_bytes = queued_output_bytes;
+            }
+            TmuxNotification::Exit(reason) => {
+                // Exit is terminal for the UI client. Drop stale backlog so the
+                // consumer sees one deterministic shutdown signal.
+                self.queued.clear();
+                self.has_refresh_queued = false;
+                self.queued_output_bytes = 0;
+                self.queued.push_back(TmuxNotification::Exit(reason));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn pop_next(&mut self) -> Option<TmuxNotification> {
+        let notification = self.queued.pop_front()?;
+        match &notification {
+            TmuxNotification::NeedsRefresh => {
+                self.has_refresh_queued = false;
+            }
+            TmuxNotification::Output { bytes, .. } => {
+                self.queued_output_bytes = self.queued_output_bytes.saturating_sub(bytes.len());
+            }
+            TmuxNotification::Exit(_) => {}
+        }
+        Some(notification)
+    }
+
+    fn drain(&mut self) -> Vec<TmuxNotification> {
+        let mut drained = Vec::with_capacity(self.queued.len());
+        while let Some(notification) = self.pop_next() {
+            drained.push(notification);
+        }
+        drained
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ControlStateEvent {
+    None,
+    Notification(TmuxNotification),
+    CommandBegin,
+    CommandComplete {
+        is_error: bool,
+        output: String,
+    },
+    Exit(Option<String>),
+}
+
+#[derive(Debug, Default)]
+struct ControlStateMachine {
+    current_block: Option<ControlCommandBlock>,
+}
+
+impl ControlStateMachine {
+    fn on_line(&mut self, line: &[u8]) -> std::result::Result<ControlStateEvent, TmuxControlError> {
+        if line.starts_with(b"%begin") {
+            if self.current_block.is_some() {
+                return Err(TmuxControlError::protocol(
+                    "received nested %begin while previous command block was open",
+                ));
+            }
+            let command_tag = parse_control_block_tag(line, b"%begin")?;
+            self.current_block = Some(ControlCommandBlock {
+                command_tag,
+                output: String::new(),
+            });
+            return Ok(ControlStateEvent::CommandBegin);
+        }
+
+        if line.starts_with(b"%end") || line.starts_with(b"%error") {
+            let is_error = line.starts_with(b"%error");
+            let command_tag = parse_control_block_tag(line, if is_error { b"%error" } else { b"%end" })?;
+            let block = self.current_block.take().ok_or_else(|| {
+                TmuxControlError::protocol("received command terminator without open %begin block")
+            })?;
+            if command_tag != block.command_tag {
+                return Err(TmuxControlError::protocol(format!(
+                    "received mismatched command terminator: expected '{}', got '{}'",
+                    block.command_tag, command_tag
+                )));
+            }
+            return Ok(ControlStateEvent::CommandComplete {
+                is_error,
+                output: block.output,
+            });
+        }
+
+        // Notifications can interleave with both async and sync command blocks.
+        // Always route pane output/layout events to the UI instead of treating
+        // them as command stdout, otherwise redraw control bytes can be dropped.
+        if let Some((pane_id, bytes)) = parse_output_notification(line) {
+            return Ok(ControlStateEvent::Notification(TmuxNotification::Output {
+                pane_id,
+                bytes,
+            }));
+        }
+        if is_refresh_notification(line) {
+            return Ok(ControlStateEvent::Notification(TmuxNotification::NeedsRefresh));
+        }
+        if line.starts_with(b"%exit") {
+            return Ok(ControlStateEvent::Exit(parse_exit_reason(line)));
+        }
+
+        if let Some(block) = self.current_block.as_mut() {
+            let line_text = std::str::from_utf8(line).map_err(|_| {
+                TmuxControlError::parse("received non-utf8 bytes in control command output")
+            })?;
+            if !block.output.is_empty() {
+                block.output.push('\n');
+            }
+            block.output.push_str(line_text);
+        }
+
+        Ok(ControlStateEvent::None)
+    }
 }
 
 pub struct TmuxClient {
@@ -164,7 +344,59 @@ struct SessionLaunchPlan {
     teardown_on_drop: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SendInputMode {
+    ChunkedHex,
+    Bulk,
+}
+
 const PERSISTENT_SESSION_NAME: &str = "termy";
+const REQUEST_QUEUE_BOUND: usize = 1024;
+const PENDING_QUEUE_BOUND: usize = 1;
+const NOTIFICATION_QUEUE_BOUND: usize = 2048;
+const NOTIFICATION_COALESCER_OUTPUT_BYTES_BOUND: usize = 512 * 1024;
+const SEND_INPUT_CHUNKED_HEX_BYTES: usize = 256;
+const SEND_INPUT_BULK_THRESHOLD_BYTES: usize = 2048;
+const SEND_INPUT_BULK_HEX_BYTES: usize = 2048;
+const SNAPSHOT_FIELD_SEP: char = '\u{1f}';
+const WINDOW_SNAPSHOT_FORMAT: &str = concat!(
+    "#{window_id}",
+    "\u{1f}",
+    "#{window_index}",
+    "\u{1f}",
+    "#{q:window_name}",
+    "\u{1f}",
+    "#{q:window_layout}",
+    "\u{1f}",
+    "#{window_active}",
+    "\u{1f}",
+    "#{automatic-rename}",
+);
+const PANE_SNAPSHOT_FORMAT: &str = concat!(
+    "#{pane_id}",
+    "\u{1f}",
+    "#{window_id}",
+    "\u{1f}",
+    "#{session_id}",
+    "\u{1f}",
+    "#{pane_active}",
+    "\u{1f}",
+    "#{pane_left}",
+    "\u{1f}",
+    "#{pane_top}",
+    "\u{1f}",
+    "#{pane_width}",
+    "\u{1f}",
+    "#{pane_height}",
+    "\u{1f}",
+    "#{cursor_x}",
+    "\u{1f}",
+    "#{cursor_y}",
+    "\u{1f}",
+    "#{q:pane_current_path}",
+    "\u{1f}",
+    "#{q:pane_current_command}",
+);
 
 #[cfg(unix)]
 fn spawn_tmux_control_mode(
@@ -219,6 +451,62 @@ fn spawn_tmux_control_mode(
     Ok((child, writer, controller))
 }
 
+fn try_enqueue_control_request(
+    request_tx: &Sender<ControlRequest>,
+    request: ControlRequest,
+) -> std::result::Result<(), TmuxControlError> {
+    match request_tx.try_send(request) {
+        Ok(()) => Ok(()),
+        Err(TrySendError::Full(_)) => Err(TmuxControlError::channel(format!(
+            "tmux control request queue is full (capacity {REQUEST_QUEUE_BOUND})"
+        ))),
+        Err(TrySendError::Disconnected(_)) => {
+            Err(TmuxControlError::channel("tmux control channel is closed"))
+        }
+    }
+}
+
+fn try_send_notification(
+    notifications_tx: &Sender<TmuxNotification>,
+    notification: TmuxNotification,
+) -> std::result::Result<(), TmuxControlError> {
+    match notifications_tx.try_send(notification) {
+        Ok(()) => Ok(()),
+        Err(TrySendError::Full(_)) => Err(TmuxControlError::channel(format!(
+            "tmux notification queue is full (capacity {NOTIFICATION_QUEUE_BOUND})"
+        ))),
+        Err(TrySendError::Disconnected(_)) => {
+            Err(TmuxControlError::channel("tmux notification channel is closed"))
+        }
+    }
+}
+
+fn signal_event_wakeup(event_wakeup_tx: Option<&Sender<()>>) {
+    let Some(event_wakeup_tx) = event_wakeup_tx else {
+        return;
+    };
+
+    match event_wakeup_tx.try_send(()) {
+        Ok(()) | Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {}
+    }
+}
+
+fn flush_notification_coalescer(
+    coalescer: &mut NotificationCoalescer,
+    notifications_tx: &Sender<TmuxNotification>,
+    event_wakeup_tx: Option<&Sender<()>>,
+) -> std::result::Result<(), TmuxControlError> {
+    let mut sent_notifications = false;
+    while let Some(notification) = coalescer.pop_next() {
+        try_send_notification(notifications_tx, notification)?;
+        sent_notifications = true;
+    }
+    if sent_notifications {
+        signal_event_wakeup(event_wakeup_tx);
+    }
+    Ok(())
+}
+
 impl TmuxClient {
     fn launch_plan(config: &TmuxRuntimeConfig) -> SessionLaunchPlan {
         if config.persistence {
@@ -236,10 +524,15 @@ impl TmuxClient {
         }
     }
 
-    pub fn new(config: TmuxRuntimeConfig, cols: u16, rows: u16) -> Result<Self> {
+    pub fn new(
+        config: TmuxRuntimeConfig,
+        cols: u16,
+        rows: u16,
+        event_wakeup_tx: Option<Sender<()>>,
+    ) -> Result<Self> {
         #[cfg(not(unix))]
         {
-            let _ = (cols, rows);
+            let _ = (cols, rows, event_wakeup_tx);
             return Err(anyhow!("tmux control mode is only supported on unix targets"));
         }
 
@@ -251,9 +544,10 @@ impl TmuxClient {
             launch_plan.attach_existing,
         )?;
 
-        let (request_tx, request_rx) = unbounded::<ControlRequest>();
-        let (pending_tx, pending_rx) = unbounded::<PendingCommand>();
-        let (notifications_tx, notifications_rx) = unbounded::<TmuxNotification>();
+        let (request_tx, request_rx) = bounded::<ControlRequest>(REQUEST_QUEUE_BOUND);
+        let (pending_tx, pending_rx) = bounded::<PendingCommand>(PENDING_QUEUE_BOUND);
+        let (notifications_tx, notifications_rx) =
+            bounded::<TmuxNotification>(NOTIFICATION_QUEUE_BOUND);
 
         std::thread::spawn(move || {
             let _ = child.wait();
@@ -263,8 +557,9 @@ impl TmuxClient {
             let mut stdin = child_stdin;
             while let Ok(request) = request_rx.recv() {
                 let command = request.command;
+                let response_tx = request.response_tx;
                 if stdin.write_all(command.as_bytes()).is_err() {
-                    if let Some(response_tx) = request.response_tx {
+                    if let Some(response_tx) = response_tx {
                         let _ = response_tx.send(Err(TmuxControlError::channel(
                             "failed to write command to tmux control stdin",
                         )));
@@ -272,7 +567,7 @@ impl TmuxClient {
                     break;
                 }
                 if stdin.write_all(b"\n").is_err() {
-                    if let Some(response_tx) = request.response_tx {
+                    if let Some(response_tx) = response_tx {
                         let _ = response_tx.send(Err(TmuxControlError::channel(
                             "failed to write command terminator to tmux control stdin",
                         )));
@@ -280,7 +575,7 @@ impl TmuxClient {
                     break;
                 }
                 if stdin.flush().is_err() {
-                    if let Some(response_tx) = request.response_tx {
+                    if let Some(response_tx) = response_tx {
                         let _ = response_tx.send(Err(TmuxControlError::channel(
                             "failed to flush tmux control stdin",
                         )));
@@ -288,46 +583,81 @@ impl TmuxClient {
                     break;
                 }
 
-                if pending_tx
-                    .send(PendingCommand {
-                        command,
-                        response_tx: request.response_tx,
-                    })
-                    .is_err()
-                {
+                let (completion_tx, completion_rx) = flume::bounded(1);
+                match pending_tx.try_send(PendingCommand {
+                    command,
+                    response_tx,
+                    completion_tx,
+                }) {
+                    Ok(()) => {}
+                    Err(TrySendError::Full(pending)) => {
+                        if let Some(response_tx) = pending.response_tx {
+                            let _ = response_tx.send(Err(TmuxControlError::channel(
+                                "tmux control pending queue is full",
+                            )));
+                        }
+                        let _ = pending.completion_tx.send(());
+                        break;
+                    }
+                    Err(TrySendError::Disconnected(pending)) => {
+                        if let Some(response_tx) = pending.response_tx {
+                            let _ = response_tx.send(Err(TmuxControlError::channel(
+                                "tmux control reader is unavailable",
+                            )));
+                        }
+                        let _ = pending.completion_tx.send(());
+                        break;
+                    }
+                }
+                if completion_rx.recv().is_err() {
                     break;
                 }
             }
         });
 
         std::thread::spawn(move || {
-            const PENDING_MATCH_TIMEOUT: Duration = Duration::from_millis(80);
-
             let mut reader = BufReader::new(child_stdout);
             let mut line = Vec::<u8>::new();
-            let mut pending_queue = VecDeque::<PendingCommand>::new();
-            let mut current_block = None::<ControlCommandBlock>;
+            let mut current_pending = None::<PendingCommand>;
+            let mut control_state = ControlStateMachine::default();
+            let mut notifications = NotificationCoalescer::default();
 
+            let complete_pending =
+                |pending: PendingCommand,
+                 response: std::result::Result<ControlCommandResult, TmuxControlError>| {
+                    if let Some(response_tx) = pending.response_tx {
+                        let _ = response_tx.send(response);
+                    }
+                    let _ = pending.completion_tx.send(());
+                };
             let fail_pending = |pending: PendingCommand, error: TmuxControlError| {
-                if let Some(response_tx) = pending.response_tx {
-                    let _ = response_tx.send(Err(error));
-                }
+                complete_pending(pending, Err(error));
             };
-
             let fail_all_pending =
-                |current_block: &mut Option<ControlCommandBlock>,
-                 pending_queue: &mut VecDeque<PendingCommand>,
+                |current_pending: &mut Option<PendingCommand>,
                  pending_rx: &Receiver<PendingCommand>,
                  error: TmuxControlError| {
-                    if let Some(block) = current_block.take() {
-                        fail_pending(block.pending, error.clone());
-                    }
-                    while let Some(pending) = pending_queue.pop_front() {
+                    if let Some(pending) = current_pending.take() {
                         fail_pending(pending, error.clone());
                     }
                     while let Ok(pending) = pending_rx.try_recv() {
                         fail_pending(pending, error.clone());
                     }
+                };
+            let fail_with_exit =
+                |current_pending: &mut Option<PendingCommand>,
+                 pending_rx: &Receiver<PendingCommand>,
+                 notifications_tx: &Sender<TmuxNotification>,
+                 notifications: &mut NotificationCoalescer,
+                 event_wakeup_tx: Option<&Sender<()>>,
+                 error: TmuxControlError| {
+                    fail_all_pending(current_pending, pending_rx, error.clone());
+                    let _ = notifications.push(TmuxNotification::Exit(Some(error.message)));
+                    let _ = flush_notification_coalescer(
+                        notifications,
+                        notifications_tx,
+                        event_wakeup_tx,
+                    );
                 };
 
             loop {
@@ -335,25 +665,33 @@ impl TmuxClient {
                 let read = reader.read_until(b'\n', &mut line);
                 let Ok(read) = read else {
                     fail_all_pending(
-                        &mut current_block,
-                        &mut pending_queue,
+                        &mut current_pending,
                         &pending_rx,
                         TmuxControlError::channel("tmux control mode read failure"),
                     );
-                    let _ = notifications_tx.send(TmuxNotification::Exit(Some(
+                    let _ = notifications.push(TmuxNotification::Exit(Some(
                         "tmux control mode read failure".to_string(),
                     )));
+                    let _ = flush_notification_coalescer(
+                        &mut notifications,
+                        &notifications_tx,
+                        event_wakeup_tx.as_ref(),
+                    );
                     break;
                 };
 
                 if read == 0 {
                     fail_all_pending(
-                        &mut current_block,
-                        &mut pending_queue,
+                        &mut current_pending,
                         &pending_rx,
                         TmuxControlError::channel("tmux control mode closed"),
                     );
-                    let _ = notifications_tx.send(TmuxNotification::Exit(None));
+                    let _ = notifications.push(TmuxNotification::Exit(None));
+                    let _ = flush_notification_coalescer(
+                        &mut notifications,
+                        &notifications_tx,
+                        event_wakeup_tx.as_ref(),
+                    );
                     break;
                 }
 
@@ -364,100 +702,132 @@ impl TmuxClient {
                     continue;
                 }
 
-                while let Ok(pending) = pending_rx.try_recv() {
-                    pending_queue.push_back(pending);
-                }
+                let event = match control_state.on_line(&line) {
+                    Ok(event) => event,
+                    Err(error) => {
+                        fail_with_exit(
+                            &mut current_pending,
+                            &pending_rx,
+                            &notifications_tx,
+                            &mut notifications,
+                            event_wakeup_tx.as_ref(),
+                            error,
+                        );
+                        break;
+                    }
+                };
 
-                if line.starts_with(b"%begin") {
-                    if current_block.is_some() {
-                        if let Some(block) = current_block.take() {
-                            fail_pending(
-                                block.pending,
-                                TmuxControlError::protocol(
-                                    "received nested %begin while previous command block was open",
-                                ),
+                match event {
+                    ControlStateEvent::None => {}
+                    ControlStateEvent::Notification(notification) => {
+                        if let Err(error) = notifications.push(notification) {
+                            fail_with_exit(
+                                &mut current_pending,
+                                &pending_rx,
+                                &notifications_tx,
+                                &mut notifications,
+                                event_wakeup_tx.as_ref(),
+                                error,
                             );
+                            break;
                         }
                     }
-                    let pending = if let Some(pending) = pending_queue.pop_front() {
-                        Some(pending)
-                    } else {
-                        pending_rx.recv_timeout(PENDING_MATCH_TIMEOUT).ok()
-                    };
+                    ControlStateEvent::CommandBegin => {
+                        // This explicit handoff removes race-based pending matching:
+                        // the reader binds each %begin block to exactly one writer-issued request.
+                        if current_pending.is_some() {
+                            fail_with_exit(
+                                &mut current_pending,
+                                &pending_rx,
+                                &notifications_tx,
+                                &mut notifications,
+                                event_wakeup_tx.as_ref(),
+                                TmuxControlError::protocol(
+                                    "received %begin while another command was still pending",
+                                ),
+                            );
+                            break;
+                        }
 
-                    if let Some(pending) = pending {
-                        current_block = Some(ControlCommandBlock {
-                            pending,
-                            output: String::new(),
-                        });
+                        let pending = match pending_rx.recv() {
+                            Ok(pending) => pending,
+                            Err(_) => {
+                                fail_with_exit(
+                                    &mut current_pending,
+                                    &pending_rx,
+                                    &notifications_tx,
+                                    &mut notifications,
+                                    event_wakeup_tx.as_ref(),
+                                    TmuxControlError::channel(
+                                        "tmux control pending-command channel closed",
+                                    ),
+                                );
+                                break;
+                            }
+                        };
+                        current_pending = Some(pending);
                     }
-                    continue;
-                }
+                    ControlStateEvent::CommandComplete { is_error, output } => {
+                        let Some(pending) = current_pending.take() else {
+                            fail_with_exit(
+                                &mut current_pending,
+                                &pending_rx,
+                                &notifications_tx,
+                                &mut notifications,
+                                event_wakeup_tx.as_ref(),
+                                TmuxControlError::protocol(
+                                    "received command completion without a pending request",
+                                ),
+                            );
+                            break;
+                        };
 
-                if line.starts_with(b"%end") || line.starts_with(b"%error") {
-                    let is_error = line.starts_with(b"%error");
-                    if let Some(block) = current_block.take()
-                        && let Some(response_tx) = block.pending.response_tx
-                    {
-                        let trimmed = block.output.trim();
+                        let trimmed = output.trim();
                         let response = if is_error {
                             Err(TmuxControlError::runtime(if trimmed.is_empty() {
-                                format!("command '{}' failed", block.pending.command)
+                                format!("command '{}' failed", pending.command)
                             } else {
                                 trimmed.to_string()
                             }))
                         } else {
-                            Ok(ControlCommandResult {
-                                output: block.output,
-                            })
+                            Ok(ControlCommandResult { output })
                         };
-                        let _ = response_tx.send(response);
+                        complete_pending(pending, response);
                     }
-                    continue;
-                }
-
-                // Notifications can interleave with both async and sync command blocks.
-                // Always route pane output/layout events to the UI instead of treating
-                // them as command stdout, otherwise redraw control bytes can be dropped.
-                if let Some((pane_id, bytes)) = parse_output_notification(&line) {
-                    let _ = notifications_tx.send(TmuxNotification::Output { pane_id, bytes });
-                    continue;
-                }
-                if is_refresh_notification(&line) {
-                    let _ = notifications_tx.send(TmuxNotification::NeedsRefresh);
-                    continue;
-                }
-
-                if let Some(block) = current_block.as_mut() {
-                    let line_text = match std::str::from_utf8(&line) {
-                        Ok(line_text) => line_text,
-                        Err(_) => {
-                            if let Some(block) = current_block.take() {
-                                fail_pending(
-                                    block.pending,
-                                    TmuxControlError::parse(
-                                        "received non-utf8 bytes in control command output",
-                                    ),
-                                );
-                            }
-                            continue;
-                        }
-                    };
-                    if !block.output.is_empty() {
-                        block.output.push('\n');
+                    ControlStateEvent::Exit(reason) => {
+                        fail_all_pending(
+                            &mut current_pending,
+                            &pending_rx,
+                            TmuxControlError::channel(
+                                reason
+                                    .clone()
+                                    .unwrap_or_else(|| "tmux control mode exited".to_string()),
+                            ),
+                        );
+                        let _ = notifications.push(TmuxNotification::Exit(reason));
+                        let _ = flush_notification_coalescer(
+                            &mut notifications,
+                            &notifications_tx,
+                            event_wakeup_tx.as_ref(),
+                        );
+                        break;
                     }
-                    block.output.push_str(line_text);
-                    continue;
                 }
 
-                if line.starts_with(b"%exit") {
-                    let reason = std::str::from_utf8(&line)
-                        .ok()
-                        .and_then(|value| value.strip_prefix("%exit"))
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                        .map(ToOwned::to_owned);
-                    let _ = notifications_tx.send(TmuxNotification::Exit(reason));
+                if let Err(error) = flush_notification_coalescer(
+                    &mut notifications,
+                    &notifications_tx,
+                    event_wakeup_tx.as_ref(),
+                )
+                {
+                    fail_with_exit(
+                        &mut current_pending,
+                        &pending_rx,
+                        &notifications_tx,
+                        &mut notifications,
+                        event_wakeup_tx.as_ref(),
+                        error,
+                    );
                     break;
                 }
             }
@@ -480,7 +850,16 @@ impl TmuxClient {
     }
 
     pub fn poll_notifications(&self) -> Vec<TmuxNotification> {
-        self.notifications_rx.try_iter().collect()
+        let mut coalescer = NotificationCoalescer::with_output_byte_limit(usize::MAX);
+        for notification in self.notifications_rx.try_iter() {
+            // Draining already-bounded channel contents cannot grow unbounded;
+            // this second-stage coalescing keeps refresh/output bursts from
+            // triggering redraw storms in the UI event loop.
+            if let Err(error) = coalescer.push(notification) {
+                return vec![TmuxNotification::Exit(Some(error.message))];
+            }
+        }
+        coalescer.drain()
     }
 
     pub fn refresh_snapshot(&self) -> Result<TmuxSnapshot> {
@@ -489,7 +868,9 @@ impl TmuxClient {
             "-t",
             self.session_name.as_str(),
             "-F",
-            "#{window_id}\t#{window_index}\t#{window_name}\t#{window_layout}\t#{window_active}\t#{automatic-rename}",
+            // Use an explicit non-printable field separator and escaped string fields
+            // so tabs/newlines inside names cannot corrupt record framing.
+            WINDOW_SNAPSHOT_FORMAT,
         ])?;
 
         let panes_output = self.run_control_capture_args(&[
@@ -498,7 +879,7 @@ impl TmuxClient {
             "-t",
             self.session_name.as_str(),
             "-F",
-            "#{pane_id}\t#{window_id}\t#{session_id}\t#{pane_active}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{pane_current_path}\t#{pane_current_command}",
+            PANE_SNAPSHOT_FORMAT,
         ])?;
 
         parse_snapshot(&self.session_name, &windows_output, &panes_output)
@@ -601,13 +982,22 @@ impl TmuxClient {
             return Ok(());
         }
 
-        for chunk in bytes.chunks(256) {
-            let mut command = format!("send-keys -t {} -H", pane_id);
-            for byte in chunk {
-                command.push(' ');
-                command.push_str(&format!("{:02x}", byte));
+        let (mode, _) = choose_send_input_mode(bytes.len());
+        match mode {
+            SendInputMode::ChunkedHex => {
+                for chunk in bytes.chunks(SEND_INPUT_CHUNKED_HEX_BYTES) {
+                    let command = send_keys_hex_command(pane_id, chunk);
+                    self.send_control_command_async(command.as_str())?;
+                }
             }
-            self.send_control_command_async(command.as_str())?;
+            SendInputMode::Bulk => {
+                // Large pastes must honor per-command completion so bounded control queues
+                // cannot be flooded by thousands of async send-keys requests.
+                for chunk in bytes.chunks(SEND_INPUT_BULK_HEX_BYTES) {
+                    let command = send_keys_hex_command(pane_id, chunk);
+                    let _ = self.send_control_command_wait(command.as_str())?;
+                }
+            }
         }
 
         Ok(())
@@ -681,25 +1071,25 @@ impl TmuxClient {
         Ok(())
     }
 
+    fn enqueue_control_request(&self, request: ControlRequest) -> Result<()> {
+        try_enqueue_control_request(&self.request_tx, request).map_err(anyhow::Error::new)
+    }
+
     fn send_control_command_async(&self, command: &str) -> Result<()> {
-        self.request_tx
-            .send(ControlRequest {
-                command: command.to_string(),
-                response_tx: None,
-            })
-            .map_err(|_| anyhow!("tmux control channel is closed"))
+        self.enqueue_control_request(ControlRequest {
+            command: command.to_string(),
+            response_tx: None,
+        })
     }
 
     fn send_control_command_wait(&self, command: &str) -> Result<ControlCommandResult> {
         const CONTROL_COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
 
         let (response_tx, response_rx) = flume::bounded(1);
-        self.request_tx
-            .send(ControlRequest {
-                command: command.to_string(),
-                response_tx: Some(response_tx),
-            })
-            .map_err(|_| anyhow!("tmux control channel is closed"))?;
+        self.enqueue_control_request(ControlRequest {
+            command: command.to_string(),
+            response_tx: Some(response_tx),
+        })?;
 
         let response = response_rx.recv_timeout(CONTROL_COMMAND_TIMEOUT).map_err(|_| {
             anyhow!(TmuxControlError::channel(format!(
@@ -812,6 +1202,33 @@ fn tmux_command_line(args: &[&str]) -> String {
         .join(" ")
 }
 
+fn choose_send_input_mode(bytes_len: usize) -> (SendInputMode, usize) {
+    if bytes_len >= SEND_INPUT_BULK_THRESHOLD_BYTES {
+        return (
+            SendInputMode::Bulk,
+            bytes_len.div_ceil(SEND_INPUT_BULK_HEX_BYTES),
+        );
+    }
+
+    (
+        SendInputMode::ChunkedHex,
+        bytes_len.div_ceil(SEND_INPUT_CHUNKED_HEX_BYTES),
+    )
+}
+
+fn send_keys_hex_command(pane_id: &str, chunk: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    let mut command = String::with_capacity(18 + pane_id.len() + (chunk.len() * 3));
+    command.push_str("send-keys -t ");
+    command.push_str(pane_id);
+    command.push_str(" -H");
+    for byte in chunk {
+        write!(&mut command, " {byte:02x}").expect("writing hex bytes into String cannot fail");
+    }
+    command
+}
+
 fn quote_tmux_arg(value: &str) -> String {
     if value.is_empty() {
         return "''".to_string();
@@ -825,70 +1242,138 @@ fn quote_tmux_arg(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
+fn decode_snapshot_field(value: &str) -> Result<String> {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        let current = bytes[index];
+        if current != b'\\' {
+            output.push(current);
+            index += 1;
+            continue;
+        }
+
+        index += 1;
+        let escape = bytes
+            .get(index)
+            .ok_or_else(|| anyhow!("invalid trailing escape in snapshot field '{}'", value))?;
+        match escape {
+            b'\\' => {
+                output.push(b'\\');
+                index += 1;
+            }
+            b'n' => {
+                output.push(b'\n');
+                index += 1;
+            }
+            b'r' => {
+                output.push(b'\r');
+                index += 1;
+            }
+            b't' => {
+                output.push(b'\t');
+                index += 1;
+            }
+            b'x' => {
+                let hex = bytes
+                    .get(index + 1..index + 3)
+                    .ok_or_else(|| anyhow!("invalid hex escape in snapshot field '{}'", value))?;
+                let hi = (hex[0] as char)
+                    .to_digit(16)
+                    .ok_or_else(|| anyhow!("invalid hex escape in snapshot field '{}'", value))?;
+                let lo = (hex[1] as char)
+                    .to_digit(16)
+                    .ok_or_else(|| anyhow!("invalid hex escape in snapshot field '{}'", value))?;
+                output.push(((hi << 4) | lo) as u8);
+                index += 3;
+            }
+            b'0'..=b'7' => {
+                let octal = bytes
+                    .get(index..index + 3)
+                    .ok_or_else(|| anyhow!("invalid octal escape in snapshot field '{}'", value))?;
+                if !octal.iter().all(|digit| (b'0'..=b'7').contains(digit)) {
+                    return Err(anyhow!("invalid octal escape in snapshot field '{}'", value));
+                }
+                let decoded =
+                    ((octal[0] - b'0') << 6) | ((octal[1] - b'0') << 3) | (octal[2] - b'0');
+                output.push(decoded);
+                index += 3;
+            }
+            _ => {
+                return Err(anyhow!("invalid escape in snapshot field '{}'", value));
+            }
+        }
+    }
+
+    String::from_utf8(output)
+        .with_context(|| format!("snapshot field is not valid utf-8: '{}'", value))
+}
+
+fn parse_snapshot_fields<const N: usize>(line: &str, kind: &str) -> Result<[String; N]> {
+    // Snapshot rows must have a fixed schema. Rejecting mismatched field counts
+    // prevents silent record drift when delimiters appear unescaped in data.
+    let fields = line
+        .split(SNAPSHOT_FIELD_SEP)
+        .map(decode_snapshot_field)
+        .collect::<Result<Vec<_>>>()?;
+    let field_count = fields.len();
+
+    fields.try_into().map_err(|_| {
+        anyhow!(
+            "invalid tmux {kind} line: expected {N} fields, got {field_count}: '{}'",
+            line
+        )
+    })
+}
+
+fn parse_snapshot_bool(value: &str, field: &str, kind: &str, line: &str) -> Result<bool> {
+    match value {
+        "0" => Ok(false),
+        "1" => Ok(true),
+        _ => Err(anyhow!("invalid {field} in tmux {kind} line: '{}'", line)),
+    }
+}
+
+fn parse_snapshot_u16(value: &str, field: &str, kind: &str, line: &str) -> Result<u16> {
+    value
+        .parse::<u16>()
+        .with_context(|| format!("invalid {field} in tmux {kind} line: '{}'", line))
+}
+
+fn parse_snapshot_i32(value: &str, field: &str, kind: &str, line: &str) -> Result<i32> {
+    value
+        .parse::<i32>()
+        .with_context(|| format!("invalid {field} in tmux {kind} line: '{}'", line))
+}
+
 fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> Result<TmuxSnapshot> {
     let mut panes_by_window: HashMap<String, Vec<TmuxPaneState>> = HashMap::new();
     let mut session_id = None::<String>;
 
     for line in panes.lines().filter(|line| !line.trim().is_empty()) {
-        let mut parts = line.split('\t');
-        let pane_id = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .to_string();
-        let window_id = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .to_string();
-        let pane_session_id = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .to_string();
-        let is_active = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            == "1";
-        let left = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .parse::<u16>()
-            .with_context(|| format!("invalid pane_left in '{}'", line))?;
-        let top = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .parse::<u16>()
-            .with_context(|| format!("invalid pane_top in '{}'", line))?;
-        let width = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .parse::<u16>()
-            .with_context(|| format!("invalid pane_width in '{}'", line))?;
-        let height = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .parse::<u16>()
-            .with_context(|| format!("invalid pane_height in '{}'", line))?;
-        let cursor_x = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .parse::<u16>()
-            .with_context(|| format!("invalid cursor_x in '{}'", line))?;
-        let cursor_y = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .parse::<u16>()
-            .with_context(|| format!("invalid cursor_y in '{}'", line))?;
-        let current_path = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .to_string();
-        let current_command = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
-            .to_string();
-
-        if parts.next().is_some() {
-            return Err(anyhow!("invalid tmux pane line: '{}'", line));
-        }
+        let [
+            pane_id,
+            window_id,
+            pane_session_id,
+            pane_active,
+            pane_left,
+            pane_top,
+            pane_width,
+            pane_height,
+            cursor_x,
+            cursor_y,
+            current_path,
+            current_command,
+        ] = parse_snapshot_fields::<12>(line, "pane")?;
+        let is_active = parse_snapshot_bool(&pane_active, "pane_active", "pane", line)?;
+        let left = parse_snapshot_u16(&pane_left, "pane_left", "pane", line)?;
+        let top = parse_snapshot_u16(&pane_top, "pane_top", "pane", line)?;
+        let width = parse_snapshot_u16(&pane_width, "pane_width", "pane", line)?;
+        let height = parse_snapshot_u16(&pane_height, "pane_height", "pane", line)?;
+        let cursor_x = parse_snapshot_u16(&cursor_x, "cursor_x", "pane", line)?;
+        let cursor_y = parse_snapshot_u16(&cursor_y, "cursor_y", "pane", line)?;
 
         if session_id.is_none() {
             session_id = Some(pane_session_id.clone());
@@ -915,35 +1400,12 @@ fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> Result<Tmux
 
     let mut parsed_windows = Vec::new();
     for line in windows.lines().filter(|line| !line.trim().is_empty()) {
-        let mut parts = line.split('\t');
-        let window_id = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux window line: '{}'", line))?
-            .to_string();
-        let index = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux window line: '{}'", line))?
-            .parse::<i32>()
-            .with_context(|| format!("invalid window_index in '{}'", line))?;
-        let name = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux window line: '{}'", line))?
-            .to_string();
-        let layout = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux window line: '{}'", line))?
-            .to_string();
-        let is_active = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux window line: '{}'", line))?
-            == "1";
-        let automatic_rename = parts
-            .next()
-            .ok_or_else(|| anyhow!("invalid tmux window line: '{}'", line))?
-            == "1";
-        if parts.next().is_some() {
-            return Err(anyhow!("invalid tmux window line: '{}'", line));
-        }
+        let [window_id, window_index, name, layout, window_active, automatic_rename] =
+            parse_snapshot_fields::<6>(line, "window")?;
+        let index = parse_snapshot_i32(&window_index, "window_index", "window", line)?;
+        let is_active = parse_snapshot_bool(&window_active, "window_active", "window", line)?;
+        let automatic_rename =
+            parse_snapshot_bool(&automatic_rename, "automatic-rename", "window", line)?;
 
         let mut window_panes = panes_by_window.remove(&window_id).unwrap_or_default();
         window_panes.sort_by_key(|pane| (pane.top, pane.left));
@@ -971,6 +1433,34 @@ fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> Result<Tmux
         session_id,
         windows: parsed_windows,
     })
+}
+
+fn parse_control_block_tag(line: &[u8], marker: &[u8]) -> std::result::Result<String, TmuxControlError> {
+    let Some(rest) = line.strip_prefix(marker) else {
+        return Err(TmuxControlError::protocol(
+            "failed to parse tmux control command marker",
+        ));
+    };
+    let rest = rest.strip_prefix(b" ").unwrap_or(rest);
+    let tag = std::str::from_utf8(rest)
+        .map_err(|_| TmuxControlError::parse("received non-utf8 command marker metadata"))?;
+    let tag = tag.trim();
+    if tag.is_empty() {
+        return Err(TmuxControlError::protocol(format!(
+            "received '{}' without command metadata",
+            String::from_utf8_lossy(marker)
+        )));
+    }
+    Ok(tag.to_string())
+}
+
+fn parse_exit_reason(line: &[u8]) -> Option<String> {
+    std::str::from_utf8(line)
+        .ok()
+        .and_then(|value| value.strip_prefix("%exit"))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn parse_output_notification(line: &[u8]) -> Option<(String, Vec<u8>)> {
@@ -1102,13 +1592,169 @@ fn parse_version_prefix(version: &str) -> Option<(u8, u8)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        PERSISTENT_SESSION_NAME, TmuxClient, TmuxRuntimeConfig, managed_session_name,
-        parse_output_notification, parse_snapshot, parse_version_prefix, quote_tmux_arg,
-        strip_legacy_title_sequences, unescape_tmux_payload,
+        ControlRequest, ControlStateEvent, ControlStateMachine, NotificationCoalescer,
+        PERSISTENT_SESSION_NAME, SNAPSHOT_FIELD_SEP, SendInputMode, TmuxClient,
+        TmuxControlErrorKind, TmuxNotification, TmuxRuntimeConfig, choose_send_input_mode,
+        flush_notification_coalescer, managed_session_name, parse_output_notification,
+        parse_snapshot, parse_version_prefix, quote_tmux_arg, strip_legacy_title_sequences,
+        try_enqueue_control_request, unescape_tmux_payload,
     };
 
     fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|window| window == needle)
+    }
+
+    fn expect_command_complete(event: ControlStateEvent) -> (bool, String) {
+        match event {
+            ControlStateEvent::CommandComplete { is_error, output } => (is_error, output),
+            other => panic!("expected command completion event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn notification_coalescer_collapses_redundant_refresh_events() {
+        let mut c = NotificationCoalescer::default();
+        c.push(TmuxNotification::NeedsRefresh).expect("refresh");
+        c.push(TmuxNotification::NeedsRefresh).expect("refresh");
+
+        let drained = c.drain();
+        let refresh_count = drained
+            .iter()
+            .filter(|notification| matches!(notification, TmuxNotification::NeedsRefresh))
+            .count();
+        assert_eq!(refresh_count, 1);
+    }
+
+    #[test]
+    fn notification_coalescer_merges_adjacent_output_bursts_per_pane() {
+        let mut c = NotificationCoalescer::default();
+        c.push(TmuxNotification::Output {
+            pane_id: "%1".to_string(),
+            bytes: b"hello".to_vec(),
+        })
+        .expect("output");
+        c.push(TmuxNotification::Output {
+            pane_id: "%1".to_string(),
+            bytes: b" world".to_vec(),
+        })
+        .expect("output");
+        c.push(TmuxNotification::Output {
+            pane_id: "%2".to_string(),
+            bytes: b"!".to_vec(),
+        })
+        .expect("output");
+
+        let drained = c.drain();
+        assert_eq!(
+            drained,
+            vec![
+                TmuxNotification::Output {
+                    pane_id: "%1".to_string(),
+                    bytes: b"hello world".to_vec(),
+                },
+                TmuxNotification::Output {
+                    pane_id: "%2".to_string(),
+                    bytes: b"!".to_vec(),
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn notification_coalescer_reports_backpressure_when_output_backlog_exceeds_limit() {
+        let mut c = NotificationCoalescer::with_output_byte_limit(4);
+        c.push(TmuxNotification::Output {
+            pane_id: "%1".to_string(),
+            bytes: b"abcd".to_vec(),
+        })
+        .expect("output");
+
+        let err = c
+            .push(TmuxNotification::Output {
+                pane_id: "%1".to_string(),
+                bytes: b"e".to_vec(),
+            })
+            .expect_err("backlog should fail");
+        assert_eq!(err.kind, TmuxControlErrorKind::Channel);
+        assert!(err.message.contains("backlog exceeded"));
+    }
+
+    #[test]
+    fn notification_flush_signals_wakeup_when_notifications_are_enqueued() {
+        let mut c = NotificationCoalescer::default();
+        c.push(TmuxNotification::NeedsRefresh).expect("refresh");
+
+        let (notifications_tx, notifications_rx) = flume::bounded(4);
+        let (event_wakeup_tx, event_wakeup_rx) = flume::bounded(1);
+
+        flush_notification_coalescer(&mut c, &notifications_tx, Some(&event_wakeup_tx))
+            .expect("flush should succeed");
+
+        assert!(matches!(
+            notifications_rx.try_recv(),
+            Ok(TmuxNotification::NeedsRefresh)
+        ));
+        assert!(event_wakeup_rx.try_recv().is_ok());
+    }
+
+    #[test]
+    fn notification_flush_skips_wakeup_when_no_notifications_are_enqueued() {
+        let mut c = NotificationCoalescer::default();
+        let (notifications_tx, _notifications_rx) = flume::bounded(4);
+        let (event_wakeup_tx, event_wakeup_rx) = flume::bounded(1);
+
+        flush_notification_coalescer(&mut c, &notifications_tx, Some(&event_wakeup_tx))
+            .expect("flush should succeed");
+
+        assert!(event_wakeup_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn request_enqueue_reports_backpressure_when_queue_is_full() {
+        let (request_tx, _request_rx) = flume::bounded::<ControlRequest>(1);
+        request_tx
+            .try_send(ControlRequest {
+                command: "first".to_string(),
+                response_tx: None,
+            })
+            .expect("seed queue");
+
+        let err = try_enqueue_control_request(
+            &request_tx,
+            ControlRequest {
+                command: "second".to_string(),
+                response_tx: None,
+            },
+        )
+        .expect_err("full queue should fail");
+        assert_eq!(err.kind, TmuxControlErrorKind::Channel);
+        assert!(err.message.contains("request queue is full"));
+    }
+
+    #[test]
+    fn send_input_uses_chunked_hex_path_for_small_payloads() {
+        let (mode, chunks) = choose_send_input_mode(1024);
+        assert_eq!(mode, SendInputMode::ChunkedHex);
+        assert_eq!(chunks, 4);
+    }
+
+    #[test]
+    fn send_input_uses_bulk_path_for_large_payloads() {
+        let (mode, chunks) = choose_send_input_mode(8192);
+        assert_eq!(mode, SendInputMode::Bulk);
+        assert_eq!(chunks, 4);
+        assert!(chunks < 64);
+    }
+
+    #[test]
+    fn send_input_switches_to_bulk_at_threshold() {
+        let (small_mode, small_chunks) = choose_send_input_mode(2047);
+        assert_eq!(small_mode, SendInputMode::ChunkedHex);
+        assert_eq!(small_chunks, 8);
+
+        let (bulk_mode, bulk_chunks) = choose_send_input_mode(2048);
+        assert_eq!(bulk_mode, SendInputMode::Bulk);
+        assert_eq!(bulk_chunks, 1);
     }
 
     #[test]
@@ -1183,10 +1829,91 @@ mod tests {
     }
 
     #[test]
+    fn control_state_machine_keeps_notifications_out_of_command_output() {
+        let mut sm = ControlStateMachine::default();
+        assert_eq!(
+            sm.on_line(b"%begin 10 3 0").expect("begin"),
+            ControlStateEvent::CommandBegin
+        );
+
+        assert_eq!(
+            sm.on_line(b"%output %1 hi\\012").expect("notification"),
+            ControlStateEvent::Notification(TmuxNotification::Output {
+                pane_id: "%1".to_string(),
+                bytes: b"hi\r\n".to_vec(),
+            })
+        );
+
+        assert_eq!(sm.on_line(b"ok").expect("output line"), ControlStateEvent::None);
+        let (is_error, output) = expect_command_complete(sm.on_line(b"%end 10 3 0").expect("end"));
+        assert!(!is_error);
+        assert_eq!(output.trim(), "ok");
+    }
+
+    #[test]
+    fn control_state_machine_reports_error_block_output() {
+        let mut sm = ControlStateMachine::default();
+        assert_eq!(
+            sm.on_line(b"%begin 11 8 0").expect("begin"),
+            ControlStateEvent::CommandBegin
+        );
+        assert_eq!(
+            sm.on_line(b"pane not found").expect("output line"),
+            ControlStateEvent::None
+        );
+
+        let (is_error, output) =
+            expect_command_complete(sm.on_line(b"%error 11 8 0").expect("error"));
+        assert!(is_error);
+        assert_eq!(output.trim(), "pane not found");
+    }
+
+    #[test]
+    fn control_state_machine_rejects_mismatched_end_marker() {
+        let mut sm = ControlStateMachine::default();
+        assert_eq!(
+            sm.on_line(b"%begin 44 9 0").expect("begin"),
+            ControlStateEvent::CommandBegin
+        );
+        let err = sm.on_line(b"%end 45 9 0").expect_err("mismatch should fail");
+        assert_eq!(err.kind, TmuxControlErrorKind::Protocol);
+        assert!(err.message.contains("mismatched command terminator"));
+    }
+
+    #[test]
+    fn control_state_machine_routes_refresh_notifications_while_collecting_output() {
+        let mut sm = ControlStateMachine::default();
+        assert_eq!(
+            sm.on_line(b"%begin 72 1 0").expect("begin"),
+            ControlStateEvent::CommandBegin
+        );
+        assert_eq!(
+            sm.on_line(b"%layout-change @1 tiled").expect("refresh"),
+            ControlStateEvent::Notification(TmuxNotification::NeedsRefresh)
+        );
+        assert_eq!(
+            sm.on_line(b"captured").expect("output line"),
+            ControlStateEvent::None
+        );
+
+        let (is_error, output) =
+            expect_command_complete(sm.on_line(b"%end 72 1 0").expect("end"));
+        assert!(!is_error);
+        assert_eq!(output, "captured");
+    }
+
+    #[test]
     fn parse_snapshot_builds_windows_and_panes() {
-        let windows = "@1\t0\tone\tlayout-a\t1\t1\n@2\t1\ttwo\tlayout-b\t0\t0\n";
-        let panes = "%1\t@1\t$1\t1\t0\t0\t80\t24\t13\t22\t/tmp\tzsh\n%2\t@2\t$1\t1\t0\t0\t60\t24\t7\t2\t/work\tsleep\n%3\t@2\t$1\t0\t61\t0\t19\t24\t3\t8\t/work\tzsh\n";
-        let snapshot = parse_snapshot("termy", windows, panes).expect("snapshot");
+        let sep = SNAPSHOT_FIELD_SEP;
+        let windows = format!(
+            "@1{sep}0{sep}one{sep}layout-a{sep}1{sep}1\n@2{sep}1{sep}two{sep}layout-b{sep}0{sep}0\n",
+        );
+        let panes = format!(
+            "%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}13{sep}22{sep}/tmp{sep}zsh\n\
+             %2{sep}@2{sep}$1{sep}1{sep}0{sep}0{sep}60{sep}24{sep}7{sep}2{sep}/work{sep}sleep\n\
+             %3{sep}@2{sep}$1{sep}0{sep}61{sep}0{sep}19{sep}24{sep}3{sep}8{sep}/work{sep}zsh\n",
+        );
+        let snapshot = parse_snapshot("termy", windows.as_str(), panes.as_str()).expect("snapshot");
         assert_eq!(snapshot.windows.len(), 2);
         assert_eq!(snapshot.windows[0].id, "@1");
         assert_eq!(snapshot.windows[0].panes.len(), 1);
@@ -1197,6 +1924,63 @@ mod tests {
         assert_eq!(snapshot.windows[0].panes[0].cursor_y, 22);
         assert_eq!(snapshot.windows[0].panes[0].current_path, "/tmp");
         assert_eq!(snapshot.windows[1].panes[0].current_command, "sleep");
+    }
+
+    #[test]
+    fn parse_snapshot_accepts_escaped_field_delimiters_in_window_name_and_command() {
+        let sep = SNAPSHOT_FIELD_SEP;
+        let windows =
+            format!("@1{sep}0{sep}name\\x09with-tab\\x1fwindow{sep}layout\\x1fgrid{sep}1{sep}1\n");
+        let panes = format!(
+            "%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp\\x1fdir\\x09tab{sep}cmd\\x0awith-nl\\x1fpart\n",
+        );
+        let snapshot = parse_snapshot("termy", windows.as_str(), panes.as_str()).expect("snapshot");
+        assert_eq!(snapshot.windows[0].name, "name\twith-tab\x1fwindow");
+        assert_eq!(snapshot.windows[0].layout, "layout\x1fgrid");
+        assert_eq!(snapshot.windows[0].panes[0].current_path, "/tmp\x1fdir\ttab");
+        assert_eq!(
+            snapshot.windows[0].panes[0].current_command,
+            "cmd\nwith-nl\x1fpart"
+        );
+    }
+
+    #[test]
+    fn parse_snapshot_accepts_tmux_q_octal_escapes_for_tabs_newlines_and_delimiters() {
+        let sep = SNAPSHOT_FIELD_SEP;
+        let windows = format!(
+            "@1{sep}0{sep}name\\011with-tab\\037window{sep}layout\\037grid{sep}1{sep}1\n"
+        );
+        let panes = format!(
+            "%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp\\011dir\\037tab{sep}cmd\\012with-nl\\037part\n",
+        );
+        let snapshot = parse_snapshot("termy", windows.as_str(), panes.as_str()).expect("snapshot");
+        assert_eq!(snapshot.windows[0].name, "name\twith-tab\x1fwindow");
+        assert_eq!(snapshot.windows[0].layout, "layout\x1fgrid");
+        assert_eq!(snapshot.windows[0].panes[0].current_path, "/tmp\tdir\x1ftab");
+        assert_eq!(
+            snapshot.windows[0].panes[0].current_command,
+            "cmd\nwith-nl\x1fpart"
+        );
+    }
+
+    #[test]
+    fn parse_snapshot_rejects_unescaped_field_separator_in_window_record() {
+        let sep = SNAPSHOT_FIELD_SEP;
+        let windows = format!("@1{sep}0{sep}broken{sep}name{sep}layout{sep}1{sep}1\n");
+        let panes =
+            format!("%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp{sep}zsh\n");
+        let error = parse_snapshot("termy", windows.as_str(), panes.as_str()).unwrap_err();
+        assert!(error.to_string().contains("expected 6 fields, got 7"));
+    }
+
+    #[test]
+    fn parse_snapshot_rejects_invalid_hex_escape_in_fields() {
+        let sep = SNAPSHOT_FIELD_SEP;
+        let windows = format!("@1{sep}0{sep}name\\x0g{sep}layout{sep}1{sep}1\n");
+        let panes =
+            format!("%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp{sep}zsh\n");
+        let error = parse_snapshot("termy", windows.as_str(), panes.as_str()).unwrap_err();
+        assert!(error.to_string().contains("invalid hex escape"));
     }
 
     #[test]

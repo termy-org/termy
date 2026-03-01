@@ -153,31 +153,12 @@ impl TerminalView {
         let rows = terminal.size().rows as i32;
         let start_line = -(history_size as i32);
         let end_line = rows - 1;
-
-        let mut line_texts = Vec::with_capacity((end_line - start_line + 1).max(0) as usize);
-        match terminal {
-            Terminal::Tmux(terminal) => terminal.with_term(|term| {
-                let grid = term.grid();
-                for line_idx in start_line..=end_line {
-                    line_texts.push(extract_line_text(grid, line_idx, display_offset));
-                }
-            }),
-            Terminal::Native(terminal) => {
-                if let Ok(terminal) = terminal.lock() {
-                    terminal.with_term(|term| {
-                        let grid = term.grid();
-                        for line_idx in start_line..=end_line {
-                            line_texts.push(extract_line_text(grid, line_idx, display_offset));
-                        }
-                    });
-                }
-            }
-        }
+        let line_texts = collect_search_line_texts(terminal, start_line, end_line, display_offset);
 
         let search_state = &mut self.search_state;
         search_state.search(start_line, end_line, |line_idx| {
             let offset = (line_idx - start_line) as usize;
-            line_texts.get(offset).cloned().unwrap_or_default()
+            line_texts.get(offset).cloned().flatten()
         });
 
         // Start from the bottommost (newest) match, which is now index 0.
@@ -390,6 +371,21 @@ impl TerminalView {
     }
 }
 
+fn collect_search_line_texts(
+    terminal: &Terminal,
+    start_line: i32,
+    end_line: i32,
+    display_offset: usize,
+) -> Vec<Option<String>> {
+    let mut line_texts = Vec::with_capacity((end_line - start_line + 1).max(0) as usize);
+    let _ = terminal.with_grid(|grid| {
+        for line_idx in start_line..=end_line {
+            line_texts.push(extract_line_text(grid, line_idx, display_offset));
+        }
+    });
+    line_texts
+}
+
 /// Extract text from a terminal grid line
 fn extract_line_text(
     grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
@@ -423,4 +419,48 @@ fn extract_line_text(
     }
 
     Some(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use termy_terminal_ui::TerminalSize;
+
+    fn filled_line_count(lines: &[Option<String>]) -> usize {
+        lines
+            .iter()
+            .filter_map(|line| line.as_deref())
+            .filter(|line| !line.trim().is_empty())
+            .count()
+    }
+
+    #[test]
+    fn terminal_read_adapter_extracts_lines_for_both_runtime_variants() {
+        let size = TerminalSize {
+            cols: 24,
+            rows: 4,
+            ..TerminalSize::default()
+        };
+
+        let tmux = Terminal::new_tmux(size, 256);
+        tmux.feed_output(b"tmux-line\r\n");
+        let (tmux_display_offset, _) = tmux.scroll_state();
+        let tmux_lines = collect_search_line_texts(&tmux, 0, i32::from(size.rows) - 1, tmux_display_offset);
+        assert_eq!(tmux_lines.len(), usize::from(size.rows));
+        assert!(
+            filled_line_count(&tmux_lines) >= 1,
+            "tmux terminal should expose at least one non-empty line"
+        );
+
+        let native = Terminal::new_native(size, None, None, None, None)
+            .expect("native terminal should initialize for read adapter test");
+        let (native_display_offset, _) = native.scroll_state();
+        let native_lines = collect_search_line_texts(
+            &native,
+            0,
+            i32::from(size.rows) - 1,
+            native_display_offset,
+        );
+        assert_eq!(native_lines.len(), usize::from(size.rows));
+    }
 }

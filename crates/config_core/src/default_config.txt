@@ -77,10 +77,12 @@ pane_focus_strength = 0.35
 command_palette_show_keybinds = true
 
 # Keybindings (repeatable)
+# tmux-only keybind actions require `tmux_enabled = true` and app restart
 # keybind = cmd-p=toggle_command_palette
 # keybind = cmd-c=copy
 # keybind = cmd-c=unbind
 # keybind = clear
+# keybind = secondary-d=split_pane_vertical
 
 # Color overrides
 [colors]

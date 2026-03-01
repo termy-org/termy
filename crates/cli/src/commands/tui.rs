@@ -147,11 +147,18 @@ fn get_content_for_item(item: &MenuItem) -> Vec<String> {
         MenuItem::ListFonts => providers::list_fonts_lines(),
         MenuItem::ListThemes => providers::list_theme_lines(),
         MenuItem::ListColors => providers::list_color_lines(),
-        MenuItem::ListKeybinds => providers::list_keybind_lines(),
-        MenuItem::ListActions => providers::list_action_lines(),
+        MenuItem::ListKeybinds => format_provider_table_lines(providers::list_keybind_lines()),
+        MenuItem::ListActions => format_provider_table_lines(providers::list_action_lines()),
         MenuItem::ValidateConfig => get_validate_config_content(),
         MenuItem::EditConfig => vec!["Press Enter to open config in your editor".to_string()],
     }
+}
+
+fn format_provider_table_lines(lines: Vec<String>) -> Vec<String> {
+    lines
+        .into_iter()
+        .map(|line| line.replace('\t', "    "))
+        .collect()
 }
 
 fn get_validate_config_content() -> Vec<String> {

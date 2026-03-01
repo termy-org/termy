@@ -1,6 +1,8 @@
+mod availability;
 mod catalog;
 mod keybind;
 
+pub use availability::{CommandAvailability, CommandCapabilities, CommandUnavailableReason};
 pub use catalog::{CommandId, CommandSpec, command_specs};
 pub use keybind::{
     DefaultKeybind, KeybindDirective, KeybindLineRef, KeybindPlatform, KeybindWarning,

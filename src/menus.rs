@@ -2,6 +2,7 @@ use crate::commands::{CommandAction, CommandMenuEntry, MenuRoot};
 use gpui::{Menu, MenuItem};
 #[cfg(target_os = "macos")]
 use gpui::SystemMenuType;
+use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavailableReason};
 
 const INSTALL_CLI_TITLE: &str = "Install CLI";
 const INSTALL_CLI_INSTALLED_TITLE: &str = "Install CLI (Installed)";
@@ -11,14 +12,19 @@ const CLOSE_PANE_TMUX_REQUIRED_TITLE: &str = "Close Pane (tmux required)";
 const FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE: &str = "Focus Next Pane (tmux required)";
 
 pub(crate) fn app_menus(install_cli_available: bool, tmux_enabled: bool) -> Vec<Menu> {
+    let capabilities = CommandCapabilities {
+        tmux_runtime_active: tmux_enabled,
+        install_cli_available,
+    };
+
     CommandAction::menu_roots()
         .iter()
         .copied()
-        .map(|root| build_menu(root, install_cli_available, tmux_enabled))
+        .map(|root| build_menu(root, capabilities))
         .collect()
 }
 
-fn build_menu(root: MenuRoot, install_cli_available: bool, tmux_enabled: bool) -> Menu {
+fn build_menu(root: MenuRoot, capabilities: CommandCapabilities) -> Menu {
     let entries = CommandAction::menu_entries_for_root(root);
     let mut items = Vec::new();
 
@@ -30,7 +36,7 @@ fn build_menu(root: MenuRoot, install_cli_available: bool, tmux_enabled: bool) -
         }
     }
 
-    append_menu_entries(&mut items, &entries, install_cli_available, tmux_enabled);
+    append_menu_entries(&mut items, &entries, capabilities);
 
     Menu {
         name: root.title().into(),
@@ -41,23 +47,15 @@ fn build_menu(root: MenuRoot, install_cli_available: bool, tmux_enabled: bool) -
 fn append_menu_entries(
     items: &mut Vec<MenuItem>,
     entries: &[CommandMenuEntry],
-    install_cli_available: bool,
-    tmux_enabled: bool,
+    capabilities: CommandCapabilities,
 ) {
     let mut previous_section = None;
 
     for entry in entries {
-        // Keep only the requested pane actions visible in native mode and label
-        // them explicitly so users understand why the menu rows are disabled.
-        let tmux_required_title = if tmux_enabled {
-            None
-        } else {
-            tmux_required_menu_title(entry.action)
-        };
-
-        if entry.action.requires_tmux() && !tmux_enabled && tmux_required_title.is_none() {
+        let availability = entry.action.availability(capabilities);
+        let Some(title) = menu_item_title(entry, availability) else {
             continue;
-        }
+        };
 
         if let Some(section) = previous_section {
             if section != entry.section {
@@ -65,20 +63,30 @@ fn append_menu_entries(
             }
         }
 
-        let title = if entry.action == CommandAction::InstallCli {
-            if install_cli_available {
-                INSTALL_CLI_TITLE
-            } else {
-                INSTALL_CLI_INSTALLED_TITLE
-            }
-        } else if let Some(tmux_required_title) = tmux_required_title {
-            tmux_required_title
-        } else {
-            entry.title
-        };
-
         items.push(entry.action.to_menu_item(title, entry.role));
         previous_section = Some(entry.section);
+    }
+}
+
+fn menu_item_title(
+    entry: &CommandMenuEntry,
+    availability: CommandAvailability,
+) -> Option<&'static str> {
+    if availability.enabled {
+        if entry.action == CommandAction::InstallCli {
+            return Some(INSTALL_CLI_TITLE);
+        }
+        return Some(entry.title);
+    }
+
+    match availability.reason {
+        // Keep only the requested pane actions visible in native mode and label
+        // them explicitly so users understand why those rows are unavailable.
+        Some(CommandUnavailableReason::RequiresTmuxRuntime) => tmux_required_menu_title(entry.action),
+        Some(CommandUnavailableReason::InstallCliAlreadyInstalled) => {
+            Some(INSTALL_CLI_INSTALLED_TITLE)
+        }
+        None => unreachable!("disabled command must include an unavailable reason"),
     }
 }
 
@@ -99,7 +107,9 @@ mod tests {
         INSTALL_CLI_INSTALLED_TITLE, INSTALL_CLI_TITLE, SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE,
         SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE, app_menus,
     };
+    use crate::commands::CommandAction;
     use gpui::{MenuItem, OsAction};
+    use termy_command_core::{CommandCapabilities, CommandUnavailableReason};
 
     #[test]
     fn top_level_menu_order_is_stable() {
@@ -212,10 +222,36 @@ mod tests {
             install_cli_titles(&help_menu_installed),
             [INSTALL_CLI_INSTALLED_TITLE]
         );
+
+        let availability = CommandAction::InstallCli.availability(CommandCapabilities {
+            tmux_runtime_active: true,
+            install_cli_available: false,
+        });
+        assert_eq!(
+            availability.reason,
+            Some(CommandUnavailableReason::InstallCliAlreadyInstalled)
+        );
     }
 
     #[test]
     fn file_menu_shows_tmux_required_pane_actions_when_tmux_is_disabled() {
+        let caps = CommandCapabilities {
+            tmux_runtime_active: false,
+            install_cli_available: true,
+        };
+        for action in [
+            CommandAction::SplitPaneVertical,
+            CommandAction::SplitPaneHorizontal,
+            CommandAction::ClosePane,
+            CommandAction::FocusPaneNext,
+        ] {
+            let availability = action.availability(caps);
+            assert_eq!(
+                availability.reason,
+                Some(CommandUnavailableReason::RequiresTmuxRuntime)
+            );
+        }
+
         let file_menu = app_menus(true, false)
             .into_iter()
             .find(|menu| menu.name.as_ref() == "File")

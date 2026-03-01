@@ -7,12 +7,14 @@ mod config;
 mod keybindings;
 mod menus;
 mod settings_view;
+mod startup;
 mod terminal_view;
 mod text_input;
 mod ui;
 
 use commands::{OpenConfig, OpenSettings};
 use gpui::{App, Application, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
+use startup::StartupBlocker;
 use termy_terminal_ui::TmuxClient;
 use terminal_view::{TerminalView, initial_window_background_appearance};
 
@@ -29,7 +31,7 @@ const WINDOWS_DEFAULT_WINDOW_WIDTH: f32 = 1280.0;
 #[cfg(target_os = "windows")]
 const WINDOWS_DEFAULT_WINDOW_HEIGHT: f32 = 820.0;
 
-fn preflight_tmux_runtime(config: &config::AppConfig) -> Result<(), String> {
+fn preflight_tmux_runtime(config: &config::AppConfig) -> Result<(), StartupBlocker> {
     if !config.tmux_enabled {
         return Ok(());
     }
@@ -37,20 +39,22 @@ fn preflight_tmux_runtime(config: &config::AppConfig) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let _ = config;
-        return Err(
+        return Err(StartupBlocker::TmuxPreflight(
             "tmux runtime is unsupported on Windows; supported platforms are macOS and Linux"
                 .to_string(),
-        );
+        ));
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         let _ = config;
-        return Err("tmux runtime is unsupported on this platform".to_string());
+        return Err(StartupBlocker::TmuxPreflight(
+            "tmux runtime is unsupported on this platform".to_string(),
+        ));
     }
 
     TmuxClient::verify_tmux_version(config.tmux_binary.as_str(), 3, 3)
-        .map_err(|error| format!("tmux preflight failed: {error}"))
+        .map_err(|error| StartupBlocker::TmuxPreflight(format!("tmux preflight failed: {error}")))
 }
 
 fn main() {
@@ -74,10 +78,8 @@ fn main() {
         let startup_load =
             config::load_runtime_config(&mut startup_config_error, "Failed to load config");
         let app_config = startup_load.config;
-        if let Err(error) = preflight_tmux_runtime(&app_config) {
-            log::error!("{error}");
-            eprintln!("Termy startup blocked: {error}");
-            std::process::exit(1);
+        if let Err(blocker) = preflight_tmux_runtime(&app_config) {
+            blocker.present_and_exit();
         }
         keybindings::install_keybindings(cx, &app_config, app_config.tmux_enabled);
         let window_background = initial_window_background_appearance(&app_config);

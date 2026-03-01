@@ -9,6 +9,8 @@ use termy_command_core::{
     parse_keybind_directives_from_iter, resolve_keybinds,
 };
 
+const GLOBAL_KEYBIND_WARNING_LINE_NUMBER: usize = 0;
+
 pub fn install_keybindings(cx: &mut App, config: &AppConfig, tmux_enabled: bool) {
     let (resolved, warnings) = resolve_keybinds_for_config(config, tmux_enabled);
     report_warnings(&warnings);
@@ -66,7 +68,7 @@ pub(crate) fn resolve_keybinds_for_config(
     Vec<termy_command_core::ResolvedKeybind>,
     Vec<KeybindWarning>,
 ) {
-    let (directives, warnings) =
+    let (directives, mut warnings) =
         parse_keybind_directives_from_iter(config.keybind_lines.iter().map(|line| {
             KeybindLineRef {
                 line_number: line.line_number,
@@ -75,14 +77,33 @@ pub(crate) fn resolve_keybinds_for_config(
         }));
 
     let resolved = resolve_keybinds(default_resolved_keybinds(), &directives);
+    let mut suppressed_tmux_only_bindings = 0usize;
     let resolved = if tmux_enabled {
         resolved
     } else {
+        // Native mode intentionally suppresses tmux-only actions. Emit an explicit
+        // warning so this behavior is visible instead of silently dropping bindings.
         resolved
             .into_iter()
-            .filter(|binding| !binding.action.is_tmux_only())
+            .filter(|binding| {
+                if binding.action.is_tmux_only() {
+                    suppressed_tmux_only_bindings += 1;
+                    return false;
+                }
+                true
+            })
             .collect()
     };
+
+    if suppressed_tmux_only_bindings > 0 {
+        warnings.push(KeybindWarning {
+            line_number: GLOBAL_KEYBIND_WARNING_LINE_NUMBER,
+            message: format!(
+                "{suppressed_tmux_only_bindings} tmux-only keybind(s) ignored while tmux is disabled"
+            ),
+        });
+    }
+
     (resolved, warnings)
 }
 
@@ -91,19 +112,31 @@ fn report_warnings(warnings: &[KeybindWarning]) {
         return;
     }
 
+    let mut invalid_keybind_warning_count = 0usize;
     for warning in warnings {
+        if warning.line_number == GLOBAL_KEYBIND_WARNING_LINE_NUMBER {
+            warn!("Ignoring keybind: {}", warning.message);
+            continue;
+        }
+
+        invalid_keybind_warning_count += 1;
         warn!(
             "Ignoring invalid keybind at config line {}: {}",
             warning.line_number, warning.message
         );
     }
 
-    let noun = if warnings.len() == 1 { "line" } else { "lines" };
-    termy_toast::warning(format!(
-        "Ignored {} invalid keybind {}",
-        warnings.len(),
-        noun
-    ));
+    if invalid_keybind_warning_count > 0 {
+        let noun = if invalid_keybind_warning_count == 1 {
+            "line"
+        } else {
+            "lines"
+        };
+        termy_toast::warning(format!(
+            "Ignored {} invalid keybind {}",
+            invalid_keybind_warning_count, noun
+        ));
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -254,9 +287,36 @@ mod tests {
             .any(|binding| binding.action.is_tmux_only()));
 
         let (native_resolved, native_warnings) = resolve_keybinds_for_config(&config, false);
-        assert!(native_warnings.is_empty());
+        assert_eq!(native_warnings.len(), 1);
+        assert_eq!(native_warnings[0].line_number, 0);
+        assert!(native_warnings[0]
+            .message
+            .contains("tmux-only keybind(s) ignored while tmux is disabled"));
         assert!(native_resolved
             .iter()
             .all(|binding| !binding.action.is_tmux_only()));
+    }
+
+    #[test]
+    fn keybind_resolution_emits_tmux_suppression_warning_when_tmux_disabled() {
+        let mut config = AppConfig::default();
+        config.keybind_lines = vec![
+            KeybindConfigLine {
+                line_number: 1,
+                value: "clear".to_string(),
+            },
+            KeybindConfigLine {
+                line_number: 10,
+                value: "secondary-d=split_pane_vertical".to_string(),
+            },
+        ];
+
+        let (resolved, warnings) = resolve_keybinds_for_config(&config, false);
+        assert!(resolved.is_empty());
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].line_number, 0);
+        assert!(warnings[0]
+            .message
+            .contains("1 tmux-only keybind(s) ignored while tmux is disabled"));
     }
 }

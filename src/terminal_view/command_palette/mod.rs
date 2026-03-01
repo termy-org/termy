@@ -4,6 +4,7 @@ use state::{
     command_palette_next_scroll_y, command_palette_target_scroll_y,
     ordered_theme_ids_for_palette, CommandPaletteItem, CommandPaletteItemKind,
 };
+use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavailableReason};
 
 mod render;
 mod state;
@@ -73,23 +74,23 @@ impl TerminalView {
         shortcut
     }
 
-    fn command_palette_action_available_for_state(
+    fn command_palette_action_availability_for_state(
         action: CommandAction,
         install_cli_available: bool,
-    ) -> bool {
-        match action {
-            CommandAction::InstallCli => install_cli_available,
-            _ => true,
-        }
+        tmux_enabled: bool,
+    ) -> CommandAvailability {
+        action.availability(CommandCapabilities {
+            tmux_runtime_active: tmux_enabled,
+            install_cli_available,
+        })
     }
 
-    fn command_palette_action_status_hint_for_state(
-        action: CommandAction,
-        install_cli_available: bool,
-    ) -> Option<&'static str> {
-        match action {
-            CommandAction::InstallCli if !install_cli_available => Some("Installed"),
-            _ => None,
+    fn command_palette_status_hint_for_unavailable_reason(
+        reason: CommandUnavailableReason,
+    ) -> &'static str {
+        match reason {
+            CommandUnavailableReason::RequiresTmuxRuntime => "tmux required",
+            CommandUnavailableReason::InstallCliAlreadyInstalled => "Installed",
         }
     }
 
@@ -98,11 +99,24 @@ impl TerminalView {
         title: &str,
         keywords: &str,
         install_cli_available: bool,
+        tmux_enabled: bool,
     ) -> CommandPaletteItem {
-        let enabled = Self::command_palette_action_available_for_state(action, install_cli_available);
-        let status_hint =
-            Self::command_palette_action_status_hint_for_state(action, install_cli_available);
-        CommandPaletteItem::command_with_state(title, keywords, action, enabled, status_hint)
+        let availability = Self::command_palette_action_availability_for_state(
+            action,
+            install_cli_available,
+            tmux_enabled,
+        );
+        let status_hint = availability
+            .reason
+            .map(Self::command_palette_status_hint_for_unavailable_reason);
+
+        CommandPaletteItem::command_with_state(
+            title,
+            keywords,
+            action,
+            availability.enabled,
+            status_hint,
+        )
     }
 
     fn command_palette_command_items_for_state(
@@ -111,13 +125,13 @@ impl TerminalView {
     ) -> Vec<CommandPaletteItem> {
         CommandAction::palette_entries()
             .into_iter()
-            .filter(|entry| tmux_enabled || !entry.action.requires_tmux())
             .map(|entry| {
                 Self::command_palette_command_item_for_state(
                     entry.action,
                     entry.title,
                     entry.keywords,
                     install_cli_available,
+                    tmux_enabled,
                 )
             })
             .collect()
@@ -404,7 +418,11 @@ impl TerminalView {
         match item.kind {
             CommandPaletteItemKind::Command(action) => {
                 if !item.enabled {
-                    termy_toast::info(Self::command_palette_disabled_action_message(action));
+                    termy_toast::info(Self::command_palette_disabled_action_message_for_state(
+                        action,
+                        self.install_cli_available(),
+                        self.runtime_uses_tmux(),
+                    ));
                     cx.notify();
                     return;
                 }
@@ -416,10 +434,23 @@ impl TerminalView {
         }
     }
 
-    fn command_palette_disabled_action_message(action: CommandAction) -> &'static str {
-        match action {
-            CommandAction::InstallCli => "CLI is already installed",
-            _ => "Command is currently unavailable",
+    fn command_palette_disabled_action_message_for_state(
+        action: CommandAction,
+        install_cli_available: bool,
+        tmux_enabled: bool,
+    ) -> &'static str {
+        let availability = Self::command_palette_action_availability_for_state(
+            action,
+            install_cli_available,
+            tmux_enabled,
+        );
+
+        match availability.reason {
+            Some(CommandUnavailableReason::RequiresTmuxRuntime) => {
+                "Enable tmux integration and restart to use this command"
+            }
+            Some(CommandUnavailableReason::InstallCliAlreadyInstalled) => "CLI is already installed",
+            None => "Command is currently unavailable",
         }
     }
 
@@ -585,32 +616,40 @@ mod tests {
     }
 
     #[test]
-    fn tmux_commands_are_hidden_when_tmux_is_disabled() {
-        let items = TerminalView::command_palette_command_items_for_state(true, false);
-        assert!(!items.iter().any(|item| matches!(
-            item.kind,
-            CommandPaletteItemKind::Command(CommandAction::SplitPaneVertical
-                | CommandAction::SplitPaneHorizontal
-                | CommandAction::TogglePaneZoom
-                | CommandAction::ClosePane
-                | CommandAction::FocusPaneLeft
-                | CommandAction::FocusPaneRight
-                | CommandAction::FocusPaneUp
-                | CommandAction::FocusPaneDown
-                | CommandAction::FocusPaneNext
-                | CommandAction::FocusPanePrevious
-                | CommandAction::ResizePaneLeft
-                | CommandAction::ResizePaneRight
-                | CommandAction::ResizePaneUp
-                | CommandAction::ResizePaneDown)
-        )));
+    fn tmux_commands_are_present_but_disabled_when_tmux_runtime_is_off() {
+        let items = TerminalView::command_palette_command_items_for_state(false, false);
+        let split = items
+            .iter()
+            .find_map(|item| match item.kind {
+                CommandPaletteItemKind::Command(CommandAction::SplitPaneVertical) => Some(item),
+                _ => None,
+            })
+            .expect("missing split pane command");
+        assert!(!split.enabled);
+        assert_eq!(split.status_hint, Some("tmux required"));
     }
 
     #[test]
     fn install_cli_disabled_message_matches_expected_copy() {
         assert_eq!(
-            TerminalView::command_palette_disabled_action_message(CommandAction::InstallCli),
+            TerminalView::command_palette_disabled_action_message_for_state(
+                CommandAction::InstallCli,
+                false,
+                true,
+            ),
             "CLI is already installed"
+        );
+    }
+
+    #[test]
+    fn tmux_disabled_message_matches_expected_copy() {
+        assert_eq!(
+            TerminalView::command_palette_disabled_action_message_for_state(
+                CommandAction::SplitPaneVertical,
+                true,
+                false,
+            ),
+            "Enable tmux integration and restart to use this command"
         );
     }
 }

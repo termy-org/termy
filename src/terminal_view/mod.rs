@@ -6,6 +6,7 @@ use crate::config::{
     TerminalScrollbarVisibility,
 };
 use crate::keybindings;
+use crate::startup::StartupBlocker;
 use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
 use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
@@ -38,6 +39,7 @@ use gpui::{AppContext, Entity};
 use termy_auto_update::{AutoUpdater, UpdateState};
 
 mod command_palette;
+mod backend;
 mod inline_input;
 mod interaction;
 mod render;
@@ -46,13 +48,16 @@ mod search;
 mod tab_strip;
 mod tabs;
 mod titles;
+mod tmux_sync;
 #[cfg(target_os = "macos")]
 mod update_toasts;
 
+use backend::{RuntimeBackend, RuntimeBackendMode};
 use command_palette::{CommandPaletteMode, CommandPaletteState};
 use inline_input::{InlineInputAlignment, InlineInputState};
 pub(crate) use tab_strip::constants::*;
 use tab_strip::state::TabStripState;
+use tmux_sync::{TmuxResizeScheduler, TmuxResizeWakeup};
 
 const MIN_FONT_SIZE: f32 = 8.0;
 const MAX_FONT_SIZE: f32 = 40.0;
@@ -66,7 +71,6 @@ const DEFAULT_TAB_TITLE: &str = "Terminal";
 const COMMAND_TITLE_DELAY_MS: u64 = 250;
 const CONFIG_WATCH_INTERVAL_MS: u64 = 750;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 530;
-const TMUX_POLL_INTERVAL_MS: u64 = 16;
 const TMUX_TITLE_REFRESH_DEBOUNCE_MS: u64 = 120;
 const SELECTION_BG_ALPHA: f32 = 0.35;
 const DIM_TEXT_FACTOR: f32 = 0.66;
@@ -160,12 +164,6 @@ enum TmuxSnapshotRefreshMode {
     None,
     Debounced,
     Immediate,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TerminalRuntimeMode {
-    Native,
-    Tmux,
 }
 
 #[derive(Clone, Debug)]
@@ -366,6 +364,54 @@ impl Terminal {
                 .lock()
                 .map(|terminal| terminal.alternate_screen_mode())
                 .unwrap_or(false),
+        }
+    }
+
+    fn with_grid<R>(
+        &self,
+        f: impl FnOnce(&alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>) -> R,
+    ) -> Option<R> {
+        match self {
+            Self::Tmux(terminal) => Some(terminal.with_term(|term| f(term.grid()))),
+            Self::Native(terminal) => {
+                if let Ok(terminal) = terminal.lock() {
+                    Some(terminal.with_term(|term| f(term.grid())))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn for_each_renderable_cell(
+        &self,
+        mut visitor: impl FnMut(usize, i32, usize, &alacritty_terminal::term::cell::Cell),
+    ) -> Option<usize> {
+        macro_rules! visit_term_cells {
+            ($term:expr) => {{
+                let content = $term.renderable_content();
+                let display_offset = content.display_offset;
+                for cell in content.display_iter {
+                    visitor(
+                        display_offset,
+                        cell.point.line.0,
+                        cell.point.column.0,
+                        cell.cell,
+                    );
+                }
+                display_offset
+            }};
+        }
+
+        match self {
+            Self::Tmux(terminal) => Some(terminal.with_term(|term| visit_term_cells!(term))),
+            Self::Native(terminal) => {
+                if let Ok(terminal) = terminal.lock() {
+                    Some(terminal.with_term(|term| visit_term_cells!(term)))
+                } else {
+                    None
+                }
+            }
         }
     }
 }
@@ -768,12 +814,15 @@ pub struct TerminalView {
     tab_shell_integration: TabTitleShellIntegration,
     configured_working_dir: Option<String>,
     terminal_runtime: TerminalRuntimeConfig,
-    runtime_mode: TerminalRuntimeMode,
+    runtime_mode: RuntimeBackendMode,
     tmux_runtime: Option<TmuxRuntimeConfig>,
     tmux_client: Option<TmuxClient>,
     tmux_client_cols: u16,
     tmux_client_rows: u16,
+    tmux_resize_scheduler: TmuxResizeScheduler,
+    tmux_resize_wakeup_scheduled: bool,
     tmux_title_refresh_deadline: Option<Instant>,
+    tmux_title_refresh_wakeup_scheduled: bool,
     tmux_enabled_config: bool,
     config_path: Option<PathBuf>,
     config_fingerprint: Option<u64>,
@@ -886,12 +935,17 @@ impl TerminalView {
         }
     }
 
-    fn runtime_mode_from_app_config(config: &AppConfig) -> TerminalRuntimeMode {
+    fn runtime_mode_from_app_config(config: &AppConfig) -> RuntimeBackendMode {
         if config.tmux_enabled {
-            TerminalRuntimeMode::Tmux
+            RuntimeBackendMode::Tmux
         } else {
-            TerminalRuntimeMode::Native
+            RuntimeBackendMode::Native
         }
+    }
+
+    #[cfg(test)]
+    fn uses_event_driven_tmux_wakeup() -> bool {
+        true
     }
 
     fn tmux_runtime_from_app_config(config: &AppConfig) -> TmuxRuntimeConfig {
@@ -962,17 +1016,24 @@ impl TerminalView {
         Some(Self::display_working_directory_for_prompt(&path))
     }
 
+    fn runtime_backend_mode(&self) -> RuntimeBackendMode {
+        self.runtime_mode
+    }
+
+    fn runtime_backend(&self) -> RuntimeBackend<'_> {
+        RuntimeBackend::new(self.runtime_backend_mode(), self.tmux_client.as_ref())
+    }
+
     fn runtime_uses_tmux(&self) -> bool {
-        self.runtime_mode == TerminalRuntimeMode::Tmux
+        self.runtime_backend_mode().uses_tmux()
     }
 
     fn tmux_client(&self) -> Option<&TmuxClient> {
-        self.tmux_client.as_ref()
+        self.runtime_backend().tmux_client()
     }
 
     fn tmux_client_required(&self) -> &TmuxClient {
-        self.tmux_client
-            .as_ref()
+        self.tmux_client()
             .expect("tmux client must exist while tmux runtime is active")
     }
 
@@ -1175,10 +1236,10 @@ impl TerminalView {
     }
 
     fn refresh_tmux_snapshot(&mut self) -> bool {
-        if self.tmux_client.is_none() {
+        let Some(tmux_client) = self.runtime_backend().tmux_client() else {
             return false;
-        }
-        match self.tmux_client_required().refresh_snapshot() {
+        };
+        match tmux_client.refresh_snapshot() {
             Ok(snapshot) => {
                 self.apply_tmux_snapshot(snapshot);
                 true
@@ -1229,36 +1290,76 @@ impl TerminalView {
             })
     }
 
-    fn refresh_tmux_snapshot_for_client_size(&mut self, cols: u16, rows: u16) -> bool {
-        const MAX_ATTEMPTS: usize = 6;
-        const RETRY_DELAY_MS: u64 = 12;
+    fn request_tmux_resize_convergence(&mut self, cols: u16, rows: u16) {
+        self.tmux_resize_scheduler.request_resize(cols, rows);
+        let _ = self.event_wakeup_tx.try_send(());
+    }
 
-        if self.tmux_client.is_none() {
-            return false;
+    fn clear_tmux_resize_convergence(&mut self) {
+        self.tmux_resize_scheduler.clear();
+        self.tmux_resize_wakeup_scheduled = false;
+    }
+
+    fn ensure_tmux_resize_convergence_wakeup(&mut self, cx: &mut Context<Self>) {
+        if !self.runtime_uses_tmux() || !self.tmux_resize_scheduler.has_work() {
+            return;
         }
-        let mut applied = false;
-        for attempt in 0..MAX_ATTEMPTS {
-            match self.tmux_client_required().refresh_snapshot() {
+
+        match self.tmux_resize_scheduler.next_wakeup(Instant::now()) {
+            TmuxResizeWakeup::None => {}
+            TmuxResizeWakeup::Immediate => {
+                let _ = self.event_wakeup_tx.try_send(());
+            }
+            TmuxResizeWakeup::Delayed(delay) => {
+                if self.tmux_resize_wakeup_scheduled {
+                    return;
+                }
+
+                self.tmux_resize_wakeup_scheduled = true;
+                let wakeup_tx = self.event_wakeup_tx.clone();
+                cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                    smol::Timer::after(delay).await;
+                    let _ = cx.update(|cx| {
+                        this.update(cx, |view, _cx| {
+                            view.tmux_resize_wakeup_scheduled = false;
+                            if view.runtime_uses_tmux() && view.tmux_resize_scheduler.has_work() {
+                                let _ = wakeup_tx.try_send(());
+                            }
+                        })
+                    });
+                })
+                .detach();
+            }
+        }
+    }
+
+    fn drive_tmux_resize_convergence(&mut self, cx: &mut Context<Self>) -> bool {
+        let mut should_redraw = false;
+        if let Some(attempt) = self.tmux_resize_scheduler.claim_attempt(Instant::now()) {
+            let Some(tmux_client) = self.runtime_backend().tmux_client() else {
+                self.clear_tmux_resize_convergence();
+                return false;
+            };
+            match tmux_client.refresh_snapshot() {
                 Ok(snapshot) => {
-                    let converged = Self::snapshot_matches_client_size(&snapshot, cols, rows);
+                    let converged =
+                        Self::snapshot_matches_client_size(&snapshot, attempt.cols, attempt.rows);
                     self.apply_tmux_snapshot(snapshot);
-                    applied = true;
-                    if converged {
-                        return true;
-                    }
-                    if attempt + 1 < MAX_ATTEMPTS {
-                        std::thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
-                    }
+                    should_redraw = true;
+                    self.tmux_resize_scheduler
+                        .complete_attempt(Instant::now(), converged);
                 }
                 Err(error) => {
                     termy_toast::error(format!("tmux sync failed: {error}"));
-                    return applied;
+                    self.clear_tmux_resize_convergence();
                 }
             }
         }
 
-        applied
+        self.ensure_tmux_resize_convergence_wakeup(cx);
+        should_redraw
     }
+
     fn pane_terminal_by_id(&self, pane_id: &str) -> Option<&Terminal> {
         self.tabs
             .iter()
@@ -1612,43 +1713,23 @@ impl TerminalView {
         // Focus the terminal immediately
         focus_handle.focus(window, cx);
 
-        if config.tmux_enabled {
-            // Poll tmux control-mode notifications.
-            cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-                loop {
-                    smol::Timer::after(Duration::from_millis(TMUX_POLL_INTERVAL_MS)).await;
-                    let result = cx.update(|cx| {
-                        this.update(cx, |view, cx| {
-                            if view.process_terminal_events(cx) {
-                                cx.notify();
-                            }
-                        })
-                    });
-                    if result.is_err() {
-                        break;
-                    }
+        // Process terminal events only when runtimes signal activity.
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            while event_wakeup_rx.recv_async().await.is_ok() {
+                while event_wakeup_rx.try_recv().is_ok() {}
+                let result = cx.update(|cx| {
+                    this.update(cx, |view, cx| {
+                        if view.process_terminal_events(cx) {
+                            cx.notify();
+                        }
+                    })
+                });
+                if result.is_err() {
+                    break;
                 }
-            })
-            .detach();
-        } else {
-            // Process native terminal events only when terminals signal activity.
-            cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-                while event_wakeup_rx.recv_async().await.is_ok() {
-                    while event_wakeup_rx.try_recv().is_ok() {}
-                    let result = cx.update(|cx| {
-                        this.update(cx, |view, cx| {
-                            if view.process_terminal_events(cx) {
-                                cx.notify();
-                            }
-                        })
-                    });
-                    if result.is_err() {
-                        break;
-                    }
-                }
-            })
-            .detach();
-        }
+            }
+        })
+        .detach();
 
         // Reload immediately when config is updated in-process (e.g. settings/theme actions).
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
@@ -1748,25 +1829,24 @@ impl TerminalView {
         let initial_cols = TerminalSize::default().cols;
         let initial_rows = TerminalSize::default().rows;
         let (tmux_runtime, tmux_client, initial_snapshot, native_terminal) = match runtime_mode {
-            TerminalRuntimeMode::Tmux => {
+            RuntimeBackendMode::Tmux => {
                 let tmux_runtime = Self::tmux_runtime_from_app_config(&config);
-                let tmux_client = match TmuxClient::new(tmux_runtime.clone(), initial_cols, initial_rows) {
+                let tmux_client = match TmuxClient::new(
+                    tmux_runtime.clone(),
+                    initial_cols,
+                    initial_rows,
+                    Some(event_wakeup_tx.clone()),
+                ) {
                     Ok(client) => client,
-                    Err(error) => {
-                        eprintln!("Termy startup blocked: failed to start tmux control runtime: {error}");
-                        std::process::exit(1);
-                    }
+                    Err(error) => StartupBlocker::TmuxClientLaunch(error.to_string()).present_and_exit(),
                 };
                 let initial_snapshot = match tmux_client.refresh_snapshot() {
                     Ok(snapshot) => snapshot,
-                    Err(error) => {
-                        eprintln!("Termy startup blocked: failed to fetch initial tmux snapshot: {error}");
-                        std::process::exit(1);
-                    }
+                    Err(error) => StartupBlocker::TmuxInitialSnapshot(error.to_string()).present_and_exit(),
                 };
                 (Some(tmux_runtime), Some(tmux_client), Some(initial_snapshot), None)
             }
-            TerminalRuntimeMode::Native => {
+            RuntimeBackendMode::Native => {
                 let native_terminal = match Terminal::new_native(
                     TerminalSize {
                         cols: initial_cols,
@@ -1812,7 +1892,10 @@ impl TerminalView {
             tmux_client,
             tmux_client_cols: initial_cols,
             tmux_client_rows: initial_rows,
+            tmux_resize_scheduler: TmuxResizeScheduler::default(),
+            tmux_resize_wakeup_scheduled: false,
             tmux_title_refresh_deadline: None,
+            tmux_title_refresh_wakeup_scheduled: false,
             tmux_enabled_config: config.tmux_enabled,
             config_path,
             config_fingerprint,
@@ -1947,11 +2030,14 @@ impl TerminalView {
                     runtime,
                     self.tmux_client_cols.max(1),
                     self.tmux_client_rows.max(1),
+                    Some(self.event_wakeup_tx.clone()),
                 ) {
                     Ok(client) => {
                         self.tmux_runtime = next_tmux_runtime;
                         self.tmux_client = Some(client);
+                        self.clear_tmux_resize_convergence();
                         self.tmux_title_refresh_deadline = None;
+                        self.tmux_title_refresh_wakeup_scheduled = false;
                         let _ = self.refresh_tmux_snapshot();
                     }
                     Err(error) => {
@@ -2127,6 +2213,31 @@ impl TerminalView {
         self.tmux_title_refresh_deadline = Some(
             Instant::now() + Duration::from_millis(TMUX_TITLE_REFRESH_DEBOUNCE_MS),
         );
+        let _ = self.event_wakeup_tx.try_send(());
+    }
+
+    fn ensure_tmux_title_refresh_wakeup(&mut self, cx: &mut Context<Self>) {
+        if !self.runtime_uses_tmux()
+            || self.tmux_title_refresh_deadline.is_none()
+            || self.tmux_title_refresh_wakeup_scheduled
+        {
+            return;
+        }
+
+        self.tmux_title_refresh_wakeup_scheduled = true;
+        let wakeup_tx = self.event_wakeup_tx.clone();
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            smol::Timer::after(Duration::from_millis(TMUX_TITLE_REFRESH_DEBOUNCE_MS)).await;
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, _cx| {
+                    view.tmux_title_refresh_wakeup_scheduled = false;
+                    if view.runtime_uses_tmux() && view.tmux_title_refresh_deadline.is_some() {
+                        let _ = wakeup_tx.try_send(());
+                    }
+                })
+            });
+        })
+        .detach();
     }
 
     fn tmux_snapshot_refresh_mode(
@@ -2146,14 +2257,11 @@ impl TerminalView {
     }
 
     fn process_terminal_events(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.runtime_uses_tmux() {
-            let Some(tmux_client) = self.tmux_client.as_ref() else {
-                return false;
-            };
+        if self.runtime_backend_mode().uses_tmux() {
             let mut should_redraw = false;
             let mut needs_refresh = false;
 
-            for notification in tmux_client.poll_notifications() {
+            for notification in self.runtime_backend().poll_tmux_notifications() {
                 match notification {
                     TmuxNotification::Output { pane_id, bytes } => {
                         if let Some(terminal) = self.pane_terminal_by_id(&pane_id) {
@@ -2176,16 +2284,22 @@ impl TerminalView {
                 }
             }
 
+            self.ensure_tmux_title_refresh_wakeup(cx);
             let now = Instant::now();
             match Self::tmux_snapshot_refresh_mode(needs_refresh, self.tmux_title_refresh_deadline, now)
             {
                 TmuxSnapshotRefreshMode::Immediate | TmuxSnapshotRefreshMode::Debounced => {
                     self.tmux_title_refresh_deadline = None;
+                    self.tmux_title_refresh_wakeup_scheduled = false;
                     if self.refresh_tmux_snapshot() {
                         should_redraw = true;
                     }
                 }
                 TmuxSnapshotRefreshMode::None => {}
+            }
+
+            if self.drive_tmux_resize_convergence(cx) {
+                should_redraw = true;
             }
 
             should_redraw
@@ -2463,14 +2577,19 @@ mod tests {
         config.tmux_enabled = false;
         assert_eq!(
             TerminalView::runtime_mode_from_app_config(&config),
-            TerminalRuntimeMode::Native
+            RuntimeBackendMode::Native
         );
 
         config.tmux_enabled = true;
         assert_eq!(
             TerminalView::runtime_mode_from_app_config(&config),
-            TerminalRuntimeMode::Tmux
+            RuntimeBackendMode::Tmux
         );
+    }
+
+    #[test]
+    fn tmux_runtime_uses_event_driven_wakeup_strategy() {
+        assert!(TerminalView::uses_event_driven_tmux_wakeup());
     }
 
     #[test]

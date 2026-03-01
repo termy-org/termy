@@ -1,3 +1,4 @@
+use termy_command_core::{KeybindDirective, KeybindLineRef, parse_keybind_directives_from_iter};
 use termy_config_core::{AppConfig, ConfigDiagnosticKind, config_path};
 
 pub fn run() {
@@ -83,7 +84,40 @@ pub fn validate_contents(contents: &str) -> ValidationReport {
         }
     }
 
+    warnings.extend(tmux_disabled_keybind_warnings(&report.config));
+
     ValidationReport { errors, warnings }
+}
+
+fn tmux_disabled_keybind_warnings(config: &AppConfig) -> Vec<String> {
+    if config.tmux_enabled {
+        return Vec::new();
+    }
+
+    let mut warnings = Vec::new();
+
+    // Parse each keybind line independently so warnings keep the exact source line number.
+    for line in &config.keybind_lines {
+        let (directives, _parse_warnings) =
+            parse_keybind_directives_from_iter(std::iter::once(KeybindLineRef {
+                line_number: line.line_number,
+                value: line.value.as_str(),
+            }));
+
+        for directive in directives {
+            if let KeybindDirective::Bind { action, .. } = directive
+                && action.is_tmux_only()
+            {
+                warnings.push(format!(
+                    "Line {}: keybind action '{}' requires tmux_enabled=true (restart required)",
+                    line.line_number,
+                    action.config_name()
+                ));
+            }
+        }
+    }
+
+    warnings
 }
 
 #[cfg(test)]
@@ -129,5 +163,41 @@ mod tests {
         assert_eq!(report.errors.len(), 1);
         assert!(report.errors[0].contains("font_size"));
         assert!(report.warnings.is_empty());
+    }
+
+    #[test]
+    fn tmux_only_keybind_warns_when_tmux_is_disabled() {
+        let report = validate_contents(
+            "tmux_enabled = false\n\
+             keybind = secondary-d=split_pane_vertical\n\
+             keybind = secondary-c=copy\n",
+        );
+
+        assert!(report.errors.is_empty(), "unexpected errors: {:?}", report.errors);
+        assert!(
+            report.warnings.iter().any(|warning| {
+                warning.contains("Line 2:")
+                    && warning.contains("split_pane_vertical")
+                    && warning.contains("tmux_enabled=true")
+            }),
+            "expected tmux-only keybind warning, got {:?}",
+            report.warnings
+        );
+        assert!(
+            !report.warnings.iter().any(|warning| warning.contains("copy")),
+            "non-tmux keybind should not warn: {:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn tmux_only_keybind_does_not_warn_when_tmux_is_enabled() {
+        let report = validate_contents(
+            "tmux_enabled = true\n\
+             keybind = secondary-d=split_pane_vertical\n",
+        );
+
+        assert!(report.errors.is_empty(), "unexpected errors: {:?}", report.errors);
+        assert!(report.warnings.is_empty(), "unexpected warnings: {:?}", report.warnings);
     }
 }

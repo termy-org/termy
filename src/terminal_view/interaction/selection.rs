@@ -7,6 +7,54 @@ enum TerminalSelectionCharClass {
     Other,
 }
 
+fn fill_grid_rows_for_selection(
+    terminal: &Terminal,
+    min_row: usize,
+    max_row: usize,
+    cols: usize,
+    grid: &mut [Vec<char>],
+) {
+    let _ = terminal.for_each_renderable_cell(|display_offset, term_line, col, cell| {
+        let Some(row) = TerminalView::viewport_row_from_term_line(term_line, display_offset) else {
+            return;
+        };
+        if row < min_row || row > max_row || col >= cols {
+            return;
+        }
+
+        let c = cell.c;
+        if c != '\0' {
+            let grid_row = row - min_row;
+            grid[grid_row][col] = if c.is_control() { ' ' } else { c };
+        }
+    });
+}
+
+fn row_text_from_terminal(terminal: &Terminal, row: usize, cols: usize) -> Vec<char> {
+    let mut line = vec![' '; cols];
+    let _ = terminal.for_each_renderable_cell(|display_offset, term_line, col, cell| {
+        let Some(cell_row) = TerminalView::viewport_row_from_term_line(term_line, display_offset)
+        else {
+            return;
+        };
+        if cell_row != row || col >= cols {
+            return;
+        }
+
+        if cell
+            .flags
+            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN)
+        {
+            return;
+        }
+
+        let c = cell.c;
+        if c != '\0' {
+            line[col] = if c.is_control() { ' ' } else { c };
+        }
+    });
+    line
+}
 
 impl TerminalView {
     pub(in super::super) fn position_to_pane_cell(
@@ -149,53 +197,7 @@ impl TerminalView {
         let max_row = selection_end.row;
         let grid_rows = max_row - min_row + 1;
         let mut grid = vec![vec![' '; cols]; grid_rows];
-        match self.active_terminal() {
-            Terminal::Tmux(terminal) => terminal.with_term(|term| {
-                let content = term.renderable_content();
-                for cell in content.display_iter {
-                    let Some(row) =
-                        Self::viewport_row_from_term_line(cell.point.line.0, content.display_offset)
-                    else {
-                        continue;
-                    };
-                    let col = cell.point.column.0;
-                    if row < min_row || row > max_row || col >= cols {
-                        continue;
-                    }
-
-                    let c = cell.cell.c;
-                    if c != '\0' {
-                        let grid_row = row - min_row;
-                        grid[grid_row][col] = if c.is_control() { ' ' } else { c };
-                    }
-                }
-            }),
-            Terminal::Native(terminal) => {
-                if let Ok(terminal) = terminal.lock() {
-                    terminal.with_term(|term| {
-                        let content = term.renderable_content();
-                        for cell in content.display_iter {
-                            let Some(row) = Self::viewport_row_from_term_line(
-                                cell.point.line.0,
-                                content.display_offset,
-                            ) else {
-                                continue;
-                            };
-                            let col = cell.point.column.0;
-                            if row < min_row || row > max_row || col >= cols {
-                                continue;
-                            }
-
-                            let c = cell.cell.c;
-                            if c != '\0' {
-                                let grid_row = row - min_row;
-                                grid[grid_row][col] = if c.is_control() { ' ' } else { c };
-                            }
-                        }
-                    });
-                }
-            }
-        }
+        fill_grid_rows_for_selection(self.active_terminal(), min_row, max_row, cols, &mut grid);
 
         let mut lines = Vec::new();
         for row in min_row..=max_row {
@@ -236,74 +238,7 @@ impl TerminalView {
             return None;
         }
 
-        let mut line = vec![' '; cols];
-        match self.active_terminal() {
-            Terminal::Tmux(terminal) => terminal.with_term(|term| {
-                let content = term.renderable_content();
-                for cell in content.display_iter {
-                    let Some(cell_row) =
-                        Self::viewport_row_from_term_line(cell.point.line.0, content.display_offset)
-                    else {
-                        continue;
-                    };
-                    if cell_row != row {
-                        continue;
-                    }
-
-                    let col = cell.point.column.0;
-                    if col >= cols {
-                        continue;
-                    }
-
-                    if cell.cell.flags.intersects(
-                        Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN,
-                    ) {
-                        continue;
-                    }
-
-                    let c = cell.cell.c;
-                    if c != '\0' {
-                        line[col] = if c.is_control() { ' ' } else { c };
-                    }
-                }
-            }),
-            Terminal::Native(terminal) => {
-                if let Ok(terminal) = terminal.lock() {
-                    terminal.with_term(|term| {
-                        let content = term.renderable_content();
-                        for cell in content.display_iter {
-                            let Some(cell_row) = Self::viewport_row_from_term_line(
-                                cell.point.line.0,
-                                content.display_offset,
-                            ) else {
-                                continue;
-                            };
-                            if cell_row != row {
-                                continue;
-                            }
-
-                            let col = cell.point.column.0;
-                            if col >= cols {
-                                continue;
-                            }
-
-                            if cell.cell.flags.intersects(
-                                Flags::WIDE_CHAR_SPACER
-                                    | Flags::LEADING_WIDE_CHAR_SPACER
-                                    | Flags::HIDDEN,
-                            ) {
-                                continue;
-                            }
-
-                            let c = cell.cell.c;
-                            if c != '\0' {
-                                line[col] = if c.is_control() { ' ' } else { c };
-                            }
-                        }
-                    });
-                }
-            }
-        }
+        let line = row_text_from_terminal(self.active_terminal(), row, cols);
 
         Some(line)
     }
@@ -436,6 +371,7 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use termy_terminal_ui::TerminalSize;
 
     #[test]
     fn viewport_row_maps_scrollback_lines_into_viewport() {
@@ -443,4 +379,23 @@ mod tests {
         assert_eq!(TerminalView::viewport_row_from_term_line(4, 3), Some(7));
     }
 
+    #[test]
+    fn terminal_read_adapter_extracts_rows_for_both_runtime_variants() {
+        let size = TerminalSize {
+            cols: 16,
+            rows: 3,
+            ..TerminalSize::default()
+        };
+
+        let tmux = Terminal::new_tmux(size, 128);
+        tmux.feed_output(b"row-adapter\r\n");
+        let tmux_row = row_text_from_terminal(&tmux, 0, usize::from(size.cols));
+        assert_eq!(tmux_row.len(), usize::from(size.cols));
+        assert!(tmux_row.iter().any(|c| !c.is_whitespace()));
+
+        let native = Terminal::new_native(size, None, None, None, None)
+            .expect("native terminal should initialize for row adapter test");
+        let native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
+        assert_eq!(native_row.len(), usize::from(size.cols));
+    }
 }
