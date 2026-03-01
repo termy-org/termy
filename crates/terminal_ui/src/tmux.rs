@@ -1437,7 +1437,10 @@ fn decode_snapshot_field(value: &str) -> Result<String> {
                 index += 3;
             }
             _ => {
-                return Err(anyhow!("invalid escape in snapshot field '{}'", value));
+                // tmux `#{q:...}` uses shell-style escaping for punctuation and whitespace
+                // (for example: "\[", "\(", "\ ", "\*", "\?"), so decode these as literals.
+                output.push(*escape);
+                index += 1;
             }
         }
     }
@@ -2230,6 +2233,39 @@ mod tests {
         assert_eq!(
             snapshot.windows[0].panes[0].current_command,
             "cmd\nwith-nl\x1fpart"
+        );
+    }
+
+    #[test]
+    fn parse_snapshot_accepts_tmux_q_shell_escaped_window_layout() {
+        let sep = SNAPSHOT_FIELD_SEP;
+        let windows = format!(
+            "@1{sep}0{sep}one{sep}aeea,149x39,0,0{{74x39,0,0\\[74x19,0,0,0,74x19,0,20,2],74x39,75,0,1}}{sep}1{sep}1\n",
+        );
+        let panes =
+            format!("%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}149{sep}39{sep}0{sep}0{sep}/tmp{sep}zsh\n");
+        let snapshot = parse_snapshot("termy", windows.as_str(), panes.as_str()).expect("snapshot");
+        assert_eq!(
+            snapshot.windows[0].layout,
+            "aeea,149x39,0,0{74x39,0,0[74x19,0,0,0,74x19,0,20,2],74x39,75,0,1}"
+        );
+    }
+
+    #[test]
+    fn parse_snapshot_accepts_tmux_q_shell_escaped_punctuation() {
+        let sep = SNAPSHOT_FIELD_SEP;
+        let windows = format!(
+            "@1{sep}0{sep}name\\[a\\]\\(b\\)\\ c\\*d\\?e{sep}layout-a{sep}1{sep}1\n",
+        );
+        let panes = format!(
+            "%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp\\ path\\[x\\]\\(y\\){sep}cmd\\ \\\"quoted\\\"\\ and\\ symbols\\*\\?\n",
+        );
+        let snapshot = parse_snapshot("termy", windows.as_str(), panes.as_str()).expect("snapshot");
+        assert_eq!(snapshot.windows[0].name, "name[a](b) c*d?e");
+        assert_eq!(snapshot.windows[0].panes[0].current_path, "/tmp path[x](y)");
+        assert_eq!(
+            snapshot.windows[0].panes[0].current_command,
+            "cmd \"quoted\" and symbols*?"
         );
     }
 

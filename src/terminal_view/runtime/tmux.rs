@@ -1,5 +1,63 @@
 use super::super::*;
 use super::TmuxResizeWakeup;
+use termy_terminal_ui::{
+    TmuxClient, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig, TmuxSnapshot, TmuxWindowState,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TmuxSnapshotRefreshMode {
+    None,
+    Debounced,
+    Immediate,
+}
+
+impl TerminalPane {
+    fn from_tmux_state(state: &TmuxPaneState, terminal: Terminal) -> Self {
+        Self {
+            id: state.id.clone(),
+            left: state.left,
+            top: state.top,
+            width: state.width,
+            height: state.height,
+            terminal,
+        }
+    }
+}
+
+impl TerminalTab {
+    fn from_tmux_window(id: TabId, window: &TmuxWindowState, panes: Vec<TerminalPane>) -> Self {
+        let title = DEFAULT_TAB_TITLE.to_string();
+        let title_text_width = 0.0;
+        let sticky_title_width = TerminalView::tab_display_width_for_text_px_without_close_with_max(
+            title_text_width,
+            TAB_MAX_WIDTH,
+        );
+        let display_width =
+            TerminalView::tab_display_width_for_text_px_with_max(title_text_width, TAB_MAX_WIDTH);
+
+        Self {
+            id,
+            window_id: window.id.clone(),
+            window_index: window.index,
+            active_pane_id: window
+                .active_pane_id
+                .clone()
+                .or_else(|| panes.first().map(|pane| pane.id.clone()))
+                .unwrap_or_default(),
+            panes,
+            manual_title: None,
+            explicit_title: None,
+            shell_title: None,
+            pending_command_title: None,
+            pending_command_token: 0,
+            title,
+            title_text_width,
+            sticky_title_width,
+            display_width,
+            running_process: false,
+        }
+    }
+}
 
 impl TerminalView {
     pub(in super::super) fn tmux_client_cols(&self) -> u16 {
@@ -68,6 +126,452 @@ impl TerminalView {
         }
 
         true
+    }
+
+    pub(in super::super) fn tmux_send_input_to_active_pane(&self, input: &[u8]) -> bool {
+        let Some(active_pane_id) = self.active_pane_id() else {
+            return false;
+        };
+        match self.tmux_runtime().client.send_input(active_pane_id, input) {
+            Ok(()) => true,
+            Err(error) => {
+                termy_toast::error(format!("Input write failed: {error}"));
+                false
+            }
+        }
+    }
+
+    pub(in super::super) fn tmux_resize_pane_step(
+        &self,
+        pane_id: &str,
+        axis: PaneResizeAxis,
+        positive_direction: bool,
+    ) -> bool {
+        self.run_tmux_action("Failed to resize pane", |tmux_client| {
+            match (axis, positive_direction) {
+                (PaneResizeAxis::Horizontal, true) => tmux_client.resize_pane_right(pane_id, 1),
+                (PaneResizeAxis::Horizontal, false) => tmux_client.resize_pane_left(pane_id, 1),
+                (PaneResizeAxis::Vertical, true) => tmux_client.resize_pane_down(pane_id, 1),
+                (PaneResizeAxis::Vertical, false) => tmux_client.resize_pane_up(pane_id, 1),
+            }
+        })
+    }
+
+    pub(in super::super) fn tmux_reorder_tab(&mut self, from: usize, to: usize) -> bool {
+        let moved_window_id = self.tabs[from].window_id.clone();
+        let mut window_order = self
+            .tabs
+            .iter()
+            .map(|tab| tab.window_id.clone())
+            .collect::<Vec<_>>();
+
+        if from < to {
+            for index in from..to {
+                let source = window_order[index].clone();
+                let target = window_order[index + 1].clone();
+                if !self.run_tmux_action("Failed to reorder tabs", |tmux_client| {
+                    tmux_client.swap_windows(source.as_str(), target.as_str())
+                }) {
+                    return false;
+                }
+                window_order.swap(index, index + 1);
+            }
+        } else {
+            for index in (to + 1..=from).rev() {
+                let source = window_order[index].clone();
+                let target = window_order[index - 1].clone();
+                if !self.run_tmux_action("Failed to reorder tabs", |tmux_client| {
+                    tmux_client.swap_windows(source.as_str(), target.as_str())
+                }) {
+                    return false;
+                }
+                window_order.swap(index, index - 1);
+            }
+        }
+
+        if !self.refresh_tmux_snapshot() {
+            return false;
+        }
+
+        if let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.window_id == moved_window_id)
+        {
+            self.active_tab = index;
+        }
+
+        true
+    }
+
+    pub(in super::super) fn tmux_switch_active_tab_left(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.run_tmux_action("Failed to switch tab", |tmux_client| {
+            tmux_client.previous_window()
+        }) {
+            return false;
+        }
+        let refreshed = self.refresh_tmux_snapshot();
+        if refreshed {
+            self.clear_selection();
+            self.scroll_active_tab_into_view();
+            cx.notify();
+        }
+        refreshed
+    }
+
+    pub(in super::super) fn tmux_switch_active_tab_right(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.run_tmux_action("Failed to switch tab", |tmux_client| tmux_client.next_window()) {
+            return false;
+        }
+        let refreshed = self.refresh_tmux_snapshot();
+        if refreshed {
+            self.clear_selection();
+            self.scroll_active_tab_into_view();
+            cx.notify();
+        }
+        refreshed
+    }
+
+    pub(in super::super) fn tmux_add_tab(&mut self, cx: &mut Context<Self>) {
+        if !self.run_tmux_action("Failed to create tab", |tmux_client| tmux_client.new_window()) {
+            return;
+        }
+
+        if self.refresh_tmux_snapshot() {
+            self.reset_tab_interaction_state();
+            self.scroll_active_tab_into_view();
+            cx.notify();
+        }
+    }
+
+    pub(in super::super) fn tmux_close_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        let window_id = self.tabs[index].window_id.clone();
+        if !self.run_tmux_action("Failed to close tab", |tmux_client| {
+            tmux_client.kill_window(window_id.as_str())
+        }) {
+            return;
+        }
+
+        if self.refresh_tmux_snapshot() {
+            self.reset_tab_drag_state();
+            self.clear_selection();
+            self.scroll_active_tab_into_view();
+            cx.notify();
+        }
+    }
+
+    pub(in super::super) fn tmux_switch_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        let window_id = self.tabs[index].window_id.clone();
+        if !self.run_tmux_action("Failed to switch tab", |tmux_client| {
+            tmux_client.select_window(window_id.as_str())
+        }) {
+            return;
+        }
+
+        if self.refresh_tmux_snapshot() {
+            self.reset_tab_rename_state();
+            self.reset_tab_drag_state();
+            self.clear_selection();
+            self.scroll_active_tab_into_view();
+            cx.notify();
+        }
+    }
+
+    pub(in super::super) fn tmux_commit_rename_tab(&mut self, index: usize) {
+        let trimmed = self.rename_input.text().trim();
+        if trimmed.is_empty() {
+            return;
+        }
+
+        let renamed = Self::truncate_tab_title(trimmed);
+        let window_id = self.tabs[index].window_id.clone();
+        if self.run_tmux_action("Failed to rename tab", |tmux_client| {
+            tmux_client.rename_window(window_id.as_str(), renamed.as_str())
+        }) {
+            let _ = self.refresh_tmux_snapshot();
+        }
+    }
+
+    fn tmux_pane_geometry_signature(&self, pane_id: &str) -> Option<(u16, u16, u16, u16)> {
+        let pane = self.pane_ref_by_id(pane_id)?;
+        Some((pane.left, pane.top, pane.width, pane.height))
+    }
+
+    fn tmux_apply_focus_snapshot(
+        &mut self,
+        previous_pane_id: &str,
+        no_change_message: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.refresh_tmux_snapshot() {
+            return false;
+        }
+
+        let focused_pane_changed = self.active_pane_id() != Some(previous_pane_id);
+        if !focused_pane_changed {
+            if let Some(message) = no_change_message {
+                termy_toast::info(message);
+            }
+            cx.notify();
+            return false;
+        }
+
+        self.clear_selection();
+        cx.notify();
+        true
+    }
+
+    fn tmux_apply_resize_snapshot(
+        &mut self,
+        pane_id: &str,
+        before: (u16, u16, u16, u16),
+        blocked_message: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.refresh_tmux_snapshot() {
+            return false;
+        }
+
+        let changed = self
+            .tmux_pane_geometry_signature(pane_id)
+            .is_some_and(|after| after != before);
+        if !changed {
+            termy_toast::info(blocked_message);
+        }
+        cx.notify();
+        changed
+    }
+
+    pub(in super::super) fn tmux_focus_pane_target(
+        &mut self,
+        pane_id: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let previous_pane_id = self.active_pane_id().map(ToOwned::to_owned);
+        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
+            tmux_client.select_pane(pane_id)
+        }) {
+            return false;
+        }
+
+        if let Some(previous_pane_id) = previous_pane_id {
+            self.tmux_apply_focus_snapshot(previous_pane_id.as_str(), None, cx)
+        } else if self.refresh_tmux_snapshot() {
+            cx.notify();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(in super::super) fn tmux_split_active_pane_vertical(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to split pane", |tmux_client| {
+            tmux_client.split_vertical(pane_id.as_str())
+        }) {
+            return false;
+        }
+        let refreshed = self.refresh_tmux_snapshot();
+        if refreshed {
+            self.clear_selection();
+            cx.notify();
+        }
+        refreshed
+    }
+
+    pub(in super::super) fn tmux_split_active_pane_horizontal(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to split pane", |tmux_client| {
+            tmux_client.split_horizontal(pane_id.as_str())
+        }) {
+            return false;
+        }
+        let refreshed = self.refresh_tmux_snapshot();
+        if refreshed {
+            self.clear_selection();
+            cx.notify();
+        }
+        refreshed
+    }
+
+    pub(in super::super) fn tmux_close_active_pane(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to close pane", |tmux_client| {
+            tmux_client.close_pane(pane_id.as_str())
+        }) {
+            return false;
+        }
+        let refreshed = self.refresh_tmux_snapshot();
+        if refreshed {
+            self.clear_selection();
+            cx.notify();
+        }
+        refreshed
+    }
+
+    pub(in super::super) fn tmux_focus_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
+            tmux_client.focus_pane_left(pane_id.as_str())
+        }) {
+            return false;
+        }
+        self.tmux_apply_focus_snapshot(pane_id.as_str(), Some("No pane to the left"), cx)
+    }
+
+    pub(in super::super) fn tmux_focus_pane_right(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
+            tmux_client.focus_pane_right(pane_id.as_str())
+        }) {
+            return false;
+        }
+        self.tmux_apply_focus_snapshot(pane_id.as_str(), Some("No pane to the right"), cx)
+    }
+
+    pub(in super::super) fn tmux_focus_pane_up(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
+            tmux_client.focus_pane_up(pane_id.as_str())
+        }) {
+            return false;
+        }
+        self.tmux_apply_focus_snapshot(pane_id.as_str(), Some("No pane above"), cx)
+    }
+
+    pub(in super::super) fn tmux_focus_pane_down(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
+            tmux_client.focus_pane_down(pane_id.as_str())
+        }) {
+            return false;
+        }
+        self.tmux_apply_focus_snapshot(pane_id.as_str(), Some("No pane below"), cx)
+    }
+
+    pub(in super::super) fn tmux_resize_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        let Some(before) = self.tmux_pane_geometry_signature(pane_id.as_str()) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to resize pane", |tmux_client| {
+            tmux_client.resize_pane_left(pane_id.as_str(), 1)
+        }) {
+            return false;
+        }
+        self.tmux_apply_resize_snapshot(
+            pane_id.as_str(),
+            before,
+            "Pane cannot resize further to the left",
+            cx,
+        )
+    }
+
+    pub(in super::super) fn tmux_resize_pane_right(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        let Some(before) = self.tmux_pane_geometry_signature(pane_id.as_str()) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to resize pane", |tmux_client| {
+            tmux_client.resize_pane_right(pane_id.as_str(), 1)
+        }) {
+            return false;
+        }
+        self.tmux_apply_resize_snapshot(
+            pane_id.as_str(),
+            before,
+            "Pane cannot resize further to the right",
+            cx,
+        )
+    }
+
+    pub(in super::super) fn tmux_resize_pane_up(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        let Some(before) = self.tmux_pane_geometry_signature(pane_id.as_str()) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to resize pane", |tmux_client| {
+            tmux_client.resize_pane_up(pane_id.as_str(), 1)
+        }) {
+            return false;
+        }
+        self.tmux_apply_resize_snapshot(
+            pane_id.as_str(),
+            before,
+            "Pane cannot resize further upward",
+            cx,
+        )
+    }
+
+    pub(in super::super) fn tmux_resize_pane_down(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        let Some(before) = self.tmux_pane_geometry_signature(pane_id.as_str()) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to resize pane", |tmux_client| {
+            tmux_client.resize_pane_down(pane_id.as_str(), 1)
+        }) {
+            return false;
+        }
+        self.tmux_apply_resize_snapshot(
+            pane_id.as_str(),
+            before,
+            "Pane cannot resize further downward",
+            cx,
+        )
+    }
+
+    pub(in super::super) fn tmux_toggle_active_pane_zoom(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+        if !self.run_tmux_action("Failed to toggle pane zoom", |tmux_client| {
+            tmux_client.toggle_pane_zoom(pane_id.as_str())
+        }) {
+            return false;
+        }
+        let refreshed = self.refresh_tmux_snapshot();
+        if refreshed {
+            cx.notify();
+        }
+        refreshed
     }
 
     fn terminal_size_for_pane_state(
@@ -377,7 +881,7 @@ impl TerminalView {
         .detach();
     }
 
-    pub(in super::super) fn tmux_snapshot_refresh_mode(
+    fn tmux_snapshot_refresh_mode(
         needs_refresh: bool,
         title_refresh_deadline: Option<Instant>,
         now: Instant,
@@ -441,5 +945,43 @@ impl TerminalView {
         }
 
         should_redraw
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tmux_snapshot_refresh_mode_is_debounced_when_deadline_has_elapsed() {
+        let now = Instant::now();
+        let mode = TerminalView::tmux_snapshot_refresh_mode(
+            false,
+            Some(now - Duration::from_millis(1)),
+            now,
+        );
+        assert_eq!(mode, TmuxSnapshotRefreshMode::Debounced);
+    }
+
+    #[test]
+    fn tmux_snapshot_refresh_mode_is_none_when_deadline_has_not_elapsed() {
+        let now = Instant::now();
+        let mode = TerminalView::tmux_snapshot_refresh_mode(
+            false,
+            Some(now + Duration::from_millis(5)),
+            now,
+        );
+        assert_eq!(mode, TmuxSnapshotRefreshMode::None);
+    }
+
+    #[test]
+    fn tmux_snapshot_refresh_mode_prioritizes_immediate_refresh_over_debounce() {
+        let now = Instant::now();
+        let mode = TerminalView::tmux_snapshot_refresh_mode(
+            true,
+            Some(now - Duration::from_millis(1)),
+            now,
+        );
+        assert_eq!(mode, TmuxSnapshotRefreshMode::Immediate);
     }
 }

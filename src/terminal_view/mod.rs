@@ -6,7 +6,6 @@ use crate::config::{
     TerminalScrollbarVisibility,
 };
 use crate::keybindings;
-use crate::startup::StartupBlocker;
 use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
 use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
@@ -27,8 +26,7 @@ use std::{
 use termy_search::SearchState;
 use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
-    TerminalCursorStyle, TerminalEvent, TerminalGrid, TerminalRuntimeConfig, TerminalSize, TmuxClient,
-    TmuxNotification, TmuxPaneState, TmuxRuntimeConfig, TmuxSnapshot, TmuxWindowState,
+    TerminalCursorStyle, TerminalEvent, TerminalGrid, TerminalRuntimeConfig, TerminalSize,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
 use termy_toast::ToastManager;
@@ -155,13 +153,6 @@ struct TerminalScrollbarDragState {
 enum PaneResizeAxis {
     Horizontal,
     Vertical,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TmuxSnapshotRefreshMode {
-    None,
-    Debounced,
-    Immediate,
 }
 
 #[derive(Clone, Debug)]
@@ -423,19 +414,6 @@ struct TerminalPane {
     terminal: Terminal,
 }
 
-impl TerminalPane {
-    fn from_tmux_state(state: &TmuxPaneState, terminal: Terminal) -> Self {
-        Self {
-            id: state.id.clone(),
-            left: state.left,
-            top: state.top,
-            width: state.width,
-            height: state.height,
-            terminal,
-        }
-    }
-}
-
 struct TerminalTab {
     id: TabId,
     window_id: String,
@@ -453,41 +431,7 @@ struct TerminalTab {
     display_width: f32,
     running_process: bool,
 }
-
 impl TerminalTab {
-    fn from_tmux_window(id: TabId, window: &TmuxWindowState, panes: Vec<TerminalPane>) -> Self {
-        let title = DEFAULT_TAB_TITLE.to_string();
-        let title_text_width = 0.0;
-        let sticky_title_width = TerminalView::tab_display_width_for_text_px_without_close_with_max(
-            title_text_width,
-            TAB_MAX_WIDTH,
-        );
-        let display_width =
-            TerminalView::tab_display_width_for_text_px_with_max(title_text_width, TAB_MAX_WIDTH);
-
-        Self {
-            id,
-            window_id: window.id.clone(),
-            window_index: window.index,
-            active_pane_id: window
-                .active_pane_id
-                .clone()
-                .or_else(|| panes.first().map(|pane| pane.id.clone()))
-                .unwrap_or_default(),
-            panes,
-            manual_title: None,
-            explicit_title: None,
-            shell_title: None,
-            pending_command_title: None,
-            pending_command_token: 0,
-            title,
-            title_text_width,
-            sticky_title_width,
-            display_width,
-            running_process: false,
-        }
-    }
-
     fn active_pane_index(&self) -> Option<usize> {
         self.panes
             .iter()
@@ -925,24 +869,9 @@ impl TerminalView {
         }
     }
 
-    fn runtime_kind_from_app_config(config: &AppConfig) -> RuntimeKind {
-        if config.tmux_enabled {
-            RuntimeKind::Tmux
-        } else {
-            RuntimeKind::Native
-        }
-    }
-
     #[cfg(test)]
     fn uses_event_driven_tmux_wakeup() -> bool {
         true
-    }
-
-    fn tmux_runtime_from_app_config(config: &AppConfig) -> TmuxRuntimeConfig {
-        TmuxRuntimeConfig {
-            persistence: config.tmux_persistence,
-            binary: config.tmux_binary.trim().to_string(),
-        }
     }
 
     fn user_home_dir() -> Option<PathBuf> {
@@ -1535,61 +1464,17 @@ impl TerminalView {
         );
         let startup_predicted_title =
             Self::predicted_prompt_seed_title(&tab_title, predicted_prompt_cwd.as_deref());
-        let runtime_kind = Self::runtime_kind_from_app_config(&config);
         let initial_cols = TerminalSize::default().cols;
         let initial_rows = TerminalSize::default().rows;
-        let (runtime, initial_snapshot, native_terminal) = match runtime_kind {
-            RuntimeKind::Tmux => {
-                let tmux_runtime = Self::tmux_runtime_from_app_config(&config);
-                let tmux_client = match TmuxClient::new(
-                    tmux_runtime.clone(),
-                    initial_cols,
-                    initial_rows,
-                    Some(event_wakeup_tx.clone()),
-                ) {
-                    Ok(client) => client,
-                    Err(error) => {
-                        StartupBlocker::TmuxClientLaunch(format!("{error:#}")).present_and_exit()
-                    }
-                };
-                let initial_snapshot = match tmux_client.refresh_snapshot() {
-                    Ok(snapshot) => snapshot,
-                    Err(error) => {
-                        StartupBlocker::TmuxInitialSnapshot(format!("{error:#}")).present_and_exit()
-                    }
-                };
-                (
-                    RuntimeState::Tmux(TmuxRuntime::new(
-                        tmux_runtime,
-                        tmux_client,
-                        initial_cols,
-                        initial_rows,
-                    )),
-                    Some(initial_snapshot),
-                    None,
-                )
-            }
-            RuntimeKind::Native => {
-                let native_terminal = match Terminal::new_native(
-                    TerminalSize {
-                        cols: initial_cols,
-                        rows: initial_rows,
-                        ..TerminalSize::default()
-                    },
-                    configured_working_dir.as_deref(),
-                    Some(event_wakeup_tx.clone()),
-                    Some(&tab_shell_integration),
-                    Some(&terminal_runtime),
-                ) {
-                    Ok(terminal) => terminal,
-                    Err(error) => {
-                        eprintln!("Termy startup blocked: failed to start native runtime: {error}");
-                        std::process::exit(1);
-                    }
-                };
-                (RuntimeState::Native, None, Some(native_terminal))
-            }
-        };
+        let (runtime, initial_snapshot, native_terminal) = Self::runtime_startup_from_app_config(
+            &config,
+            &event_wakeup_tx,
+            configured_working_dir.as_deref(),
+            &tab_shell_integration,
+            &terminal_runtime,
+            initial_cols,
+            initial_rows,
+        );
 
         let mut view = Self {
             tabs: Vec::new(),
@@ -2143,39 +2028,6 @@ mod tests {
             TerminalView::refreshed_install_cli_availability(false, true);
         assert!(!next_available);
         assert!(!changed);
-    }
-
-    #[test]
-    fn tmux_snapshot_refresh_mode_is_debounced_when_deadline_has_elapsed() {
-        let now = Instant::now();
-        let mode = TerminalView::tmux_snapshot_refresh_mode(
-            false,
-            Some(now - Duration::from_millis(1)),
-            now,
-        );
-        assert_eq!(mode, TmuxSnapshotRefreshMode::Debounced);
-    }
-
-    #[test]
-    fn tmux_snapshot_refresh_mode_is_none_when_deadline_has_not_elapsed() {
-        let now = Instant::now();
-        let mode = TerminalView::tmux_snapshot_refresh_mode(
-            false,
-            Some(now + Duration::from_millis(5)),
-            now,
-        );
-        assert_eq!(mode, TmuxSnapshotRefreshMode::None);
-    }
-
-    #[test]
-    fn tmux_snapshot_refresh_mode_prioritizes_immediate_refresh_over_debounce() {
-        let now = Instant::now();
-        let mode = TerminalView::tmux_snapshot_refresh_mode(
-            true,
-            Some(now - Duration::from_millis(1)),
-            now,
-        );
-        assert_eq!(mode, TmuxSnapshotRefreshMode::Immediate);
     }
 
     #[test]

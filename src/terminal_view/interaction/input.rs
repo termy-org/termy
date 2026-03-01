@@ -2,20 +2,12 @@ use super::*;
 
 impl TerminalView {
     fn send_input_to_active_pane(&self, input: &[u8]) -> bool {
-        if self.runtime_uses_tmux() {
-            let Some(active_pane_id) = self.active_pane_id() else {
-                return false;
-            };
-            match self.tmux_runtime().client.send_input(active_pane_id, input) {
-                Ok(()) => true,
-                Err(error) => {
-                    termy_toast::error(format!("Input write failed: {error}"));
-                    false
-                }
+        match self.runtime_kind() {
+            RuntimeKind::Tmux => self.tmux_send_input_to_active_pane(input),
+            RuntimeKind::Native => {
+                self.active_terminal().write_input(input);
+                true
             }
-        } else {
-            self.active_terminal().write_input(input);
-            true
         }
     }
 
@@ -26,7 +18,6 @@ impl TerminalView {
         self.scroll_to_bottom(cx);
     }
 
-
     pub(in super::super) fn write_terminal_input(&mut self, input: &[u8], cx: &mut Context<Self>) {
         if input.is_empty() {
             return;
@@ -34,7 +25,7 @@ impl TerminalView {
 
         self.prepare_terminal_input_write(cx);
         if self.send_input_to_active_pane(input) {
-            if self.runtime_uses_tmux() {
+            if self.runtime_kind() == RuntimeKind::Tmux {
                 self.schedule_tmux_title_refresh();
             }
         }
@@ -106,7 +97,7 @@ impl TerminalView {
         };
 
         if wrote_input {
-            if self.runtime_uses_tmux() {
+            if self.runtime_kind() == RuntimeKind::Tmux {
                 self.schedule_tmux_title_refresh();
             }
         }
@@ -157,7 +148,6 @@ impl TerminalView {
             _ => false,
         }
     }
-
 
     pub(in super::super) fn handle_key_down(
         &mut self,

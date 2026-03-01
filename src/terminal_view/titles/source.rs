@@ -1,4 +1,5 @@
 use super::super::*;
+use termy_terminal_ui::TmuxPaneState;
 
 impl TerminalView {
     pub(crate) fn fallback_title(&self) -> &str {

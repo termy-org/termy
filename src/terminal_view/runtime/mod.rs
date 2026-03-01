@@ -1,6 +1,11 @@
 use std::time::Instant;
 
-use termy_terminal_ui::{TmuxClient, TmuxRuntimeConfig};
+use flume::Sender;
+use termy_terminal_ui::{TmuxClient, TmuxRuntimeConfig, TmuxSnapshot};
+
+use crate::startup::StartupBlocker;
+
+use super::*;
 
 mod tmux;
 mod tmux_sync;
@@ -16,6 +21,14 @@ pub(super) enum RuntimeKind {
 impl RuntimeKind {
     pub(super) const fn uses_tmux(self) -> bool {
         matches!(self, Self::Tmux)
+    }
+
+    pub(super) const fn from_app_config(config: &AppConfig) -> Self {
+        if config.tmux_enabled {
+            Self::Tmux
+        } else {
+            Self::Native
+        }
     }
 }
 
@@ -74,6 +87,82 @@ impl TmuxRuntime {
             resize_wakeup_scheduled: false,
             title_refresh_deadline: None,
             title_refresh_wakeup_scheduled: false,
+        }
+    }
+}
+
+impl TerminalView {
+    pub(super) fn runtime_kind_from_app_config(config: &AppConfig) -> RuntimeKind {
+        RuntimeKind::from_app_config(config)
+    }
+
+    pub(super) fn tmux_runtime_from_app_config(config: &AppConfig) -> TmuxRuntimeConfig {
+        TmuxRuntimeConfig {
+            persistence: config.tmux_persistence,
+            binary: config.tmux_binary.trim().to_string(),
+        }
+    }
+
+    pub(super) fn runtime_startup_from_app_config(
+        config: &AppConfig,
+        event_wakeup_tx: &Sender<()>,
+        configured_working_dir: Option<&str>,
+        tab_shell_integration: &TabTitleShellIntegration,
+        terminal_runtime: &TerminalRuntimeConfig,
+        initial_cols: u16,
+        initial_rows: u16,
+    ) -> (RuntimeState, Option<TmuxSnapshot>, Option<Terminal>) {
+        match RuntimeKind::from_app_config(config) {
+            RuntimeKind::Tmux => {
+                let tmux_runtime = Self::tmux_runtime_from_app_config(config);
+                let tmux_client = match TmuxClient::new(
+                    tmux_runtime.clone(),
+                    initial_cols,
+                    initial_rows,
+                    Some(event_wakeup_tx.clone()),
+                ) {
+                    Ok(client) => client,
+                    Err(error) => {
+                        StartupBlocker::TmuxClientLaunch(format!("{error:#}")).present_and_exit()
+                    }
+                };
+                let initial_snapshot = match tmux_client.refresh_snapshot() {
+                    Ok(snapshot) => snapshot,
+                    Err(error) => {
+                        StartupBlocker::TmuxInitialSnapshot(format!("{error:#}")).present_and_exit()
+                    }
+                };
+                (
+                    RuntimeState::Tmux(TmuxRuntime::new(
+                        tmux_runtime,
+                        tmux_client,
+                        initial_cols,
+                        initial_rows,
+                    )),
+                    Some(initial_snapshot),
+                    None,
+                )
+            }
+            RuntimeKind::Native => {
+                let native_terminal = match Terminal::new_native(
+                    TerminalSize {
+                        cols: initial_cols,
+                        rows: initial_rows,
+                        ..TerminalSize::default()
+                    },
+                    configured_working_dir,
+                    Some(event_wakeup_tx.clone()),
+                    Some(tab_shell_integration),
+                    Some(terminal_runtime),
+                ) {
+                    Ok(terminal) => terminal,
+                    Err(error) => {
+                        eprintln!("Termy startup blocked: failed to start native runtime: {error}");
+                        std::process::exit(1);
+                    }
+                };
+                (RuntimeState::Native, None, Some(native_terminal))
+            }
         }
     }
 }
