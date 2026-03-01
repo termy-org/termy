@@ -1187,39 +1187,16 @@ impl TmuxClient {
     }
 
     pub fn capture_pane(&self, pane_id: &str) -> Result<Vec<u8>> {
-        let out = self.run_control_capture_args(&[
-            "capture-pane",
-            "-p",
-            "-e",
-            "-C",
-            "-J",
-            "-S",
-            "-",
-            "-E",
-            "-",
-            "-t",
-            pane_id,
-        ])?;
+        let args = capture_full_pane_args(pane_id);
+        let out = self.run_control_capture_args(&args)?;
         Ok(sanitize_tmux_payload(unescape_tmux_payload(
             out.trim_end().as_bytes(),
         )))
     }
 
-    pub fn capture_pane_viewport(&self, pane_id: &str, rows: u16) -> Result<Vec<u8>> {
-        let start = format!("-{}", rows.max(1));
-        let out = self.run_control_capture_args(&[
-            "capture-pane",
-            "-p",
-            "-e",
-            "-C",
-            "-J",
-            "-S",
-            start.as_str(),
-            "-E",
-            "-",
-            "-t",
-            pane_id,
-        ])?;
+    pub fn capture_pane_viewport(&self, pane_id: &str) -> Result<Vec<u8>> {
+        let args = capture_viewport_pane_args(pane_id);
+        let out = self.run_control_capture_args(&args)?;
         Ok(sanitize_tmux_payload(unescape_tmux_payload(
             out.trim_end().as_bytes(),
         )))
@@ -1404,6 +1381,44 @@ fn managed_session_name() -> String {
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     format!("termy-{}-{}", std::process::id(), now_ns)
+}
+
+fn capture_full_pane_args<'a>(pane_id: &'a str) -> [&'a str; 10] {
+    // Do not pass `-J` here. Joined wrapped lines desynchronize tmux's raw
+    // cursor coordinates (`cursor_x`, `cursor_y`) from reconstructed pane rows
+    // during session attach/switch hydration.
+    // Keep full-pane capture at `-S -`; explicit helper naming avoids stringly
+    // capture modes and keeps call sites self-documenting.
+    [
+        "capture-pane",
+        "-p",
+        "-e",
+        "-C",
+        "-S",
+        "-",
+        "-E",
+        "-",
+        "-t",
+        pane_id,
+    ]
+}
+
+fn capture_viewport_pane_args<'a>(pane_id: &'a str) -> [&'a str; 10] {
+    // Start at viewport row 0 for hydration (`-S 0`) so reconstructed rows match
+    // tmux cursor coordinates; negative starts include history rows and cause
+    // cursor placement to drift into stale lines after attach/switch.
+    [
+        "capture-pane",
+        "-p",
+        "-e",
+        "-C",
+        "-S",
+        "0",
+        "-E",
+        "-",
+        "-t",
+        pane_id,
+    ]
 }
 
 fn run_tmux_command_with_socket(
@@ -1861,7 +1876,8 @@ mod tests {
         NotificationCoalescer, PERSISTENT_SESSION_NAME, PendingCommand, SNAPSHOT_FIELD_SEP,
         SendInputMode, TmuxClient, TmuxControlErrorKind, TmuxLaunchTarget, TmuxNotification,
         TmuxRuntimeConfig, TmuxSocketTarget,
-        choose_send_input_mode, claim_pending_for_command_begin, complete_pending_command,
+        capture_full_pane_args, capture_viewport_pane_args, choose_send_input_mode,
+        claim_pending_for_command_begin, complete_pending_command,
         flush_notification_coalescer, managed_session_name, map_command_completion_response,
         parse_output_notification, parse_session_summaries, parse_snapshot, parse_version_prefix,
         quote_tmux_arg,
@@ -2499,5 +2515,45 @@ mod tests {
     fn managed_session_name_prefix_is_stable() {
         let name = managed_session_name();
         assert!(name.starts_with("termy-"));
+    }
+
+    #[test]
+    fn capture_full_pane_args_match_expected_shape_without_joined_wraps() {
+        let args = capture_full_pane_args("%1");
+        assert_eq!(
+            args,
+            [
+                "capture-pane",
+                "-p",
+                "-e",
+                "-C",
+                "-S",
+                "-",
+                "-E",
+                "-",
+                "-t",
+                "%1",
+            ]
+        );
+    }
+
+    #[test]
+    fn capture_viewport_pane_args_match_expected_shape_without_joined_wraps() {
+        let args = capture_viewport_pane_args("%2");
+        assert_eq!(
+            args,
+            [
+                "capture-pane",
+                "-p",
+                "-e",
+                "-C",
+                "-S",
+                "0",
+                "-E",
+                "-",
+                "-t",
+                "%2",
+            ]
+        );
     }
 }

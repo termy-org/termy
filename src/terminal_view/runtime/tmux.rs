@@ -159,7 +159,7 @@ impl TerminalView {
             size.cols.max(1),
             size.rows.max(1),
         ));
-        self.apply_tmux_snapshot(snapshot);
+        self.apply_tmux_snapshot_rehydrate(snapshot);
         self.reset_tab_interaction_state();
         self.clear_selection();
         self.refresh_runtime_capability_surfaces(cx);
@@ -772,7 +772,7 @@ impl TerminalView {
             scrollback_history,
         );
 
-        if let Ok(capture) = tmux_client.capture_pane_viewport(&pane.id, pane.height.max(1)) {
+        if let Ok(capture) = tmux_client.capture_pane_viewport(&pane.id) {
             terminal.feed_output(&capture);
             let cursor_row = pane.cursor_y.min(pane.height.saturating_sub(1)).saturating_add(1);
             let cursor_col = pane.cursor_x.min(pane.width.saturating_sub(1)).saturating_add(1);
@@ -783,7 +783,11 @@ impl TerminalView {
         terminal
     }
 
-    pub(in super::super) fn apply_tmux_snapshot(&mut self, snapshot: TmuxSnapshot) {
+    fn apply_tmux_snapshot_rehydrate(&mut self, snapshot: TmuxSnapshot) {
+        self.apply_tmux_snapshot_inner(snapshot, false);
+    }
+
+    fn apply_tmux_snapshot_inner(&mut self, snapshot: TmuxSnapshot, reuse_existing_terminals: bool) {
         let previous_active_window_id = self.tabs.get(self.active_tab).map(|tab| tab.window_id.clone());
         let previous_ids = self
             .tabs
@@ -792,9 +796,12 @@ impl TerminalView {
             .collect::<std::collections::HashMap<_, _>>();
 
         let mut existing_terminals = std::collections::HashMap::<String, Terminal>::new();
-        for mut tab in std::mem::take(&mut self.tabs) {
-            for pane in tab.panes.drain(..) {
-                existing_terminals.insert(pane.id.clone(), pane.terminal);
+        let old_tabs = std::mem::take(&mut self.tabs);
+        if reuse_existing_terminals {
+            for mut tab in old_tabs {
+                for pane in tab.panes.drain(..) {
+                    existing_terminals.insert(pane.id.clone(), pane.terminal);
+                }
             }
         }
 
@@ -894,6 +901,10 @@ impl TerminalView {
         }
         self.mark_tab_strip_layout_dirty();
         self.scroll_active_tab_into_view();
+    }
+
+    pub(in super::super) fn apply_tmux_snapshot(&mut self, snapshot: TmuxSnapshot) {
+        self.apply_tmux_snapshot_inner(snapshot, true);
     }
 
     pub(in super::super) fn refresh_tmux_snapshot(&mut self) -> bool {

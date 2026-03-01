@@ -282,3 +282,55 @@ fn tmux_repeated_split_refresh_cycles_remain_parseable() {
         assert_window_geometry_within_bounds(after_window, TEST_COLS, TEST_ROWS);
     }
 }
+
+#[test]
+#[ignore = "requires local tmux 3.3+; run explicitly"]
+fn tmux_capture_viewport_preserves_wrapped_input_rows() {
+    let _guard = tmux_test_guard();
+    ensure_isolated_tmux_tmpdir();
+    let binary = tmux_test_binary();
+    tmux_preflight(binary.as_str());
+
+    let client = new_tmux_client(binary.as_str());
+    client
+        .set_client_size(40, 10)
+        .expect("client resize should succeed");
+
+    let resized_snapshot = client
+        .refresh_snapshot()
+        .expect("resized snapshot should parse");
+    let resized_window = active_window(&resized_snapshot);
+    let pane_id = active_pane_id(resized_window).to_string();
+    let pane_width = resized_window
+        .panes
+        .iter()
+        .find(|pane| pane.id == pane_id)
+        .map(|pane| pane.width)
+        .expect("resized pane should exist");
+    assert!(
+        pane_width <= 40,
+        "expected wrapped-pane width <= 40, got {}",
+        pane_width
+    );
+
+    let wrapped_input = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz";
+    client
+        .send_input(pane_id.as_str(), wrapped_input.as_bytes())
+        .expect("send-input should succeed");
+
+    let capture = client
+        .capture_pane_viewport(pane_id.as_str())
+        .expect("capture-pane viewport should succeed");
+    let capture_text = String::from_utf8_lossy(&capture);
+
+    assert!(
+        capture_text.contains("abcdefghijklmnopqrstuvwxyz"),
+        "capture should include typed input: '{}'",
+        capture_text
+    );
+    assert!(
+        !capture_text.contains(wrapped_input),
+        "capture unexpectedly joined wrapped rows; expected raw viewport wrapping: '{}'",
+        capture_text
+    );
+}
