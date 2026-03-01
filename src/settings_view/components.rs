@@ -6,8 +6,12 @@ impl SettingsWindow {
         setting_key: &'static str,
         content: AnyElement,
     ) -> AnyElement {
+        // Anchor wrappers must participate in width layout; otherwise `w_full()` row
+        // children can resolve against content size and render far beyond the viewport.
         div()
             .id(SharedString::from(format!("setting-{setting_key}")))
+            .w_full()
+            .min_w(px(0.0))
             .anchor_scroll(self.setting_scroll_anchors.get(setting_key).cloned())
             .child(content)
             .into_any_element()
@@ -157,11 +161,13 @@ impl SettingsWindow {
             self.text_muted()
         };
 
+        // Keep toggle rows shrink-safe in narrow content areas.
+        // `justify_between` with a growing left column can inflate intrinsic width
+        // and push the control cluster beyond the visible viewport.
         let row = div()
             .w_full()
             .flex()
             .items_center()
-            .justify_between()
             .gap_4()
             .py_3()
             .px_4()
@@ -193,6 +199,7 @@ impl SettingsWindow {
             )
             .child(
                 div()
+                    .ml_auto()
                     .flex_none()
                     .flex()
                     .items_center()
@@ -655,6 +662,7 @@ impl SettingsWindow {
             )
             .child(
                 div()
+                    .ml_auto()
                     .flex_none()
                     .flex()
                     .items_center()
@@ -1022,6 +1030,7 @@ impl SettingsWindow {
             )
             .child(
                 div()
+                    .ml_auto()
                     .flex_none()
                     .flex()
                     .items_center()

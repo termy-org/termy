@@ -2,6 +2,19 @@ use super::super::scrollbar as terminal_scrollbar;
 use super::*;
 use crate::ui::scrollbar as ui_scrollbar;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WheelScrollPaneDecision {
+    UseActivePane,
+    FocusHoveredPane,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WheelScrollRetargetResult {
+    Unchanged,
+    Switched,
+    Abort,
+}
+
 impl TerminalView {
     fn consume_suppressed_scroll_event(
         &mut self,
@@ -83,6 +96,54 @@ impl TerminalView {
                     line_height,
                     viewport_height,
                 )
+            }
+        }
+    }
+
+    fn wheel_scroll_pane_decision(
+        runtime_uses_tmux: bool,
+        hovered_pane_id: Option<&str>,
+        active_pane_id: Option<&str>,
+    ) -> WheelScrollPaneDecision {
+        if !runtime_uses_tmux
+            || hovered_pane_id.is_none()
+            || hovered_pane_id == active_pane_id
+        {
+            WheelScrollPaneDecision::UseActivePane
+        } else {
+            WheelScrollPaneDecision::FocusHoveredPane
+        }
+    }
+
+    fn retarget_scroll_wheel_pane(
+        &mut self,
+        position: gpui::Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) -> WheelScrollRetargetResult {
+        let hovered_pane_id = self
+            .position_to_pane_cell(position, false)
+            .map(|(pane_id, _)| pane_id);
+        let decision = Self::wheel_scroll_pane_decision(
+            self.runtime_uses_tmux(),
+            hovered_pane_id.as_deref(),
+            self.active_pane_id(),
+        );
+
+        match decision {
+            WheelScrollPaneDecision::UseActivePane => WheelScrollRetargetResult::Unchanged,
+            WheelScrollPaneDecision::FocusHoveredPane => {
+                let Some(pane_id) = hovered_pane_id.as_deref() else {
+                    return WheelScrollRetargetResult::Unchanged;
+                };
+
+                if !self.focus_pane_target(pane_id, cx) {
+                    return WheelScrollRetargetResult::Abort;
+                }
+                if self.active_pane_id() == Some(pane_id) {
+                    WheelScrollRetargetResult::Switched
+                } else {
+                    WheelScrollRetargetResult::Abort
+                }
             }
         }
     }
@@ -237,6 +298,18 @@ impl TerminalView {
         }
 
         cx.stop_propagation();
+        match self.retarget_scroll_wheel_pane(event.position, cx) {
+            WheelScrollRetargetResult::Unchanged => {}
+            WheelScrollRetargetResult::Switched => {
+                // Avoid carrying fractional wheel residue across pane boundaries.
+                self.terminal_scroll_accumulator_y = 0.0;
+            }
+            WheelScrollRetargetResult::Abort => {
+                self.terminal_scroll_accumulator_y = 0.0;
+                return;
+            }
+        }
+
         if matches!(event.touch_phase, TouchPhase::Moved) {
             self.mark_terminal_scrollbar_activity(cx);
         }
@@ -313,4 +386,27 @@ mod tests {
         assert_eq!(accumulated, 12.0);
     }
 
+    #[test]
+    fn wheel_scroll_pane_decision_uses_active_for_non_tmux() {
+        assert_eq!(
+            TerminalView::wheel_scroll_pane_decision(false, Some("%2"), Some("%1")),
+            WheelScrollPaneDecision::UseActivePane
+        );
+    }
+
+    #[test]
+    fn wheel_scroll_pane_decision_uses_active_when_hovered_matches_active() {
+        assert_eq!(
+            TerminalView::wheel_scroll_pane_decision(true, Some("%7"), Some("%7")),
+            WheelScrollPaneDecision::UseActivePane
+        );
+    }
+
+    #[test]
+    fn wheel_scroll_pane_decision_focuses_hovered_tmux_pane_when_different() {
+        assert_eq!(
+            TerminalView::wheel_scroll_pane_decision(true, Some("%8"), Some("%3")),
+            WheelScrollPaneDecision::FocusHoveredPane
+        );
+    }
 }

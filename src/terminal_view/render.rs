@@ -33,6 +33,23 @@ fn desaturate_rgb(color: gpui::Rgba, amount: f32) -> gpui::Rgba {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TerminalScrollbarOverlayFrame {
+    left: f32,
+    top: f32,
+    width: f32,
+    height: f32,
+}
+
+fn terminal_scrollbar_overlay_frame(surface: TerminalViewportGeometry) -> TerminalScrollbarOverlayFrame {
+    TerminalScrollbarOverlayFrame {
+        left: surface.origin_x + surface.width - TERMINAL_SCROLLBAR_GUTTER_WIDTH,
+        top: surface.origin_y,
+        width: TERMINAL_SCROLLBAR_GUTTER_WIDTH,
+        height: surface.height,
+    }
+}
+
 impl Focusable for TerminalView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -163,6 +180,7 @@ impl TerminalView {
 
     fn render_terminal_scrollbar_overlay(
         &mut self,
+        surface: TerminalViewportGeometry,
         layout: terminal_scrollbar::TerminalScrollbarLayout,
         force_visible: bool,
     ) -> Option<AnyElement> {
@@ -202,15 +220,16 @@ impl TerminalView {
         let current_marker_top =
             self.refresh_terminal_scrollbar_marker_cache(layout, TERMINAL_SCROLLBAR_MARKER_HEIGHT);
         let marker_tops = &self.terminal_scrollbar_marker_cache.marker_tops;
+        let frame = terminal_scrollbar_overlay_frame(surface);
 
         Some(
             div()
                 .id("terminal-scrollbar-overlay")
                 .absolute()
-                .top_0()
-                .right_0()
-                .bottom_0()
-                .w(px(TERMINAL_SCROLLBAR_GUTTER_WIDTH))
+                .left(px(frame.left))
+                .top(px(frame.top))
+                .w(px(frame.width))
+                .h(px(frame.height))
                 .bg(gutter_bg)
                 .child(
                     div()
@@ -829,17 +848,16 @@ impl Render for TerminalView {
         {
             self.start_terminal_scrollbar_animation(cx);
         }
-        let terminal_track_height = self
-            .terminal_surface_geometry(window)
-            .map(|geometry| geometry.height)
-            .unwrap_or(0.0);
-        let terminal_scrollbar_layout =
-            self.terminal_scrollbar_layout_for_track(terminal_track_height);
+        let terminal_surface = self.terminal_surface_geometry(window);
+        let terminal_scrollbar_layout = terminal_surface.and_then(|surface| {
+            self.terminal_scrollbar_layout_for_track(surface.height)
+                .map(|layout| (surface, layout))
+        });
         if terminal_scrollbar_layout.is_none() {
             self.clear_terminal_scrollbar_marker_cache();
         }
-        let terminal_scrollbar_overlay = terminal_scrollbar_layout.and_then(|layout| {
-            self.render_terminal_scrollbar_overlay(layout, terminal_display_offset > 0)
+        let terminal_scrollbar_overlay = terminal_scrollbar_layout.and_then(|(surface, layout)| {
+            self.render_terminal_scrollbar_overlay(surface, layout, terminal_display_offset > 0)
         });
         let terminal_grid_layer = div()
             .relative()
@@ -1237,5 +1255,29 @@ impl Render for TerminalView {
                     .children(search_overlay),
             )
             .children(toast_overlay)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_scrollbar_overlay_frame_anchors_to_active_pane_geometry() {
+        let surface = TerminalViewportGeometry {
+            origin_x: 32.0,
+            origin_y: 48.0,
+            width: 640.0,
+            height: 420.0,
+        };
+
+        let frame = terminal_scrollbar_overlay_frame(surface);
+        assert_eq!(
+            frame.left,
+            surface.origin_x + surface.width - TERMINAL_SCROLLBAR_GUTTER_WIDTH
+        );
+        assert_eq!(frame.top, surface.origin_y);
+        assert_eq!(frame.width, TERMINAL_SCROLLBAR_GUTTER_WIDTH);
+        assert_eq!(frame.height, surface.height);
     }
 }

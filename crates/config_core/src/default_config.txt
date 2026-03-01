@@ -3,9 +3,9 @@
 theme = termy
 # Enable tmux runtime integration
 tmux_enabled = false
-# Reuse tmux tabs and panes across app restarts (only used when tmux_enabled = true)
+# Reuse tmux tabs and panes across app restarts
 tmux_persistence = false
-# tmux executable path or binary name (only used when tmux_enabled = true)
+# tmux executable path or binary name
 tmux_binary = tmux
 # Initial directory for new sessions
 # working_dir = none

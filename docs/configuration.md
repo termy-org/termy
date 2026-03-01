@@ -50,12 +50,12 @@ Termy reads configuration from `~/.config/termy/config.txt`.
 
 `tmux_persistence`
 - Default: `false`
-- Reuse tmux tabs and panes across app restarts (only used when tmux_enabled = true)
+- Reuse tmux tabs and panes across app restarts
 - Group: `TMUX`
 
 `tmux_binary`
 - Default: `tmux`
-- tmux executable path or binary name (only used when tmux_enabled = true)
+- tmux executable path or binary name
 - Group: `TMUX`
 
 `shell`
@@ -279,4 +279,3 @@ Use `[colors]` to override theme colors with `#RRGGBB` values.
 `bright_white`
 - Aliases: `brightwhite`, `color15`
 - ANSI bright white
-
