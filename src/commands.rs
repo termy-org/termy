@@ -255,6 +255,10 @@ macro_rules! define_commands {
                     });
                 }
 
+                // Keep menu section ordering deterministic even when command specs are grouped
+                // by action families instead of menu layout.
+                entries.sort_by_key(|entry| entry.section);
+
                 entries
             }
 
@@ -432,8 +436,8 @@ define_commands!(
             CommandPaletteVisibility::Always
         )),
         Some(menu(
-            MenuRoot::Window,
-            2,
+            MenuRoot::File,
+            1,
             "Split Pane Vertical",
             MenuVisibility::Always,
             MenuActionRole::Normal
@@ -448,8 +452,8 @@ define_commands!(
             CommandPaletteVisibility::Always
         )),
         Some(menu(
-            MenuRoot::Window,
-            2,
+            MenuRoot::File,
+            1,
             "Split Pane Horizontal",
             MenuVisibility::Always,
             MenuActionRole::Normal
@@ -464,8 +468,8 @@ define_commands!(
             CommandPaletteVisibility::Always
         )),
         Some(menu(
-            MenuRoot::Window,
-            2,
+            MenuRoot::File,
+            1,
             "Close Pane",
             MenuVisibility::Always,
             MenuActionRole::Normal
@@ -520,8 +524,8 @@ define_commands!(
             CommandPaletteVisibility::Always
         )),
         Some(menu(
-            MenuRoot::Window,
-            2,
+            MenuRoot::File,
+            1,
             "Focus Next Pane",
             MenuVisibility::Always,
             MenuActionRole::Normal
@@ -535,13 +539,7 @@ define_commands!(
             "focus pane previous cycle",
             CommandPaletteVisibility::Always
         )),
-        Some(menu(
-            MenuRoot::Window,
-            2,
-            "Focus Previous Pane",
-            MenuVisibility::Always,
-            MenuActionRole::Normal
-        ))
+        None
     ),
     (
         ResizePaneLeft,
@@ -1021,6 +1019,50 @@ mod tests {
                 .iter()
                 .any(|entry| entry.action == CommandAction::RenameTab)
         );
+    }
+
+    #[test]
+    fn file_menu_includes_requested_pane_actions() {
+        let file_entries = CommandAction::menu_entries_for_root(MenuRoot::File);
+
+        for action in [
+            CommandAction::SplitPaneVertical,
+            CommandAction::SplitPaneHorizontal,
+            CommandAction::ClosePane,
+            CommandAction::FocusPaneNext,
+        ] {
+            assert!(
+                file_entries.iter().any(|entry| entry.action == action),
+                "missing {action:?} from File menu"
+            );
+        }
+    }
+
+    #[test]
+    fn window_menu_excludes_file_menu_pane_actions() {
+        let window_entries = CommandAction::menu_entries_for_root(MenuRoot::Window);
+        for action in [
+            CommandAction::SplitPaneVertical,
+            CommandAction::SplitPaneHorizontal,
+            CommandAction::ClosePane,
+            CommandAction::FocusPaneNext,
+            CommandAction::FocusPanePrevious,
+        ] {
+            assert!(
+                !window_entries.iter().any(|entry| entry.action == action),
+                "unexpected {action:?} in Window menu"
+            );
+        }
+    }
+
+    #[test]
+    fn file_menu_section_order_is_stable() {
+        let file_entries = CommandAction::menu_entries_for_root(MenuRoot::File);
+        let sections = file_entries
+            .iter()
+            .map(|entry| entry.section)
+            .collect::<Vec<_>>();
+        assert_eq!(sections, [0, 0, 0, 1, 1, 1, 1]);
     }
 
     #[test]

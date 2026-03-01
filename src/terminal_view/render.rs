@@ -1193,14 +1193,18 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_move_tab_right_action))
                     .on_action(cx.listener(Self::handle_switch_tab_left_action))
                     .on_action(cx.listener(Self::handle_switch_tab_right_action))
-                    .on_action(cx.listener(Self::handle_split_pane_vertical_action))
-                    .on_action(cx.listener(Self::handle_split_pane_horizontal_action))
-                    .on_action(cx.listener(Self::handle_close_pane_action))
+                    // GPUI grays out unavailable menu actions, so we only register
+                    // File menu pane handlers when the tmux runtime is active.
+                    .when(self.runtime_uses_tmux(), |s| {
+                        s.on_action(cx.listener(Self::handle_split_pane_vertical_action))
+                            .on_action(cx.listener(Self::handle_split_pane_horizontal_action))
+                            .on_action(cx.listener(Self::handle_close_pane_action))
+                            .on_action(cx.listener(Self::handle_focus_pane_next_action))
+                    })
                     .on_action(cx.listener(Self::handle_focus_pane_left_action))
                     .on_action(cx.listener(Self::handle_focus_pane_right_action))
                     .on_action(cx.listener(Self::handle_focus_pane_up_action))
                     .on_action(cx.listener(Self::handle_focus_pane_down_action))
-                    .on_action(cx.listener(Self::handle_focus_pane_next_action))
                     .on_action(cx.listener(Self::handle_focus_pane_previous_action))
                     .on_action(cx.listener(Self::handle_resize_pane_left_action))
                     .on_action(cx.listener(Self::handle_resize_pane_right_action))

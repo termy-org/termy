@@ -5,6 +5,10 @@ use gpui::SystemMenuType;
 
 const INSTALL_CLI_TITLE: &str = "Install CLI";
 const INSTALL_CLI_INSTALLED_TITLE: &str = "Install CLI (Installed)";
+const SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE: &str = "Split Pane Vertical (tmux required)";
+const SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE: &str = "Split Pane Horizontal (tmux required)";
+const CLOSE_PANE_TMUX_REQUIRED_TITLE: &str = "Close Pane (tmux required)";
+const FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE: &str = "Focus Next Pane (tmux required)";
 
 pub(crate) fn app_menus(install_cli_available: bool, tmux_enabled: bool) -> Vec<Menu> {
     CommandAction::menu_roots()
@@ -43,7 +47,15 @@ fn append_menu_entries(
     let mut previous_section = None;
 
     for entry in entries {
-        if entry.action.requires_tmux() && !tmux_enabled {
+        // Keep only the requested pane actions visible in native mode and label
+        // them explicitly so users understand why the menu rows are disabled.
+        let tmux_required_title = if tmux_enabled {
+            None
+        } else {
+            tmux_required_menu_title(entry.action)
+        };
+
+        if entry.action.requires_tmux() && !tmux_enabled && tmux_required_title.is_none() {
             continue;
         }
 
@@ -59,6 +71,8 @@ fn append_menu_entries(
             } else {
                 INSTALL_CLI_INSTALLED_TITLE
             }
+        } else if let Some(tmux_required_title) = tmux_required_title {
+            tmux_required_title
         } else {
             entry.title
         };
@@ -68,9 +82,23 @@ fn append_menu_entries(
     }
 }
 
+fn tmux_required_menu_title(action: CommandAction) -> Option<&'static str> {
+    match action {
+        CommandAction::SplitPaneVertical => Some(SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE),
+        CommandAction::SplitPaneHorizontal => Some(SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE),
+        CommandAction::ClosePane => Some(CLOSE_PANE_TMUX_REQUIRED_TITLE),
+        CommandAction::FocusPaneNext => Some(FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{INSTALL_CLI_INSTALLED_TITLE, INSTALL_CLI_TITLE, app_menus};
+    use super::{
+        CLOSE_PANE_TMUX_REQUIRED_TITLE, FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE,
+        INSTALL_CLI_INSTALLED_TITLE, INSTALL_CLI_TITLE, SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE,
+        SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE, app_menus,
+    };
     use gpui::{MenuItem, OsAction};
 
     #[test]
@@ -187,15 +215,53 @@ mod tests {
     }
 
     #[test]
-    fn tmux_only_actions_are_hidden_when_tmux_is_disabled() {
+    fn file_menu_shows_tmux_required_pane_actions_when_tmux_is_disabled() {
+        let file_menu = app_menus(true, false)
+            .into_iter()
+            .find(|menu| menu.name.as_ref() == "File")
+            .expect("missing File menu");
+
+        let labels = file_menu
+            .items
+            .iter()
+            .map(|item| match item {
+                MenuItem::Action { name, .. } => name.as_ref().to_string(),
+                MenuItem::Separator => "<separator>".to_string(),
+                MenuItem::Submenu(_) | MenuItem::SystemMenu(_) => "<non-action>".to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            labels,
+            vec![
+                "New Tab",
+                "Close Tab",
+                "Rename Tab",
+                "<separator>",
+                SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE,
+                SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE,
+                CLOSE_PANE_TMUX_REQUIRED_TITLE,
+                FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE,
+            ]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn tmux_only_actions_outside_requested_file_set_remain_hidden_when_tmux_is_disabled() {
         let all_menu_titles = app_menus(true, false)
             .into_iter()
             .flat_map(|menu| menu.items)
-            .filter_map(|item| match item {
-                MenuItem::Action { name, .. } => Some(name.as_ref().to_string()),
-                _ => None,
+            .filter_map(|item| {
+                let MenuItem::Action { name, .. } = item else {
+                    return None;
+                };
+                Some(name.as_ref().to_string())
             })
             .collect::<Vec<_>>();
+
         assert!(
             !all_menu_titles.iter().any(|title| matches!(
                 title.as_str(),
