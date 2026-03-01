@@ -41,11 +41,9 @@ impl TerminalView {
         click_count: usize,
         cx: &mut Context<Self>,
     ) {
-        if self.runtime_uses_tmux() {
-            self.switch_tab(tab_index, cx);
-            self.begin_tab_drag(tab_index);
-        }
-        if click_count == 2 && self.runtime_uses_tmux() {
+        self.switch_tab(tab_index, cx);
+        self.begin_tab_drag(tab_index);
+        if click_count == 2 {
             self.begin_rename_tab(tab_index, cx);
         }
     }

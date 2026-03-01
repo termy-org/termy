@@ -69,6 +69,8 @@ impl TerminalView {
             | CommandAction::FocusPaneRight
             | CommandAction::FocusPaneUp
             | CommandAction::FocusPaneDown
+            | CommandAction::FocusPaneNext
+            | CommandAction::FocusPanePrevious
             | CommandAction::ResizePaneLeft
             | CommandAction::ResizePaneRight
             | CommandAction::ResizePaneUp
@@ -286,6 +288,24 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::FocusPaneDown, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_focus_pane_next_action(
+        &mut self,
+        _: &commands::FocusPaneNext,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::FocusPaneNext, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_focus_pane_previous_action(
+        &mut self,
+        _: &commands::FocusPanePrevious,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::FocusPanePrevious, true, window, cx);
     }
 
     pub(in super::super) fn handle_resize_pane_left_action(

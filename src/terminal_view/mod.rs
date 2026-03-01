@@ -64,6 +64,7 @@ const CONFIG_WATCH_INTERVAL_MS: u64 = 750;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 530;
 const TMUX_POLL_INTERVAL_MS: u64 = 16;
 const TMUX_TITLE_REFRESH_DEBOUNCE_MS: u64 = 120;
+const NATIVE_COMMAND_TITLE_DELAY_MS: u64 = 250;
 const SELECTION_BG_ALPHA: f32 = 0.35;
 const DIM_TEXT_FACTOR: f32 = 0.66;
 #[cfg(target_os = "macos")]
@@ -371,6 +372,8 @@ struct TerminalTab {
     manual_title: Option<String>,
     explicit_title: Option<String>,
     shell_title: Option<String>,
+    pending_shell_title: Option<String>,
+    pending_shell_title_deadline: Option<Instant>,
     title: String,
     title_text_width: f32,
     sticky_title_width: f32,
@@ -402,6 +405,8 @@ impl TerminalTab {
             manual_title: None,
             explicit_title: None,
             shell_title: None,
+            pending_shell_title: None,
+            pending_shell_title_deadline: None,
             title,
             title_text_width,
             sticky_title_width,
@@ -873,14 +878,14 @@ impl TerminalView {
         terminal
     }
 
-    fn create_native_tab(terminal: Terminal, cols: u16, rows: u16) -> TerminalTab {
+    fn create_native_tab(tab_id: TabId, terminal: Terminal, cols: u16, rows: u16) -> TerminalTab {
         let title = DEFAULT_TAB_TITLE.to_string();
         let title_text_width = 0.0;
         let sticky_title_width =
             Self::tab_display_width_for_text_px_without_close_with_max(title_text_width, TAB_MAX_WIDTH);
         let display_width =
             Self::tab_display_width_for_text_px_with_max(title_text_width, TAB_MAX_WIDTH);
-        let pane_id = "%native-1".to_string();
+        let pane_id = format!("%native-{tab_id}");
         let pane = TerminalPane {
             id: pane_id.clone(),
             left: 0,
@@ -890,14 +895,16 @@ impl TerminalView {
             terminal,
         };
         TerminalTab {
-            id: 1,
-            window_id: "@native-1".to_string(),
+            id: tab_id,
+            window_id: format!("@native-{tab_id}"),
             window_index: 0,
             panes: vec![pane],
             active_pane_id: pane_id,
             manual_title: None,
             explicit_title: None,
             shell_title: None,
+            pending_shell_title: None,
+            pending_shell_title_deadline: None,
             title,
             title_text_width,
             sticky_title_width,
@@ -1591,12 +1598,13 @@ impl TerminalView {
             Some(initial_snapshot) => view.apply_tmux_snapshot(initial_snapshot),
             None => {
                 if let Some(native_terminal) = native_terminal {
+                    let tab_id = view.allocate_tab_id();
                     view.tabs = vec![Self::create_native_tab(
+                        tab_id,
                         native_terminal,
                         initial_cols,
                         initial_rows,
                     )];
-                    view.next_tab_id = 2;
                     view.active_tab = 0;
                     view.refresh_tab_title(0);
                     view.mark_tab_strip_layout_dirty();
@@ -1891,22 +1899,24 @@ impl TerminalView {
             should_redraw
         } else {
             let mut should_redraw = false;
+            if self.apply_due_native_command_title(self.active_tab, Instant::now()) {
+                should_redraw = true;
+            }
             let events = self.active_terminal().process_events();
             for event in events {
                 match event {
                     TerminalEvent::Wakeup => should_redraw = true,
                     TerminalEvent::Title(title) => {
-                        if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-                            tab.shell_title = Some(Self::truncate_tab_title(title.as_str()));
-                            tab.running_process = false;
-                            self.refresh_tab_title(self.active_tab);
+                        if self.apply_native_osc_title(
+                            self.active_tab,
+                            title.as_str(),
+                            Instant::now(),
+                        ) {
                             should_redraw = true;
                         }
                     }
                     TerminalEvent::ResetTitle => {
-                        if let Some(tab) = self.tabs.get_mut(self.active_tab) {
-                            tab.shell_title = None;
-                            self.refresh_tab_title(self.active_tab);
+                        if self.clear_native_osc_title(self.active_tab) {
                             should_redraw = true;
                         }
                     }
@@ -1919,6 +1929,9 @@ impl TerminalView {
                         should_redraw = true;
                     }
                 }
+            }
+            if self.apply_due_native_command_title(self.active_tab, Instant::now()) {
+                should_redraw = true;
             }
             should_redraw
         }
@@ -2140,15 +2153,15 @@ mod tests {
     #[test]
     fn create_native_tab_starts_with_one_full_size_pane() {
         let terminal = Terminal::new_tmux(TerminalSize::default(), 2000);
-        let tab = TerminalView::create_native_tab(terminal, 120, 42);
+        let tab = TerminalView::create_native_tab(7, terminal, 120, 42);
 
         assert_eq!(tab.panes.len(), 1);
-        assert_eq!(tab.window_id, "@native-1");
+        assert_eq!(tab.window_id, "@native-7");
         assert_eq!(tab.window_index, 0);
-        assert_eq!(tab.active_pane_id, "%native-1");
+        assert_eq!(tab.active_pane_id, "%native-7");
 
         let pane = &tab.panes[0];
-        assert_eq!(pane.id, "%native-1");
+        assert_eq!(pane.id, "%native-7");
         assert_eq!(pane.left, 0);
         assert_eq!(pane.top, 0);
         assert_eq!(pane.width, 120);

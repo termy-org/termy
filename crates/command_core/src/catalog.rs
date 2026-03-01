@@ -15,6 +15,8 @@ macro_rules! termy_command_catalog {
             (FocusPaneRight, "focus_pane_right"),
             (FocusPaneUp, "focus_pane_up"),
             (FocusPaneDown, "focus_pane_down"),
+            (FocusPaneNext, "focus_pane_next"),
+            (FocusPanePrevious, "focus_pane_previous"),
             (ResizePaneLeft, "resize_pane_left"),
             (ResizePaneRight, "resize_pane_right"),
             (ResizePaneUp, "resize_pane_up"),

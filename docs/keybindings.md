@@ -160,6 +160,8 @@ Related UI option:
 - `focus_pane_right`
 - `focus_pane_up`
 - `focus_pane_down`
+- `focus_pane_next`
+- `focus_pane_previous`
 - `resize_pane_left`
 - `resize_pane_right`
 - `resize_pane_up`

@@ -261,20 +261,15 @@ macro_rules! define_commands {
             pub const fn requires_tmux(self) -> bool {
                 matches!(
                     self,
-                    Self::RenameTab
-                        | Self::NewTab
-                        | Self::CloseTab
-                        | Self::MoveTabLeft
-                        | Self::MoveTabRight
-                        | Self::SwitchTabLeft
-                        | Self::SwitchTabRight
-                        | Self::SplitPaneVertical
+                    Self::SplitPaneVertical
                         | Self::SplitPaneHorizontal
                         | Self::ClosePane
                         | Self::FocusPaneLeft
                         | Self::FocusPaneRight
                         | Self::FocusPaneUp
                         | Self::FocusPaneDown
+                        | Self::FocusPaneNext
+                        | Self::FocusPanePrevious
                         | Self::ResizePaneLeft
                         | Self::ResizePaneRight
                         | Self::ResizePaneUp
@@ -531,6 +526,38 @@ define_commands!(
             CommandPaletteVisibility::Always
         )),
         None
+    ),
+    (
+        FocusPaneNext,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Focus Next Pane",
+            "focus pane next cycle",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::Window,
+            2,
+            "Focus Next Pane",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
+    ),
+    (
+        FocusPanePrevious,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Focus Previous Pane",
+            "focus pane previous cycle",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::Window,
+            2,
+            "Focus Previous Pane",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
     ),
     (
         ResizePaneLeft,
@@ -1096,13 +1123,6 @@ mod tests {
         actual.sort_unstable();
 
         let mut expected = vec![
-            "rename_tab",
-            "new_tab",
-            "close_tab",
-            "move_tab_left",
-            "move_tab_right",
-            "switch_tab_left",
-            "switch_tab_right",
             "split_pane_vertical",
             "split_pane_horizontal",
             "close_pane",
@@ -1110,6 +1130,8 @@ mod tests {
             "focus_pane_right",
             "focus_pane_up",
             "focus_pane_down",
+            "focus_pane_next",
+            "focus_pane_previous",
             "resize_pane_left",
             "resize_pane_right",
             "resize_pane_up",

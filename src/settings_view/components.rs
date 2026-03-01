@@ -158,6 +158,7 @@ impl SettingsWindow {
         };
 
         let row = div()
+            .w_full()
             .flex()
             .items_center()
             .justify_between()
@@ -172,6 +173,7 @@ impl SettingsWindow {
                 div()
                     .flex()
                     .flex_1()
+                    .min_w(px(0.0))
                     .flex_col()
                     .gap(px(2.0))
                     .child(
@@ -191,6 +193,7 @@ impl SettingsWindow {
             )
             .child(
                 div()
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap_3()
@@ -606,6 +609,7 @@ impl SettingsWindow {
 
         let row = div()
             .id(SharedString::from(format!("editable-row-{field:?}")))
+            .w_full()
             .flex()
             .items_center()
             .gap_4()
@@ -643,6 +647,7 @@ impl SettingsWindow {
                 div()
                     .flex()
                     .flex_1()
+                    .min_w(px(0.0))
                     .flex_col()
                     .gap(px(2.0))
                     .child(div().text_sm().font_weight(gpui::FontWeight::MEDIUM).text_color(text_primary).child(title))
@@ -650,6 +655,7 @@ impl SettingsWindow {
             )
             .child(
                 div()
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap_2()
@@ -982,6 +988,7 @@ impl SettingsWindow {
 
         let row = div()
             .id("editable-row-background-opacity")
+            .w_full()
             .flex()
             .items_center()
             .gap_4()
@@ -995,6 +1002,7 @@ impl SettingsWindow {
                 div()
                     .flex()
                     .flex_1()
+                    .min_w(px(0.0))
                     .flex_col()
                     .gap(px(2.0))
                     .child(
@@ -1014,6 +1022,7 @@ impl SettingsWindow {
             )
             .child(
                 div()
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap_2()

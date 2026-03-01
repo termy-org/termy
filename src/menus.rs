@@ -188,31 +188,24 @@ mod tests {
 
     #[test]
     fn tmux_only_actions_are_hidden_when_tmux_is_disabled() {
-        let window_menu = app_menus(true, false)
+        let all_menu_titles = app_menus(true, false)
             .into_iter()
-            .find(|menu| menu.name.as_ref() == "Window")
-            .expect("missing Window menu");
+            .flat_map(|menu| menu.items)
+            .filter_map(|item| match item {
+                MenuItem::Action { name, .. } => Some(name.as_ref().to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         assert!(
-            !window_menu
-                .items
-                .iter()
-                .filter_map(|item| match item {
-                    MenuItem::Action { name, .. } => Some(name.as_ref()),
-                    _ => None,
-                })
-                .any(|title| matches!(
-                    title,
-                    "New Tab"
-                        | "Close Tab"
-                        | "Move Tab Left"
-                        | "Move Tab Right"
-                        | "Switch Tab Left"
-                        | "Switch Tab Right"
-                        | "Split Pane Vertical"
-                        | "Split Pane Horizontal"
-                        | "Close Pane"
-                        | "Rename Tab"
-                ))
+            !all_menu_titles.iter().any(|title| matches!(
+                title.as_str(),
+                "Split Pane Vertical"
+                    | "Split Pane Horizontal"
+                    | "Close Pane"
+                    | "Focus Next Pane"
+                    | "Focus Previous Pane"
+                    | "Toggle Pane Zoom"
+            ))
         );
     }
 }

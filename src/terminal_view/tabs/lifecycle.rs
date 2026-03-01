@@ -7,10 +7,6 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if !self.runtime_uses_tmux() {
-            return false;
-        }
-
         match action {
             CommandAction::RenameTab => {
                 self.begin_rename_tab(self.active_tab, cx);
@@ -48,6 +44,8 @@ impl TerminalView {
             CommandAction::FocusPaneRight => self.focus_pane_right(cx),
             CommandAction::FocusPaneUp => self.focus_pane_up(cx),
             CommandAction::FocusPaneDown => self.focus_pane_down(cx),
+            CommandAction::FocusPaneNext => self.focus_pane_next(cx),
+            CommandAction::FocusPanePrevious => self.focus_pane_previous(cx),
             CommandAction::ResizePaneLeft => self.resize_pane_left(cx),
             CommandAction::ResizePaneRight => self.resize_pane_right(cx),
             CommandAction::ResizePaneUp => self.resize_pane_up(cx),
@@ -73,52 +71,103 @@ impl TerminalView {
         }
     }
 
-    pub(crate) fn reorder_tab(&mut self, from: usize, to: usize, cx: &mut Context<Self>) -> bool {
-        if !self.runtime_uses_tmux() {
-            return false;
+    fn adjacent_pane_index(active_pane: usize, pane_count: usize, step: i32) -> Option<usize> {
+        if pane_count <= 1 || active_pane >= pane_count {
+            return None;
         }
+
+        if step > 0 {
+            Some((active_pane + 1) % pane_count)
+        } else if step < 0 {
+            Some((active_pane + pane_count - 1) % pane_count)
+        } else {
+            None
+        }
+    }
+
+    fn remap_index_after_move(index: usize, from: usize, to: usize) -> usize {
+        if index == from {
+            return to;
+        }
+
+        if from < to {
+            if (from + 1..=to).contains(&index) {
+                return index - 1;
+            }
+            index
+        } else if (to..from).contains(&index) {
+            index + 1
+        } else {
+            index
+        }
+    }
+
+    pub(crate) fn reorder_tab(&mut self, from: usize, to: usize, cx: &mut Context<Self>) -> bool {
         if from >= self.tabs.len() || to >= self.tabs.len() || from == to {
             return false;
         }
 
-        let moved_window_id = self.tabs[from].window_id.clone();
-        let mut window_order = self
-            .tabs
-            .iter()
-            .map(|tab| tab.window_id.clone())
-            .collect::<Vec<_>>();
+        if self.runtime_uses_tmux() {
+            let moved_window_id = self.tabs[from].window_id.clone();
+            let mut window_order = self
+                .tabs
+                .iter()
+                .map(|tab| tab.window_id.clone())
+                .collect::<Vec<_>>();
 
-        if from < to {
-            for index in from..to {
-                let source = window_order[index].clone();
-                let target = window_order[index + 1].clone();
-                if let Err(error) = self.tmux_client_required().swap_windows(source.as_str(), target.as_str()) {
-                    termy_toast::error(format!("Failed to reorder tabs: {error}"));
-                    return false;
+            if from < to {
+                for index in from..to {
+                    let source = window_order[index].clone();
+                    let target = window_order[index + 1].clone();
+                    if let Err(error) = self
+                        .tmux_client_required()
+                        .swap_windows(source.as_str(), target.as_str())
+                    {
+                        termy_toast::error(format!("Failed to reorder tabs: {error}"));
+                        return false;
+                    }
+                    window_order.swap(index, index + 1);
                 }
-                window_order.swap(index, index + 1);
+            } else {
+                for index in (to + 1..=from).rev() {
+                    let source = window_order[index].clone();
+                    let target = window_order[index - 1].clone();
+                    if let Err(error) = self
+                        .tmux_client_required()
+                        .swap_windows(source.as_str(), target.as_str())
+                    {
+                        termy_toast::error(format!("Failed to reorder tabs: {error}"));
+                        return false;
+                    }
+                    window_order.swap(index, index - 1);
+                }
+            }
+
+            if !self.refresh_tmux_snapshot() {
+                return false;
+            }
+            if let Some(index) = self
+                .tabs
+                .iter()
+                .position(|tab| tab.window_id == moved_window_id)
+            {
+                self.active_tab = index;
             }
         } else {
-            for index in (to + 1..=from).rev() {
-                let source = window_order[index].clone();
-                let target = window_order[index - 1].clone();
-                if let Err(error) = self.tmux_client_required().swap_windows(source.as_str(), target.as_str()) {
-                    termy_toast::error(format!("Failed to reorder tabs: {error}"));
-                    return false;
-                }
-                window_order.swap(index, index - 1);
-            }
-        }
-
-        if !self.refresh_tmux_snapshot() {
-            return false;
-        }
-        if let Some(index) = self
-            .tabs
-            .iter()
-            .position(|tab| tab.window_id == moved_window_id)
-        {
-            self.active_tab = index;
+            let moved_tab = self.tabs.remove(from);
+            self.tabs.insert(to, moved_tab);
+            self.active_tab = Self::remap_index_after_move(self.active_tab, from, to);
+            self.renaming_tab = self
+                .renaming_tab
+                .map(|index| Self::remap_index_after_move(index, from, to));
+            self.tab_strip.hovered_tab = self
+                .tab_strip
+                .hovered_tab
+                .map(|index| Self::remap_index_after_move(index, from, to));
+            self.tab_strip.hovered_tab_close = self
+                .tab_strip
+                .hovered_tab_close
+                .map(|index| Self::remap_index_after_move(index, from, to));
         }
         self.reset_tab_drag_state();
         self.scroll_active_tab_into_view();
@@ -145,57 +194,86 @@ impl TerminalView {
     }
 
     pub(crate) fn switch_active_tab_left(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.runtime_uses_tmux() {
+        let Some(target_index) = Self::adjacent_tab_index(self.active_tab, self.tabs.len(), false)
+        else {
             return false;
-        }
-        if self.tabs.len() <= 1 {
-            return false;
-        }
+        };
 
-        if let Err(error) = self.tmux_client_required().previous_window() {
-            termy_toast::error(format!("Failed to switch tab: {error}"));
-            return false;
+        if self.runtime_uses_tmux() {
+            if let Err(error) = self.tmux_client_required().previous_window() {
+                termy_toast::error(format!("Failed to switch tab: {error}"));
+                return false;
+            }
+            let refreshed = self.refresh_tmux_snapshot();
+            if refreshed {
+                self.clear_selection();
+                self.scroll_active_tab_into_view();
+                cx.notify();
+            }
+            refreshed
+        } else {
+            self.switch_tab(target_index, cx);
+            true
         }
-        let refreshed = self.refresh_tmux_snapshot();
-        if refreshed {
-            self.clear_selection();
-            self.scroll_active_tab_into_view();
-            cx.notify();
-        }
-        refreshed
     }
 
     pub(crate) fn switch_active_tab_right(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.runtime_uses_tmux() {
+        let Some(target_index) = Self::adjacent_tab_index(self.active_tab, self.tabs.len(), true)
+        else {
             return false;
-        }
-        if self.tabs.len() <= 1 {
-            return false;
-        }
+        };
 
-        if let Err(error) = self.tmux_client_required().next_window() {
-            termy_toast::error(format!("Failed to switch tab: {error}"));
-            return false;
+        if self.runtime_uses_tmux() {
+            if let Err(error) = self.tmux_client_required().next_window() {
+                termy_toast::error(format!("Failed to switch tab: {error}"));
+                return false;
+            }
+            let refreshed = self.refresh_tmux_snapshot();
+            if refreshed {
+                self.clear_selection();
+                self.scroll_active_tab_into_view();
+                cx.notify();
+            }
+            refreshed
+        } else {
+            self.switch_tab(target_index, cx);
+            true
         }
-        let refreshed = self.refresh_tmux_snapshot();
-        if refreshed {
-            self.clear_selection();
-            self.scroll_active_tab_into_view();
-            cx.notify();
-        }
-        refreshed
     }
 
     pub(crate) fn add_tab(&mut self, cx: &mut Context<Self>) {
-        if !self.runtime_uses_tmux() {
-            return;
-        }
-        if let Err(error) = self.tmux_client_required().new_window() {
-            termy_toast::error(format!("Failed to create tab: {error}"));
-            return;
-        }
+        if self.runtime_uses_tmux() {
+            if let Err(error) = self.tmux_client_required().new_window() {
+                termy_toast::error(format!("Failed to create tab: {error}"));
+                return;
+            }
 
-        if self.refresh_tmux_snapshot() {
+            if self.refresh_tmux_snapshot() {
+                self.reset_tab_interaction_state();
+                self.scroll_active_tab_into_view();
+                cx.notify();
+            }
+        } else {
+            let size = self.active_terminal().size();
+            let terminal = match Terminal::new_native(
+                size,
+                self.configured_working_dir.as_deref(),
+                Some(&self.tab_shell_integration),
+                Some(&self.terminal_runtime),
+            ) {
+                Ok(terminal) => terminal,
+                Err(error) => {
+                    termy_toast::error(format!("Failed to create tab: {error}"));
+                    return;
+                }
+            };
+
+            let tab_id = self.allocate_tab_id();
+            self.tabs
+                .push(Self::create_native_tab(tab_id, terminal, size.cols, size.rows));
+            self.active_tab = self.tabs.len() - 1;
+            self.refresh_tab_title(self.active_tab);
+            self.mark_tab_strip_layout_dirty();
             self.reset_tab_interaction_state();
             self.scroll_active_tab_into_view();
             cx.notify();
@@ -203,25 +281,64 @@ impl TerminalView {
     }
 
     pub(crate) fn close_tab(&mut self, index: usize, cx: &mut Context<Self>) {
-        if !self.runtime_uses_tmux() {
-            return;
-        }
         if index >= self.tabs.len() {
             return;
         }
 
-        let window_id = self.tabs[index].window_id.clone();
-        if let Err(error) = self.tmux_client_required().kill_window(window_id.as_str()) {
-            termy_toast::error(format!("Failed to close tab: {error}"));
+        if self.runtime_uses_tmux() {
+            let window_id = self.tabs[index].window_id.clone();
+            if let Err(error) = self.tmux_client_required().kill_window(window_id.as_str()) {
+                termy_toast::error(format!("Failed to close tab: {error}"));
+                return;
+            }
+
+            if self.refresh_tmux_snapshot() {
+                self.reset_tab_drag_state();
+                self.clear_selection();
+                self.scroll_active_tab_into_view();
+                cx.notify();
+            }
             return;
         }
 
-        if self.refresh_tmux_snapshot() {
-            self.reset_tab_drag_state();
-            self.clear_selection();
-            self.scroll_active_tab_into_view();
-            cx.notify();
+        if self.tabs.len() <= 1 {
+            return;
         }
+
+        self.tabs.remove(index);
+        self.mark_tab_strip_layout_dirty();
+
+        if self.active_tab > index {
+            self.active_tab -= 1;
+        } else if self.active_tab >= self.tabs.len() {
+            self.active_tab = self.tabs.len() - 1;
+        }
+
+        match self.renaming_tab {
+            Some(editing) if editing == index => {
+                self.reset_tab_rename_state();
+            }
+            Some(editing) if editing > index => {
+                self.renaming_tab = Some(editing - 1);
+            }
+            _ => {}
+        }
+
+        self.tab_strip.hovered_tab = match self.tab_strip.hovered_tab {
+            Some(hovered) if hovered == index => None,
+            Some(hovered) if hovered > index => Some(hovered - 1),
+            value => value,
+        };
+        self.tab_strip.hovered_tab_close = match self.tab_strip.hovered_tab_close {
+            Some(hovered) if hovered == index => None,
+            Some(hovered) if hovered > index => Some(hovered - 1),
+            value => value,
+        };
+        self.reset_tab_drag_state();
+
+        self.clear_selection();
+        self.scroll_active_tab_into_view();
+        cx.notify();
     }
 
     pub(crate) fn begin_rename_tab(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -249,20 +366,44 @@ impl TerminalView {
     }
 
     pub(crate) fn switch_tab(&mut self, index: usize, cx: &mut Context<Self>) {
-        if !self.runtime_uses_tmux() {
-            return;
-        }
         if index >= self.tabs.len() || index == self.active_tab {
             return;
         }
 
-        let window_id = self.tabs[index].window_id.clone();
-        if let Err(error) = self.tmux_client_required().select_window(window_id.as_str()) {
-            termy_toast::error(format!("Failed to switch tab: {error}"));
-            return;
-        }
+        if self.runtime_uses_tmux() {
+            let window_id = self.tabs[index].window_id.clone();
+            if let Err(error) = self.tmux_client_required().select_window(window_id.as_str()) {
+                termy_toast::error(format!("Failed to switch tab: {error}"));
+                return;
+            }
 
-        if self.refresh_tmux_snapshot() {
+            if self.refresh_tmux_snapshot() {
+                self.reset_tab_rename_state();
+                self.reset_tab_drag_state();
+                self.clear_selection();
+                self.scroll_active_tab_into_view();
+                cx.notify();
+            }
+        } else {
+            let old_active = self.active_tab;
+            self.active_tab = index;
+            if self.tab_width_mode != TabWidthMode::Stable {
+                self.mark_tab_strip_layout_dirty();
+                self.sync_tab_display_widths_for_viewport_if_needed(
+                    self.tab_strip.layout_last_synced_viewport_width,
+                );
+            }
+
+            if let Some(inactive_scrollback) = self.inactive_tab_scrollback {
+                for pane in &self.tabs[old_active].panes {
+                    pane.terminal.set_scrollback_history(inactive_scrollback);
+                }
+                for pane in &self.tabs[index].panes {
+                    pane.terminal
+                        .set_scrollback_history(self.terminal_runtime.scrollback_history);
+                }
+            }
+
             self.reset_tab_rename_state();
             self.reset_tab_drag_state();
             self.clear_selection();
@@ -272,28 +413,30 @@ impl TerminalView {
     }
 
     pub(crate) fn commit_rename_tab(&mut self, cx: &mut Context<Self>) {
-        if !self.runtime_uses_tmux() {
-            self.reset_tab_rename_state();
-            self.reset_tab_drag_state();
-            cx.notify();
-            return;
-        }
         let Some(index) = self.renaming_tab else {
             return;
         };
 
-        let trimmed = self.rename_input.text().trim();
-        if !trimmed.is_empty() {
-            let renamed = Self::truncate_tab_title(trimmed);
-            let window_id = self.tabs[index].window_id.clone();
-            if let Err(error) = self
-                .tmux_client_required()
-                .rename_window(window_id.as_str(), renamed.as_str())
-            {
-                termy_toast::error(format!("Failed to rename tab: {error}"));
-            } else {
-                let _ = self.refresh_tmux_snapshot();
+        if self.runtime_uses_tmux() {
+            let trimmed = self.rename_input.text().trim();
+            if !trimmed.is_empty() {
+                let renamed = Self::truncate_tab_title(trimmed);
+                let window_id = self.tabs[index].window_id.clone();
+                if let Err(error) = self
+                    .tmux_client_required()
+                    .rename_window(window_id.as_str(), renamed.as_str())
+                {
+                    termy_toast::error(format!("Failed to rename tab: {error}"));
+                } else {
+                    let _ = self.refresh_tmux_snapshot();
+                }
             }
+        } else {
+            let trimmed = self.rename_input.text().trim();
+            self.tabs[index].manual_title = (!trimmed.is_empty())
+                .then(|| Self::truncate_tab_title(trimmed))
+                .filter(|title| !title.is_empty());
+            self.refresh_tab_title(index);
         }
 
         self.reset_tab_rename_state();
@@ -492,6 +635,35 @@ impl TerminalView {
         self.apply_focus_snapshot(pane_id.as_str(), Some("No pane below"), cx)
     }
 
+    fn focus_pane_cycle(&mut self, step: i32, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
+
+        let Some(tab) = self.tabs.get(self.active_tab) else {
+            return false;
+        };
+        let Some(active_pane_index) = tab.active_pane_index() else {
+            return false;
+        };
+        let Some(target_pane_index) =
+            Self::adjacent_pane_index(active_pane_index, tab.panes.len(), step)
+        else {
+            return false;
+        };
+
+        let target_pane_id = tab.panes[target_pane_index].id.clone();
+        self.focus_pane_target(target_pane_id.as_str(), cx)
+    }
+
+    pub(crate) fn focus_pane_next(&mut self, cx: &mut Context<Self>) -> bool {
+        self.focus_pane_cycle(1, cx)
+    }
+
+    pub(crate) fn focus_pane_previous(&mut self, cx: &mut Context<Self>) -> bool {
+        self.focus_pane_cycle(-1, cx)
+    }
+
     pub(crate) fn resize_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
         if !self.runtime_uses_tmux() {
             return false;
@@ -610,6 +782,22 @@ mod tests {
     }
 
     #[test]
+    fn adjacent_pane_index_wraps_for_next_and_previous() {
+        assert_eq!(TerminalView::adjacent_pane_index(2, 4, 1), Some(3));
+        assert_eq!(TerminalView::adjacent_pane_index(3, 4, 1), Some(0));
+        assert_eq!(TerminalView::adjacent_pane_index(0, 4, -1), Some(3));
+        assert_eq!(TerminalView::adjacent_pane_index(2, 4, -1), Some(1));
+    }
+
+    #[test]
+    fn adjacent_pane_index_is_none_for_invalid_or_no_movement() {
+        assert_eq!(TerminalView::adjacent_pane_index(0, 0, 1), None);
+        assert_eq!(TerminalView::adjacent_pane_index(0, 1, 1), None);
+        assert_eq!(TerminalView::adjacent_pane_index(2, 2, 1), None);
+        assert_eq!(TerminalView::adjacent_pane_index(0, 2, 0), None);
+    }
+
+    #[test]
     fn adjacent_tab_index_is_none_for_edges() {
         assert_eq!(TerminalView::adjacent_tab_index(0, 5, false), None);
         assert_eq!(TerminalView::adjacent_tab_index(4, 5, true), None);
@@ -620,5 +808,27 @@ mod tests {
         assert_eq!(TerminalView::adjacent_tab_index(0, 0, false), None);
         assert_eq!(TerminalView::adjacent_tab_index(0, 1, true), None);
         assert_eq!(TerminalView::adjacent_tab_index(5, 3, true), None);
+    }
+
+    #[test]
+    fn remap_index_after_move_handles_move_to_right() {
+        assert_eq!(TerminalView::remap_index_after_move(1, 1, 3), 3);
+        assert_eq!(TerminalView::remap_index_after_move(2, 1, 3), 1);
+        assert_eq!(TerminalView::remap_index_after_move(3, 1, 3), 2);
+        assert_eq!(TerminalView::remap_index_after_move(0, 1, 3), 0);
+    }
+
+    #[test]
+    fn remap_index_after_move_handles_move_to_left() {
+        assert_eq!(TerminalView::remap_index_after_move(3, 3, 1), 1);
+        assert_eq!(TerminalView::remap_index_after_move(1, 3, 1), 2);
+        assert_eq!(TerminalView::remap_index_after_move(2, 3, 1), 3);
+        assert_eq!(TerminalView::remap_index_after_move(4, 3, 1), 4);
+    }
+
+    #[test]
+    fn remap_index_after_move_keeps_moved_tab_active() {
+        assert_eq!(TerminalView::remap_index_after_move(2, 2, 1), 1);
+        assert_eq!(TerminalView::remap_index_after_move(2, 2, 3), 3);
     }
 }

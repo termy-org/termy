@@ -805,14 +805,13 @@ impl TerminalView {
             };
             let is_active = index == self.active_tab;
             let is_hovered = self.tab_strip.hovered_tab == Some(index);
-            let show_tab_close = self.runtime_uses_tmux()
-                && Self::tab_shows_close(
-                    self.tab_close_visibility,
-                    is_active,
-                    self.tab_strip.hovered_tab,
-                    self.tab_strip.hovered_tab_close,
-                    index,
-                );
+            let show_tab_close = Self::tab_shows_close(
+                self.tab_close_visibility,
+                is_active,
+                self.tab_strip.hovered_tab,
+                self.tab_strip.hovered_tab_close,
+                index,
+            );
             let is_renaming = self.renaming_tab == Some(index);
             let close_slot_width = if show_tab_close {
                 TAB_CLOSE_SLOT_WIDTH
@@ -870,7 +869,7 @@ impl TerminalView {
         button_size: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if !self.runtime_uses_tmux() || button_size <= 0.0 {
+        if button_size <= 0.0 {
             return div()
                 .id("tabbar-new-tab")
                 .w(px(0.0))

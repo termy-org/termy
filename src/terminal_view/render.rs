@@ -1067,6 +1067,8 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_focus_pane_right_action))
                     .on_action(cx.listener(Self::handle_focus_pane_up_action))
                     .on_action(cx.listener(Self::handle_focus_pane_down_action))
+                    .on_action(cx.listener(Self::handle_focus_pane_next_action))
+                    .on_action(cx.listener(Self::handle_focus_pane_previous_action))
                     .on_action(cx.listener(Self::handle_resize_pane_left_action))
                     .on_action(cx.listener(Self::handle_resize_pane_right_action))
                     .on_action(cx.listener(Self::handle_resize_pane_up_action))

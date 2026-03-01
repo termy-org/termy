@@ -486,6 +486,8 @@ impl TerminalView {
             | CommandAction::FocusPaneRight
             | CommandAction::FocusPaneUp
             | CommandAction::FocusPaneDown
+            | CommandAction::FocusPaneNext
+            | CommandAction::FocusPanePrevious
             | CommandAction::ResizePaneLeft
             | CommandAction::ResizePaneRight
             | CommandAction::ResizePaneUp
@@ -587,12 +589,20 @@ mod tests {
         let items = TerminalView::command_palette_command_items_for_state(true, false);
         assert!(!items.iter().any(|item| matches!(
             item.kind,
-            CommandPaletteItemKind::Command(CommandAction::NewTab
-                | CommandAction::CloseTab
-                | CommandAction::SplitPaneVertical
+            CommandPaletteItemKind::Command(CommandAction::SplitPaneVertical
                 | CommandAction::SplitPaneHorizontal
                 | CommandAction::TogglePaneZoom
-                | CommandAction::RenameTab)
+                | CommandAction::ClosePane
+                | CommandAction::FocusPaneLeft
+                | CommandAction::FocusPaneRight
+                | CommandAction::FocusPaneUp
+                | CommandAction::FocusPaneDown
+                | CommandAction::FocusPaneNext
+                | CommandAction::FocusPanePrevious
+                | CommandAction::ResizePaneLeft
+                | CommandAction::ResizePaneRight
+                | CommandAction::ResizePaneUp
+                | CommandAction::ResizePaneDown)
         )));
     }
 
