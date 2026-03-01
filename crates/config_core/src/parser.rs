@@ -8,8 +8,9 @@ use crate::constants::{
 use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
 use crate::types::{
-    AppConfig, CursorStyle, KeybindConfigLine, TabCloseVisibility, TabTitleMode, TabTitleSource,
-    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
+    AppConfig, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility, TabTitleMode,
+    TabTitleSource, TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId,
+    WorkingDirFallback,
 };
 
 impl AppConfig {
@@ -462,6 +463,40 @@ impl AppConfig {
                         parse_usize_field(&mut diagnostics, line_number, key, value)
                     {
                         config.inactive_tab_scrollback = Some(parsed.min(MAX_SCROLLBACK_HISTORY));
+                    }
+                }
+                RootSettingId::PaneFocusEffect => {
+                    if let Some(parsed) = PaneFocusEffect::from_str(value) {
+                        config.pane_focus_effect = parsed;
+                    } else {
+                        push_invalid_value(
+                            &mut diagnostics,
+                            line_number,
+                            key,
+                            value,
+                            "one of: off, soft_spotlight, cinematic, minimal",
+                        );
+                    }
+                }
+                RootSettingId::PaneFocusStrength => {
+                    if let Some(parsed) = parse_f32_field(
+                        &mut diagnostics,
+                        line_number,
+                        key,
+                        value,
+                        "a number between 0.0 and 1.0",
+                    ) {
+                        if parsed.is_finite() {
+                            config.pane_focus_strength = parsed.clamp(0.0, 1.0);
+                        } else {
+                            push_invalid_value(
+                                &mut diagnostics,
+                                line_number,
+                                key,
+                                value,
+                                "a number between 0.0 and 1.0",
+                            );
+                        }
                     }
                 }
                 RootSettingId::CommandPaletteShowKeybinds => {

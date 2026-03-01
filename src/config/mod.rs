@@ -18,7 +18,7 @@ pub use mutate::{
 };
 pub use termy_config_core::{
     AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors,
-    SHELL_DECIDE_THEME_ID, TabCloseVisibility, TabTitleConfig, TabTitleSource,
+    PaneFocusEffect, SHELL_DECIDE_THEME_ID, TabCloseVisibility, TabTitleConfig, TabTitleSource,
     TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
 };
 

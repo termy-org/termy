@@ -21,6 +21,8 @@ pub(super) enum EditableField {
     CursorStyle,
     ScrollbarVisibility,
     ScrollbarStyle,
+    PaneFocusEffect,
+    PaneFocusStrength,
     TabFallbackTitle,
     TabTitlePriority,
     TabTitleMode,
@@ -207,6 +209,8 @@ impl SettingsWindow {
             RootSettingId::MouseScrollMultiplier,
             RootSettingId::ScrollbarVisibility,
             RootSettingId::ScrollbarStyle,
+            RootSettingId::PaneFocusEffect,
+            RootSettingId::PaneFocusStrength,
             RootSettingId::CommandPaletteShowKeybinds,
         ];
         const TABS_SETTINGS: &[RootSettingId] = &[
@@ -343,7 +347,9 @@ impl SettingsWindow {
             | EditableField::ScrollMultiplier
             | EditableField::CursorStyle
             | EditableField::ScrollbarVisibility
-            | EditableField::ScrollbarStyle => Self::terminal_field_spec(field),
+            | EditableField::ScrollbarStyle
+            | EditableField::PaneFocusEffect
+            | EditableField::PaneFocusStrength => Self::terminal_field_spec(field),
             EditableField::TabFallbackTitle
             | EditableField::TabTitlePriority
             | EditableField::TabTitleMode
@@ -432,6 +438,17 @@ impl SettingsWindow {
             EditableField::CursorStyle => Self::enum_field_spec(RootSettingId::CursorStyle),
             EditableField::ScrollbarVisibility => Self::enum_field_spec(RootSettingId::ScrollbarVisibility),
             EditableField::ScrollbarStyle => Self::enum_field_spec(RootSettingId::ScrollbarStyle),
+            EditableField::PaneFocusEffect => {
+                Self::enum_field_spec(RootSettingId::PaneFocusEffect)
+            }
+            EditableField::PaneFocusStrength => Self::numeric_field_spec(
+                RootSettingId::PaneFocusStrength,
+                NumericStepSpec {
+                    delta: 0.05,
+                    min: 0.0,
+                    max: 1.0,
+                },
+            ),
             _ => unreachable!("invalid terminal field"),
         }
     }
@@ -723,6 +740,17 @@ impl SettingsWindow {
                 }
                 .to_string()
             }
+            EditableField::PaneFocusEffect => match self.config.pane_focus_effect {
+                termy_config_core::PaneFocusEffect::Off => "off",
+                termy_config_core::PaneFocusEffect::SoftSpotlight => "soft_spotlight",
+                termy_config_core::PaneFocusEffect::Cinematic => "cinematic",
+                termy_config_core::PaneFocusEffect::Minimal => "minimal",
+            }
+            .to_string(),
+            EditableField::PaneFocusStrength => format!(
+                "{}",
+                (self.config.pane_focus_strength * 100.0).round() as i32
+            ),
             EditableField::TabFallbackTitle => self.config.tab_title.fallback.clone(),
             EditableField::TabTitlePriority => self
                 .config
@@ -847,6 +875,15 @@ impl SettingsWindow {
                 self.config.mouse_scroll_multiplier = next;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::MouseScrollMultiplier,
+                    &format!("{:.3}", next),
+                )
+            }
+            EditableField::PaneFocusStrength => {
+                let next =
+                    (self.config.pane_focus_strength + (delta as f32 * step.delta)).clamp(step.min, step.max);
+                self.config.pane_focus_strength = next;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::PaneFocusStrength,
                     &format!("{:.3}", next),
                 )
             }
@@ -988,6 +1025,8 @@ mod tests {
             EditableField::CursorStyle,
             EditableField::ScrollbarVisibility,
             EditableField::ScrollbarStyle,
+            EditableField::PaneFocusEffect,
+            EditableField::PaneFocusStrength,
             EditableField::TabFallbackTitle,
             EditableField::TabTitlePriority,
             EditableField::TabTitleMode,
@@ -1020,6 +1059,7 @@ mod tests {
             EditableField::CursorStyle,
             EditableField::ScrollbarVisibility,
             EditableField::ScrollbarStyle,
+            EditableField::PaneFocusEffect,
             EditableField::TabTitleMode,
             EditableField::TabCloseVisibility,
             EditableField::TabWidthMode,
@@ -1043,6 +1083,7 @@ mod tests {
             EditableField::ScrollbackHistory,
             EditableField::InactiveTabScrollback,
             EditableField::ScrollMultiplier,
+            EditableField::PaneFocusStrength,
             EditableField::WindowWidth,
             EditableField::WindowHeight,
         ];

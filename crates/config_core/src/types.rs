@@ -1,8 +1,9 @@
 use crate::constants::{
     DEFAULT_COLORTERM, DEFAULT_CURSOR_BLINK, DEFAULT_INACTIVE_TAB_SCROLLBACK,
-    DEFAULT_MOUSE_SCROLL_MULTIPLIER, DEFAULT_SCROLLBACK_HISTORY, DEFAULT_TAB_TITLE_COMMAND_FORMAT,
-    DEFAULT_TAB_TITLE_EXPLICIT_PREFIX, DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT,
-    DEFAULT_TERM, DEFAULT_TMUX_BINARY, DEFAULT_TMUX_ENABLED, DEFAULT_TMUX_PERSISTENCE,
+    DEFAULT_MOUSE_SCROLL_MULTIPLIER, DEFAULT_PANE_FOCUS_STRENGTH, DEFAULT_SCROLLBACK_HISTORY,
+    DEFAULT_TAB_TITLE_COMMAND_FORMAT, DEFAULT_TAB_TITLE_EXPLICIT_PREFIX,
+    DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT, DEFAULT_TERM,
+    DEFAULT_TMUX_BINARY, DEFAULT_TMUX_ENABLED, DEFAULT_TMUX_PERSISTENCE,
     DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
 };
 
@@ -215,6 +216,27 @@ impl TerminalScrollbarStyle {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PaneFocusEffect {
+    Off,
+    #[default]
+    SoftSpotlight,
+    Cinematic,
+    Minimal,
+}
+
+impl PaneFocusEffect {
+    pub(crate) fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "off" => Some(Self::Off),
+            "soft_spotlight" | "softspotlight" | "soft-spotlight" => Some(Self::SoftSpotlight),
+            "cinematic" => Some(Self::Cinematic),
+            "minimal" => Some(Self::Minimal),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CustomColors {
     pub foreground: Option<Rgb8>,
@@ -254,6 +276,8 @@ pub struct AppConfig {
     pub terminal_scrollbar_style: TerminalScrollbarStyle,
     pub scrollback_history: usize,
     pub inactive_tab_scrollback: Option<usize>,
+    pub pane_focus_effect: PaneFocusEffect,
+    pub pane_focus_strength: f32,
     pub command_palette_show_keybinds: bool,
     pub keybind_lines: Vec<KeybindConfigLine>,
     pub colors: CustomColors,
@@ -297,6 +321,8 @@ impl Default for AppConfig {
             terminal_scrollbar_style: TerminalScrollbarStyle::default(),
             scrollback_history: DEFAULT_SCROLLBACK_HISTORY,
             inactive_tab_scrollback: DEFAULT_INACTIVE_TAB_SCROLLBACK,
+            pane_focus_effect: PaneFocusEffect::default(),
+            pane_focus_strength: DEFAULT_PANE_FOCUS_STRENGTH,
             command_palette_show_keybinds: true,
             keybind_lines: Vec::new(),
             colors: CustomColors::default(),

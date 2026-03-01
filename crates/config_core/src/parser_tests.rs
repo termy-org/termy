@@ -1,6 +1,6 @@
 use crate::{
-    AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle, Rgb8, TabCloseVisibility,
-    TabTitleMode, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
+    AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle, PaneFocusEffect, Rgb8,
+    TabCloseVisibility, TabTitleMode, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
     TerminalScrollbarVisibility, WorkingDirFallback,
 };
 
@@ -210,6 +210,21 @@ fn enum_keys_parse_table_driven() {
         TerminalScrollbarStyle::Neutral
     );
 
+    let pane_focus_effect_cases = [
+        ("off", PaneFocusEffect::Off),
+        ("soft_spotlight", PaneFocusEffect::SoftSpotlight),
+        ("cinematic", PaneFocusEffect::Cinematic),
+        ("minimal", PaneFocusEffect::Minimal),
+    ];
+    for (input, expected) in pane_focus_effect_cases {
+        let config = parse(&format!("pane_focus_effect = {}\n", input));
+        assert_eq!(config.pane_focus_effect, expected);
+    }
+    assert_eq!(
+        parse("pane_focus_effect = unknown\n").pane_focus_effect,
+        PaneFocusEffect::SoftSpotlight
+    );
+
     let fallback_cases = [
         ("home", WorkingDirFallback::Home),
         ("process", WorkingDirFallback::Process),
@@ -360,6 +375,20 @@ fn numeric_keys_parse_table_driven() {
     assert_eq!(
         parse("transparent_background_opacity = 0.2\n").background_opacity,
         defaults.background_opacity
+    );
+
+    assert_eq!(parse("pane_focus_strength = -0.5\n").pane_focus_strength, 0.0);
+    assert_eq!(parse("pane_focus_strength = 4\n").pane_focus_strength, 1.0);
+    let nan_pane_focus_strength = parse_report("pane_focus_strength = NaN\n");
+    assert_eq!(
+        nan_pane_focus_strength.config.pane_focus_strength,
+        defaults.pane_focus_strength
+    );
+    assert!(
+        nan_pane_focus_strength
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.kind == ConfigDiagnosticKind::InvalidValue)
     );
 
     assert_eq!(

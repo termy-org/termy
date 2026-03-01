@@ -368,11 +368,30 @@ impl SettingsWindow {
     }
 
     pub(super) fn render_terminal_ui_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let pane_focus_effect_meta = Self::setting_metadata_or_fallback("pane_focus_effect");
+        let pane_focus_strength_meta = Self::setting_metadata_or_fallback("pane_focus_strength");
         let palette_meta = Self::setting_metadata_or_fallback("command_palette_show_keybinds");
+        let pane_focus_strength_percent = (self.config.pane_focus_strength * 100.0).round() as i32;
         let command_palette_show_keybinds = self.config.command_palette_show_keybinds;
 
         div()
             .child(self.render_group_header("UI"))
+            .child(self.render_editable_row(
+                "pane_focus_effect",
+                EditableField::PaneFocusEffect,
+                pane_focus_effect_meta.title,
+                pane_focus_effect_meta.description,
+                self.editable_field_value(EditableField::PaneFocusEffect),
+                cx,
+            ))
+            .child(self.render_editable_row(
+                "pane_focus_strength",
+                EditableField::PaneFocusStrength,
+                pane_focus_strength_meta.title,
+                pane_focus_strength_meta.description,
+                format!("{}%", pane_focus_strength_percent),
+                cx,
+            ))
             .child(self.render_setting_row(
                 "command_palette_show_keybinds",
                 "command_palette_show_keybinds-toggle",

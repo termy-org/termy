@@ -1,5 +1,5 @@
 use crate::types::{
-    AppConfig, CursorStyle, TabCloseVisibility, TabTitleMode, TabWidthMode,
+    AppConfig, CursorStyle, PaneFocusEffect, TabCloseVisibility, TabTitleMode, TabWidthMode,
     TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
 };
 
@@ -276,6 +276,25 @@ pub const WORKING_DIR_FALLBACK_ENUM_CHOICES: &[EnumChoice] = &[
     },
 ];
 
+pub const PANE_FOCUS_EFFECT_ENUM_CHOICES: &[EnumChoice] = &[
+    EnumChoice {
+        value: "off",
+        label: "Off",
+    },
+    EnumChoice {
+        value: "soft_spotlight",
+        label: "Soft Spotlight",
+    },
+    EnumChoice {
+        value: "cinematic",
+        label: "Cinematic",
+    },
+    EnumChoice {
+        value: "minimal",
+        label: "Minimal",
+    },
+];
+
 define_root_settings! {
     (Theme, "theme", [], Appearance, "THEME", "Theme", "Current color scheme name", ["color", "scheme", "appearance"], RootSettingValueKind::Special, false),
     (TmuxEnabled, "tmux_enabled", [], Terminal, "TMUX", "Tmux Enabled", "Enable tmux runtime integration", ["tmux", "runtime", "integration", "enabled"], RootSettingValueKind::Boolean, false),
@@ -312,6 +331,8 @@ define_root_settings! {
     (ScrollbarStyle, "scrollbar_style", [], Terminal, "SCROLLING", "Scrollbar Style", "Terminal scrollbar color style", ["scrollbar", "style", "theme"], RootSettingValueKind::Enum, false),
     (ScrollbackHistory, "scrollback_history", ["scrollback"], Terminal, "SCROLLING", "Scrollback History", "Lines retained in terminal scrollback", ["scrollback", "history", "buffer", "lines"], RootSettingValueKind::Numeric, false),
     (InactiveTabScrollback, "inactive_tab_scrollback", [], Terminal, "SCROLLING", "Inactive Tab Scrollback", "Scrollback limit for inactive tabs", ["scrollback", "inactive", "tabs"], RootSettingValueKind::Numeric, false),
+    (PaneFocusEffect, "pane_focus_effect", [], Terminal, "UI", "Pane Focus Effect", "How inactive panes are visually dimmed when a pane is active", ["pane", "focus", "dimming", "effect"], RootSettingValueKind::Enum, false),
+    (PaneFocusStrength, "pane_focus_strength", [], Terminal, "UI", "Pane Focus Strength", "Strength of active pane emphasis (0.0 to 1.0)", ["pane", "focus", "strength", "dimming"], RootSettingValueKind::Numeric, false),
     (CommandPaletteShowKeybinds, "command_palette_show_keybinds", [], Terminal, "UI", "Show Keybindings In Palette", "Show shortcut badges in command palette rows", ["palette", "keybinds", "shortcuts"], RootSettingValueKind::Boolean, false),
     (Keybind, "keybind", [], Keybindings, "KEYBINDS", "Keybind Directive", "Keybinding override directive", ["keybind", "shortcut", "command"], RootSettingValueKind::Special, true),
 }
@@ -359,6 +380,7 @@ pub fn root_setting_enum_choices(id: RootSettingId) -> Option<&'static [EnumChoi
         RootSettingId::CursorStyle => Some(CURSOR_STYLE_ENUM_CHOICES),
         RootSettingId::ScrollbarVisibility => Some(SCROLLBAR_VISIBILITY_ENUM_CHOICES),
         RootSettingId::ScrollbarStyle => Some(SCROLLBAR_STYLE_ENUM_CHOICES),
+        RootSettingId::PaneFocusEffect => Some(PANE_FOCUS_EFFECT_ENUM_CHOICES),
         _ => None,
     }
 }
@@ -442,6 +464,13 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         }),
         RootSettingId::ScrollbackHistory => Some(config.scrollback_history.to_string()),
         RootSettingId::InactiveTabScrollback => config.inactive_tab_scrollback.map(|v| v.to_string()),
+        RootSettingId::PaneFocusEffect => Some(match config.pane_focus_effect {
+            PaneFocusEffect::Off => "off".to_string(),
+            PaneFocusEffect::SoftSpotlight => "soft_spotlight".to_string(),
+            PaneFocusEffect::Cinematic => "cinematic".to_string(),
+            PaneFocusEffect::Minimal => "minimal".to_string(),
+        }),
+        RootSettingId::PaneFocusStrength => Some(config.pane_focus_strength.to_string()),
         RootSettingId::CommandPaletteShowKeybinds => Some(config.command_palette_show_keybinds.to_string()),
         RootSettingId::Keybind => None,
     }
@@ -523,6 +552,15 @@ mod tests {
             enum_choice_values(RootSettingId::WorkingDirFallback),
             vec!["home", "process"]
         );
+
+        assert_eq!(
+            root_setting_value_kind(RootSettingId::PaneFocusEffect),
+            RootSettingValueKind::Enum
+        );
+        assert_eq!(
+            enum_choice_values(RootSettingId::PaneFocusEffect),
+            vec!["off", "soft_spotlight", "cinematic", "minimal"]
+        );
     }
 
     #[test]
@@ -544,5 +582,11 @@ mod tests {
             RootSettingValueKind::Boolean
         );
         assert!(root_setting_enum_choices(RootSettingId::CursorBlink).is_none());
+
+        assert_eq!(
+            root_setting_value_kind(RootSettingId::PaneFocusStrength),
+            RootSettingValueKind::Numeric
+        );
+        assert!(root_setting_enum_choices(RootSettingId::PaneFocusStrength).is_none());
     }
 }

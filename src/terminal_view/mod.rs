@@ -2,7 +2,8 @@ use crate::colors::TerminalColors;
 use crate::commands::{self, CommandAction};
 use crate::config::{
     self, AppConfig, CursorStyle as AppCursorStyle, TabCloseVisibility, TabTitleConfig,
-    TabTitleSource, TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility,
+    PaneFocusEffect, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
+    TerminalScrollbarVisibility,
 };
 use crate::keybindings;
 use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
@@ -123,6 +124,9 @@ const SEARCH_COUNTER_TEXT_ALPHA: f32 = 0.60;
 const SEARCH_BUTTON_TEXT_ALPHA: f32 = 0.70;
 const SEARCH_BUTTON_HOVER_BG_ALPHA: f32 = 0.20;
 const SEARCH_INPUT_SELECTION_ALPHA: f32 = 0.30;
+const PANE_FOCUS_ANIMATION_MS: u64 = 140;
+const PANE_FOCUS_ANIMATION_FRAME_MS: u64 = 16;
+const PANE_FOCUS_ANIMATION_DURATION: Duration = Duration::from_millis(PANE_FOCUS_ANIMATION_MS);
 
 type TabId = u64;
 
@@ -199,6 +203,28 @@ impl TerminalScrollbarMarkerCache {
         self.key = None;
         self.marker_tops.clear();
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PaneFocusTarget {
+    tab_id: TabId,
+    pane_id: String,
+}
+
+#[derive(Clone, Debug)]
+struct PaneFocusTransition {
+    tab_id: TabId,
+    from_pane_id: String,
+    to_pane_id: String,
+    started_at: Instant,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PaneFocusPreset {
+    inactive_fg_blend: f32,
+    inactive_bg_blend: f32,
+    inactive_desaturate: f32,
+    active_border_alpha: f32,
 }
 
 enum Terminal {
@@ -620,6 +646,40 @@ fn pane_divider_color(chrome_background: gpui::Rgba, foreground: gpui::Rgba) -> 
     resolve_chrome_stroke_color(chrome_background, foreground, TAB_STROKE_FOREGROUND_MIX)
 }
 
+fn pane_focus_strength_factor(pane_focus_strength: f32) -> f32 {
+    pane_focus_strength.clamp(0.0, 1.0)
+}
+
+fn pane_focus_preset(effect: PaneFocusEffect) -> Option<PaneFocusPreset> {
+    match effect {
+        PaneFocusEffect::Off => None,
+        PaneFocusEffect::SoftSpotlight => Some(PaneFocusPreset {
+            inactive_fg_blend: 0.36,
+            inactive_bg_blend: 0.12,
+            inactive_desaturate: 0.0,
+            active_border_alpha: 0.38,
+        }),
+        PaneFocusEffect::Cinematic => Some(PaneFocusPreset {
+            inactive_fg_blend: 0.52,
+            inactive_bg_blend: 0.18,
+            inactive_desaturate: 0.34,
+            active_border_alpha: 0.46,
+        }),
+        PaneFocusEffect::Minimal => Some(PaneFocusPreset {
+            inactive_fg_blend: 0.22,
+            inactive_bg_blend: 0.08,
+            inactive_desaturate: 0.0,
+            active_border_alpha: 0.28,
+        }),
+    }
+}
+
+fn pane_focus_ease_out(t: f32) -> f32 {
+    let clamped = t.clamp(0.0, 1.0);
+    let inv = 1.0 - clamped;
+    1.0 - (inv * inv * inv)
+}
+
 #[derive(Clone, Copy)]
 struct OverlayStyleBuilder<'a> {
     colors: &'a TerminalColors,
@@ -732,6 +792,11 @@ pub struct TerminalView {
     padding_x: f32,
     padding_y: f32,
     mouse_scroll_multiplier: f32,
+    pane_focus_effect: PaneFocusEffect,
+    pane_focus_strength: f32,
+    pane_focus_last_target: Option<PaneFocusTarget>,
+    pane_focus_transition: Option<PaneFocusTransition>,
+    pane_focus_animation_scheduled: bool,
     line_height: f32,
     selection_anchor: Option<CellPos>,
     selection_head: Option<CellPos>,
@@ -1242,6 +1307,106 @@ impl TerminalView {
         scaled_chrome_alpha_for_opacity(base_alpha, self.background_opacity)
     }
 
+    fn pane_focus_config(&self) -> Option<(PaneFocusPreset, f32)> {
+        let preset = pane_focus_preset(self.pane_focus_effect)?;
+        let strength = pane_focus_strength_factor(self.pane_focus_strength);
+        (strength > f32::EPSILON).then_some((preset, strength))
+    }
+
+    fn update_pane_focus_target(
+        &mut self,
+        tab_id: Option<TabId>,
+        pane_count: usize,
+        active_pane_id: Option<&str>,
+        now: Instant,
+    ) {
+        let Some(tab_id) = tab_id else {
+            self.pane_focus_last_target = None;
+            self.pane_focus_transition = None;
+            return;
+        };
+        let Some(active_pane_id) = active_pane_id else {
+            self.pane_focus_last_target = None;
+            self.pane_focus_transition = None;
+            return;
+        };
+
+        let next = PaneFocusTarget {
+            tab_id,
+            pane_id: active_pane_id.to_string(),
+        };
+
+        if pane_count <= 1 {
+            self.pane_focus_last_target = Some(next);
+            self.pane_focus_transition = None;
+            return;
+        }
+
+        match &self.pane_focus_last_target {
+            None => {
+                self.pane_focus_last_target = Some(next);
+                self.pane_focus_transition = None;
+            }
+            Some(previous) if previous == &next => {}
+            Some(previous) if previous.tab_id != next.tab_id => {
+                self.pane_focus_last_target = Some(next);
+                self.pane_focus_transition = None;
+            }
+            Some(previous) => {
+                self.pane_focus_transition = Some(PaneFocusTransition {
+                    tab_id: next.tab_id,
+                    from_pane_id: previous.pane_id.clone(),
+                    to_pane_id: next.pane_id.clone(),
+                    started_at: now,
+                });
+                self.pane_focus_last_target = Some(next);
+            }
+        }
+    }
+
+    fn pane_focus_transition_snapshot(
+        &mut self,
+        active_tab_id: Option<TabId>,
+        now: Instant,
+    ) -> Option<(String, String, f32)> {
+        let transition = self.pane_focus_transition.as_ref()?;
+        if active_tab_id != Some(transition.tab_id) {
+            self.pane_focus_transition = None;
+            return None;
+        }
+
+        let elapsed = now.saturating_duration_since(transition.started_at);
+        if elapsed >= PANE_FOCUS_ANIMATION_DURATION {
+            self.pane_focus_transition = None;
+            return None;
+        }
+        let progress =
+            pane_focus_ease_out(elapsed.as_secs_f32() / PANE_FOCUS_ANIMATION_DURATION.as_secs_f32());
+        Some((
+            transition.from_pane_id.clone(),
+            transition.to_pane_id.clone(),
+            progress,
+        ))
+    }
+
+    fn schedule_pane_focus_animation(&mut self, cx: &mut Context<Self>) {
+        if self.pane_focus_animation_scheduled || self.pane_focus_transition.is_none() {
+            return;
+        }
+
+        self.pane_focus_animation_scheduled = true;
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            smol::Timer::after(Duration::from_millis(PANE_FOCUS_ANIMATION_FRAME_MS)).await;
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    view.pane_focus_animation_scheduled = false;
+                    cx.notify();
+                })
+            });
+        })
+        .detach();
+    }
+
     fn effective_terminal_padding(&self) -> (f32, f32) {
         if self.active_terminal().alternate_screen_mode() {
             (0.0, 0.0)
@@ -1666,6 +1831,11 @@ impl TerminalView {
             padding_x,
             padding_y,
             mouse_scroll_multiplier: config.mouse_scroll_multiplier,
+            pane_focus_effect: config.pane_focus_effect,
+            pane_focus_strength: config.pane_focus_strength,
+            pane_focus_last_target: None,
+            pane_focus_transition: None,
+            pane_focus_animation_scheduled: false,
             line_height: 1.4,
             selection_anchor: None,
             selection_head: None,
@@ -1806,6 +1976,15 @@ impl TerminalView {
         self.padding_x = config.padding_x.max(0.0);
         self.padding_y = config.padding_y.max(0.0);
         self.mouse_scroll_multiplier = config.mouse_scroll_multiplier;
+        if self.pane_focus_effect != config.pane_focus_effect
+            || (self.pane_focus_strength - config.pane_focus_strength).abs() > f32::EPSILON
+        {
+            self.pane_focus_last_target = None;
+            self.pane_focus_transition = None;
+            self.pane_focus_animation_scheduled = false;
+        }
+        self.pane_focus_effect = config.pane_focus_effect;
+        self.pane_focus_strength = config.pane_focus_strength;
         if self.terminal_scrollbar_visibility != config.terminal_scrollbar_visibility {
             self.terminal_scrollbar_visibility = config.terminal_scrollbar_visibility;
             self.terminal_scrollbar_visibility_controller.reset();
@@ -2191,6 +2370,39 @@ mod tests {
             pane_divider_color(chrome_surface_bg, foreground),
             resolve_chrome_stroke_color(chrome_surface_bg, foreground, TAB_STROKE_FOREGROUND_MIX)
         );
+    }
+
+    #[test]
+    fn pane_focus_preset_is_disabled_for_off() {
+        assert!(pane_focus_preset(PaneFocusEffect::Off).is_none());
+    }
+
+    #[test]
+    fn pane_focus_preset_strength_scales_monotonically() {
+        let preset = pane_focus_preset(PaneFocusEffect::SoftSpotlight)
+            .expect("soft spotlight preset should exist");
+        let low_strength = pane_focus_strength_factor(0.2);
+        let high_strength = pane_focus_strength_factor(0.8);
+
+        assert!(
+            (preset.inactive_fg_blend * high_strength)
+                > (preset.inactive_fg_blend * low_strength)
+        );
+        assert!(
+            (preset.inactive_bg_blend * high_strength)
+                > (preset.inactive_bg_blend * low_strength)
+        );
+        assert!(
+            (preset.active_border_alpha * high_strength)
+                > (preset.active_border_alpha * low_strength)
+        );
+    }
+
+    #[test]
+    fn pane_focus_ease_out_matches_endpoint_expectations() {
+        assert_eq!(pane_focus_ease_out(0.0), 0.0);
+        assert_eq!(pane_focus_ease_out(1.0), 1.0);
+        assert!(pane_focus_ease_out(0.5) > 0.5);
     }
 
     #[test]

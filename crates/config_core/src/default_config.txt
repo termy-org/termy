@@ -69,6 +69,10 @@ scrollbar_style = neutral
 scrollback_history = 2000
 # Scrollback limit for inactive tabs
 # inactive_tab_scrollback = none
+# How inactive panes are visually dimmed when a pane is active
+pane_focus_effect = soft_spotlight
+# Strength of active pane emphasis (0.0 to 1.0)
+pane_focus_strength = 0.35
 # Show shortcut badges in command palette rows
 command_palette_show_keybinds = true
 

@@ -7,6 +7,32 @@ fn cell_ranges_overlap(start_a: u32, end_a: u32, start_b: u32, end_b: u32) -> bo
     start_a < end_b && start_b < end_a
 }
 
+fn blend_rgb_only(base: gpui::Rgba, target: gpui::Rgba, factor: f32) -> gpui::Rgba {
+    let factor = factor.clamp(0.0, 1.0);
+    let inv = 1.0 - factor;
+    gpui::Rgba {
+        r: (base.r * inv) + (target.r * factor),
+        g: (base.g * inv) + (target.g * factor),
+        b: (base.b * inv) + (target.b * factor),
+        a: base.a,
+    }
+}
+
+fn desaturate_rgb(color: gpui::Rgba, amount: f32) -> gpui::Rgba {
+    let amount = amount.clamp(0.0, 1.0);
+    if amount <= f32::EPSILON {
+        return color;
+    }
+    let luma = (color.r * 0.2126) + (color.g * 0.7152) + (color.b * 0.0722);
+    let inv = 1.0 - amount;
+    gpui::Rgba {
+        r: (color.r * inv) + (luma * amount),
+        g: (color.g * inv) + (luma * amount),
+        b: (color.b * inv) + (luma * amount),
+        a: color.a,
+    }
+}
+
 impl Focusable for TerminalView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -468,7 +494,23 @@ impl Render for TerminalView {
 
         self.sync_terminal_size(window, cell_size);
 
+        let now = Instant::now();
         let active_pane_id = self.active_pane_id().map(ToOwned::to_owned);
+        let active_tab_focus_snapshot = self
+            .tabs
+            .get(self.active_tab)
+            .map(|tab| (tab.id, tab.panes.len()));
+        self.update_pane_focus_target(
+            active_tab_focus_snapshot.map(|(id, _)| id),
+            active_tab_focus_snapshot
+                .map(|(_, pane_count)| pane_count)
+                .unwrap_or(0),
+            active_pane_id.as_deref(),
+            now,
+        );
+        let pane_focus_transition =
+            self.pane_focus_transition_snapshot(active_tab_focus_snapshot.map(|(id, _)| id), now);
+        let pane_focus_config = self.pane_focus_config();
         let terminal_cursor_active =
             !self.is_command_palette_open() && self.renaming_tab.is_none() && !self.search_open;
         let cursor_visible = terminal_cursor_active
@@ -481,9 +523,13 @@ impl Render for TerminalView {
         let divider_color: gpui::Hsla = divider_rgba.into();
         let mut pane_layers = Vec::<AnyElement>::new();
         let mut pane_dividers = Vec::<AnyElement>::new();
+        let mut pane_focus_accents = Vec::<AnyElement>::new();
+        let mut pane_focus_needs_animation = false;
 
         if let Some(active_tab) = self.tabs.get(self.active_tab) {
             let multi_pane = active_tab.panes.len() > 1;
+            let pane_focus_enabled = multi_pane && pane_focus_config.is_some();
+            pane_focus_needs_animation = pane_focus_enabled && pane_focus_transition.is_some();
             let max_right_cells = active_tab
                 .panes
                 .iter()
@@ -506,6 +552,42 @@ impl Render for TerminalView {
                     continue;
                 }
                 let is_active_pane = active_pane_id.as_deref() == Some(pane.id.as_str());
+                let (pane_inactive_focus, pane_active_focus) = if pane_focus_enabled {
+                    if let Some((from_pane_id, to_pane_id, progress)) = pane_focus_transition.as_ref()
+                    {
+                        if pane.id == *from_pane_id {
+                            (*progress, 1.0 - *progress)
+                        } else if pane.id == *to_pane_id {
+                            (1.0 - *progress, *progress)
+                        } else {
+                            (1.0, 0.0)
+                        }
+                    } else if is_active_pane {
+                        (0.0, 1.0)
+                    } else {
+                        (1.0, 0.0)
+                    }
+                } else {
+                    (0.0, 0.0)
+                };
+                let (
+                    pane_inactive_fg_blend,
+                    pane_inactive_bg_blend,
+                    pane_inactive_desaturate,
+                    pane_active_border_alpha,
+                ) = if let Some((preset, strength)) = pane_focus_config {
+                    let inactive_scale = strength * pane_inactive_focus;
+                    let active_scale = strength * pane_active_focus;
+                    (
+                        preset.inactive_fg_blend * inactive_scale,
+                        preset.inactive_bg_blend * inactive_scale,
+                        preset.inactive_desaturate * inactive_scale,
+                        preset.active_border_alpha * active_scale,
+                    )
+                } else {
+                    (0.0, 0.0, 0.0, 0.0)
+                };
+                let pane_focus_target_bg = colors.background;
                 let estimated_cells = cols.saturating_mul(rows);
                 let mut cells_to_render: Vec<CellRenderInfo> = Vec::with_capacity(estimated_cells);
                 let (cursor_col, cursor_row) = terminal.cursor_position();
@@ -544,6 +626,16 @@ impl Render for TerminalView {
                                 fg.b *= DIM_TEXT_FACTOR;
                             }
                             bg.a *= effective_background_opacity;
+                            if pane_inactive_fg_blend > f32::EPSILON {
+                                fg = blend_rgb_only(fg, pane_focus_target_bg, pane_inactive_fg_blend);
+                            }
+                            if pane_inactive_bg_blend > f32::EPSILON {
+                                bg = blend_rgb_only(bg, terminal_surface_bg, pane_inactive_bg_blend);
+                            }
+                            if pane_inactive_desaturate > f32::EPSILON {
+                                fg = desaturate_rgb(fg, pane_inactive_desaturate);
+                                bg = desaturate_rgb(bg, pane_inactive_desaturate);
+                            }
 
                             let c = cell_content.c;
                             let is_cursor = show_cursor && col == cursor_col && row == cursor_row;
@@ -692,7 +784,29 @@ impl Render for TerminalView {
                         .child(terminal_grid)
                         .into_any_element(),
                 );
+
+                if pane_active_border_alpha > f32::EPSILON {
+                    let mut accent = blend_rgb_only(colors.cursor, colors.foreground, 0.18);
+                    accent.a = self.scaled_chrome_alpha(pane_active_border_alpha);
+                    let accent_hsla: gpui::Hsla = accent.into();
+                    pane_focus_accents.push(
+                        div()
+                            .id(SharedString::from(format!("pane-focus-accent-{}", pane.id)))
+                            .absolute()
+                            .left(px(pane_left))
+                            .top(px(pane_top))
+                            .w(px(pane_width))
+                            .h(px(pane_height))
+                            .border_1()
+                            .border_color(accent_hsla)
+                            .into_any_element(),
+                    );
+                }
             }
+        }
+
+        if pane_focus_needs_animation {
+            self.schedule_pane_focus_animation(cx);
         }
 
         let focus_handle = self.focus_handle.clone();
@@ -733,6 +847,7 @@ impl Render for TerminalView {
             .h_full()
             .children(pane_layers)
             .children(pane_dividers)
+            .children(pane_focus_accents)
             .into_any_element();
         let command_palette_overlay = if self.is_command_palette_open() {
             Some(self.render_command_palette_modal(cx))

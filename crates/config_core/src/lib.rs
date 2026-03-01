@@ -28,9 +28,9 @@ pub use schema::{
     root_setting_from_key, root_setting_spec, root_setting_specs, root_setting_value_kind,
 };
 pub use types::{
-    AppConfig, CursorStyle, CustomColors, KeybindConfigLine, Rgb8, TabCloseVisibility,
-    TabTitleConfig, TabTitleMode, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
-    TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
+    AppConfig, CursorStyle, CustomColors, KeybindConfigLine, PaneFocusEffect, Rgb8,
+    TabCloseVisibility, TabTitleConfig, TabTitleMode, TabTitleSource, TabWidthMode,
+    TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
 };
 
 #[cfg(test)]
