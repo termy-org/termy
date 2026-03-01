@@ -1,6 +1,15 @@
 use super::super::*;
 
 impl TerminalView {
+    pub(crate) fn fallback_title(&self) -> &str {
+        let fallback = self.tab_title.fallback.trim();
+        if fallback.is_empty() {
+            DEFAULT_TAB_TITLE
+        } else {
+            fallback
+        }
+    }
+
     pub(crate) fn resolve_template(
         template: &str,
         cwd: Option<&str>,
@@ -87,164 +96,71 @@ impl TerminalView {
         Some(Self::truncate_tab_title(resolved))
     }
 
-    pub(crate) fn native_title_fields_from_osc(
-        tab_title: &TabTitleConfig,
-        raw_title: &str,
-    ) -> (Option<String>, Option<String>, bool) {
-        let trimmed = raw_title.trim();
-        if trimmed.is_empty() {
-            return (None, None, false);
-        }
-
-        let prefix = tab_title.explicit_prefix.trim();
-        let payload = if prefix.is_empty() {
-            trimmed
-        } else {
-            trimmed.strip_prefix(prefix).unwrap_or(trimmed)
-        };
-
-        if let Some(cwd_payload) = payload.strip_prefix("prompt:") {
-            let cwd = cwd_payload.trim();
-            let resolved =
-                Self::resolve_template(&tab_title.prompt_format, (!cwd.is_empty()).then_some(cwd), None);
-            let resolved = resolved.trim();
-            let shell_title = (!resolved.is_empty()).then(|| Self::truncate_tab_title(resolved));
-            return (shell_title, None, false);
-        }
-
-        if let Some(command_payload) = payload.strip_prefix("command:") {
-            let command = command_payload.trim();
-            let resolved = Self::resolve_template(
-                &tab_title.command_format,
-                None,
-                (!command.is_empty()).then_some(command),
-            );
-            let resolved = resolved.trim();
-            let shell_title = (!resolved.is_empty()).then(|| Self::truncate_tab_title(resolved));
-            let running_process = !command.is_empty() && !Self::is_shell_command(command);
-            return (shell_title, None, running_process);
-        }
-
-        let explicit = payload.trim();
-        let explicit_title = (!explicit.is_empty()).then(|| Self::truncate_tab_title(explicit));
-        (None, explicit_title, false)
+    pub(crate) fn should_seed_predicted_prompt_title(tab_title: &TabTitleConfig) -> bool {
+        tab_title
+            .priority
+            .iter()
+            .any(|source| *source == TabTitleSource::Explicit)
     }
 
-    pub(crate) fn native_command_payload_from_osc<'a>(
+    pub(crate) fn predicted_prompt_seed_title(
         tab_title: &TabTitleConfig,
-        raw_title: &'a str,
-    ) -> Option<&'a str> {
-        let trimmed = raw_title.trim();
-        if trimmed.is_empty() {
+        cwd: Option<&str>,
+    ) -> Option<String> {
+        if !Self::should_seed_predicted_prompt_title(tab_title) {
             return None;
         }
 
-        let prefix = tab_title.explicit_prefix.trim();
-        let payload = if prefix.is_empty() {
-            trimmed
-        } else {
-            trimmed.strip_prefix(prefix).unwrap_or(trimmed)
-        };
-
-        payload.strip_prefix("command:").map(str::trim)
-    }
-
-    pub(crate) fn apply_native_osc_title(
-        &mut self,
-        index: usize,
-        raw_title: &str,
-        now: Instant,
-    ) -> bool {
-        if index >= self.tabs.len() {
-            return false;
+        let resolved = Self::resolve_template(&tab_title.prompt_format, cwd, None);
+        let resolved = resolved.trim();
+        if resolved.is_empty() {
+            return None;
         }
 
-        let (shell_title, explicit_title, running_process) =
-            Self::native_title_fields_from_osc(&self.tab_title, raw_title);
-        let command_payload = Self::native_command_payload_from_osc(&self.tab_title, raw_title);
-        let mut title_sources_changed = false;
+        Some(Self::truncate_tab_title(resolved))
+    }
 
-        {
-            let tab = &mut self.tabs[index];
-            tab.running_process = running_process;
+    fn parse_explicit_title(&self, title: &str) -> Option<ExplicitTitlePayload> {
+        let prefix = self.tab_title.explicit_prefix.trim();
+        if prefix.is_empty() {
+            return None;
+        }
 
-            if command_payload.is_some() && running_process {
-                tab.pending_shell_title = shell_title;
-                tab.pending_shell_title_deadline = tab
-                    .pending_shell_title
-                    .as_ref()
-                    .map(|_| now + Duration::from_millis(NATIVE_COMMAND_TITLE_DELAY_MS));
-                title_sources_changed = tab.explicit_title.take().is_some();
-            } else {
-                tab.pending_shell_title = None;
-                tab.pending_shell_title_deadline = None;
+        let payload = title.strip_prefix(prefix)?.trim();
+        if payload.is_empty() {
+            return None;
+        }
 
-                if tab.shell_title != shell_title {
-                    tab.shell_title = shell_title;
-                    title_sources_changed = true;
-                }
-                if tab.explicit_title != explicit_title {
-                    tab.explicit_title = explicit_title;
-                    title_sources_changed = true;
-                }
+        if let Some(prompt) = payload.strip_prefix("prompt:") {
+            let prompt = prompt.trim();
+            if prompt.is_empty() {
+                return None;
             }
+            return Some(ExplicitTitlePayload::Prompt(Self::resolve_template(
+                &self.tab_title.prompt_format,
+                Some(prompt),
+                None,
+            )));
         }
 
-        title_sources_changed && self.refresh_tab_title(index)
-    }
-
-    pub(crate) fn clear_native_osc_title(&mut self, index: usize) -> bool {
-        if index >= self.tabs.len() {
-            return false;
-        }
-
-        let title_sources_changed;
-        {
-            let tab = &mut self.tabs[index];
-            tab.pending_shell_title = None;
-            tab.pending_shell_title_deadline = None;
-            tab.running_process = false;
-            let had_shell = tab.shell_title.take().is_some();
-            let had_explicit = tab.explicit_title.take().is_some();
-            title_sources_changed = had_shell || had_explicit;
-        }
-
-        title_sources_changed && self.refresh_tab_title(index)
-    }
-
-    pub(crate) fn apply_due_native_command_title(&mut self, index: usize, now: Instant) -> bool {
-        if index >= self.tabs.len() {
-            return false;
-        }
-
-        let mut title_sources_changed = false;
-        {
-            let tab = &mut self.tabs[index];
-            let Some(deadline) = tab.pending_shell_title_deadline else {
-                return false;
-            };
-            if now < deadline {
-                return false;
+        if let Some(command) = payload.strip_prefix("command:") {
+            let command = command.trim();
+            if command.is_empty() {
+                return None;
             }
-
-            tab.pending_shell_title_deadline = None;
-            let next_shell_title = tab.pending_shell_title.take();
-            if tab.shell_title != next_shell_title {
-                tab.shell_title = next_shell_title;
-                title_sources_changed = true;
-            }
+            return Some(ExplicitTitlePayload::Command(Self::resolve_template(
+                &self.tab_title.command_format,
+                None,
+                Some(command),
+            )));
         }
 
-        title_sources_changed && self.refresh_tab_title(index)
-    }
-
-    pub(crate) fn fallback_title(&self) -> &str {
-        let fallback = self.tab_title.fallback.trim();
-        if fallback.is_empty() {
-            DEFAULT_TAB_TITLE
-        } else {
-            fallback
+        let explicit = payload.strip_prefix("title:").unwrap_or(payload).trim();
+        if explicit.is_empty() {
+            return None;
         }
+
+        Some(ExplicitTitlePayload::Title(explicit.to_string()))
     }
 
     pub(crate) fn resolved_tab_title(&self, index: usize) -> String {
@@ -287,11 +203,74 @@ impl TerminalView {
         self.mark_tab_strip_layout_dirty();
         true
     }
+
+    pub(crate) fn apply_terminal_title(
+        &mut self,
+        index: usize,
+        title: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let title = title.trim();
+        if title.is_empty() || index >= self.tabs.len() {
+            return false;
+        }
+
+        if let Some(explicit_payload) = self.parse_explicit_title(title) {
+            return match explicit_payload {
+                ExplicitTitlePayload::Prompt(prompt_title) => {
+                    self.tabs[index].running_process = false;
+                    self.cancel_pending_command_title(index);
+                    self.set_explicit_title(index, prompt_title)
+                }
+                ExplicitTitlePayload::Title(prompt_title) => {
+                    self.cancel_pending_command_title(index);
+                    self.set_explicit_title(index, prompt_title)
+                }
+                ExplicitTitlePayload::Command(command_title) => {
+                    self.tabs[index].running_process = true;
+                    let tab_id = self.tabs[index].id;
+                    self.schedule_delayed_command_title(
+                        tab_id,
+                        command_title,
+                        COMMAND_TITLE_DELAY_MS,
+                        cx,
+                    );
+                    false
+                }
+            };
+        }
+
+        let shell_title = Self::truncate_tab_title(title);
+        if self.tabs[index].shell_title.as_deref() == Some(shell_title.as_str()) {
+            return false;
+        }
+
+        self.tabs[index].shell_title = Some(shell_title);
+        self.refresh_tab_title(index)
+    }
+
+    pub(crate) fn clear_terminal_titles(&mut self, index: usize) -> bool {
+        if index >= self.tabs.len() {
+            return false;
+        }
+
+        self.cancel_pending_command_title(index);
+        let tab = &mut self.tabs[index];
+        tab.running_process = false;
+        let had_shell = tab.shell_title.take().is_some();
+        let had_explicit = tab.explicit_title.take().is_some();
+        if !had_shell && !had_explicit {
+            return false;
+        }
+
+        self.refresh_tab_title(index)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{TabTitleConfig, TabTitleSource};
 
     fn pane_with(path: &str, command: &str) -> TmuxPaneState {
         TmuxPaneState {
@@ -311,6 +290,31 @@ mod tests {
     }
 
     #[test]
+    fn predicted_prompt_seed_title_uses_cwd_template_when_explicit_is_enabled() {
+        let config = TabTitleConfig::default();
+        let title = TerminalView::predicted_prompt_seed_title(&config, Some("~/projects/termy"));
+        assert_eq!(title.as_deref(), Some("~/projects/termy"));
+    }
+
+    #[test]
+    fn predicted_prompt_seed_title_skips_static_only_priority() {
+        let mut config = TabTitleConfig::default();
+        config.priority = vec![TabTitleSource::Manual, TabTitleSource::Fallback];
+
+        let title = TerminalView::predicted_prompt_seed_title(&config, Some("~/projects/termy"));
+        assert!(title.is_none());
+    }
+
+    #[test]
+    fn predicted_prompt_seed_title_ignores_empty_resolved_output() {
+        let mut config = TabTitleConfig::default();
+        config.prompt_format = "{cwd}".to_string();
+
+        let title = TerminalView::predicted_prompt_seed_title(&config, None);
+        assert!(title.is_none());
+    }
+
+    #[test]
     fn resolve_template_replaces_known_tokens_in_single_pass() {
         let resolved = TerminalView::resolve_template(
             "cwd={cwd} command={command}",
@@ -321,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_template_leaves_unknown_tokens_unchanged() {
+    fn resolve_template_leaves_unknown_brace_tokens_unchanged() {
         let resolved =
             TerminalView::resolve_template("start {unknown} end", Some("cwd"), Some("cmd"));
         assert_eq!(resolved, "start {unknown} end");
@@ -364,78 +368,5 @@ mod tests {
 
         let title = TerminalView::derive_tmux_shell_title(&tab_title, &pane);
         assert!(title.is_none());
-    }
-
-    #[test]
-    fn native_title_fields_parse_prompt_payload_with_prefix() {
-        let mut tab_title = TabTitleConfig::default();
-        tab_title.explicit_prefix = "termy:tab:".to_string();
-        tab_title.prompt_format = "cwd:{cwd}".to_string();
-
-        let (shell_title, explicit_title, running_process) =
-            TerminalView::native_title_fields_from_osc(&tab_title, "termy:tab:prompt:~/projects");
-        assert_eq!(shell_title.as_deref(), Some("cwd:~/projects"));
-        assert!(explicit_title.is_none());
-        assert!(!running_process);
-    }
-
-    #[test]
-    fn native_title_fields_parse_command_payload_with_prefix() {
-        let mut tab_title = TabTitleConfig::default();
-        tab_title.explicit_prefix = "termy:tab:".to_string();
-        tab_title.command_format = "run:{command}".to_string();
-
-        let (shell_title, explicit_title, running_process) =
-            TerminalView::native_title_fields_from_osc(&tab_title, "termy:tab:command:rg");
-        assert_eq!(shell_title.as_deref(), Some("run:rg"));
-        assert!(explicit_title.is_none());
-        assert!(running_process);
-    }
-
-    #[test]
-    fn native_title_fields_command_payload_marks_shell_as_not_running() {
-        let mut tab_title = TabTitleConfig::default();
-        tab_title.explicit_prefix = "termy:tab:".to_string();
-
-        let (_, _, running_process) =
-            TerminalView::native_title_fields_from_osc(&tab_title, "termy:tab:command:zsh");
-        assert!(!running_process);
-    }
-
-    #[test]
-    fn native_command_payload_detects_prefixed_command_payload() {
-        let mut tab_title = TabTitleConfig::default();
-        tab_title.explicit_prefix = "termy:tab:".to_string();
-
-        let payload =
-            TerminalView::native_command_payload_from_osc(&tab_title, "termy:tab:command:rg");
-        assert_eq!(payload, Some("rg"));
-    }
-
-    #[test]
-    fn native_command_payload_ignores_prompt_and_explicit_payloads() {
-        let mut tab_title = TabTitleConfig::default();
-        tab_title.explicit_prefix = "termy:tab:".to_string();
-
-        assert_eq!(
-            TerminalView::native_command_payload_from_osc(&tab_title, "termy:tab:prompt:~/work"),
-            None
-        );
-        assert_eq!(
-            TerminalView::native_command_payload_from_osc(&tab_title, "termy:tab:Deploy"),
-            None
-        );
-    }
-
-    #[test]
-    fn native_title_fields_treat_raw_payload_as_explicit_title() {
-        let mut tab_title = TabTitleConfig::default();
-        tab_title.explicit_prefix = "termy:tab:".to_string();
-
-        let (shell_title, explicit_title, running_process) =
-            TerminalView::native_title_fields_from_osc(&tab_title, "termy:tab:Deploying");
-        assert!(shell_title.is_none());
-        assert_eq!(explicit_title.as_deref(), Some("Deploying"));
-        assert!(!running_process);
     }
 }

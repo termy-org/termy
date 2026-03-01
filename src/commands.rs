@@ -258,24 +258,8 @@ macro_rules! define_commands {
                 entries
             }
 
-            pub const fn requires_tmux(self) -> bool {
-                matches!(
-                    self,
-                    Self::SplitPaneVertical
-                        | Self::SplitPaneHorizontal
-                        | Self::ClosePane
-                        | Self::FocusPaneLeft
-                        | Self::FocusPaneRight
-                        | Self::FocusPaneUp
-                        | Self::FocusPaneDown
-                        | Self::FocusPaneNext
-                        | Self::FocusPanePrevious
-                        | Self::ResizePaneLeft
-                        | Self::ResizePaneRight
-                        | Self::ResizePaneUp
-                        | Self::ResizePaneDown
-                        | Self::TogglePaneZoom
-                )
+            pub fn requires_tmux(self) -> bool {
+                self.to_command_id().is_tmux_only()
             }
 
             pub fn to_menu_item(self, title: &'static str, role: MenuActionRole) -> MenuItem {

@@ -14,7 +14,10 @@ impl SettingsWindow {
             | EditableField::FontSize
             | EditableField::PaddingX
             | EditableField::PaddingY => self.apply_appearance_field(field, value),
-            EditableField::TmuxBinary
+            EditableField::Shell
+            | EditableField::Term
+            | EditableField::Colorterm
+            | EditableField::TmuxBinary
             | EditableField::ScrollbackHistory
             | EditableField::InactiveTabScrollback
             | EditableField::ScrollMultiplier
@@ -115,6 +118,31 @@ impl SettingsWindow {
         value: &str,
     ) -> Result<(), String> {
         match field {
+            EditableField::Shell => {
+                if value.is_empty() {
+                    self.config.shell = None;
+                    config::set_root_setting(termy_config_core::RootSettingId::Shell, "none")
+                } else {
+                    self.config.shell = Some(value.to_string());
+                    config::set_root_setting(termy_config_core::RootSettingId::Shell, value)
+                }
+            }
+            EditableField::Term => {
+                if value.is_empty() {
+                    return Err("TERM cannot be empty".to_string());
+                }
+                self.config.term = value.to_string();
+                config::set_root_setting(termy_config_core::RootSettingId::Term, value)
+            }
+            EditableField::Colorterm => {
+                if value.is_empty() {
+                    self.config.colorterm = None;
+                    config::set_root_setting(termy_config_core::RootSettingId::Colorterm, "none")
+                } else {
+                    self.config.colorterm = Some(value.to_string());
+                    config::set_root_setting(termy_config_core::RootSettingId::Colorterm, value)
+                }
+            }
             EditableField::TmuxBinary => {
                 if value.is_empty() {
                     return Err("tmux binary cannot be empty".to_string());

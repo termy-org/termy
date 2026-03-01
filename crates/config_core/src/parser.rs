@@ -299,6 +299,23 @@ impl AppConfig {
                         config.show_termy_in_titlebar = parsed;
                     }
                 }
+                RootSettingId::Shell => {
+                    config.shell = parse_optional_string_value(value);
+                }
+                RootSettingId::Term => {
+                    if let Some(parsed) = parse_string_field(
+                        &mut diagnostics,
+                        line_number,
+                        key,
+                        value,
+                        "a non-empty string",
+                    ) {
+                        config.term = parsed;
+                    }
+                }
+                RootSettingId::Colorterm => {
+                    config.colorterm = parse_optional_string_value(value);
+                }
                 RootSettingId::WindowWidth => {
                     if let Some(parsed) =
                         parse_positive_f32_field(&mut diagnostics, line_number, key, value)
@@ -629,6 +646,15 @@ fn parse_string_field(
         push_invalid_value(diagnostics, line_number, key, value, expected);
         None
     })
+}
+
+fn parse_optional_string_value(value: &str) -> Option<String> {
+    let parsed = parse_string_value(value)?;
+    let normalized = parsed.trim().to_ascii_lowercase();
+    if matches!(normalized.as_str(), "none" | "unset" | "default" | "auto") {
+        return None;
+    }
+    Some(parsed)
 }
 
 fn parse_tab_title_priority(value: &str) -> Option<Vec<TabTitleSource>> {

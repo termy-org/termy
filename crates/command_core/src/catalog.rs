@@ -97,6 +97,26 @@ macro_rules! define_command_catalog {
                 }
             }
 
+            pub const fn is_tmux_only(self) -> bool {
+                matches!(
+                    self,
+                    Self::SplitPaneVertical
+                        | Self::SplitPaneHorizontal
+                        | Self::ClosePane
+                        | Self::FocusPaneLeft
+                        | Self::FocusPaneRight
+                        | Self::FocusPaneUp
+                        | Self::FocusPaneDown
+                        | Self::FocusPaneNext
+                        | Self::FocusPanePrevious
+                        | Self::ResizePaneLeft
+                        | Self::ResizePaneRight
+                        | Self::ResizePaneUp
+                        | Self::ResizePaneDown
+                        | Self::TogglePaneZoom
+                )
+            }
+
             pub fn all() -> impl std::iter::ExactSizeIterator<Item = Self> + Clone {
                 COMMAND_IDS.iter().copied()
             }
@@ -139,5 +159,34 @@ mod tests {
             CommandId::from_config_name("toggle_command_palette"),
             Some(CommandId::ToggleCommandPalette)
         );
+    }
+
+    #[test]
+    fn tmux_only_command_set_is_stable() {
+        let mut actual = CommandId::all()
+            .filter(|id| id.is_tmux_only())
+            .map(CommandId::config_name)
+            .collect::<Vec<_>>();
+        actual.sort_unstable();
+
+        let mut expected = vec![
+            "close_pane",
+            "focus_pane_down",
+            "focus_pane_left",
+            "focus_pane_next",
+            "focus_pane_previous",
+            "focus_pane_right",
+            "focus_pane_up",
+            "resize_pane_down",
+            "resize_pane_left",
+            "resize_pane_right",
+            "resize_pane_up",
+            "split_pane_horizontal",
+            "split_pane_vertical",
+            "toggle_pane_zoom",
+        ];
+        expected.sort_unstable();
+
+        assert_eq!(actual, expected);
     }
 }

@@ -83,8 +83,20 @@ impl TerminalView {
         let terminal_width = (viewport_width - (padding_x * 2.0)).max(cell_width * 2.0);
         let terminal_height =
             (viewport_height - self.chrome_height() - (padding_y * 2.0)).max(cell_height);
-        let cols = (terminal_width / cell_width).floor().max(2.0) as u16;
-        let rows = (terminal_height / cell_height).floor().max(1.0) as u16;
+        let edge_to_edge_grid =
+            !self.runtime_uses_tmux() && self.active_terminal().alternate_screen_mode();
+        let cols = if edge_to_edge_grid {
+            (terminal_width / cell_width).ceil()
+        } else {
+            (terminal_width / cell_width).floor()
+        }
+        .max(2.0) as u16;
+        let rows = if edge_to_edge_grid {
+            (terminal_height / cell_height).ceil()
+        } else {
+            (terminal_height / cell_height).floor()
+        }
+        .max(1.0) as u16;
 
         if self.runtime_uses_tmux() {
             if self.tmux_client_cols != cols || self.tmux_client_rows != rows {
@@ -105,14 +117,14 @@ impl TerminalView {
         } else {
             self.tmux_client_cols = cols;
             self.tmux_client_rows = rows;
-            if let Some(tab) = self.tabs.get_mut(self.active_tab)
-                && let Some(pane) = tab.panes.get_mut(0)
-            {
-                pane.left = 0;
-                pane.top = 0;
-                pane.width = cols.max(1);
-                pane.height = rows.max(1);
-                tab.active_pane_id = pane.id.clone();
+            for tab in &mut self.tabs {
+                if let Some(pane) = tab.panes.get_mut(0) {
+                    pane.left = 0;
+                    pane.top = 0;
+                    pane.width = cols.max(1);
+                    pane.height = rows.max(1);
+                    tab.active_pane_id = pane.id.clone();
+                }
             }
         }
 

@@ -7,6 +7,7 @@ use crate::config::{
 use crate::keybindings;
 use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
 use alacritty_terminal::term::cell::Flags;
+use flume::{Sender, bounded};
 use gpui::{
     AnyElement, App, AsyncApp, ClipboardItem, Context, Element, ExternalPaths, FocusHandle,
     Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
@@ -15,7 +16,8 @@ use gpui::{
     WindowBackgroundAppearance, div, point, px,
 };
 use std::{
-    path::PathBuf,
+    env,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::Mutex,
     time::{Duration, Instant},
@@ -60,11 +62,11 @@ const TITLEBAR_HEIGHT: f32 = 32.0;
 const TITLEBAR_HEIGHT: f32 = 34.0;
 const MAX_TAB_TITLE_CHARS: usize = 96;
 const DEFAULT_TAB_TITLE: &str = "Terminal";
+const COMMAND_TITLE_DELAY_MS: u64 = 250;
 const CONFIG_WATCH_INTERVAL_MS: u64 = 750;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 530;
 const TMUX_POLL_INTERVAL_MS: u64 = 16;
 const TMUX_TITLE_REFRESH_DEBOUNCE_MS: u64 = 120;
-const NATIVE_COMMAND_TITLE_DELAY_MS: u64 = 250;
 const SELECTION_BG_ALPHA: f32 = 0.35;
 const DIM_TEXT_FACTOR: f32 = 0.66;
 #[cfg(target_os = "macos")]
@@ -212,13 +214,14 @@ impl Terminal {
     fn new_native(
         size: TerminalSize,
         configured_working_dir: Option<&str>,
+        event_wakeup_tx: Option<Sender<()>>,
         tab_title_shell_integration: Option<&TabTitleShellIntegration>,
         runtime_config: Option<&TerminalRuntimeConfig>,
     ) -> anyhow::Result<Self> {
         Ok(Self::Native(Mutex::new(NativeTerminal::new(
             size,
             configured_working_dir,
-            None,
+            event_wakeup_tx,
             tab_title_shell_integration,
             runtime_config,
         )?)))
@@ -372,8 +375,8 @@ struct TerminalTab {
     manual_title: Option<String>,
     explicit_title: Option<String>,
     shell_title: Option<String>,
-    pending_shell_title: Option<String>,
-    pending_shell_title_deadline: Option<Instant>,
+    pending_command_title: Option<String>,
+    pending_command_token: u64,
     title: String,
     title_text_width: f32,
     sticky_title_width: f32,
@@ -405,8 +408,8 @@ impl TerminalTab {
             manual_title: None,
             explicit_title: None,
             shell_title: None,
-            pending_shell_title: None,
-            pending_shell_title_deadline: None,
+            pending_command_title: None,
+            pending_command_token: 0,
             title,
             title_text_width,
             sticky_title_width,
@@ -433,6 +436,12 @@ impl TerminalTab {
             .and_then(|index| self.panes.get(index))
             .map(|pane| pane.id.as_str())
     }
+}
+
+enum ExplicitTitlePayload {
+    Prompt(String),
+    Command(String),
+    Title(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -686,6 +695,7 @@ pub struct TerminalView {
     active_tab: usize,
     renaming_tab: Option<usize>,
     rename_input: InlineInputState,
+    event_wakeup_tx: Sender<()>,
     focus_handle: FocusHandle,
     theme_id: String,
     colors: TerminalColors,
@@ -802,10 +812,13 @@ impl TerminalView {
             config::WorkingDirFallback::Process => RuntimeWorkingDirFallback::Process,
         };
 
-        let mut runtime = TerminalRuntimeConfig::default();
-        runtime.working_dir_fallback = working_dir_fallback;
-        runtime.scrollback_history = config.scrollback_history;
-        runtime
+        TerminalRuntimeConfig {
+            shell: config.shell.clone(),
+            term: config.term.clone(),
+            colorterm: config.colorterm.clone(),
+            working_dir_fallback,
+            scrollback_history: config.scrollback_history,
+        }
     }
 
     fn runtime_mode_from_app_config(config: &AppConfig) -> TerminalRuntimeMode {
@@ -821,6 +834,67 @@ impl TerminalView {
             persistence: config.tmux_persistence,
             binary: config.tmux_binary.trim().to_string(),
         }
+    }
+
+    fn user_home_dir() -> Option<PathBuf> {
+        dirs::home_dir()
+    }
+
+    fn resolve_configured_working_directory(configured: Option<&str>) -> Option<PathBuf> {
+        let configured = configured?.trim();
+        if configured.is_empty() {
+            return None;
+        }
+
+        let path = if configured == "~" {
+            Self::user_home_dir()?
+        } else if let Some(relative) = configured
+            .strip_prefix("~/")
+            .or_else(|| configured.strip_prefix("~\\"))
+        {
+            Self::user_home_dir()?.join(relative)
+        } else {
+            PathBuf::from(configured)
+        };
+
+        path.is_dir().then_some(path)
+    }
+
+    fn default_working_directory_with_fallback(
+        fallback: RuntimeWorkingDirFallback,
+    ) -> Option<PathBuf> {
+        if fallback == RuntimeWorkingDirFallback::Home
+            && let Some(home) = Self::user_home_dir()
+            && home.is_dir()
+        {
+            return Some(home);
+        }
+
+        env::current_dir().ok()
+    }
+
+    fn display_working_directory_for_prompt(path: &Path) -> String {
+        if let Some(home) = Self::user_home_dir() {
+            if path == home.as_path() {
+                return "~".to_string();
+            }
+
+            if let Ok(relative) = path.strip_prefix(&home) {
+                let relative = relative.to_string_lossy();
+                return format!("~{}{}", std::path::MAIN_SEPARATOR, relative);
+            }
+        }
+
+        path.to_string_lossy().into_owned()
+    }
+
+    fn predicted_prompt_cwd(
+        configured_working_dir: Option<&str>,
+        fallback: RuntimeWorkingDirFallback,
+    ) -> Option<String> {
+        let path = Self::resolve_configured_working_directory(configured_working_dir)
+            .or_else(|| Self::default_working_directory_with_fallback(fallback))?;
+        Some(Self::display_working_directory_for_prompt(&path))
     }
 
     fn runtime_uses_tmux(&self) -> bool {
@@ -878,8 +952,17 @@ impl TerminalView {
         terminal
     }
 
-    fn create_native_tab(tab_id: TabId, terminal: Terminal, cols: u16, rows: u16) -> TerminalTab {
-        let title = DEFAULT_TAB_TITLE.to_string();
+    fn create_native_tab(
+        tab_id: TabId,
+        terminal: Terminal,
+        cols: u16,
+        rows: u16,
+        predicted_prompt_title: Option<String>,
+    ) -> TerminalTab {
+        let title = predicted_prompt_title
+            .as_deref()
+            .unwrap_or(DEFAULT_TAB_TITLE)
+            .to_string();
         let title_text_width = 0.0;
         let sticky_title_width =
             Self::tab_display_width_for_text_px_without_close_with_max(title_text_width, TAB_MAX_WIDTH);
@@ -901,10 +984,10 @@ impl TerminalView {
             panes: vec![pane],
             active_pane_id: pane_id,
             manual_title: None,
-            explicit_title: None,
+            explicit_title: predicted_prompt_title,
             shell_title: None,
-            pending_shell_title: None,
-            pending_shell_title_deadline: None,
+            pending_command_title: None,
+            pending_command_token: 0,
             title,
             title_text_width,
             sticky_title_width,
@@ -1358,28 +1441,49 @@ impl TerminalView {
 
     pub fn new(window: &mut Window, cx: &mut Context<Self>, config: AppConfig) -> Self {
         let focus_handle = cx.focus_handle();
+        let (event_wakeup_tx, event_wakeup_rx) = bounded(1);
         let config_change_rx = config::subscribe_config_changes();
 
         // Focus the terminal immediately
         focus_handle.focus(window, cx);
 
-        // Poll tmux control-mode notifications.
-        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-            loop {
-                smol::Timer::after(Duration::from_millis(TMUX_POLL_INTERVAL_MS)).await;
-                let result = cx.update(|cx| {
-                    this.update(cx, |view, cx| {
-                        if view.process_terminal_events(cx) {
-                            cx.notify();
-                        }
-                    })
-                });
-                if result.is_err() {
-                    break;
+        if config.tmux_enabled {
+            // Poll tmux control-mode notifications.
+            cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                loop {
+                    smol::Timer::after(Duration::from_millis(TMUX_POLL_INTERVAL_MS)).await;
+                    let result = cx.update(|cx| {
+                        this.update(cx, |view, cx| {
+                            if view.process_terminal_events(cx) {
+                                cx.notify();
+                            }
+                        })
+                    });
+                    if result.is_err() {
+                        break;
+                    }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        } else {
+            // Process native terminal events only when terminals signal activity.
+            cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                while event_wakeup_rx.recv_async().await.is_ok() {
+                    while event_wakeup_rx.try_recv().is_ok() {}
+                    let result = cx.update(|cx| {
+                        this.update(cx, |view, cx| {
+                            if view.process_terminal_events(cx) {
+                                cx.notify();
+                            }
+                        })
+                    });
+                    if result.is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
 
         // Reload immediately when config is updated in-process (e.g. settings/theme actions).
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
@@ -1469,6 +1573,12 @@ impl TerminalView {
             explicit_prefix: tab_title.explicit_prefix.clone(),
         };
         let terminal_runtime = Self::runtime_config_from_app_config(&config);
+        let predicted_prompt_cwd = Self::predicted_prompt_cwd(
+            configured_working_dir.as_deref(),
+            terminal_runtime.working_dir_fallback,
+        );
+        let startup_predicted_title =
+            Self::predicted_prompt_seed_title(&tab_title, predicted_prompt_cwd.as_deref());
         let runtime_mode = Self::runtime_mode_from_app_config(&config);
         let initial_cols = TerminalSize::default().cols;
         let initial_rows = TerminalSize::default().rows;
@@ -1499,6 +1609,7 @@ impl TerminalView {
                         ..TerminalSize::default()
                     },
                     configured_working_dir.as_deref(),
+                    Some(event_wakeup_tx.clone()),
                     Some(&tab_shell_integration),
                     Some(&terminal_runtime),
                 ) {
@@ -1518,6 +1629,7 @@ impl TerminalView {
             active_tab: 0,
             renaming_tab: None,
             rename_input: InlineInputState::new(String::new()),
+            event_wakeup_tx,
             focus_handle,
             theme_id,
             colors,
@@ -1604,6 +1716,7 @@ impl TerminalView {
                         native_terminal,
                         initial_cols,
                         initial_rows,
+                        startup_predicted_title.clone(),
                     )];
                     view.active_tab = 0;
                     view.refresh_tab_title(0);
@@ -1899,40 +2012,38 @@ impl TerminalView {
             should_redraw
         } else {
             let mut should_redraw = false;
-            if self.apply_due_native_command_title(self.active_tab, Instant::now()) {
-                should_redraw = true;
-            }
-            let events = self.active_terminal().process_events();
-            for event in events {
-                match event {
-                    TerminalEvent::Wakeup => should_redraw = true,
-                    TerminalEvent::Title(title) => {
-                        if self.apply_native_osc_title(
-                            self.active_tab,
-                            title.as_str(),
-                            Instant::now(),
-                        ) {
+            let active_tab = self.active_tab;
+
+            for index in 0..self.tabs.len() {
+                let Some(terminal) = self.tabs[index].active_terminal() else {
+                    continue;
+                };
+                let events = terminal.process_events();
+                for event in events {
+                    match event {
+                        TerminalEvent::Wakeup | TerminalEvent::Bell | TerminalEvent::Exit => {
+                            if index == active_tab {
+                                should_redraw = true;
+                            }
+                        }
+                        TerminalEvent::Title(title) => {
+                            if self.apply_terminal_title(index, &title, cx) {
+                                should_redraw = true;
+                            }
+                        }
+                        TerminalEvent::ResetTitle => {
+                            if self.clear_terminal_titles(index) {
+                                should_redraw = true;
+                            }
+                        }
+                        TerminalEvent::ClipboardStore(text) => {
+                            self.pending_clipboard = Some(text);
                             should_redraw = true;
                         }
-                    }
-                    TerminalEvent::ResetTitle => {
-                        if self.clear_native_osc_title(self.active_tab) {
-                            should_redraw = true;
-                        }
-                    }
-                    TerminalEvent::Bell => {}
-                    TerminalEvent::Exit => {
-                        cx.quit();
-                    }
-                    TerminalEvent::ClipboardStore(text) => {
-                        self.pending_clipboard = Some(text);
-                        should_redraw = true;
                     }
                 }
             }
-            if self.apply_due_native_command_title(self.active_tab, Instant::now()) {
-                should_redraw = true;
-            }
+
             should_redraw
         }
     }
@@ -2153,7 +2264,7 @@ mod tests {
     #[test]
     fn create_native_tab_starts_with_one_full_size_pane() {
         let terminal = Terminal::new_tmux(TerminalSize::default(), 2000);
-        let tab = TerminalView::create_native_tab(7, terminal, 120, 42);
+        let tab = TerminalView::create_native_tab(7, terminal, 120, 42, None);
 
         assert_eq!(tab.panes.len(), 1);
         assert_eq!(tab.window_id, "@native-7");

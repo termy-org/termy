@@ -58,6 +58,21 @@ Termy reads configuration from `~/.config/termy/config.txt`.
 - tmux executable path or binary name (only used when tmux_enabled = true)
 - Group: `TMUX`
 
+`shell`
+- Default: unset
+- Executable used for new sessions
+- Group: `SHELL`
+
+`term`
+- Default: `xterm-256color`
+- TERM value exposed to child applications
+- Group: `SHELL`
+
+`colorterm`
+- Default: `truecolor`
+- COLORTERM value exposed to child applications
+- Group: `SHELL`
+
 `cursor_style`
 - Default: `block`
 - Shape of the terminal cursor

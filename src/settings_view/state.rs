@@ -11,6 +11,9 @@ pub(super) enum EditableField {
     FontSize,
     PaddingX,
     PaddingY,
+    Shell,
+    Term,
+    Colorterm,
     TmuxBinary,
     ScrollbackHistory,
     InactiveTabScrollback,
@@ -196,6 +199,9 @@ impl SettingsWindow {
             RootSettingId::TmuxBinary,
             RootSettingId::CursorBlink,
             RootSettingId::CursorStyle,
+            RootSettingId::Shell,
+            RootSettingId::Term,
+            RootSettingId::Colorterm,
             RootSettingId::ScrollbackHistory,
             RootSettingId::InactiveTabScrollback,
             RootSettingId::MouseScrollMultiplier,
@@ -328,7 +334,10 @@ impl SettingsWindow {
             | EditableField::FontSize
             | EditableField::PaddingX
             | EditableField::PaddingY => Self::appearance_field_spec(field),
-            EditableField::TmuxBinary
+            EditableField::Shell
+            | EditableField::Term
+            | EditableField::Colorterm
+            | EditableField::TmuxBinary
             | EditableField::ScrollbackHistory
             | EditableField::InactiveTabScrollback
             | EditableField::ScrollMultiplier
@@ -400,6 +409,11 @@ impl SettingsWindow {
 
     pub(super) fn terminal_field_spec(field: EditableField) -> FieldSpec {
         match field {
+            EditableField::Shell => Self::text_field_spec(Some(RootSettingId::Shell)),
+            EditableField::Term => Self::text_field_spec(Some(RootSettingId::Term)),
+            EditableField::Colorterm => {
+                Self::text_field_spec(Some(RootSettingId::Colorterm))
+            }
             EditableField::TmuxBinary => {
                 Self::text_field_spec(Some(RootSettingId::TmuxBinary))
             }
@@ -675,6 +689,9 @@ impl SettingsWindow {
             EditableField::FontSize => format!("{}", self.config.font_size.round() as i32),
             EditableField::PaddingX => format!("{}", self.config.padding_x.round() as i32),
             EditableField::PaddingY => format!("{}", self.config.padding_y.round() as i32),
+            EditableField::Shell => self.config.shell.clone().unwrap_or_default(),
+            EditableField::Term => self.config.term.clone(),
+            EditableField::Colorterm => self.config.colorterm.clone().unwrap_or_default(),
             EditableField::TmuxBinary => self.config.tmux_binary.clone(),
             EditableField::ScrollbackHistory => self.config.scrollback_history.to_string(),
             EditableField::InactiveTabScrollback => self
@@ -961,6 +978,9 @@ mod tests {
             EditableField::FontSize,
             EditableField::PaddingX,
             EditableField::PaddingY,
+            EditableField::Shell,
+            EditableField::Term,
+            EditableField::Colorterm,
             EditableField::TmuxBinary,
             EditableField::ScrollbackHistory,
             EditableField::InactiveTabScrollback,

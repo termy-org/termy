@@ -33,6 +33,12 @@ tab_close_visibility = active_hover
 tab_width_mode = active_grow_sticky
 # Show or hide the termy branding in the titlebar
 show_termy_in_titlebar = true
+# Executable used for new sessions
+shell = none
+# TERM value exposed to child applications
+term = xterm-256color
+# COLORTERM value exposed to child applications
+colorterm = truecolor
 # Default startup window width in pixels
 window_width = 1280
 # Default startup window height in pixels

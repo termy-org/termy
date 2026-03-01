@@ -258,6 +258,7 @@ impl TerminalView {
             let terminal = match Terminal::new_native(
                 size,
                 self.configured_working_dir.as_deref(),
+                Some(self.event_wakeup_tx.clone()),
                 Some(&self.tab_shell_integration),
                 Some(&self.terminal_runtime),
             ) {
@@ -268,9 +269,21 @@ impl TerminalView {
                 }
             };
 
+            let predicted_prompt_cwd = Self::predicted_prompt_cwd(
+                self.configured_working_dir.as_deref(),
+                self.terminal_runtime.working_dir_fallback,
+            );
+            let predicted_title =
+                Self::predicted_prompt_seed_title(&self.tab_title, predicted_prompt_cwd.as_deref());
+
             let tab_id = self.allocate_tab_id();
-            self.tabs
-                .push(Self::create_native_tab(tab_id, terminal, size.cols, size.rows));
+            self.tabs.push(Self::create_native_tab(
+                tab_id,
+                terminal,
+                size.cols,
+                size.rows,
+                predicted_title,
+            ));
             self.active_tab = self.tabs.len() - 1;
             self.refresh_tab_title(self.active_tab);
             self.mark_tab_strip_layout_dirty();

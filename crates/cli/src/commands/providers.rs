@@ -12,13 +12,12 @@ pub fn config_file_path() -> Result<PathBuf, String> {
 }
 
 pub fn list_action_lines() -> Vec<String> {
-    CommandId::all_config_names()
-        .map(ToString::to_string)
-        .collect()
+    action_lines_for_tmux_enabled(load_config_for_providers().tmux_enabled)
 }
 
 pub fn list_keybind_lines() -> Vec<String> {
-    resolved_keybinds()
+    let config = load_config_for_providers();
+    resolve_keybinds_for_lines(&config.keybind_lines, config.tmux_enabled)
         .into_iter()
         .map(|binding| format!("{} = {}", binding.trigger, binding.action.config_name()))
         .collect()
@@ -94,35 +93,44 @@ pub fn list_fonts_lines() -> Vec<String> {
 }
 
 pub fn active_theme_id() -> String {
-    if let Some(path) = config_path() {
-        if let Ok(contents) = std::fs::read_to_string(path) {
-            return AppConfig::from_contents(&contents).theme;
-        }
-    }
-
-    AppConfig::default().theme
+    load_config_for_providers().theme
 }
 
-fn resolved_keybinds() -> Vec<termy_command_core::ResolvedKeybind> {
+fn load_config_for_providers() -> AppConfig {
     if let Some(path) = config_path()
         && let Ok(contents) = std::fs::read_to_string(path)
     {
-        let config = AppConfig::from_contents(&contents);
-        return resolve_keybinds_for_lines(&config.keybind_lines);
+        return AppConfig::from_contents(&contents);
     }
 
-    resolve_keybinds_for_lines(&[])
+    AppConfig::default()
+}
+
+fn action_lines_for_tmux_enabled(tmux_enabled: bool) -> Vec<String> {
+    CommandId::all()
+        .filter(|id| tmux_enabled || !id.is_tmux_only())
+        .map(|id| id.config_name().to_string())
+        .collect()
 }
 
 fn resolve_keybinds_for_lines(
     lines: &[termy_config_core::KeybindConfigLine],
+    tmux_enabled: bool,
 ) -> Vec<termy_command_core::ResolvedKeybind> {
     let (directives, _warnings) =
         parse_keybind_directives_from_iter(lines.iter().map(|line| KeybindLineRef {
             line_number: line.line_number,
             value: line.value.as_str(),
         }));
-    resolve_keybinds(default_resolved_keybinds(), &directives)
+    let resolved = resolve_keybinds(default_resolved_keybinds(), &directives);
+    if tmux_enabled {
+        resolved
+    } else {
+        resolved
+            .into_iter()
+            .filter(|binding| !binding.action.is_tmux_only())
+            .collect()
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -210,7 +218,7 @@ fn list_fonts_impl() -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{list_action_lines, list_theme_lines, resolve_keybinds_for_lines};
+    use super::{action_lines_for_tmux_enabled, list_theme_lines, resolve_keybinds_for_lines};
     use termy_command_core::{
         CommandId, KeybindLineRef, default_resolved_keybinds, parse_keybind_directives_from_iter,
         resolve_keybinds,
@@ -239,17 +247,26 @@ mod tests {
     }
 
     #[test]
-    fn actions_match_command_catalog_exactly() {
-        let actions = list_action_lines();
-        let expected = CommandId::all_config_names()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>();
-        assert_eq!(actions, expected);
+    fn actions_filter_tmux_only_when_tmux_is_disabled() {
+        let actions = action_lines_for_tmux_enabled(false);
+        assert!(!actions.iter().any(|name| {
+            CommandId::from_config_name(name)
+                .is_some_and(|id| id.is_tmux_only())
+        }));
+    }
+
+    #[test]
+    fn actions_include_tmux_only_when_tmux_is_enabled() {
+        let actions = action_lines_for_tmux_enabled(true);
+        assert!(actions.iter().any(|name| {
+            CommandId::from_config_name(name)
+                .is_some_and(|id| id.is_tmux_only())
+        }));
     }
 
     #[test]
     fn keybinds_include_secondary_comma_mapping() {
-        let keybinds = resolve_keybinds_for_lines(&[]);
+        let keybinds = resolve_keybinds_for_lines(&[], true);
         assert!(
             keybinds.iter().any(|binding| {
                 binding.trigger == "secondary-," && binding.action.config_name() == "open_settings"
@@ -261,7 +278,7 @@ mod tests {
     #[test]
     fn keybind_resolution_matches_command_core_for_same_fixture() {
         let lines = fixture_keybind_lines();
-        let resolved_from_provider = resolve_keybinds_for_lines(&lines);
+        let resolved_from_provider = resolve_keybinds_for_lines(&lines, true);
 
         let (directives, warnings) =
             parse_keybind_directives_from_iter(lines.iter().map(|line| KeybindLineRef {
@@ -272,6 +289,12 @@ mod tests {
 
         let resolved_from_core = resolve_keybinds(default_resolved_keybinds(), &directives);
         assert_eq!(resolved_from_provider, resolved_from_core);
+    }
+
+    #[test]
+    fn keybind_resolution_filters_tmux_only_when_tmux_is_disabled() {
+        let resolved = resolve_keybinds_for_lines(&[], false);
+        assert!(resolved.iter().all(|binding| !binding.action.is_tmux_only()));
     }
 
     #[test]

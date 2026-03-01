@@ -80,9 +80,7 @@ pub(crate) fn resolve_keybinds_for_config(
     } else {
         resolved
             .into_iter()
-            .filter(|binding| {
-                !CommandAction::from_command_id(binding.action).requires_tmux()
-            })
+            .filter(|binding| !binding.action.is_tmux_only())
             .collect()
     };
     (resolved, warnings)
@@ -126,7 +124,6 @@ fn debug_assert_trigger_is_valid_for_gpui(_trigger: &str) {}
 #[cfg(test)]
 mod tests {
     use super::{reorder_resolved_keybinds_for_menu_display, resolve_keybinds_for_config};
-    use crate::commands::CommandAction;
     use crate::config::AppConfig;
     use termy_command_core::{
         CommandId, KeybindLineRef, ResolvedKeybind, default_resolved_keybinds,
@@ -254,12 +251,12 @@ mod tests {
         assert!(tmux_warnings.is_empty());
         assert!(tmux_resolved
             .iter()
-            .any(|binding| CommandAction::from_command_id(binding.action).requires_tmux()));
+            .any(|binding| binding.action.is_tmux_only()));
 
         let (native_resolved, native_warnings) = resolve_keybinds_for_config(&config, false);
         assert!(native_warnings.is_empty());
         assert!(native_resolved
             .iter()
-            .all(|binding| !CommandAction::from_command_id(binding.action).requires_tmux()));
+            .all(|binding| !binding.action.is_tmux_only()));
     }
 }
