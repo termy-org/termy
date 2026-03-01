@@ -750,33 +750,52 @@ impl TerminalView {
             return;
         }
 
-        let confirmed = termy_native_sdk::confirm(
-            "Kill tmux Session",
-            &format!(
-                "Kill tmux session \"{session_name}\"? This will close all windows and panes in that session."
-            ),
-        );
-        if !confirmed {
-            return;
-        }
-
-        let binary = match self.tmux_binary_for_session_palette() {
-            Ok(binary) => binary,
-            Err(error) => {
-                termy_toast::error(error);
-                cx.notify();
-                return;
-            }
-        };
-
-        if let Err(error) = TmuxClient::kill_session(binary.as_str(), socket_target, session_name) {
-            termy_toast::error(format!("Failed to kill tmux session: {error}"));
+        let session_name = session_name.trim().to_string();
+        if session_name.is_empty() {
+            termy_toast::error("tmux session name cannot be empty");
             cx.notify();
             return;
         }
 
-        termy_toast::success(format!("Killed tmux session \"{session_name}\""));
-        self.refresh_tmux_session_palette_after_lifecycle_action(cx);
+        let confirmation_message = format!(
+            "Kill tmux session \"{session_name}\"? This will close all windows and panes in that session."
+        );
+        // Native confirm dialogs can run nested modal loops; invoking them while GPUI
+        // is mutably updating this view can re-enter and trip RefCell borrow checks.
+        // Run confirm out-of-band, then re-enter through AsyncApp for the mutation.
+        cx.spawn(async move |this, cx: &mut AsyncApp| {
+            let confirmed = termy_native_sdk::confirm("Kill tmux Session", &confirmation_message);
+            if !confirmed {
+                return;
+            }
+
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    let binary = match view.tmux_binary_for_session_palette() {
+                        Ok(binary) => binary,
+                        Err(error) => {
+                            termy_toast::error(error);
+                            cx.notify();
+                            return;
+                        }
+                    };
+
+                    if let Err(error) = TmuxClient::kill_session(
+                        binary.as_str(),
+                        socket_target,
+                        session_name.as_str(),
+                    ) {
+                        termy_toast::error(format!("Failed to kill tmux session: {error}"));
+                        cx.notify();
+                        return;
+                    }
+
+                    termy_toast::success(format!("Killed tmux session \"{session_name}\""));
+                    view.refresh_tmux_session_palette_after_lifecycle_action(cx);
+                })
+            });
+        })
+        .detach();
     }
 
     fn execute_command_palette_action(
