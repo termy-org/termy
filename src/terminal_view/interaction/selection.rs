@@ -149,26 +149,53 @@ impl TerminalView {
         let max_row = selection_end.row;
         let grid_rows = max_row - min_row + 1;
         let mut grid = vec![vec![' '; cols]; grid_rows];
-        self.active_terminal().with_term(|term| {
-            let content = term.renderable_content();
-            for cell in content.display_iter {
-                let Some(row) =
-                    Self::viewport_row_from_term_line(cell.point.line.0, content.display_offset)
-                else {
-                    continue;
-                };
-                let col = cell.point.column.0;
-                if row < min_row || row > max_row || col >= cols {
-                    continue;
-                }
+        match self.active_terminal() {
+            Terminal::Tmux(terminal) => terminal.with_term(|term| {
+                let content = term.renderable_content();
+                for cell in content.display_iter {
+                    let Some(row) =
+                        Self::viewport_row_from_term_line(cell.point.line.0, content.display_offset)
+                    else {
+                        continue;
+                    };
+                    let col = cell.point.column.0;
+                    if row < min_row || row > max_row || col >= cols {
+                        continue;
+                    }
 
-                let c = cell.cell.c;
-                if c != '\0' {
-                    let grid_row = row - min_row;
-                    grid[grid_row][col] = if c.is_control() { ' ' } else { c };
+                    let c = cell.cell.c;
+                    if c != '\0' {
+                        let grid_row = row - min_row;
+                        grid[grid_row][col] = if c.is_control() { ' ' } else { c };
+                    }
+                }
+            }),
+            Terminal::Native(terminal) => {
+                if let Ok(terminal) = terminal.lock() {
+                    terminal.with_term(|term| {
+                        let content = term.renderable_content();
+                        for cell in content.display_iter {
+                            let Some(row) = Self::viewport_row_from_term_line(
+                                cell.point.line.0,
+                                content.display_offset,
+                            ) else {
+                                continue;
+                            };
+                            let col = cell.point.column.0;
+                            if row < min_row || row > max_row || col >= cols {
+                                continue;
+                            }
+
+                            let c = cell.cell.c;
+                            if c != '\0' {
+                                let grid_row = row - min_row;
+                                grid[grid_row][col] = if c.is_control() { ' ' } else { c };
+                            }
+                        }
+                    });
                 }
             }
-        });
+        }
 
         let mut lines = Vec::new();
         for row in min_row..=max_row {
@@ -210,35 +237,73 @@ impl TerminalView {
         }
 
         let mut line = vec![' '; cols];
-        self.active_terminal().with_term(|term| {
-            let content = term.renderable_content();
-            for cell in content.display_iter {
-                let Some(cell_row) =
-                    Self::viewport_row_from_term_line(cell.point.line.0, content.display_offset)
-                else {
-                    continue;
-                };
-                if cell_row != row {
-                    continue;
-                }
+        match self.active_terminal() {
+            Terminal::Tmux(terminal) => terminal.with_term(|term| {
+                let content = term.renderable_content();
+                for cell in content.display_iter {
+                    let Some(cell_row) =
+                        Self::viewport_row_from_term_line(cell.point.line.0, content.display_offset)
+                    else {
+                        continue;
+                    };
+                    if cell_row != row {
+                        continue;
+                    }
 
-                let col = cell.point.column.0;
-                if col >= cols {
-                    continue;
-                }
+                    let col = cell.point.column.0;
+                    if col >= cols {
+                        continue;
+                    }
 
-                if cell.cell.flags.intersects(
-                    Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN,
-                ) {
-                    continue;
-                }
+                    if cell.cell.flags.intersects(
+                        Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN,
+                    ) {
+                        continue;
+                    }
 
-                let c = cell.cell.c;
-                if c != '\0' {
-                    line[col] = if c.is_control() { ' ' } else { c };
+                    let c = cell.cell.c;
+                    if c != '\0' {
+                        line[col] = if c.is_control() { ' ' } else { c };
+                    }
+                }
+            }),
+            Terminal::Native(terminal) => {
+                if let Ok(terminal) = terminal.lock() {
+                    terminal.with_term(|term| {
+                        let content = term.renderable_content();
+                        for cell in content.display_iter {
+                            let Some(cell_row) = Self::viewport_row_from_term_line(
+                                cell.point.line.0,
+                                content.display_offset,
+                            ) else {
+                                continue;
+                            };
+                            if cell_row != row {
+                                continue;
+                            }
+
+                            let col = cell.point.column.0;
+                            if col >= cols {
+                                continue;
+                            }
+
+                            if cell.cell.flags.intersects(
+                                Flags::WIDE_CHAR_SPACER
+                                    | Flags::LEADING_WIDE_CHAR_SPACER
+                                    | Flags::HIDDEN,
+                            ) {
+                                continue;
+                            }
+
+                            let c = cell.cell.c;
+                            if c != '\0' {
+                                line[col] = if c.is_control() { ' ' } else { c };
+                            }
+                        }
+                    });
                 }
             }
-        });
+        }
 
         Some(line)
     }

@@ -30,6 +30,10 @@ const WINDOWS_DEFAULT_WINDOW_WIDTH: f32 = 1280.0;
 const WINDOWS_DEFAULT_WINDOW_HEIGHT: f32 = 820.0;
 
 fn preflight_tmux_runtime(config: &config::AppConfig) -> Result<(), String> {
+    if !config.tmux_enabled {
+        return Ok(());
+    }
+
     #[cfg(target_os = "windows")]
     {
         let _ = config;
@@ -75,7 +79,7 @@ fn main() {
             eprintln!("Termy startup blocked: {error}");
             std::process::exit(1);
         }
-        keybindings::install_keybindings(cx, &app_config);
+        keybindings::install_keybindings(cx, &app_config, app_config.tmux_enabled);
         let window_background = initial_window_background_appearance(&app_config);
         let window_width = app_config.window_width;
         let window_height = app_config.window_height;

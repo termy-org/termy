@@ -200,13 +200,39 @@ impl SettingsWindow {
     }
 
     pub(super) fn render_terminal_tmux_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let enabled_meta = Self::setting_metadata_or_fallback("tmux_enabled");
         let persistence_meta = Self::setting_metadata_or_fallback("tmux_persistence");
         let binary_meta = Self::setting_metadata_or_fallback("tmux_binary");
+        let tmux_enabled = self.config.tmux_enabled;
         let tmux_persistence = self.config.tmux_persistence;
         let binary = self.config.tmux_binary.clone();
 
-        div()
+        let mut group = div()
             .child(self.render_group_header("TMUX"))
+            .child(self.render_setting_row(
+                "tmux_enabled",
+                "tmux_enabled-toggle",
+                enabled_meta.title,
+                enabled_meta.description,
+                tmux_enabled,
+                cx,
+                |view, _cx| {
+                    let next = !view.config.tmux_enabled;
+                    match config::set_root_setting(RootSettingId::TmuxEnabled, &next.to_string()) {
+                        Ok(()) => {
+                            view.config.tmux_enabled = next;
+                            termy_toast::success("Saved. Restart Termy to apply runtime mode change.");
+                        }
+                        Err(error) => termy_toast::error(error),
+                    }
+                },
+            ));
+
+        if !tmux_enabled {
+            return group.into_any_element();
+        }
+
+        group = group
             .child(self.render_setting_row(
                 "tmux_persistence",
                 "tmux_persistence-toggle",
@@ -233,8 +259,9 @@ impl SettingsWindow {
                 binary_meta.description,
                 binary,
                 cx,
-            ))
-            .into_any_element()
+            ));
+
+        group.into_any_element()
     }
 
     pub(super) fn render_terminal_scrolling_group(&mut self, cx: &mut Context<Self>) -> AnyElement {

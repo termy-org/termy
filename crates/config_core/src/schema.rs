@@ -278,8 +278,9 @@ pub const WORKING_DIR_FALLBACK_ENUM_CHOICES: &[EnumChoice] = &[
 
 define_root_settings! {
     (Theme, "theme", [], Appearance, "THEME", "Theme", "Current color scheme name", ["color", "scheme", "appearance"], RootSettingValueKind::Special, false),
-    (TmuxPersistence, "tmux_persistence", [], Terminal, "TMUX", "tmux Persistence", "Reuse tmux tabs and panes across app restarts", ["tmux", "session", "persistence", "restart"], RootSettingValueKind::Boolean, false),
-    (TmuxBinary, "tmux_binary", [], Terminal, "TMUX", "tmux Binary", "tmux executable path or binary name", ["tmux", "binary", "path"], RootSettingValueKind::Text, false),
+    (TmuxEnabled, "tmux_enabled", [], Terminal, "TMUX", "Tmux Enabled", "Enable tmux runtime integration", ["tmux", "runtime", "integration", "enabled"], RootSettingValueKind::Boolean, false),
+    (TmuxPersistence, "tmux_persistence", [], Terminal, "TMUX", "Tmux Persistence", "Reuse tmux tabs and panes across app restarts (only used when tmux_enabled = true)", ["tmux", "session", "persistence", "restart"], RootSettingValueKind::Boolean, false),
+    (TmuxBinary, "tmux_binary", [], Terminal, "TMUX", "Tmux Binary", "tmux executable path or binary name (only used when tmux_enabled = true)", ["tmux", "binary", "path"], RootSettingValueKind::Text, false),
     (WorkingDir, "working_dir", [], Advanced, "STARTUP", "Working Directory", "Initial directory for new sessions", ["working directory", "cwd", "startup", "path"], RootSettingValueKind::Text, false),
     (WorkingDirFallback, "working_dir_fallback", ["default_working_dir"], Advanced, "STARTUP", "Working Directory Fallback", "Directory used when working_dir is unset", ["working directory", "fallback", "cwd", "startup"], RootSettingValueKind::Enum, false),
     (WarnOnQuitWithRunningProcess, "warn_on_quit_with_running_process", [], Advanced, "SAFETY", "Warn On Quit", "Warn before quitting when a tab has an active process", ["quit", "warning", "safety", "process"], RootSettingValueKind::Boolean, false),
@@ -362,6 +363,7 @@ pub fn root_setting_enum_choices(id: RootSettingId) -> Option<&'static [EnumChoi
 pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Option<String> {
     match id {
         RootSettingId::Theme => Some(config.theme.clone()),
+        RootSettingId::TmuxEnabled => Some(config.tmux_enabled.to_string()),
         RootSettingId::TmuxPersistence => Some(config.tmux_persistence.to_string()),
         RootSettingId::TmuxBinary => Some(config.tmux_binary.clone()),
         RootSettingId::WorkingDir => config.working_dir.clone(),

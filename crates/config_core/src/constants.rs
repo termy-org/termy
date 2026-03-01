@@ -4,6 +4,7 @@ pub(crate) const DEFAULT_TAB_TITLE_FALLBACK: &str = "Terminal";
 pub(crate) const DEFAULT_TAB_TITLE_EXPLICIT_PREFIX: &str = "termy:tab:";
 pub(crate) const DEFAULT_TAB_TITLE_PROMPT_FORMAT: &str = "{cwd}";
 pub(crate) const DEFAULT_TAB_TITLE_COMMAND_FORMAT: &str = "{command}";
+pub(crate) const DEFAULT_TMUX_ENABLED: bool = false;
 pub(crate) const DEFAULT_TMUX_BINARY: &str = "tmux";
 pub(crate) const DEFAULT_TMUX_PERSISTENCE: bool = false;
 pub(crate) const DEFAULT_MOUSE_SCROLL_MULTIPLIER: f32 = 3.0;

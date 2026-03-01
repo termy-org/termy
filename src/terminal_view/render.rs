@@ -516,65 +516,76 @@ impl Render for TerminalView {
                     None
                 };
 
-                terminal.with_term(|term| {
-                    let content = term.renderable_content();
-                    pane_display_offset = content.display_offset;
-                    let show_cursor = content.display_offset == 0 && cursor_visible && is_active_pane;
-                    for cell in content.display_iter {
-                        let point = cell.point;
-                        let cell_content = &cell.cell;
-                        let term_line = point.line.0;
-                        let Some(row) =
-                            Self::viewport_row_from_term_line(term_line, content.display_offset)
-                        else {
-                            continue;
-                        };
-                        let col = point.column.0;
-
-                        let mut fg = colors.convert(cell_content.fg);
-                        let mut bg = colors.convert(cell_content.bg);
-                        if cell_content.flags.contains(Flags::INVERSE) {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-                        if cell_content.flags.contains(Flags::DIM) {
-                            fg.r *= DIM_TEXT_FACTOR;
-                            fg.g *= DIM_TEXT_FACTOR;
-                            fg.b *= DIM_TEXT_FACTOR;
-                        }
-                        bg.a *= effective_background_opacity;
-
-                        let c = cell_content.c;
-                        let is_cursor = show_cursor && col == cursor_col && row == cursor_row;
-                        let selected = is_active_pane && self.cell_is_selected(col, row);
-
-                        let (search_current, search_match) =
-                            if let Some(results) = &pane_search_results {
-                                let is_current = results.is_current_match(term_line, col);
-                                let is_any = results.is_any_match(term_line, col);
-                                (is_current, is_any && !is_current)
-                            } else {
-                                (false, false)
+                macro_rules! collect_cells_from_term {
+                    ($term:expr) => {{
+                        let content = $term.renderable_content();
+                        pane_display_offset = content.display_offset;
+                        let show_cursor =
+                            content.display_offset == 0 && cursor_visible && is_active_pane;
+                        for cell in content.display_iter {
+                            let point = cell.point;
+                            let cell_content = &cell.cell;
+                            let term_line = point.line.0;
+                            let Some(row) =
+                                Self::viewport_row_from_term_line(term_line, content.display_offset)
+                            else {
+                                continue;
                             };
+                            let col = point.column.0;
 
-                        cells_to_render.push(CellRenderInfo {
-                            col,
-                            row,
-                            char: c,
-                            fg: fg.into(),
-                            bg: bg.into(),
-                            bold: cell_content.flags.contains(Flags::BOLD),
-                            render_text: !cell_content.flags.intersects(
-                                Flags::WIDE_CHAR_SPACER
-                                    | Flags::LEADING_WIDE_CHAR_SPACER
-                                    | Flags::HIDDEN,
-                            ),
-                            is_cursor,
-                            selected,
-                            search_current,
-                            search_match,
-                        });
+                            let mut fg = colors.convert(cell_content.fg);
+                            let mut bg = colors.convert(cell_content.bg);
+                            if cell_content.flags.contains(Flags::INVERSE) {
+                                std::mem::swap(&mut fg, &mut bg);
+                            }
+                            if cell_content.flags.contains(Flags::DIM) {
+                                fg.r *= DIM_TEXT_FACTOR;
+                                fg.g *= DIM_TEXT_FACTOR;
+                                fg.b *= DIM_TEXT_FACTOR;
+                            }
+                            bg.a *= effective_background_opacity;
+
+                            let c = cell_content.c;
+                            let is_cursor = show_cursor && col == cursor_col && row == cursor_row;
+                            let selected = is_active_pane && self.cell_is_selected(col, row);
+
+                            let (search_current, search_match) =
+                                if let Some(results) = &pane_search_results {
+                                    let is_current = results.is_current_match(term_line, col);
+                                    let is_any = results.is_any_match(term_line, col);
+                                    (is_current, is_any && !is_current)
+                                } else {
+                                    (false, false)
+                                };
+
+                            cells_to_render.push(CellRenderInfo {
+                                col,
+                                row,
+                                char: c,
+                                fg: fg.into(),
+                                bg: bg.into(),
+                                bold: cell_content.flags.contains(Flags::BOLD),
+                                render_text: !cell_content.flags.intersects(
+                                    Flags::WIDE_CHAR_SPACER
+                                        | Flags::LEADING_WIDE_CHAR_SPACER
+                                        | Flags::HIDDEN,
+                                ),
+                                is_cursor,
+                                selected,
+                                search_current,
+                                search_match,
+                            });
+                        }
+                    }};
+                }
+                match terminal {
+                    Terminal::Tmux(terminal) => terminal.with_term(|term| collect_cells_from_term!(term)),
+                    Terminal::Native(terminal) => {
+                        if let Ok(terminal) = terminal.lock() {
+                            terminal.with_term(|term| collect_cells_from_term!(term));
+                        }
                     }
-                });
+                }
 
                 if is_active_pane {
                     terminal_display_offset = pane_display_offset;

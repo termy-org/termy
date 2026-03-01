@@ -388,11 +388,13 @@ fn numeric_keys_parse_table_driven() {
 #[test]
 fn tmux_runtime_options_parse() {
     let config = parse(
-        "tmux_persistence = true\n\
+        "tmux_enabled = true\n\
+         tmux_persistence = true\n\
          tmux_binary = /opt/homebrew/bin/tmux\n\
          working_dir_fallback = process\n",
     );
 
+    assert!(config.tmux_enabled);
     assert!(config.tmux_persistence);
     assert_eq!(config.tmux_binary, "/opt/homebrew/bin/tmux");
     assert_eq!(config.working_dir_fallback, WorkingDirFallback::Process);

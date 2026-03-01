@@ -43,14 +43,19 @@ Termy reads configuration from `~/.config/termy/config.txt`.
 
 ## Terminal
 
+`tmux_enabled`
+- Default: `false`
+- Enable tmux runtime integration
+- Group: `TMUX`
+
 `tmux_persistence`
 - Default: `false`
-- Reuse tmux tabs and panes across app restarts
+- Reuse tmux tabs and panes across app restarts (only used when tmux_enabled = true)
 - Group: `TMUX`
 
 `tmux_binary`
 - Default: `tmux`
-- tmux executable path or binary name
+- tmux executable path or binary name (only used when tmux_enabled = true)
 - Group: `TMUX`
 
 `cursor_style`
@@ -130,11 +135,6 @@ Termy reads configuration from `~/.config/termy/config.txt`.
 - Default: `{command}`
 - Template for command-derived tab titles
 - Group: `TAB TITLES`
-
-Tmux runtime title behavior:
-- `shell` source is derived from the active pane (`pane_current_path` / `pane_current_command`)
-- `explicit` is not auto-populated from tmux `window_name`
-- Manual tmux renames (`automatic-rename=off`) map to `manual`
 
 `tab_close_visibility`
 - Default: `active_hover`
@@ -264,3 +264,4 @@ Use `[colors]` to override theme colors with `#RRGGBB` values.
 `bright_white`
 - Aliases: `brightwhite`, `color15`
 - ANSI bright white
+

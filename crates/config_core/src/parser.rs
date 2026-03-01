@@ -128,6 +128,13 @@ impl AppConfig {
                         );
                     }
                 }
+                RootSettingId::TmuxEnabled => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.tmux_enabled = parsed;
+                    }
+                }
                 RootSettingId::TmuxPersistence => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)

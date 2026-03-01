@@ -9,8 +9,8 @@ use termy_command_core::{
     parse_keybind_directives_from_iter, resolve_keybinds,
 };
 
-pub fn install_keybindings(cx: &mut App, config: &AppConfig) {
-    let (resolved, warnings) = resolve_keybinds_for_config(config);
+pub fn install_keybindings(cx: &mut App, config: &AppConfig, tmux_enabled: bool) {
+    let (resolved, warnings) = resolve_keybinds_for_config(config, tmux_enabled);
     report_warnings(&warnings);
     let resolved = reorder_resolved_keybinds_for_menu_display(resolved);
 
@@ -25,7 +25,10 @@ pub fn install_keybindings(cx: &mut App, config: &AppConfig) {
         CommandAction::from_command_id(binding.action).to_key_binding(&binding.trigger)
     }));
     cx.bind_keys(crate::commands::inline_input_keybindings());
-    cx.set_menus(crate::menus::app_menus(!termy_cli_install_core::is_cli_installed()));
+    cx.set_menus(crate::menus::app_menus(
+        !termy_cli_install_core::is_cli_installed(),
+        tmux_enabled,
+    ));
 }
 
 fn reorder_resolved_keybinds_for_menu_display(
@@ -58,6 +61,7 @@ fn reorder_resolved_keybinds_for_menu_display(
 
 pub(crate) fn resolve_keybinds_for_config(
     config: &AppConfig,
+    tmux_enabled: bool,
 ) -> (
     Vec<termy_command_core::ResolvedKeybind>,
     Vec<KeybindWarning>,
@@ -71,6 +75,16 @@ pub(crate) fn resolve_keybinds_for_config(
         }));
 
     let resolved = resolve_keybinds(default_resolved_keybinds(), &directives);
+    let resolved = if tmux_enabled {
+        resolved
+    } else {
+        resolved
+            .into_iter()
+            .filter(|binding| {
+                !CommandAction::from_command_id(binding.action).requires_tmux()
+            })
+            .collect()
+    };
     (resolved, warnings)
 }
 
@@ -112,6 +126,7 @@ fn debug_assert_trigger_is_valid_for_gpui(_trigger: &str) {}
 #[cfg(test)]
 mod tests {
     use super::{reorder_resolved_keybinds_for_menu_display, resolve_keybinds_for_config};
+    use crate::commands::CommandAction;
     use crate::config::AppConfig;
     use termy_command_core::{
         CommandId, KeybindLineRef, ResolvedKeybind, default_resolved_keybinds,
@@ -145,7 +160,7 @@ mod tests {
         let mut config = AppConfig::default();
         config.keybind_lines = fixture_keybind_lines();
 
-        let (resolved_from_gui, warnings) = resolve_keybinds_for_config(&config);
+        let (resolved_from_gui, warnings) = resolve_keybinds_for_config(&config, true);
         assert!(warnings.is_empty());
 
         let (directives, core_warnings) =
@@ -166,7 +181,7 @@ mod tests {
         let mut config = AppConfig::default();
         config.keybind_lines = fixture_keybind_lines();
 
-        let (resolved, warnings) = resolve_keybinds_for_config(&config);
+        let (resolved, warnings) = resolve_keybinds_for_config(&config, true);
         assert!(warnings.is_empty());
         assert!(
             resolved
@@ -229,5 +244,22 @@ mod tests {
 
         let reordered = reorder_resolved_keybinds_for_menu_display(resolved.clone());
         assert_eq!(reordered, resolved);
+    }
+
+    #[test]
+    fn native_mode_filters_tmux_only_default_keybindings() {
+        let config = AppConfig::default();
+
+        let (tmux_resolved, tmux_warnings) = resolve_keybinds_for_config(&config, true);
+        assert!(tmux_warnings.is_empty());
+        assert!(tmux_resolved
+            .iter()
+            .any(|binding| CommandAction::from_command_id(binding.action).requires_tmux()));
+
+        let (native_resolved, native_warnings) = resolve_keybinds_for_config(&config, false);
+        assert!(native_warnings.is_empty());
+        assert!(native_resolved
+            .iter()
+            .all(|binding| !CommandAction::from_command_id(binding.action).requires_tmux()));
     }
 }

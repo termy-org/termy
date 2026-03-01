@@ -19,6 +19,12 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if action.requires_tmux() && !self.runtime_uses_tmux() {
+            termy_toast::info("Enable tmux integration and restart to use this command");
+            cx.notify();
+            return;
+        }
+
         let shortcuts_suspended = respect_shortcut_suspend && self.command_shortcuts_suspended();
 
         match action {

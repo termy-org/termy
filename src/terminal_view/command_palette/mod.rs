@@ -107,9 +107,11 @@ impl TerminalView {
 
     fn command_palette_command_items_for_state(
         install_cli_available: bool,
+        tmux_enabled: bool,
     ) -> Vec<CommandPaletteItem> {
         CommandAction::palette_entries()
             .into_iter()
+            .filter(|entry| tmux_enabled || !entry.action.requires_tmux())
             .map(|entry| {
                 Self::command_palette_command_item_for_state(
                     entry.action,
@@ -124,7 +126,10 @@ impl TerminalView {
     fn command_palette_items_for_mode(&self, mode: CommandPaletteMode) -> Vec<CommandPaletteItem> {
         match mode {
             CommandPaletteMode::Commands => {
-                Self::command_palette_command_items_for_state(self.install_cli_available())
+                Self::command_palette_command_items_for_state(
+                    self.install_cli_available(),
+                    self.runtime_uses_tmux(),
+                )
             }
             CommandPaletteMode::Themes => self.command_palette_theme_items(),
         }
@@ -553,8 +558,8 @@ mod tests {
 
     #[test]
     fn install_cli_command_is_present_and_tracks_availability_state() {
-        let available_items = TerminalView::command_palette_command_items_for_state(true);
-        let unavailable_items = TerminalView::command_palette_command_items_for_state(false);
+        let available_items = TerminalView::command_palette_command_items_for_state(true, true);
+        let unavailable_items = TerminalView::command_palette_command_items_for_state(false, true);
 
         let available_install_cli = available_items
             .iter()
@@ -575,6 +580,20 @@ mod tests {
             .expect("missing Install CLI in unavailable command palette state");
         assert!(!unavailable_install_cli.enabled);
         assert_eq!(unavailable_install_cli.status_hint, Some("Installed"));
+    }
+
+    #[test]
+    fn tmux_commands_are_hidden_when_tmux_is_disabled() {
+        let items = TerminalView::command_palette_command_items_for_state(true, false);
+        assert!(!items.iter().any(|item| matches!(
+            item.kind,
+            CommandPaletteItemKind::Command(CommandAction::NewTab
+                | CommandAction::CloseTab
+                | CommandAction::SplitPaneVertical
+                | CommandAction::SplitPaneHorizontal
+                | CommandAction::TogglePaneZoom
+                | CommandAction::RenameTab)
+        )));
     }
 
     #[test]

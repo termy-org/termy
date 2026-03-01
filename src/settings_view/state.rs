@@ -191,6 +191,7 @@ impl SettingsWindow {
             RootSettingId::PaddingY,
         ];
         const TERMINAL_SETTINGS: &[RootSettingId] = &[
+            RootSettingId::TmuxEnabled,
             RootSettingId::TmuxPersistence,
             RootSettingId::TmuxBinary,
             RootSettingId::CursorBlink,

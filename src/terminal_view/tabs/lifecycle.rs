@@ -7,6 +7,10 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
+
         match action {
             CommandAction::RenameTab => {
                 self.begin_rename_tab(self.active_tab, cx);
@@ -70,6 +74,9 @@ impl TerminalView {
     }
 
     pub(crate) fn reorder_tab(&mut self, from: usize, to: usize, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         if from >= self.tabs.len() || to >= self.tabs.len() || from == to {
             return false;
         }
@@ -85,7 +92,7 @@ impl TerminalView {
             for index in from..to {
                 let source = window_order[index].clone();
                 let target = window_order[index + 1].clone();
-                if let Err(error) = self.tmux_client.swap_windows(source.as_str(), target.as_str()) {
+                if let Err(error) = self.tmux_client_required().swap_windows(source.as_str(), target.as_str()) {
                     termy_toast::error(format!("Failed to reorder tabs: {error}"));
                     return false;
                 }
@@ -95,7 +102,7 @@ impl TerminalView {
             for index in (to + 1..=from).rev() {
                 let source = window_order[index].clone();
                 let target = window_order[index - 1].clone();
-                if let Err(error) = self.tmux_client.swap_windows(source.as_str(), target.as_str()) {
+                if let Err(error) = self.tmux_client_required().swap_windows(source.as_str(), target.as_str()) {
                     termy_toast::error(format!("Failed to reorder tabs: {error}"));
                     return false;
                 }
@@ -138,11 +145,14 @@ impl TerminalView {
     }
 
     pub(crate) fn switch_active_tab_left(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         if self.tabs.len() <= 1 {
             return false;
         }
 
-        if let Err(error) = self.tmux_client.previous_window() {
+        if let Err(error) = self.tmux_client_required().previous_window() {
             termy_toast::error(format!("Failed to switch tab: {error}"));
             return false;
         }
@@ -156,11 +166,14 @@ impl TerminalView {
     }
 
     pub(crate) fn switch_active_tab_right(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         if self.tabs.len() <= 1 {
             return false;
         }
 
-        if let Err(error) = self.tmux_client.next_window() {
+        if let Err(error) = self.tmux_client_required().next_window() {
             termy_toast::error(format!("Failed to switch tab: {error}"));
             return false;
         }
@@ -174,7 +187,10 @@ impl TerminalView {
     }
 
     pub(crate) fn add_tab(&mut self, cx: &mut Context<Self>) {
-        if let Err(error) = self.tmux_client.new_window() {
+        if !self.runtime_uses_tmux() {
+            return;
+        }
+        if let Err(error) = self.tmux_client_required().new_window() {
             termy_toast::error(format!("Failed to create tab: {error}"));
             return;
         }
@@ -187,12 +203,15 @@ impl TerminalView {
     }
 
     pub(crate) fn close_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        if !self.runtime_uses_tmux() {
+            return;
+        }
         if index >= self.tabs.len() {
             return;
         }
 
         let window_id = self.tabs[index].window_id.clone();
-        if let Err(error) = self.tmux_client.kill_window(window_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().kill_window(window_id.as_str()) {
             termy_toast::error(format!("Failed to close tab: {error}"));
             return;
         }
@@ -230,12 +249,15 @@ impl TerminalView {
     }
 
     pub(crate) fn switch_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+        if !self.runtime_uses_tmux() {
+            return;
+        }
         if index >= self.tabs.len() || index == self.active_tab {
             return;
         }
 
         let window_id = self.tabs[index].window_id.clone();
-        if let Err(error) = self.tmux_client.select_window(window_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().select_window(window_id.as_str()) {
             termy_toast::error(format!("Failed to switch tab: {error}"));
             return;
         }
@@ -250,6 +272,12 @@ impl TerminalView {
     }
 
     pub(crate) fn commit_rename_tab(&mut self, cx: &mut Context<Self>) {
+        if !self.runtime_uses_tmux() {
+            self.reset_tab_rename_state();
+            self.reset_tab_drag_state();
+            cx.notify();
+            return;
+        }
         let Some(index) = self.renaming_tab else {
             return;
         };
@@ -259,7 +287,7 @@ impl TerminalView {
             let renamed = Self::truncate_tab_title(trimmed);
             let window_id = self.tabs[index].window_id.clone();
             if let Err(error) = self
-                .tmux_client
+                .tmux_client_required()
                 .rename_window(window_id.as_str(), renamed.as_str())
             {
                 termy_toast::error(format!("Failed to rename tab: {error}"));
@@ -332,8 +360,11 @@ impl TerminalView {
     }
 
     pub(crate) fn focus_pane_target(&mut self, pane_id: &str, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let previous_pane_id = self.active_pane_id().map(ToOwned::to_owned);
-        if let Err(error) = self.tmux_client.select_pane(pane_id) {
+        if let Err(error) = self.tmux_client_required().select_pane(pane_id) {
             termy_toast::error(format!("Failed to focus pane: {error}"));
             return false;
         }
@@ -349,10 +380,13 @@ impl TerminalView {
     }
 
     pub(crate) fn split_active_pane_vertical(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.split_vertical(pane_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().split_vertical(pane_id.as_str()) {
             termy_toast::error(format!("Failed to split pane: {error}"));
             return false;
         }
@@ -365,10 +399,13 @@ impl TerminalView {
     }
 
     pub(crate) fn split_active_pane_horizontal(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.split_horizontal(pane_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().split_horizontal(pane_id.as_str()) {
             termy_toast::error(format!("Failed to split pane: {error}"));
             return false;
         }
@@ -381,10 +418,13 @@ impl TerminalView {
     }
 
     pub(crate) fn close_active_pane(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.close_pane(pane_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().close_pane(pane_id.as_str()) {
             termy_toast::error(format!("Failed to close pane: {error}"));
             return false;
         }
@@ -397,10 +437,13 @@ impl TerminalView {
     }
 
     pub(crate) fn focus_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.focus_pane_left(pane_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().focus_pane_left(pane_id.as_str()) {
             termy_toast::error(format!("Failed to focus pane: {error}"));
             return false;
         }
@@ -408,10 +451,13 @@ impl TerminalView {
     }
 
     pub(crate) fn focus_pane_right(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.focus_pane_right(pane_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().focus_pane_right(pane_id.as_str()) {
             termy_toast::error(format!("Failed to focus pane: {error}"));
             return false;
         }
@@ -419,10 +465,13 @@ impl TerminalView {
     }
 
     pub(crate) fn focus_pane_up(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.focus_pane_up(pane_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().focus_pane_up(pane_id.as_str()) {
             termy_toast::error(format!("Failed to focus pane: {error}"));
             return false;
         }
@@ -430,10 +479,13 @@ impl TerminalView {
     }
 
     pub(crate) fn focus_pane_down(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.focus_pane_down(pane_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().focus_pane_down(pane_id.as_str()) {
             termy_toast::error(format!("Failed to focus pane: {error}"));
             return false;
         }
@@ -441,13 +493,16 @@ impl TerminalView {
     }
 
     pub(crate) fn resize_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
         let Some(before) = self.pane_geometry_signature(pane_id.as_str()) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.resize_pane_left(pane_id.as_str(), 1) {
+        if let Err(error) = self.tmux_client_required().resize_pane_left(pane_id.as_str(), 1) {
             termy_toast::error(format!("Failed to resize pane: {error}"));
             return false;
         }
@@ -460,13 +515,16 @@ impl TerminalView {
     }
 
     pub(crate) fn resize_pane_right(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
         let Some(before) = self.pane_geometry_signature(pane_id.as_str()) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.resize_pane_right(pane_id.as_str(), 1) {
+        if let Err(error) = self.tmux_client_required().resize_pane_right(pane_id.as_str(), 1) {
             termy_toast::error(format!("Failed to resize pane: {error}"));
             return false;
         }
@@ -479,13 +537,16 @@ impl TerminalView {
     }
 
     pub(crate) fn resize_pane_up(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
         let Some(before) = self.pane_geometry_signature(pane_id.as_str()) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.resize_pane_up(pane_id.as_str(), 1) {
+        if let Err(error) = self.tmux_client_required().resize_pane_up(pane_id.as_str(), 1) {
             termy_toast::error(format!("Failed to resize pane: {error}"));
             return false;
         }
@@ -498,13 +559,16 @@ impl TerminalView {
     }
 
     pub(crate) fn resize_pane_down(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
         let Some(before) = self.pane_geometry_signature(pane_id.as_str()) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.resize_pane_down(pane_id.as_str(), 1) {
+        if let Err(error) = self.tmux_client_required().resize_pane_down(pane_id.as_str(), 1) {
             termy_toast::error(format!("Failed to resize pane: {error}"));
             return false;
         }
@@ -517,10 +581,13 @@ impl TerminalView {
     }
 
     pub(crate) fn toggle_pane_zoom(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if let Err(error) = self.tmux_client.toggle_pane_zoom(pane_id.as_str()) {
+        if let Err(error) = self.tmux_client_required().toggle_pane_zoom(pane_id.as_str()) {
             termy_toast::error(format!("Failed to toggle pane zoom: {error}"));
             return false;
         }

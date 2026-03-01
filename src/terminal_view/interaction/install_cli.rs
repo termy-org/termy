@@ -64,7 +64,10 @@ impl TerminalView {
 
                 if self.refresh_install_cli_availability() {
                     self.refresh_command_palette_items_for_current_mode(cx);
-                    cx.set_menus(crate::menus::app_menus(self.install_cli_available()));
+                    cx.set_menus(crate::menus::app_menus(
+                        self.install_cli_available(),
+                        self.runtime_uses_tmux(),
+                    ));
                 }
                 cx.notify();
             }

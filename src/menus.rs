@@ -6,15 +6,15 @@ use gpui::SystemMenuType;
 const INSTALL_CLI_TITLE: &str = "Install CLI";
 const INSTALL_CLI_INSTALLED_TITLE: &str = "Install CLI (Installed)";
 
-pub(crate) fn app_menus(install_cli_available: bool) -> Vec<Menu> {
+pub(crate) fn app_menus(install_cli_available: bool, tmux_enabled: bool) -> Vec<Menu> {
     CommandAction::menu_roots()
         .iter()
         .copied()
-        .map(|root| build_menu(root, install_cli_available))
+        .map(|root| build_menu(root, install_cli_available, tmux_enabled))
         .collect()
 }
 
-fn build_menu(root: MenuRoot, install_cli_available: bool) -> Menu {
+fn build_menu(root: MenuRoot, install_cli_available: bool, tmux_enabled: bool) -> Menu {
     let entries = CommandAction::menu_entries_for_root(root);
     let mut items = Vec::new();
 
@@ -26,7 +26,7 @@ fn build_menu(root: MenuRoot, install_cli_available: bool) -> Menu {
         }
     }
 
-    append_menu_entries(&mut items, &entries, install_cli_available);
+    append_menu_entries(&mut items, &entries, install_cli_available, tmux_enabled);
 
     Menu {
         name: root.title().into(),
@@ -38,10 +38,15 @@ fn append_menu_entries(
     items: &mut Vec<MenuItem>,
     entries: &[CommandMenuEntry],
     install_cli_available: bool,
+    tmux_enabled: bool,
 ) {
     let mut previous_section = None;
 
     for entry in entries {
+        if entry.action.requires_tmux() && !tmux_enabled {
+            continue;
+        }
+
         if let Some(section) = previous_section {
             if section != entry.section {
                 items.push(MenuItem::separator());
@@ -70,7 +75,7 @@ mod tests {
 
     #[test]
     fn top_level_menu_order_is_stable() {
-        let names = app_menus(true)
+        let names = app_menus(true, true)
             .into_iter()
             .map(|menu| menu.name.to_string())
             .collect::<Vec<_>>();
@@ -80,7 +85,7 @@ mod tests {
 
     #[test]
     fn app_menu_includes_services_only_on_macos() {
-        let app_menu = app_menus(true)
+        let app_menu = app_menus(true, true)
             .into_iter()
             .find(|menu| menu.name.as_ref() == "Termy")
             .expect("missing Termy menu");
@@ -99,7 +104,7 @@ mod tests {
 
     #[test]
     fn edit_menu_copy_and_paste_use_os_actions() {
-        let edit_menu = app_menus(true)
+        let edit_menu = app_menus(true, true)
             .into_iter()
             .find(|menu| menu.name.as_ref() == "Edit")
             .expect("missing Edit menu");
@@ -126,7 +131,7 @@ mod tests {
 
     #[test]
     fn separators_are_inserted_only_between_sections() {
-        for menu in app_menus(true) {
+        for menu in app_menus(true, true) {
             if menu.items.is_empty() {
                 continue;
             }
@@ -148,11 +153,11 @@ mod tests {
 
     #[test]
     fn install_cli_menu_title_reflects_install_state() {
-        let help_menu_available = app_menus(true)
+        let help_menu_available = app_menus(true, true)
             .into_iter()
             .find(|menu| menu.name.as_ref() == "Help")
             .expect("missing Help menu");
-        let help_menu_installed = app_menus(false)
+        let help_menu_installed = app_menus(false, true)
             .into_iter()
             .find(|menu| menu.name.as_ref() == "Help")
             .expect("missing Help menu");
@@ -178,6 +183,36 @@ mod tests {
         assert_eq!(
             install_cli_titles(&help_menu_installed),
             [INSTALL_CLI_INSTALLED_TITLE]
+        );
+    }
+
+    #[test]
+    fn tmux_only_actions_are_hidden_when_tmux_is_disabled() {
+        let window_menu = app_menus(true, false)
+            .into_iter()
+            .find(|menu| menu.name.as_ref() == "Window")
+            .expect("missing Window menu");
+        assert!(
+            !window_menu
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    MenuItem::Action { name, .. } => Some(name.as_ref()),
+                    _ => None,
+                })
+                .any(|title| matches!(
+                    title,
+                    "New Tab"
+                        | "Close Tab"
+                        | "Move Tab Left"
+                        | "Move Tab Right"
+                        | "Switch Tab Left"
+                        | "Switch Tab Right"
+                        | "Split Pane Vertical"
+                        | "Split Pane Horizontal"
+                        | "Close Pane"
+                        | "Rename Tab"
+                ))
         );
     }
 }

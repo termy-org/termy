@@ -258,6 +258,31 @@ macro_rules! define_commands {
                 entries
             }
 
+            pub const fn requires_tmux(self) -> bool {
+                matches!(
+                    self,
+                    Self::RenameTab
+                        | Self::NewTab
+                        | Self::CloseTab
+                        | Self::MoveTabLeft
+                        | Self::MoveTabRight
+                        | Self::SwitchTabLeft
+                        | Self::SwitchTabRight
+                        | Self::SplitPaneVertical
+                        | Self::SplitPaneHorizontal
+                        | Self::ClosePane
+                        | Self::FocusPaneLeft
+                        | Self::FocusPaneRight
+                        | Self::FocusPaneUp
+                        | Self::FocusPaneDown
+                        | Self::ResizePaneLeft
+                        | Self::ResizePaneRight
+                        | Self::ResizePaneUp
+                        | Self::ResizePaneDown
+                        | Self::TogglePaneZoom
+                )
+            }
+
             pub fn to_menu_item(self, title: &'static str, role: MenuActionRole) -> MenuItem {
                 let os_action = match role {
                     MenuActionRole::Normal => None,
@@ -1060,5 +1085,39 @@ mod tests {
                 MenuRoot::Help,
             ]
         );
+    }
+
+    #[test]
+    fn requires_tmux_matches_tmux_only_command_set() {
+        let mut actual = CommandAction::all()
+            .filter(|action| action.requires_tmux())
+            .map(|action| action.to_command_id().config_name())
+            .collect::<Vec<_>>();
+        actual.sort_unstable();
+
+        let mut expected = vec![
+            "rename_tab",
+            "new_tab",
+            "close_tab",
+            "move_tab_left",
+            "move_tab_right",
+            "switch_tab_left",
+            "switch_tab_right",
+            "split_pane_vertical",
+            "split_pane_horizontal",
+            "close_pane",
+            "focus_pane_left",
+            "focus_pane_right",
+            "focus_pane_up",
+            "focus_pane_down",
+            "resize_pane_left",
+            "resize_pane_right",
+            "resize_pane_up",
+            "resize_pane_down",
+            "toggle_pane_zoom",
+        ];
+        expected.sort_unstable();
+
+        assert_eq!(actual, expected);
     }
 }

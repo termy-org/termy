@@ -2,6 +2,9 @@ use super::*;
 
 impl TerminalView {
     fn pane_resize_hit_test(&self, position: gpui::Point<Pixels>) -> Option<PaneResizeDragState> {
+        if !self.runtime_uses_tmux() {
+            return None;
+        }
         const DIVIDER_HIT_MARGIN_PX: f32 = 4.0;
 
         let tab = self.tabs.get(self.active_tab)?;
@@ -73,6 +76,9 @@ impl TerminalView {
     }
 
     fn apply_pane_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
+        if !self.runtime_uses_tmux() {
+            return false;
+        }
         let Some(drag_state) = self.pane_resize_drag.as_ref() else {
             return false;
         };
@@ -117,18 +123,21 @@ impl TerminalView {
 
         let mut completed_steps = 0i32;
         let mut failed = false;
+        let Some(tmux_client) = self.tmux_client() else {
+            return false;
+        };
         for _ in 0..step_delta.unsigned_abs() {
             let result = match (axis, step_delta.is_positive()) {
                 (PaneResizeAxis::Horizontal, true) => {
-                    self.tmux_client.resize_pane_right(pane_id.as_str(), 1)
+                    tmux_client.resize_pane_right(pane_id.as_str(), 1)
                 }
                 (PaneResizeAxis::Horizontal, false) => {
-                    self.tmux_client.resize_pane_left(pane_id.as_str(), 1)
+                    tmux_client.resize_pane_left(pane_id.as_str(), 1)
                 }
                 (PaneResizeAxis::Vertical, true) => {
-                    self.tmux_client.resize_pane_down(pane_id.as_str(), 1)
+                    tmux_client.resize_pane_down(pane_id.as_str(), 1)
                 }
-                (PaneResizeAxis::Vertical, false) => self.tmux_client.resize_pane_up(pane_id.as_str(), 1),
+                (PaneResizeAxis::Vertical, false) => tmux_client.resize_pane_up(pane_id.as_str(), 1),
             };
             match result {
                 Ok(()) => completed_steps += 1,

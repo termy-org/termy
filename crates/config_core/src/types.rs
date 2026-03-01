@@ -1,6 +1,6 @@
 use crate::constants::{
     DEFAULT_CURSOR_BLINK, DEFAULT_INACTIVE_TAB_SCROLLBACK, DEFAULT_TMUX_BINARY,
-    DEFAULT_TMUX_PERSISTENCE,
+    DEFAULT_TMUX_ENABLED, DEFAULT_TMUX_PERSISTENCE,
     DEFAULT_MOUSE_SCROLL_MULTIPLIER, DEFAULT_SCROLLBACK_HISTORY, DEFAULT_TAB_TITLE_COMMAND_FORMAT,
     DEFAULT_TAB_TITLE_EXPLICIT_PREFIX, DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT,
     DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
@@ -226,6 +226,7 @@ pub struct CustomColors {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppConfig {
     pub theme: ThemeId,
+    pub tmux_enabled: bool,
     pub tmux_persistence: bool,
     pub tmux_binary: String,
     pub working_dir: Option<String>,
@@ -265,6 +266,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             theme: "termy".to_string(),
+            tmux_enabled: DEFAULT_TMUX_ENABLED,
             tmux_persistence: DEFAULT_TMUX_PERSISTENCE,
             tmux_binary: DEFAULT_TMUX_BINARY.to_string(),
             working_dir: None,

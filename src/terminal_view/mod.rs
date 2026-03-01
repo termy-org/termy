@@ -17,13 +17,14 @@ use gpui::{
 use std::{
     path::PathBuf,
     process::{Command, Stdio},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 use termy_search::SearchState;
 use termy_terminal_ui::{
-    CellRenderInfo, PaneTerminal as Terminal, TabTitleShellIntegration, TerminalCursorStyle,
-    TerminalGrid, TerminalRuntimeConfig, TerminalSize, TmuxClient, TmuxNotification, TmuxPaneState,
-    TmuxRuntimeConfig, TmuxSnapshot, TmuxWindowState,
+    CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
+    TerminalCursorStyle, TerminalEvent, TerminalGrid, TerminalRuntimeConfig, TerminalSize, TmuxClient,
+    TmuxNotification, TmuxPaneState, TmuxRuntimeConfig, TmuxSnapshot, TmuxWindowState,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
 use termy_toast::ToastManager;
@@ -154,6 +155,12 @@ enum TmuxSnapshotRefreshMode {
     Immediate,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TerminalRuntimeMode {
+    Native,
+    Tmux,
+}
+
 #[derive(Clone, Debug)]
 struct PaneResizeDragState {
     pane_id: String,
@@ -188,6 +195,148 @@ impl TerminalScrollbarMarkerCache {
     fn clear(&mut self) {
         self.key = None;
         self.marker_tops.clear();
+    }
+}
+
+enum Terminal {
+    Tmux(PaneTerminal),
+    Native(Mutex<NativeTerminal>),
+}
+
+impl Terminal {
+    fn new_tmux(size: TerminalSize, scrollback_history: usize) -> Self {
+        Self::Tmux(PaneTerminal::new(size, scrollback_history))
+    }
+
+    fn new_native(
+        size: TerminalSize,
+        configured_working_dir: Option<&str>,
+        tab_title_shell_integration: Option<&TabTitleShellIntegration>,
+        runtime_config: Option<&TerminalRuntimeConfig>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self::Native(Mutex::new(NativeTerminal::new(
+            size,
+            configured_working_dir,
+            None,
+            tab_title_shell_integration,
+            runtime_config,
+        )?)))
+    }
+
+    fn feed_output(&self, bytes: &[u8]) {
+        if let Self::Tmux(terminal) = self {
+            terminal.feed_output(bytes);
+        }
+    }
+
+    fn write_input(&self, input: &[u8]) {
+        if let Self::Native(terminal) = self {
+            if let Ok(terminal) = terminal.lock() {
+                terminal.write(input);
+            }
+        }
+    }
+
+    fn process_events(&self) -> Vec<TerminalEvent> {
+        match self {
+            Self::Tmux(_) => Vec::new(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.process_events())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn resize(&self, new_size: TerminalSize) {
+        match self {
+            Self::Tmux(terminal) => terminal.resize(new_size),
+            Self::Native(terminal) => {
+                if let Ok(mut terminal) = terminal.lock() {
+                    terminal.resize(new_size);
+                }
+            }
+        }
+    }
+
+    fn size(&self) -> TerminalSize {
+        match self {
+            Self::Tmux(terminal) => terminal.size(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.size())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn scroll_display(&self, delta_lines: i32) -> bool {
+        match self {
+            Self::Tmux(terminal) => terminal.scroll_display(delta_lines),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.scroll_display(delta_lines))
+                .unwrap_or(false),
+        }
+    }
+
+    fn scroll_to_bottom(&self) -> bool {
+        match self {
+            Self::Tmux(terminal) => terminal.scroll_to_bottom(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.scroll_to_bottom())
+                .unwrap_or(false),
+        }
+    }
+
+    fn scroll_state(&self) -> (usize, usize) {
+        match self {
+            Self::Tmux(terminal) => terminal.scroll_state(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.scroll_state())
+                .unwrap_or((0, 0)),
+        }
+    }
+
+    fn cursor_position(&self) -> (usize, usize) {
+        match self {
+            Self::Tmux(terminal) => terminal.cursor_position(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.cursor_position())
+                .unwrap_or((0, 0)),
+        }
+    }
+
+    fn set_scrollback_history(&self, history_size: usize) {
+        match self {
+            Self::Tmux(terminal) => terminal.set_scrollback_history(history_size),
+            Self::Native(terminal) => {
+                if let Ok(terminal) = terminal.lock() {
+                    terminal.set_scrollback_history(history_size);
+                }
+            }
+        }
+    }
+
+    fn bracketed_paste_mode(&self) -> bool {
+        match self {
+            Self::Tmux(terminal) => terminal.bracketed_paste_mode(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.bracketed_paste_mode())
+                .unwrap_or(false),
+        }
+    }
+
+    fn alternate_screen_mode(&self) -> bool {
+        match self {
+            Self::Tmux(terminal) => terminal.alternate_screen_mode(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.alternate_screen_mode())
+                .unwrap_or(false),
+        }
     }
 }
 
@@ -544,11 +693,13 @@ pub struct TerminalView {
     tab_shell_integration: TabTitleShellIntegration,
     configured_working_dir: Option<String>,
     terminal_runtime: TerminalRuntimeConfig,
-    tmux_runtime: TmuxRuntimeConfig,
-    tmux_client: TmuxClient,
+    runtime_mode: TerminalRuntimeMode,
+    tmux_runtime: Option<TmuxRuntimeConfig>,
+    tmux_client: Option<TmuxClient>,
     tmux_client_cols: u16,
     tmux_client_rows: u16,
     tmux_title_refresh_deadline: Option<Instant>,
+    tmux_enabled_config: bool,
     config_path: Option<PathBuf>,
     config_fingerprint: Option<u64>,
     last_config_error_message: Option<String>,
@@ -652,11 +803,33 @@ impl TerminalView {
         runtime
     }
 
+    fn runtime_mode_from_app_config(config: &AppConfig) -> TerminalRuntimeMode {
+        if config.tmux_enabled {
+            TerminalRuntimeMode::Tmux
+        } else {
+            TerminalRuntimeMode::Native
+        }
+    }
+
     fn tmux_runtime_from_app_config(config: &AppConfig) -> TmuxRuntimeConfig {
         TmuxRuntimeConfig {
             persistence: config.tmux_persistence,
             binary: config.tmux_binary.trim().to_string(),
         }
+    }
+
+    fn runtime_uses_tmux(&self) -> bool {
+        self.runtime_mode == TerminalRuntimeMode::Tmux
+    }
+
+    fn tmux_client(&self) -> Option<&TmuxClient> {
+        self.tmux_client.as_ref()
+    }
+
+    fn tmux_client_required(&self) -> &TmuxClient {
+        self.tmux_client
+            .as_ref()
+            .expect("tmux client must exist while tmux runtime is active")
     }
 
     fn terminal_size_for_pane_state(
@@ -684,7 +857,7 @@ impl TerminalView {
         scrollback_history: usize,
         cell_size: Option<Size<Pixels>>,
     ) -> Terminal {
-        let terminal = Terminal::new(
+        let terminal = Terminal::new_tmux(
             Self::terminal_size_for_pane_state(pane, cell_size),
             scrollback_history,
         );
@@ -698,6 +871,39 @@ impl TerminalView {
         }
 
         terminal
+    }
+
+    fn create_native_tab(terminal: Terminal, cols: u16, rows: u16) -> TerminalTab {
+        let title = DEFAULT_TAB_TITLE.to_string();
+        let title_text_width = 0.0;
+        let sticky_title_width =
+            Self::tab_display_width_for_text_px_without_close_with_max(title_text_width, TAB_MAX_WIDTH);
+        let display_width =
+            Self::tab_display_width_for_text_px_with_max(title_text_width, TAB_MAX_WIDTH);
+        let pane_id = "%native-1".to_string();
+        let pane = TerminalPane {
+            id: pane_id.clone(),
+            left: 0,
+            top: 0,
+            width: cols.max(1),
+            height: rows.max(1),
+            terminal,
+        };
+        TerminalTab {
+            id: 1,
+            window_id: "@native-1".to_string(),
+            window_index: 0,
+            panes: vec![pane],
+            active_pane_id: pane_id,
+            manual_title: None,
+            explicit_title: None,
+            shell_title: None,
+            title,
+            title_text_width,
+            sticky_title_width,
+            display_width,
+            running_process: false,
+        }
     }
 
     fn apply_tmux_snapshot(&mut self, snapshot: TmuxSnapshot) {
@@ -723,7 +929,7 @@ impl TerminalView {
                     existing
                 } else {
                     Self::hydrate_pane_terminal(
-                        &self.tmux_client,
+                        self.tmux_client_required(),
                         pane_state,
                         self.terminal_runtime.scrollback_history,
                         self.cell_size,
@@ -814,7 +1020,10 @@ impl TerminalView {
     }
 
     fn refresh_tmux_snapshot(&mut self) -> bool {
-        match self.tmux_client.refresh_snapshot() {
+        if self.tmux_client.is_none() {
+            return false;
+        }
+        match self.tmux_client_required().refresh_snapshot() {
             Ok(snapshot) => {
                 self.apply_tmux_snapshot(snapshot);
                 true
@@ -869,9 +1078,12 @@ impl TerminalView {
         const MAX_ATTEMPTS: usize = 6;
         const RETRY_DELAY_MS: u64 = 12;
 
+        if self.tmux_client.is_none() {
+            return false;
+        }
         let mut applied = false;
         for attempt in 0..MAX_ATTEMPTS {
-            match self.tmux_client.refresh_snapshot() {
+            match self.tmux_client_required().refresh_snapshot() {
                 Ok(snapshot) => {
                     let converged = Self::snapshot_matches_client_size(&snapshot, cols, rows);
                     self.apply_tmux_snapshot(snapshot);
@@ -1189,7 +1401,10 @@ impl TerminalView {
                         let availability_changed = view.refresh_install_cli_availability();
                         if availability_changed {
                             view.refresh_command_palette_items_for_current_mode(cx);
-                            cx.set_menus(crate::menus::app_menus(view.install_cli_available()));
+                            cx.set_menus(crate::menus::app_menus(
+                                view.install_cli_available(),
+                                view.runtime_uses_tmux(),
+                            ));
                         }
                         if config_changed || availability_changed {
                             cx.notify();
@@ -1247,21 +1462,46 @@ impl TerminalView {
             explicit_prefix: tab_title.explicit_prefix.clone(),
         };
         let terminal_runtime = Self::runtime_config_from_app_config(&config);
-        let tmux_runtime = Self::tmux_runtime_from_app_config(&config);
+        let runtime_mode = Self::runtime_mode_from_app_config(&config);
         let initial_cols = TerminalSize::default().cols;
         let initial_rows = TerminalSize::default().rows;
-        let tmux_client = match TmuxClient::new(tmux_runtime.clone(), initial_cols, initial_rows) {
-            Ok(client) => client,
-            Err(error) => {
-                eprintln!("Termy startup blocked: failed to start tmux control runtime: {error}");
-                std::process::exit(1);
+        let (tmux_runtime, tmux_client, initial_snapshot, native_terminal) = match runtime_mode {
+            TerminalRuntimeMode::Tmux => {
+                let tmux_runtime = Self::tmux_runtime_from_app_config(&config);
+                let tmux_client = match TmuxClient::new(tmux_runtime.clone(), initial_cols, initial_rows) {
+                    Ok(client) => client,
+                    Err(error) => {
+                        eprintln!("Termy startup blocked: failed to start tmux control runtime: {error}");
+                        std::process::exit(1);
+                    }
+                };
+                let initial_snapshot = match tmux_client.refresh_snapshot() {
+                    Ok(snapshot) => snapshot,
+                    Err(error) => {
+                        eprintln!("Termy startup blocked: failed to fetch initial tmux snapshot: {error}");
+                        std::process::exit(1);
+                    }
+                };
+                (Some(tmux_runtime), Some(tmux_client), Some(initial_snapshot), None)
             }
-        };
-        let initial_snapshot = match tmux_client.refresh_snapshot() {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                eprintln!("Termy startup blocked: failed to fetch initial tmux snapshot: {error}");
-                std::process::exit(1);
+            TerminalRuntimeMode::Native => {
+                let native_terminal = match Terminal::new_native(
+                    TerminalSize {
+                        cols: initial_cols,
+                        rows: initial_rows,
+                        ..TerminalSize::default()
+                    },
+                    configured_working_dir.as_deref(),
+                    Some(&tab_shell_integration),
+                    Some(&terminal_runtime),
+                ) {
+                    Ok(terminal) => terminal,
+                    Err(error) => {
+                        eprintln!("Termy startup blocked: failed to start native runtime: {error}");
+                        std::process::exit(1);
+                    }
+                };
+                (None, None, None, Some(native_terminal))
             }
         };
 
@@ -1283,11 +1523,13 @@ impl TerminalView {
             tab_shell_integration,
             configured_working_dir,
             terminal_runtime,
+            runtime_mode,
             tmux_runtime,
             tmux_client,
             tmux_client_cols: initial_cols,
             tmux_client_rows: initial_rows,
             tmux_title_refresh_deadline: None,
+            tmux_enabled_config: config.tmux_enabled,
             config_path,
             config_fingerprint,
             last_config_error_message,
@@ -1345,7 +1587,22 @@ impl TerminalView {
             #[cfg(target_os = "macos")]
             update_check_toast_id: None,
         };
-        view.apply_tmux_snapshot(initial_snapshot);
+        match initial_snapshot {
+            Some(initial_snapshot) => view.apply_tmux_snapshot(initial_snapshot),
+            None => {
+                if let Some(native_terminal) = native_terminal {
+                    view.tabs = vec![Self::create_native_tab(
+                        native_terminal,
+                        initial_cols,
+                        initial_rows,
+                    )];
+                    view.next_tab_id = 2;
+                    view.active_tab = 0;
+                    view.refresh_tab_title(0);
+                    view.mark_tab_strip_layout_dirty();
+                }
+            }
+        }
 
         #[cfg(target_os = "macos")]
         {
@@ -1364,7 +1621,7 @@ impl TerminalView {
     }
 
     fn apply_runtime_config(&mut self, config: AppConfig, cx: &mut Context<Self>) -> bool {
-        keybindings::install_keybindings(cx, &config);
+        keybindings::install_keybindings(cx, &config, self.runtime_uses_tmux());
         let previous_font_family = self.font_family.clone();
         let previous_font_size = self.font_size;
         self.theme_id = config.theme.clone();
@@ -1383,23 +1640,32 @@ impl TerminalView {
             enabled: self.tab_title.shell_integration,
             explicit_prefix: self.tab_title.explicit_prefix.clone(),
         };
+        let next_runtime_mode = Self::runtime_mode_from_app_config(&config);
+        let tmux_enabled_changed = config.tmux_enabled != self.tmux_enabled_config;
+        if next_runtime_mode != self.runtime_mode && tmux_enabled_changed {
+            termy_toast::info("Runtime change saved. Restart Termy to apply tmux mode updates.");
+        }
+        self.tmux_enabled_config = config.tmux_enabled;
         self.configured_working_dir = config.working_dir.clone();
         self.terminal_runtime = Self::runtime_config_from_app_config(&config);
-        let next_tmux_runtime = Self::tmux_runtime_from_app_config(&config);
-        if next_tmux_runtime != self.tmux_runtime {
-            match TmuxClient::new(
-                next_tmux_runtime.clone(),
-                self.tmux_client_cols.max(1),
-                self.tmux_client_rows.max(1),
-            ) {
-                Ok(client) => {
-                    self.tmux_runtime = next_tmux_runtime;
-                    self.tmux_client = client;
-                    self.tmux_title_refresh_deadline = None;
-                    let _ = self.refresh_tmux_snapshot();
-                }
-                Err(error) => {
-                    termy_toast::error(format!("tmux reconnect failed: {error}"));
+        if self.runtime_uses_tmux() {
+            let next_tmux_runtime = Some(Self::tmux_runtime_from_app_config(&config));
+            if next_tmux_runtime != self.tmux_runtime {
+                let runtime = next_tmux_runtime.clone().expect("tmux runtime missing");
+                match TmuxClient::new(
+                    runtime,
+                    self.tmux_client_cols.max(1),
+                    self.tmux_client_rows.max(1),
+                ) {
+                    Ok(client) => {
+                        self.tmux_runtime = next_tmux_runtime;
+                        self.tmux_client = Some(client);
+                        self.tmux_title_refresh_deadline = None;
+                        let _ = self.refresh_tmux_snapshot();
+                    }
+                    Err(error) => {
+                        termy_toast::error(format!("tmux reconnect failed: {error}"));
+                    }
                 }
             }
         }
@@ -1580,44 +1846,82 @@ impl TerminalView {
     }
 
     fn process_terminal_events(&mut self, cx: &mut Context<Self>) -> bool {
-        let mut should_redraw = false;
-        let mut needs_refresh = false;
+        if self.runtime_uses_tmux() {
+            let Some(tmux_client) = self.tmux_client.as_ref() else {
+                return false;
+            };
+            let mut should_redraw = false;
+            let mut needs_refresh = false;
 
-        for notification in self.tmux_client.poll_notifications() {
-            match notification {
-                TmuxNotification::Output { pane_id, bytes } => {
-                    if let Some(terminal) = self.pane_terminal_by_id(&pane_id) {
-                        terminal.feed_output(&bytes);
-                        if self.is_active_pane_id(&pane_id) {
-                            should_redraw = true;
-                            self.schedule_tmux_title_refresh();
+            for notification in tmux_client.poll_notifications() {
+                match notification {
+                    TmuxNotification::Output { pane_id, bytes } => {
+                        if let Some(terminal) = self.pane_terminal_by_id(&pane_id) {
+                            terminal.feed_output(&bytes);
+                            if self.is_active_pane_id(&pane_id) {
+                                should_redraw = true;
+                                self.schedule_tmux_title_refresh();
+                            }
                         }
                     }
-                }
-                TmuxNotification::NeedsRefresh => {
-                    needs_refresh = true;
-                }
-                TmuxNotification::Exit(reason) => {
-                    let reason = reason.unwrap_or_else(|| "tmux control mode exited".to_string());
-                    termy_toast::error(reason);
-                    cx.quit();
-                }
-            }
-        }
-
-        let now = Instant::now();
-        match Self::tmux_snapshot_refresh_mode(needs_refresh, self.tmux_title_refresh_deadline, now)
-        {
-            TmuxSnapshotRefreshMode::Immediate | TmuxSnapshotRefreshMode::Debounced => {
-                self.tmux_title_refresh_deadline = None;
-                if self.refresh_tmux_snapshot() {
-                    should_redraw = true;
+                    TmuxNotification::NeedsRefresh => {
+                        needs_refresh = true;
+                    }
+                    TmuxNotification::Exit(reason) => {
+                        let reason =
+                            reason.unwrap_or_else(|| "tmux control mode exited".to_string());
+                        termy_toast::error(reason);
+                        cx.quit();
+                    }
                 }
             }
-            TmuxSnapshotRefreshMode::None => {}
-        }
 
-        should_redraw
+            let now = Instant::now();
+            match Self::tmux_snapshot_refresh_mode(needs_refresh, self.tmux_title_refresh_deadline, now)
+            {
+                TmuxSnapshotRefreshMode::Immediate | TmuxSnapshotRefreshMode::Debounced => {
+                    self.tmux_title_refresh_deadline = None;
+                    if self.refresh_tmux_snapshot() {
+                        should_redraw = true;
+                    }
+                }
+                TmuxSnapshotRefreshMode::None => {}
+            }
+
+            should_redraw
+        } else {
+            let mut should_redraw = false;
+            let events = self.active_terminal().process_events();
+            for event in events {
+                match event {
+                    TerminalEvent::Wakeup => should_redraw = true,
+                    TerminalEvent::Title(title) => {
+                        if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                            tab.shell_title = Some(Self::truncate_tab_title(title.as_str()));
+                            tab.running_process = false;
+                            self.refresh_tab_title(self.active_tab);
+                            should_redraw = true;
+                        }
+                    }
+                    TerminalEvent::ResetTitle => {
+                        if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+                            tab.shell_title = None;
+                            self.refresh_tab_title(self.active_tab);
+                            should_redraw = true;
+                        }
+                    }
+                    TerminalEvent::Bell => {}
+                    TerminalEvent::Exit => {
+                        cx.quit();
+                    }
+                    TerminalEvent::ClipboardStore(text) => {
+                        self.pending_clipboard = Some(text);
+                        should_redraw = true;
+                    }
+                }
+            }
+            should_redraw
+        }
     }
 
     fn clear_selection(&mut self) -> bool {
@@ -1815,5 +2119,39 @@ mod tests {
             now,
         );
         assert_eq!(mode, TmuxSnapshotRefreshMode::Immediate);
+    }
+
+    #[test]
+    fn runtime_mode_follows_tmux_enabled_flag() {
+        let mut config = AppConfig::default();
+        config.tmux_enabled = false;
+        assert_eq!(
+            TerminalView::runtime_mode_from_app_config(&config),
+            TerminalRuntimeMode::Native
+        );
+
+        config.tmux_enabled = true;
+        assert_eq!(
+            TerminalView::runtime_mode_from_app_config(&config),
+            TerminalRuntimeMode::Tmux
+        );
+    }
+
+    #[test]
+    fn create_native_tab_starts_with_one_full_size_pane() {
+        let terminal = Terminal::new_tmux(TerminalSize::default(), 2000);
+        let tab = TerminalView::create_native_tab(terminal, 120, 42);
+
+        assert_eq!(tab.panes.len(), 1);
+        assert_eq!(tab.window_id, "@native-1");
+        assert_eq!(tab.window_index, 0);
+        assert_eq!(tab.active_pane_id, "%native-1");
+
+        let pane = &tab.panes[0];
+        assert_eq!(pane.id, "%native-1");
+        assert_eq!(pane.left, 0);
+        assert_eq!(pane.top, 0);
+        assert_eq!(pane.width, 120);
+        assert_eq!(pane.height, 42);
     }
 }

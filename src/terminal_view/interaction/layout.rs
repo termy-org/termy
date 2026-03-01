@@ -86,16 +86,33 @@ impl TerminalView {
         let cols = (terminal_width / cell_width).floor().max(2.0) as u16;
         let rows = (terminal_height / cell_height).floor().max(1.0) as u16;
 
-        if self.tmux_client_cols != cols || self.tmux_client_rows != rows {
-            match self.tmux_client.set_client_size(cols, rows) {
-                Ok(()) => {
-                    self.tmux_client_cols = cols;
-                    self.tmux_client_rows = rows;
-                    let _ = self.refresh_tmux_snapshot_for_client_size(cols, rows);
+        if self.runtime_uses_tmux() {
+            if self.tmux_client_cols != cols || self.tmux_client_rows != rows {
+                let Some(tmux_client) = self.tmux_client() else {
+                    return;
+                };
+                match tmux_client.set_client_size(cols, rows) {
+                    Ok(()) => {
+                        self.tmux_client_cols = cols;
+                        self.tmux_client_rows = rows;
+                        let _ = self.refresh_tmux_snapshot_for_client_size(cols, rows);
+                    }
+                    Err(error) => {
+                        termy_toast::error(format!("tmux resize failed: {error}"));
+                    }
                 }
-                Err(error) => {
-                    termy_toast::error(format!("tmux resize failed: {error}"));
-                }
+            }
+        } else {
+            self.tmux_client_cols = cols;
+            self.tmux_client_rows = rows;
+            if let Some(tab) = self.tabs.get_mut(self.active_tab)
+                && let Some(pane) = tab.panes.get_mut(0)
+            {
+                pane.left = 0;
+                pane.top = 0;
+                pane.width = cols.max(1);
+                pane.height = rows.max(1);
+                tab.active_pane_id = pane.id.clone();
             }
         }
 

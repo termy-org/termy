@@ -155,12 +155,24 @@ impl TerminalView {
         let end_line = rows - 1;
 
         let mut line_texts = Vec::with_capacity((end_line - start_line + 1).max(0) as usize);
-        terminal.with_term(|term| {
-            let grid = term.grid();
-            for line_idx in start_line..=end_line {
-                line_texts.push(extract_line_text(grid, line_idx, display_offset));
+        match terminal {
+            Terminal::Tmux(terminal) => terminal.with_term(|term| {
+                let grid = term.grid();
+                for line_idx in start_line..=end_line {
+                    line_texts.push(extract_line_text(grid, line_idx, display_offset));
+                }
+            }),
+            Terminal::Native(terminal) => {
+                if let Ok(terminal) = terminal.lock() {
+                    terminal.with_term(|term| {
+                        let grid = term.grid();
+                        for line_idx in start_line..=end_line {
+                            line_texts.push(extract_line_text(grid, line_idx, display_offset));
+                        }
+                    });
+                }
             }
-        });
+        }
 
         let search_state = &mut self.search_state;
         search_state.search(start_line, end_line, |line_idx| {
