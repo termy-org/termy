@@ -5557,6 +5557,7 @@ dependencies = [
  "crossterm",
  "dirs 6.0.0",
  "ratatui",
+ "termy_cli_install_core",
  "termy_command_core",
  "termy_config_core",
  "termy_release_core",

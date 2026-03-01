@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, anyhow};
-use flume::{Receiver, Sender, TrySendError, bounded};
+use flume::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
 use std::collections::{HashMap, VecDeque};
 #[cfg(unix)]
 use std::fs::File;
@@ -128,21 +128,22 @@ impl std::fmt::Display for TmuxControlError {
 impl std::error::Error for TmuxControlError {}
 
 #[derive(Debug)]
-struct ControlCommandResult {
-    output: String,
-}
-
-#[derive(Debug)]
 struct ControlRequest {
     command: String,
-    response_tx: Option<Sender<std::result::Result<ControlCommandResult, TmuxControlError>>>,
+    response_tx: Option<Sender<std::result::Result<(), TmuxControlError>>>,
 }
 
 #[derive(Debug)]
 struct PendingCommand {
     command: String,
-    response_tx: Option<Sender<std::result::Result<ControlCommandResult, TmuxControlError>>>,
+    response_tx: Option<Sender<std::result::Result<(), TmuxControlError>>>,
     completion_tx: Sender<()>,
+}
+
+#[derive(Debug)]
+enum ActiveControlCommand {
+    Tracked(PendingCommand),
+    Untracked,
 }
 
 #[derive(Debug)]
@@ -268,6 +269,11 @@ struct ControlStateMachine {
 
 impl ControlStateMachine {
     fn on_line(&mut self, line: &[u8]) -> std::result::Result<ControlStateEvent, TmuxControlError> {
+        let line = strip_control_line_wrappers(line);
+        if line.is_empty() {
+            return Ok(ControlStateEvent::None);
+        }
+
         if line.starts_with(b"%begin") {
             if self.current_block.is_some() {
                 return Err(TmuxControlError::protocol(
@@ -330,11 +336,31 @@ impl ControlStateMachine {
     }
 }
 
+fn strip_control_line_wrappers(mut line: &[u8]) -> &[u8] {
+    // tmux control mode may wrap protocol lines in DCS passthrough sequences
+    // (for example: ESC P1000p ... ESC \\). Strip wrappers so parser matching
+    // stays stable across tmux/terminal combinations.
+    while let Some(rest) = line.strip_prefix(b"\x1bP") {
+        let Some(end_idx) = rest.iter().position(|byte| *byte == b'p') else {
+            break;
+        };
+        line = &rest[end_idx + 1..];
+    }
+
+    while let Some(rest) = line.strip_suffix(b"\x1b\\") {
+        line = rest;
+    }
+
+    line
+}
+
 pub struct TmuxClient {
+    tmux_binary: String,
     session_name: String,
     teardown_on_drop: bool,
     request_tx: Sender<ControlRequest>,
     notifications_rx: Receiver<TmuxNotification>,
+    fatal_exit_rx: Receiver<Option<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -351,9 +377,12 @@ enum SendInputMode {
 }
 
 const PERSISTENT_SESSION_NAME: &str = "termy";
+const TERMY_TMUX_SOCKET_NAME: &str = "termy";
 const REQUEST_QUEUE_BOUND: usize = 1024;
 const PENDING_QUEUE_BOUND: usize = 1;
+const PENDING_MATCH_TIMEOUT_MS: u64 = 80;
 const NOTIFICATION_QUEUE_BOUND: usize = 2048;
+const FATAL_EXIT_QUEUE_BOUND: usize = 1;
 const NOTIFICATION_COALESCER_OUTPUT_BYTES_BOUND: usize = 512 * 1024;
 const SEND_INPUT_CHUNKED_HEX_BYTES: usize = 256;
 const SEND_INPUT_BULK_THRESHOLD_BYTES: usize = 2048;
@@ -419,7 +448,13 @@ fn spawn_tmux_control_mode(
     let child_stderr = user;
 
     let mut command = Command::new(config.binary.as_str());
-    command.arg("-CC").arg("new-session");
+    // Use a dedicated socket so Termy control-mode runtime is isolated from any
+    // user/default tmux server state and can start reliably.
+    command
+        .arg("-L")
+        .arg(TERMY_TMUX_SOCKET_NAME)
+        .arg("-CC")
+        .arg("new-session");
     if attach_existing {
         command.arg("-A");
     }
@@ -507,6 +542,55 @@ fn flush_notification_coalescer(
     Ok(())
 }
 
+fn signal_fatal_exit(fatal_exit_tx: &Sender<Option<String>>, reason: Option<String>) {
+    match fatal_exit_tx.try_send(reason) {
+        Ok(()) | Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {}
+    }
+}
+
+fn claim_pending_for_command_begin(
+    pending_rx: &Receiver<PendingCommand>,
+) -> std::result::Result<Option<PendingCommand>, TmuxControlError> {
+    if let Ok(pending) = pending_rx.try_recv() {
+        return Ok(Some(pending));
+    }
+
+    match pending_rx.recv_timeout(Duration::from_millis(PENDING_MATCH_TIMEOUT_MS)) {
+        Ok(pending) => Ok(Some(pending)),
+        Err(RecvTimeoutError::Timeout) => Ok(None),
+        Err(RecvTimeoutError::Disconnected) => Err(TmuxControlError::channel(
+            "tmux control pending-command channel closed",
+        )),
+    }
+}
+
+fn complete_pending_command(
+    pending: PendingCommand,
+    response: std::result::Result<(), TmuxControlError>,
+) {
+    if let Some(response_tx) = pending.response_tx {
+        let _ = response_tx.send(response);
+    }
+    let _ = pending.completion_tx.send(());
+}
+
+fn map_command_completion_response(
+    command: &str,
+    is_error: bool,
+    output: String,
+) -> std::result::Result<(), TmuxControlError> {
+    if !is_error {
+        return Ok(());
+    }
+
+    let trimmed = output.trim();
+    Err(TmuxControlError::runtime(if trimmed.is_empty() {
+        format!("command '{command}' failed")
+    } else {
+        trimmed.to_string()
+    }))
+}
+
 impl TmuxClient {
     fn launch_plan(config: &TmuxRuntimeConfig) -> SessionLaunchPlan {
         if config.persistence {
@@ -548,6 +632,7 @@ impl TmuxClient {
         let (pending_tx, pending_rx) = bounded::<PendingCommand>(PENDING_QUEUE_BOUND);
         let (notifications_tx, notifications_rx) =
             bounded::<TmuxNotification>(NOTIFICATION_QUEUE_BOUND);
+        let (fatal_exit_tx, fatal_exit_rx) = bounded::<Option<String>>(FATAL_EXIT_QUEUE_BOUND);
 
         std::thread::spawn(move || {
             let _ = child.wait();
@@ -558,56 +643,58 @@ impl TmuxClient {
             while let Ok(request) = request_rx.recv() {
                 let command = request.command;
                 let response_tx = request.response_tx;
-                if stdin.write_all(command.as_bytes()).is_err() {
-                    if let Some(response_tx) = response_tx {
-                        let _ = response_tx.send(Err(TmuxControlError::channel(
-                            "failed to write command to tmux control stdin",
-                        )));
-                    }
-                    break;
-                }
-                if stdin.write_all(b"\n").is_err() {
-                    if let Some(response_tx) = response_tx {
-                        let _ = response_tx.send(Err(TmuxControlError::channel(
-                            "failed to write command terminator to tmux control stdin",
-                        )));
-                    }
-                    break;
-                }
-                if stdin.flush().is_err() {
-                    if let Some(response_tx) = response_tx {
-                        let _ = response_tx.send(Err(TmuxControlError::channel(
-                            "failed to flush tmux control stdin",
-                        )));
-                    }
-                    break;
-                }
-
                 let (completion_tx, completion_rx) = flume::bounded(1);
+                let response_tx_for_write_error = response_tx.clone();
+                let completion_tx_for_write_error = completion_tx.clone();
+
                 match pending_tx.try_send(PendingCommand {
-                    command,
+                    command: command.clone(),
                     response_tx,
                     completion_tx,
                 }) {
                     Ok(()) => {}
                     Err(TrySendError::Full(pending)) => {
-                        if let Some(response_tx) = pending.response_tx {
-                            let _ = response_tx.send(Err(TmuxControlError::channel(
-                                "tmux control pending queue is full",
-                            )));
-                        }
-                        let _ = pending.completion_tx.send(());
+                        complete_pending_command(
+                            pending,
+                            Err(TmuxControlError::channel("tmux control pending queue is full")),
+                        );
                         break;
                     }
                     Err(TrySendError::Disconnected(pending)) => {
-                        if let Some(response_tx) = pending.response_tx {
-                            let _ = response_tx.send(Err(TmuxControlError::channel(
-                                "tmux control reader is unavailable",
-                            )));
-                        }
-                        let _ = pending.completion_tx.send(());
+                        complete_pending_command(
+                            pending,
+                            Err(TmuxControlError::channel("tmux control reader is unavailable")),
+                        );
                         break;
                     }
+                }
+
+                if stdin.write_all(command.as_bytes()).is_err() {
+                    if let Some(response_tx) = response_tx_for_write_error {
+                        let _ = response_tx.send(Err(TmuxControlError::channel(
+                            "failed to write command to tmux control stdin",
+                        )));
+                    }
+                    let _ = completion_tx_for_write_error.send(());
+                    break;
+                }
+                if stdin.write_all(b"\n").is_err() {
+                    if let Some(response_tx) = response_tx_for_write_error {
+                        let _ = response_tx.send(Err(TmuxControlError::channel(
+                            "failed to write command terminator to tmux control stdin",
+                        )));
+                    }
+                    let _ = completion_tx_for_write_error.send(());
+                    break;
+                }
+                if stdin.flush().is_err() {
+                    if let Some(response_tx) = response_tx_for_write_error {
+                        let _ = response_tx.send(Err(TmuxControlError::channel(
+                            "failed to flush tmux control stdin",
+                        )));
+                    }
+                    let _ = completion_tx_for_write_error.send(());
+                    break;
                 }
                 if completion_rx.recv().is_err() {
                     break;
@@ -618,26 +705,20 @@ impl TmuxClient {
         std::thread::spawn(move || {
             let mut reader = BufReader::new(child_stdout);
             let mut line = Vec::<u8>::new();
-            let mut current_pending = None::<PendingCommand>;
+            let mut current_command = None::<ActiveControlCommand>;
             let mut control_state = ControlStateMachine::default();
             let mut notifications = NotificationCoalescer::default();
 
-            let complete_pending =
-                |pending: PendingCommand,
-                 response: std::result::Result<ControlCommandResult, TmuxControlError>| {
-                    if let Some(response_tx) = pending.response_tx {
-                        let _ = response_tx.send(response);
-                    }
-                    let _ = pending.completion_tx.send(());
-                };
             let fail_pending = |pending: PendingCommand, error: TmuxControlError| {
-                complete_pending(pending, Err(error));
+                complete_pending_command(pending, Err(error));
             };
             let fail_all_pending =
-                |current_pending: &mut Option<PendingCommand>,
+                |current_command: &mut Option<ActiveControlCommand>,
                  pending_rx: &Receiver<PendingCommand>,
                  error: TmuxControlError| {
-                    if let Some(pending) = current_pending.take() {
+                    if let Some(active_command) = current_command.take()
+                        && let ActiveControlCommand::Tracked(pending) = active_command
+                    {
                         fail_pending(pending, error.clone());
                     }
                     while let Ok(pending) = pending_rx.try_recv() {
@@ -645,14 +726,17 @@ impl TmuxClient {
                     }
                 };
             let fail_with_exit =
-                |current_pending: &mut Option<PendingCommand>,
+                |current_command: &mut Option<ActiveControlCommand>,
                  pending_rx: &Receiver<PendingCommand>,
                  notifications_tx: &Sender<TmuxNotification>,
+                 fatal_exit_tx: &Sender<Option<String>>,
                  notifications: &mut NotificationCoalescer,
                  event_wakeup_tx: Option<&Sender<()>>,
                  error: TmuxControlError| {
-                    fail_all_pending(current_pending, pending_rx, error.clone());
-                    let _ = notifications.push(TmuxNotification::Exit(Some(error.message)));
+                    let exit_reason = Some(error.message.clone());
+                    fail_all_pending(current_command, pending_rx, error);
+                    signal_fatal_exit(fatal_exit_tx, exit_reason.clone());
+                    let _ = notifications.push(TmuxNotification::Exit(exit_reason));
                     let _ = flush_notification_coalescer(
                         notifications,
                         notifications_tx,
@@ -664,14 +748,14 @@ impl TmuxClient {
                 line.clear();
                 let read = reader.read_until(b'\n', &mut line);
                 let Ok(read) = read else {
+                    let exit_reason = Some("tmux control mode read failure".to_string());
                     fail_all_pending(
-                        &mut current_pending,
+                        &mut current_command,
                         &pending_rx,
                         TmuxControlError::channel("tmux control mode read failure"),
                     );
-                    let _ = notifications.push(TmuxNotification::Exit(Some(
-                        "tmux control mode read failure".to_string(),
-                    )));
+                    signal_fatal_exit(&fatal_exit_tx, exit_reason.clone());
+                    let _ = notifications.push(TmuxNotification::Exit(exit_reason));
                     let _ = flush_notification_coalescer(
                         &mut notifications,
                         &notifications_tx,
@@ -682,10 +766,11 @@ impl TmuxClient {
 
                 if read == 0 {
                     fail_all_pending(
-                        &mut current_pending,
+                        &mut current_command,
                         &pending_rx,
                         TmuxControlError::channel("tmux control mode closed"),
                     );
+                    signal_fatal_exit(&fatal_exit_tx, None);
                     let _ = notifications.push(TmuxNotification::Exit(None));
                     let _ = flush_notification_coalescer(
                         &mut notifications,
@@ -706,9 +791,10 @@ impl TmuxClient {
                     Ok(event) => event,
                     Err(error) => {
                         fail_with_exit(
-                            &mut current_pending,
+                            &mut current_command,
                             &pending_rx,
                             &notifications_tx,
+                            &fatal_exit_tx,
                             &mut notifications,
                             event_wakeup_tx.as_ref(),
                             error,
@@ -722,9 +808,10 @@ impl TmuxClient {
                     ControlStateEvent::Notification(notification) => {
                         if let Err(error) = notifications.push(notification) {
                             fail_with_exit(
-                                &mut current_pending,
+                                &mut current_command,
                                 &pending_rx,
                                 &notifications_tx,
+                                &fatal_exit_tx,
                                 &mut notifications,
                                 event_wakeup_tx.as_ref(),
                                 error,
@@ -735,11 +822,12 @@ impl TmuxClient {
                     ControlStateEvent::CommandBegin => {
                         // This explicit handoff removes race-based pending matching:
                         // the reader binds each %begin block to exactly one writer-issued request.
-                        if current_pending.is_some() {
+                        if current_command.is_some() {
                             fail_with_exit(
-                                &mut current_pending,
+                                &mut current_command,
                                 &pending_rx,
                                 &notifications_tx,
+                                &fatal_exit_tx,
                                 &mut notifications,
                                 event_wakeup_tx.as_ref(),
                                 TmuxControlError::protocol(
@@ -749,30 +837,37 @@ impl TmuxClient {
                             break;
                         }
 
-                        let pending = match pending_rx.recv() {
-                            Ok(pending) => pending,
-                            Err(_) => {
+                        match claim_pending_for_command_begin(&pending_rx) {
+                            Ok(Some(pending)) => {
+                                current_command = Some(ActiveControlCommand::Tracked(pending));
+                            }
+                            Ok(None) => {
+                                // tmux may emit unsolicited startup/control blocks before the
+                                // first app-issued command is tracked; consume these blocks
+                                // without binding a pending request.
+                                current_command = Some(ActiveControlCommand::Untracked);
+                            }
+                            Err(error) => {
                                 fail_with_exit(
-                                    &mut current_pending,
+                                    &mut current_command,
                                     &pending_rx,
                                     &notifications_tx,
+                                    &fatal_exit_tx,
                                     &mut notifications,
                                     event_wakeup_tx.as_ref(),
-                                    TmuxControlError::channel(
-                                        "tmux control pending-command channel closed",
-                                    ),
+                                    error,
                                 );
                                 break;
                             }
-                        };
-                        current_pending = Some(pending);
+                        }
                     }
                     ControlStateEvent::CommandComplete { is_error, output } => {
-                        let Some(pending) = current_pending.take() else {
+                        let Some(active_command) = current_command.take() else {
                             fail_with_exit(
-                                &mut current_pending,
+                                &mut current_command,
                                 &pending_rx,
                                 &notifications_tx,
+                                &fatal_exit_tx,
                                 &mut notifications,
                                 event_wakeup_tx.as_ref(),
                                 TmuxControlError::protocol(
@@ -782,21 +877,17 @@ impl TmuxClient {
                             break;
                         };
 
-                        let trimmed = output.trim();
-                        let response = if is_error {
-                            Err(TmuxControlError::runtime(if trimmed.is_empty() {
-                                format!("command '{}' failed", pending.command)
-                            } else {
-                                trimmed.to_string()
-                            }))
-                        } else {
-                            Ok(ControlCommandResult { output })
+                        let ActiveControlCommand::Tracked(pending) = active_command else {
+                            continue;
                         };
-                        complete_pending(pending, response);
+
+                        let response =
+                            map_command_completion_response(&pending.command, is_error, output);
+                        complete_pending_command(pending, response);
                     }
                     ControlStateEvent::Exit(reason) => {
                         fail_all_pending(
-                            &mut current_pending,
+                            &mut current_command,
                             &pending_rx,
                             TmuxControlError::channel(
                                 reason
@@ -804,6 +895,7 @@ impl TmuxClient {
                                     .unwrap_or_else(|| "tmux control mode exited".to_string()),
                             ),
                         );
+                        signal_fatal_exit(&fatal_exit_tx, reason.clone());
                         let _ = notifications.push(TmuxNotification::Exit(reason));
                         let _ = flush_notification_coalescer(
                             &mut notifications,
@@ -821,9 +913,10 @@ impl TmuxClient {
                 )
                 {
                     fail_with_exit(
-                        &mut current_pending,
+                        &mut current_command,
                         &pending_rx,
                         &notifications_tx,
+                        &fatal_exit_tx,
                         &mut notifications,
                         event_wakeup_tx.as_ref(),
                         error,
@@ -834,10 +927,12 @@ impl TmuxClient {
         });
 
         let client = Self {
+            tmux_binary: config.binary,
             session_name: launch_plan.session_name,
             teardown_on_drop: launch_plan.teardown_on_drop,
             request_tx,
             notifications_rx,
+            fatal_exit_rx,
         };
         client.enforce_native_session_ui()?;
         client.set_client_size(cols, rows)?;
@@ -851,14 +946,24 @@ impl TmuxClient {
 
     pub fn poll_notifications(&self) -> Vec<TmuxNotification> {
         let mut coalescer = NotificationCoalescer::with_output_byte_limit(usize::MAX);
+        let mut coalescer_error = None::<String>;
         for notification in self.notifications_rx.try_iter() {
             // Draining already-bounded channel contents cannot grow unbounded;
             // this second-stage coalescing keeps refresh/output bursts from
             // triggering redraw storms in the UI event loop.
             if let Err(error) = coalescer.push(notification) {
-                return vec![TmuxNotification::Exit(Some(error.message))];
+                coalescer_error = Some(error.message);
+                break;
             }
         }
+
+        if let Some(exit_reason) = self.fatal_exit_rx.try_iter().last() {
+            return vec![TmuxNotification::Exit(exit_reason)];
+        }
+        if let Some(error) = coalescer_error {
+            return vec![TmuxNotification::Exit(Some(error))];
+        }
+
         coalescer.drain()
     }
 
@@ -1082,7 +1187,7 @@ impl TmuxClient {
         })
     }
 
-    fn send_control_command_wait(&self, command: &str) -> Result<ControlCommandResult> {
+    fn send_control_command_wait(&self, command: &str) -> Result<()> {
         const CONTROL_COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
 
         let (response_tx, response_rx) = flume::bounded(1);
@@ -1101,15 +1206,48 @@ impl TmuxClient {
     }
 
     fn run_control_capture_args(&self, args: &[&str]) -> Result<String> {
-        let command = tmux_command_line(args);
-        let result = self.send_control_command_wait(command.as_str())?;
-        Ok(result.output)
+        let output = self
+            .run_tmux_command(args)
+            .with_context(|| format!("tmux capture command failed: {}", tmux_command_line(args)))?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
     fn run_control_status_args(&self, args: &[&str]) -> Result<()> {
-        let command = tmux_command_line(args);
-        self.send_control_command_wait(command.as_str())?;
+        self.run_tmux_command(args)
+            .with_context(|| format!("tmux status command failed: {}", tmux_command_line(args)))?;
         Ok(())
+    }
+
+    fn run_tmux_command(&self, args: &[&str]) -> Result<std::process::Output> {
+        let output = Command::new(self.tmux_binary.as_str())
+            .arg("-L")
+            .arg(TERMY_TMUX_SOCKET_NAME)
+            .args(args)
+            .output()
+            .with_context(|| {
+                format!(
+                    "failed to execute tmux command via '{}': {}",
+                    self.tmux_binary,
+                    tmux_command_line(args)
+                )
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            if stderr.is_empty() {
+                return Err(anyhow!(
+                    "tmux command exited with status {}",
+                    output
+                        .status
+                        .code()
+                        .map_or_else(|| "signal".to_string(), |code| code.to_string())
+                ));
+            }
+            return Err(anyhow!("{stderr}"));
+        }
+
+        Ok(output)
     }
 
     fn enforce_native_session_ui(&self) -> Result<()> {
@@ -1118,7 +1256,6 @@ impl TmuxClient {
 
         self.run_control_status_args(&[
             "set-environment",
-            "-g",
             "-t",
             session,
             "TERMY_SHELL_INTEGRATION",
@@ -1127,7 +1264,6 @@ impl TmuxClient {
         .context("failed to disable termy shell integration env in tmux session")?;
         self.run_control_status_args(&[
             "set-environment",
-            "-g",
             "-u",
             "-t",
             session,
@@ -1136,7 +1272,6 @@ impl TmuxClient {
         .context("failed to clear termy shell title prefix env in tmux session")?;
         self.run_control_status_args(&[
             "set-environment",
-            "-g",
             "-t",
             session,
             "PROMPT_EOL_MARK",
@@ -1592,13 +1727,16 @@ fn parse_version_prefix(version: &str) -> Option<(u8, u8)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ControlRequest, ControlStateEvent, ControlStateMachine, NotificationCoalescer,
-        PERSISTENT_SESSION_NAME, SNAPSHOT_FIELD_SEP, SendInputMode, TmuxClient,
-        TmuxControlErrorKind, TmuxNotification, TmuxRuntimeConfig, choose_send_input_mode,
-        flush_notification_coalescer, managed_session_name, parse_output_notification,
-        parse_snapshot, parse_version_prefix, quote_tmux_arg, strip_legacy_title_sequences,
-        try_enqueue_control_request, unescape_tmux_payload,
+        ActiveControlCommand, ControlRequest, ControlStateEvent, ControlStateMachine,
+        NotificationCoalescer, PERSISTENT_SESSION_NAME, PendingCommand, SNAPSHOT_FIELD_SEP,
+        SendInputMode, TmuxClient, TmuxControlErrorKind, TmuxNotification, TmuxRuntimeConfig,
+        choose_send_input_mode, claim_pending_for_command_begin, complete_pending_command,
+        flush_notification_coalescer, managed_session_name, map_command_completion_response,
+        parse_output_notification, parse_snapshot, parse_version_prefix, quote_tmux_arg,
+        signal_fatal_exit, strip_legacy_title_sequences, try_enqueue_control_request,
+        unescape_tmux_payload,
     };
+    use std::time::Duration;
 
     fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|window| window == needle)
@@ -1729,6 +1867,118 @@ mod tests {
         .expect_err("full queue should fail");
         assert_eq!(err.kind, TmuxControlErrorKind::Channel);
         assert!(err.message.contains("request queue is full"));
+    }
+
+    #[test]
+    fn unsolicited_command_block_does_not_consume_next_tracked_pending_request() {
+        let mut sm = ControlStateMachine::default();
+        let (pending_tx, pending_rx) = flume::bounded::<PendingCommand>(1);
+
+        // Simulate unsolicited startup block before any app-issued command.
+        assert_eq!(
+            sm.on_line(b"%begin 1 1 0").expect("startup begin"),
+            ControlStateEvent::CommandBegin
+        );
+        let mut active_command = match claim_pending_for_command_begin(&pending_rx).expect("claim") {
+            Some(pending) => Some(ActiveControlCommand::Tracked(pending)),
+            None => Some(ActiveControlCommand::Untracked),
+        };
+        assert!(matches!(active_command, Some(ActiveControlCommand::Untracked)));
+        assert_eq!(
+            sm.on_line(b"startup noise").expect("startup payload"),
+            ControlStateEvent::None
+        );
+        expect_command_complete(sm.on_line(b"%end 1 1 0").expect("startup end"));
+        match active_command.take().expect("startup block should be active") {
+            ActiveControlCommand::Tracked(_) => {
+                panic!("unsolicited block must stay untracked")
+            }
+            ActiveControlCommand::Untracked => {}
+        }
+
+        // Next block should claim the real pending request and deliver completion.
+        let (response_tx, response_rx) = flume::bounded(1);
+        let (completion_tx, completion_rx) = flume::bounded(1);
+        pending_tx
+            .send(PendingCommand {
+                command: "list-windows".to_string(),
+                response_tx: Some(response_tx),
+                completion_tx,
+            })
+            .expect("queue pending request");
+
+        assert_eq!(
+            sm.on_line(b"%begin 2 2 0").expect("command begin"),
+            ControlStateEvent::CommandBegin
+        );
+        active_command = match claim_pending_for_command_begin(&pending_rx).expect("claim") {
+            Some(pending) => Some(ActiveControlCommand::Tracked(pending)),
+            None => Some(ActiveControlCommand::Untracked),
+        };
+        assert!(matches!(
+            active_command,
+            Some(ActiveControlCommand::Tracked(_))
+        ));
+        assert_eq!(sm.on_line(b"ok").expect("command output"), ControlStateEvent::None);
+        let (is_error, output) = expect_command_complete(sm.on_line(b"%end 2 2 0").expect("end"));
+        let pending = match active_command.take().expect("tracked command") {
+            ActiveControlCommand::Tracked(pending) => pending,
+            ActiveControlCommand::Untracked => panic!("tracked request became untracked"),
+        };
+        let response = map_command_completion_response(&pending.command, is_error, output);
+        complete_pending_command(pending, response);
+
+        assert!(completion_rx.recv_timeout(Duration::from_millis(50)).is_ok());
+        let result = response_rx
+            .recv_timeout(Duration::from_millis(50))
+            .expect("response sent");
+        result.expect("tracked command should succeed");
+    }
+
+    #[test]
+    fn command_completion_response_maps_error_output_to_runtime_error() {
+        let error = map_command_completion_response("kill-pane", true, "pane not found\n".to_string())
+            .expect_err("error completion should fail");
+        assert_eq!(error.kind, TmuxControlErrorKind::Runtime);
+        assert_eq!(error.message, "pane not found");
+
+        let fallback_error = map_command_completion_response("kill-pane", true, " \n".to_string())
+            .expect_err("empty error completion should fail");
+        assert_eq!(fallback_error.kind, TmuxControlErrorKind::Runtime);
+        assert_eq!(fallback_error.message, "command 'kill-pane' failed");
+    }
+
+    #[test]
+    fn poll_notifications_prioritizes_dedicated_fatal_exit_signal() {
+        let (request_tx, _request_rx) = flume::bounded::<ControlRequest>(1);
+        let (notifications_tx, notifications_rx) = flume::bounded::<TmuxNotification>(4);
+        let (fatal_exit_tx, fatal_exit_rx) = flume::bounded::<Option<String>>(1);
+        notifications_tx
+            .send(TmuxNotification::Output {
+                pane_id: "%1".to_string(),
+                bytes: b"stale".to_vec(),
+            })
+            .expect("queue stale output");
+        notifications_tx
+            .send(TmuxNotification::NeedsRefresh)
+            .expect("queue stale refresh");
+        signal_fatal_exit(&fatal_exit_tx, Some("control-mode failure".to_string()));
+
+        let client = TmuxClient {
+            tmux_binary: "tmux".to_string(),
+            session_name: "test-session".to_string(),
+            teardown_on_drop: false,
+            request_tx,
+            notifications_rx,
+            fatal_exit_rx,
+        };
+        let notifications = client.poll_notifications();
+        assert_eq!(
+            notifications,
+            vec![TmuxNotification::Exit(Some(
+                "control-mode failure".to_string()
+            ))]
+        );
     }
 
     #[test]
@@ -1900,6 +2150,26 @@ mod tests {
             expect_command_complete(sm.on_line(b"%end 72 1 0").expect("end"));
         assert!(!is_error);
         assert_eq!(output, "captured");
+    }
+
+    #[test]
+    fn control_state_machine_accepts_dcs_wrapped_control_markers() {
+        let mut sm = ControlStateMachine::default();
+        assert_eq!(
+            sm.on_line(b"\x1bP1000p%begin 9 4 0").expect("wrapped begin"),
+            ControlStateEvent::CommandBegin
+        );
+        assert_eq!(sm.on_line(b"ok").expect("output line"), ControlStateEvent::None);
+        let (is_error, output) =
+            expect_command_complete(sm.on_line(b"%end 9 4 0\x1b\\").expect("wrapped end"));
+        assert!(!is_error);
+        assert_eq!(output, "ok");
+    }
+
+    #[test]
+    fn control_state_machine_ignores_standalone_dcs_terminator_line() {
+        let mut sm = ControlStateMachine::default();
+        assert_eq!(sm.on_line(b"\x1b\\").expect("dcs terminator"), ControlStateEvent::None);
     }
 
     #[test]

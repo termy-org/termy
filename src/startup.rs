@@ -20,12 +20,10 @@ impl StartupBlocker {
 
     pub(crate) fn present_and_exit(self) -> ! {
         let message = self.message();
-        termy_native_sdk::show_alert("Termy startup blocked", &message);
-        if termy_native_sdk::confirm("Open config?", "Open config file now?") {
-            if let Err(error) = crate::app_actions::open_config_file() {
-                termy_native_sdk::show_alert("Failed to open config", &error);
-            }
-        }
+        // Startup blockers can fire while GPUI holds internal borrows during app/window
+        // initialization. Triggering synchronous native modal dialogs in that state can
+        // re-enter GPUI and panic; keep this path side-effect free and terminate cleanly.
+        eprintln!("Termy startup blocked:\n{message}");
         // Hard cutover: do not continue startup after tmux preflight/startup failures.
         std::process::exit(1);
     }

@@ -262,10 +262,6 @@ macro_rules! define_commands {
                 entries
             }
 
-            pub fn requires_tmux(self) -> bool {
-                self.to_command_id().is_tmux_only()
-            }
-
             pub fn availability(self, caps: CommandCapabilities) -> CommandAvailability {
                 self.to_command_id().availability(caps)
             }
@@ -1159,9 +1155,9 @@ mod tests {
     }
 
     #[test]
-    fn requires_tmux_matches_tmux_only_command_set() {
+    fn tmux_only_actions_match_command_core_tmux_only_set() {
         let mut actual = CommandAction::all()
-            .filter(|action| action.requires_tmux())
+            .filter(|action| action.to_command_id().is_tmux_only())
             .map(|action| action.to_command_id().config_name())
             .collect::<Vec<_>>();
         actual.sort_unstable();

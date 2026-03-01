@@ -104,7 +104,11 @@ fn load_config_for_providers() -> AppConfig {
 }
 
 fn action_lines_for_tmux_enabled(tmux_enabled: bool) -> Vec<String> {
-    let capabilities = command_capabilities(tmux_enabled);
+    action_lines_for_capabilities(tmux_enabled, detect_install_cli_available())
+}
+
+fn action_lines_for_capabilities(tmux_enabled: bool, install_cli_available: bool) -> Vec<String> {
+    let capabilities = command_capabilities(tmux_enabled, install_cli_available);
 
     CommandId::all()
         .map(|id| {
@@ -125,7 +129,15 @@ fn keybind_lines_for_tmux_enabled(
     lines: &[termy_config_core::KeybindConfigLine],
     tmux_enabled: bool,
 ) -> Vec<String> {
-    let capabilities = command_capabilities(tmux_enabled);
+    keybind_lines_for_capabilities(lines, tmux_enabled, detect_install_cli_available())
+}
+
+fn keybind_lines_for_capabilities(
+    lines: &[termy_config_core::KeybindConfigLine],
+    tmux_enabled: bool,
+    install_cli_available: bool,
+) -> Vec<String> {
+    let capabilities = command_capabilities(tmux_enabled, install_cli_available);
 
     resolve_keybinds_for_lines(lines)
         .into_iter()
@@ -155,10 +167,14 @@ fn resolve_keybinds_for_lines(
     resolve_keybinds(default_resolved_keybinds(), &directives)
 }
 
-fn command_capabilities(tmux_enabled: bool) -> CommandCapabilities {
+fn detect_install_cli_available() -> bool {
+    !termy_cli_install_core::is_cli_installed()
+}
+
+fn command_capabilities(tmux_enabled: bool, install_cli_available: bool) -> CommandCapabilities {
     CommandCapabilities {
         tmux_runtime_active: tmux_enabled,
-        install_cli_available: true,
+        install_cli_available,
     }
 }
 
@@ -257,8 +273,8 @@ fn list_fonts_impl() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        action_lines_for_tmux_enabled, keybind_lines_for_tmux_enabled, list_theme_lines,
-        resolve_keybinds_for_lines,
+        action_lines_for_capabilities, action_lines_for_tmux_enabled, keybind_lines_for_capabilities,
+        keybind_lines_for_tmux_enabled, list_theme_lines, resolve_keybinds_for_lines,
     };
     use termy_command_core::{
         CommandId, KeybindLineRef, default_resolved_keybinds, parse_keybind_directives_from_iter,
@@ -300,6 +316,18 @@ mod tests {
     }
 
     #[test]
+    fn list_actions_reports_install_cli_unavailable_when_probe_is_false() {
+        let actions = action_lines_for_capabilities(true, false);
+        let install_cli_line = actions
+            .iter()
+            .find(|line| line.starts_with(CommandId::InstallCli.config_name()))
+            .expect("missing install_cli action metadata");
+        assert!(install_cli_line.contains("available=false"));
+        assert!(install_cli_line.contains("tmux_required=false"));
+        assert!(install_cli_line.contains("restart_required=false"));
+    }
+
+    #[test]
     fn keybinds_include_secondary_comma_mapping() {
         let keybinds = resolve_keybinds_for_lines(&[]);
         assert!(
@@ -336,6 +364,25 @@ mod tests {
         assert!(split_pane_line.contains("available=false"));
         assert!(split_pane_line.contains("tmux_required=true"));
         assert!(split_pane_line.contains("restart_required=true"));
+    }
+
+    #[test]
+    fn list_keybinds_reports_install_cli_unavailable_when_probe_is_false() {
+        let keybind_lines = keybind_lines_for_capabilities(
+            &[KeybindConfigLine {
+                line_number: 1,
+                value: "Secondary-I=install_cli".to_string(),
+            }],
+            true,
+            false,
+        );
+        let install_cli_line = keybind_lines
+            .iter()
+            .find(|line| line.starts_with("secondary-i = install_cli"))
+            .expect("missing install_cli keybind metadata");
+        assert!(install_cli_line.contains("available=false"));
+        assert!(install_cli_line.contains("tmux_required=false"));
+        assert!(install_cli_line.contains("restart_required=false"));
     }
 
     #[test]

@@ -1838,11 +1838,15 @@ impl TerminalView {
                     Some(event_wakeup_tx.clone()),
                 ) {
                     Ok(client) => client,
-                    Err(error) => StartupBlocker::TmuxClientLaunch(error.to_string()).present_and_exit(),
+                    Err(error) => {
+                        StartupBlocker::TmuxClientLaunch(format!("{error:#}")).present_and_exit()
+                    }
                 };
                 let initial_snapshot = match tmux_client.refresh_snapshot() {
                     Ok(snapshot) => snapshot,
-                    Err(error) => StartupBlocker::TmuxInitialSnapshot(error.to_string()).present_and_exit(),
+                    Err(error) => {
+                        StartupBlocker::TmuxInitialSnapshot(format!("{error:#}")).present_and_exit()
+                    }
                 };
                 (Some(tmux_runtime), Some(tmux_client), Some(initial_snapshot), None)
             }
