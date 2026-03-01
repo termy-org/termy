@@ -7,6 +7,21 @@ use termy_terminal_ui::{TmuxSessionSummary, TmuxSocketTarget};
 const TMUX_SESSION_ACTIVE_HINT: &str = "active session";
 const TMUX_SESSION_NAME_REQUIRED_HINT: &str = "name required";
 const TMUX_SESSION_NAME_UNCHANGED_HINT: &str = "unchanged";
+const TMUX_SOCKET_DEFAULT_LABEL: &str = "default";
+const TMUX_SOCKET_DEDICATED_LABEL: &str = "termy";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TmuxSessionStatusHint {
+    ActiveSession,
+    NameRequired,
+    NameUnchanged,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct TmuxSessionRow {
+    pub(super) summary: TmuxSessionSummary,
+    pub(super) socket_target: TmuxSocketTarget,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in super::super) enum CommandPaletteMode {
@@ -56,6 +71,7 @@ pub(super) struct CommandPaletteItem {
     pub(super) keywords: String,
     pub(super) enabled: bool,
     pub(super) status_hint: Option<&'static str>,
+    pub(super) tmux_status_hint: Option<TmuxSessionStatusHint>,
     pub(super) kind: CommandPaletteItemKind,
 }
 
@@ -72,6 +88,7 @@ impl CommandPaletteItem {
             keywords: keywords.to_string(),
             enabled,
             status_hint,
+            tmux_status_hint: None,
             kind: CommandPaletteItemKind::Command(action),
         }
     }
@@ -89,57 +106,74 @@ impl CommandPaletteItem {
             keywords,
             enabled: true,
             status_hint: None,
+            tmux_status_hint: None,
             kind: CommandPaletteItemKind::Theme(theme_id),
         }
     }
 
-    fn tmux_session_title(summary: &TmuxSessionSummary) -> String {
+    fn tmux_socket_label(socket_target: &TmuxSocketTarget) -> String {
+        match socket_target {
+            TmuxSocketTarget::Default => TMUX_SOCKET_DEFAULT_LABEL.to_string(),
+            TmuxSocketTarget::DedicatedTermy => TMUX_SOCKET_DEDICATED_LABEL.to_string(),
+            TmuxSocketTarget::Named(name) => name.clone(),
+        }
+    }
+
+    fn tmux_session_title(row: &TmuxSessionRow) -> String {
+        let socket_label = Self::tmux_socket_label(&row.socket_target);
         format!(
-            "{}  ({} window{}, {} attached)",
-            summary.name,
-            summary.window_count,
-            if summary.window_count == 1 { "" } else { "s" },
-            summary.attached_clients
+            "{}  ({} window{}, {} attached)  [{socket_label}]",
+            row.summary.name,
+            row.summary.window_count,
+            if row.summary.window_count == 1 { "" } else { "s" },
+            row.summary.attached_clients
         )
     }
 
     pub(super) fn tmux_session_attach_or_switch(
-        summary: &TmuxSessionSummary,
-        socket_target: &TmuxSocketTarget,
+        row: &TmuxSessionRow,
     ) -> Self {
-        let title = Self::tmux_session_title(summary);
+        let title = Self::tmux_session_title(row);
+        let socket_label = Self::tmux_socket_label(&row.socket_target);
         let keywords = format!(
-            "tmux attach switch session {}",
-            summary.name.replace('-', " ")
+            "tmux attach switch session {} socket {}",
+            row.summary.name.replace('-', " "),
+            socket_label.replace('-', " ")
         );
         Self {
             title,
             keywords,
             enabled: true,
             status_hint: None,
+            tmux_status_hint: None,
             kind: CommandPaletteItemKind::TmuxSessionAttachOrSwitch {
-                session_name: summary.name.clone(),
-                socket_target: socket_target.clone(),
+                session_name: row.summary.name.clone(),
+                socket_target: row.socket_target.clone(),
             },
         }
     }
 
     pub(super) fn tmux_session_rename_select(
-        summary: &TmuxSessionSummary,
-        socket_target: &TmuxSocketTarget,
+        row: &TmuxSessionRow,
         active_session_name: Option<&str>,
     ) -> Self {
-        let title = Self::tmux_session_title(summary);
-        let keywords = format!("tmux rename session {}", summary.name.replace('-', " "));
-        let is_active = active_session_name.is_some_and(|active| summary.name == active);
+        let title = Self::tmux_session_title(row);
+        let socket_label = Self::tmux_socket_label(&row.socket_target);
+        let keywords = format!(
+            "tmux rename session {} socket {}",
+            row.summary.name.replace('-', " "),
+            socket_label.replace('-', " ")
+        );
+        let is_active = active_session_name.is_some_and(|active| row.summary.name == active);
         Self {
             title,
             keywords,
             enabled: !is_active,
             status_hint: is_active.then_some(TMUX_SESSION_ACTIVE_HINT),
+            tmux_status_hint: is_active.then_some(TmuxSessionStatusHint::ActiveSession),
             kind: CommandPaletteItemKind::TmuxSessionRenameSelect {
-                session_name: summary.name.clone(),
-                socket_target: socket_target.clone(),
+                session_name: row.summary.name.clone(),
+                socket_target: row.socket_target.clone(),
             },
         }
     }
@@ -152,12 +186,15 @@ impl CommandPaletteItem {
         let next_session_name = next_session_name.trim().to_string();
         let mut enabled = true;
         let mut status_hint = None;
+        let mut tmux_status_hint = None;
         if next_session_name.is_empty() {
             enabled = false;
             status_hint = Some(TMUX_SESSION_NAME_REQUIRED_HINT);
+            tmux_status_hint = Some(TmuxSessionStatusHint::NameRequired);
         } else if current_session_name.eq_ignore_ascii_case(&next_session_name) {
             enabled = false;
             status_hint = Some(TMUX_SESSION_NAME_UNCHANGED_HINT);
+            tmux_status_hint = Some(TmuxSessionStatusHint::NameUnchanged);
         }
 
         let rendered_next_name = if next_session_name.is_empty() {
@@ -178,6 +215,7 @@ impl CommandPaletteItem {
             ),
             enabled,
             status_hint,
+            tmux_status_hint,
             kind: CommandPaletteItemKind::TmuxSessionRenameApply {
                 current_session_name: current_session_name.to_string(),
                 next_session_name,
@@ -187,24 +225,26 @@ impl CommandPaletteItem {
     }
 
     pub(super) fn tmux_session_kill(
-        summary: &TmuxSessionSummary,
-        socket_target: &TmuxSocketTarget,
+        row: &TmuxSessionRow,
         active_session_name: Option<&str>,
     ) -> Self {
-        let title = Self::tmux_session_title(summary);
+        let title = Self::tmux_session_title(row);
+        let socket_label = Self::tmux_socket_label(&row.socket_target);
         let keywords = format!(
-            "tmux kill close session {}",
-            summary.name.replace('-', " ")
+            "tmux kill close session {} socket {}",
+            row.summary.name.replace('-', " "),
+            socket_label.replace('-', " ")
         );
-        let is_active = active_session_name.is_some_and(|active| summary.name == active);
+        let is_active = active_session_name.is_some_and(|active| row.summary.name == active);
         Self {
             title,
             keywords,
             enabled: !is_active,
             status_hint: is_active.then_some(TMUX_SESSION_ACTIVE_HINT),
+            tmux_status_hint: is_active.then_some(TmuxSessionStatusHint::ActiveSession),
             kind: CommandPaletteItemKind::TmuxSessionKill {
-                session_name: summary.name.clone(),
-                socket_target: socket_target.clone(),
+                session_name: row.summary.name.clone(),
+                socket_target: row.socket_target.clone(),
             },
         }
     }
@@ -222,6 +262,7 @@ impl CommandPaletteItem {
             ),
             enabled: true,
             status_hint: None,
+            tmux_status_hint: None,
             kind: CommandPaletteItemKind::TmuxSessionCreateAndAttach {
                 session_name,
                 socket_target: socket_target.clone(),
@@ -236,6 +277,7 @@ pub(in super::super) struct CommandPaletteState {
     mode: CommandPaletteMode,
     tmux_session_intent: TmuxSessionIntent,
     tmux_rename_source_session: Option<String>,
+    tmux_rename_source_socket: Option<TmuxSocketTarget>,
     input: InlineInputState,
     items: Vec<CommandPaletteItem>,
     filtered_indices: Vec<usize>,
@@ -247,8 +289,8 @@ pub(in super::super) struct CommandPaletteState {
     scroll_last_tick: Option<Instant>,
     show_keybinds: bool,
     shortcut_cache: HashMap<CommandAction, Option<String>>,
-    tmux_sessions: Vec<TmuxSessionSummary>,
-    tmux_socket_target: TmuxSocketTarget,
+    tmux_session_rows: Vec<TmuxSessionRow>,
+    tmux_create_socket_target: TmuxSocketTarget,
 }
 
 impl CommandPaletteState {
@@ -258,6 +300,7 @@ impl CommandPaletteState {
             mode: CommandPaletteMode::Commands,
             tmux_session_intent: TmuxSessionIntent::AttachOrSwitch,
             tmux_rename_source_session: None,
+            tmux_rename_source_socket: None,
             input: InlineInputState::new(String::new()),
             items: Vec::new(),
             filtered_indices: Vec::new(),
@@ -269,8 +312,8 @@ impl CommandPaletteState {
             scroll_last_tick: None,
             show_keybinds,
             shortcut_cache: HashMap::new(),
-            tmux_sessions: Vec::new(),
-            tmux_socket_target: TmuxSocketTarget::Default,
+            tmux_session_rows: Vec::new(),
+            tmux_create_socket_target: TmuxSocketTarget::Default,
         }
     }
 
@@ -290,12 +333,18 @@ impl CommandPaletteState {
         self.tmux_session_intent = intent;
         if intent != TmuxSessionIntent::RenameInput {
             self.tmux_rename_source_session = None;
+            self.tmux_rename_source_socket = None;
         }
     }
 
-    pub(super) fn begin_tmux_session_rename(&mut self, session_name: &str) {
+    pub(super) fn begin_tmux_session_rename(
+        &mut self,
+        session_name: &str,
+        socket_target: TmuxSocketTarget,
+    ) {
         self.tmux_session_intent = TmuxSessionIntent::RenameInput;
         self.tmux_rename_source_session = Some(session_name.to_string());
+        self.tmux_rename_source_socket = Some(socket_target);
         self.input.clear();
     }
 
@@ -305,6 +354,7 @@ impl CommandPaletteState {
         }
         self.tmux_session_intent = TmuxSessionIntent::RenameSelect;
         self.tmux_rename_source_session = None;
+        self.tmux_rename_source_socket = None;
         self.input.clear();
         true
     }
@@ -362,15 +412,25 @@ impl CommandPaletteState {
         self.shortcut_cache.clear();
     }
 
-    pub(super) fn set_tmux_sessions(
+    pub(super) fn set_tmux_session_rows(
         &mut self,
-        socket_target: TmuxSocketTarget,
-        mut sessions: Vec<TmuxSessionSummary>,
+        mut rows: Vec<TmuxSessionRow>,
+        create_socket_target: TmuxSocketTarget,
     ) {
-        sessions.sort_unstable_by(|left, right| left.name.cmp(&right.name));
-        sessions.dedup_by(|left, right| left.name == right.name);
-        self.tmux_socket_target = socket_target;
-        self.tmux_sessions = sessions;
+        rows.sort_unstable_by(|left, right| {
+            left.summary
+                .name
+                .cmp(&right.summary.name)
+                .then_with(|| {
+                    CommandPaletteItem::tmux_socket_label(&left.socket_target)
+                        .cmp(&CommandPaletteItem::tmux_socket_label(&right.socket_target))
+                })
+        });
+        rows.dedup_by(|left, right| {
+            left.summary.name == right.summary.name && left.socket_target == right.socket_target
+        });
+        self.tmux_create_socket_target = create_socket_target;
+        self.tmux_session_rows = rows;
     }
 
     pub(super) fn tmux_session_items_for_query(
@@ -381,14 +441,9 @@ impl CommandPaletteState {
         match self.tmux_session_intent {
             TmuxSessionIntent::AttachOrSwitch => {
                 let mut items = self
-                    .tmux_sessions
+                    .tmux_session_rows
                     .iter()
-                    .map(|session| {
-                        CommandPaletteItem::tmux_session_attach_or_switch(
-                            session,
-                            &self.tmux_socket_target,
-                        )
-                    })
+                    .map(CommandPaletteItem::tmux_session_attach_or_switch)
                     .collect::<Vec<_>>();
 
                 let query = query.trim();
@@ -397,15 +452,15 @@ impl CommandPaletteState {
                 }
 
                 let exact_match = self
-                    .tmux_sessions
+                    .tmux_session_rows
                     .iter()
-                    .any(|session| session.name.eq_ignore_ascii_case(query));
+                    .any(|row| row.summary.name.eq_ignore_ascii_case(query));
                 if !exact_match {
                     items.insert(
                         0,
                         CommandPaletteItem::tmux_session_create_and_attach(
                             query,
-                            &self.tmux_socket_target,
+                            &self.tmux_create_socket_target,
                         ),
                     );
                 }
@@ -413,36 +468,27 @@ impl CommandPaletteState {
                 items
             }
             TmuxSessionIntent::RenameSelect => self
-                .tmux_sessions
+                .tmux_session_rows
                 .iter()
-                .map(|session| {
-                    CommandPaletteItem::tmux_session_rename_select(
-                        session,
-                        &self.tmux_socket_target,
-                        active_session_name,
-                    )
-                })
+                .map(|row| CommandPaletteItem::tmux_session_rename_select(row, active_session_name))
                 .collect(),
             TmuxSessionIntent::RenameInput => {
                 let Some(current_session_name) = self.tmux_rename_source_session() else {
                     return Vec::new();
                 };
+                let Some(socket_target) = self.tmux_rename_source_socket.as_ref() else {
+                    return Vec::new();
+                };
                 vec![CommandPaletteItem::tmux_session_rename_apply(
                     current_session_name,
                     query,
-                    &self.tmux_socket_target,
+                    socket_target,
                 )]
             }
             TmuxSessionIntent::Kill => self
-                .tmux_sessions
+                .tmux_session_rows
                 .iter()
-                .map(|session| {
-                    CommandPaletteItem::tmux_session_kill(
-                        session,
-                        &self.tmux_socket_target,
-                        active_session_name,
-                    )
-                })
+                .map(|row| CommandPaletteItem::tmux_session_kill(row, active_session_name))
                 .collect(),
         }
     }
@@ -583,6 +629,7 @@ impl CommandPaletteState {
         if self.mode != CommandPaletteMode::TmuxSessions {
             self.tmux_session_intent = TmuxSessionIntent::AttachOrSwitch;
             self.tmux_rename_source_session = None;
+            self.tmux_rename_source_socket = None;
         }
     }
 }
@@ -721,6 +768,18 @@ mod tests {
 
     fn command_item(title: &str, keywords: &str, action: CommandAction) -> CommandPaletteItem {
         CommandPaletteItem::command_with_state(title, keywords, action, true, None)
+    }
+
+    fn tmux_row(name: &str, socket_target: TmuxSocketTarget) -> TmuxSessionRow {
+        TmuxSessionRow {
+            summary: TmuxSessionSummary {
+                name: name.to_string(),
+                id: format!("${name}"),
+                window_count: 1,
+                attached_clients: 0,
+            },
+            socket_target,
+        }
     }
 
     #[test]
@@ -895,14 +954,17 @@ mod tests {
     #[test]
     fn tmux_session_items_add_create_row_only_when_query_has_no_exact_match() {
         let mut state = CommandPaletteState::new(false);
-        state.set_tmux_sessions(
-            TmuxSocketTarget::Default,
-            vec![TmuxSessionSummary {
-                name: "work".to_string(),
-                id: "$1".to_string(),
-                window_count: 2,
-                attached_clients: 1,
+        state.set_tmux_session_rows(
+            vec![TmuxSessionRow {
+                summary: TmuxSessionSummary {
+                    name: "work".to_string(),
+                    id: "$1".to_string(),
+                    window_count: 2,
+                    attached_clients: 1,
+                },
+                socket_target: TmuxSocketTarget::Default,
             }],
+            TmuxSocketTarget::DedicatedTermy,
         );
 
         let with_exact = state.tmux_session_items_for_query("work", None);
@@ -924,22 +986,28 @@ mod tests {
     fn tmux_rename_select_disables_active_session_row() {
         let mut state = CommandPaletteState::new(false);
         state.set_tmux_session_intent(TmuxSessionIntent::RenameSelect);
-        state.set_tmux_sessions(
-            TmuxSocketTarget::Default,
+        state.set_tmux_session_rows(
             vec![
-                TmuxSessionSummary {
-                    name: "work".to_string(),
-                    id: "$1".to_string(),
-                    window_count: 2,
-                    attached_clients: 1,
+                TmuxSessionRow {
+                    summary: TmuxSessionSummary {
+                        name: "work".to_string(),
+                        id: "$1".to_string(),
+                        window_count: 2,
+                        attached_clients: 1,
+                    },
+                    socket_target: TmuxSocketTarget::Default,
                 },
-                TmuxSessionSummary {
-                    name: "sandbox".to_string(),
-                    id: "$2".to_string(),
-                    window_count: 1,
-                    attached_clients: 0,
+                TmuxSessionRow {
+                    summary: TmuxSessionSummary {
+                        name: "sandbox".to_string(),
+                        id: "$2".to_string(),
+                        window_count: 1,
+                        attached_clients: 0,
+                    },
+                    socket_target: TmuxSocketTarget::Default,
                 },
             ],
+            TmuxSocketTarget::Default,
         );
 
         let items = state.tmux_session_items_for_query("", Some("work"));
@@ -961,16 +1029,19 @@ mod tests {
     #[test]
     fn tmux_rename_input_builds_single_row_and_requires_non_empty_new_name() {
         let mut state = CommandPaletteState::new(false);
-        state.set_tmux_sessions(
-            TmuxSocketTarget::Default,
-            vec![TmuxSessionSummary {
-                name: "work".to_string(),
-                id: "$1".to_string(),
-                window_count: 1,
-                attached_clients: 1,
+        state.set_tmux_session_rows(
+            vec![TmuxSessionRow {
+                summary: TmuxSessionSummary {
+                    name: "work".to_string(),
+                    id: "$1".to_string(),
+                    window_count: 1,
+                    attached_clients: 1,
+                },
+                socket_target: TmuxSocketTarget::Default,
             }],
+            TmuxSocketTarget::Default,
         );
-        state.begin_tmux_session_rename("work");
+        state.begin_tmux_session_rename("work", TmuxSocketTarget::Default);
 
         let empty = state.tmux_session_items_for_query("   ", Some("work"));
         assert_eq!(empty.len(), 1);
@@ -986,12 +1057,53 @@ mod tests {
         assert_eq!(valid.len(), 1);
         assert!(valid[0].enabled);
         assert_eq!(valid[0].status_hint, None);
+        match &valid[0].kind {
+            CommandPaletteItemKind::TmuxSessionRenameApply { socket_target, .. } => {
+                assert_eq!(socket_target, &TmuxSocketTarget::Default);
+            }
+            _ => panic!("expected rename apply row"),
+        }
+    }
+
+    #[test]
+    fn tmux_session_rows_keep_same_session_name_across_different_sockets() {
+        let mut state = CommandPaletteState::new(false);
+        state.set_tmux_session_rows(
+            vec![
+                tmux_row("work", TmuxSocketTarget::DedicatedTermy),
+                tmux_row("work", TmuxSocketTarget::Default),
+            ],
+            TmuxSocketTarget::DedicatedTermy,
+        );
+
+        let items = state.tmux_session_items_for_query("", None);
+        let attach_rows = items
+            .iter()
+            .filter(|item| matches!(item.kind, CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }))
+            .count();
+        assert_eq!(attach_rows, 2);
+    }
+
+    #[test]
+    fn tmux_session_create_row_uses_configured_create_socket_target() {
+        let mut state = CommandPaletteState::new(false);
+        state.set_tmux_session_rows(Vec::new(), TmuxSocketTarget::DedicatedTermy);
+        let items = state.tmux_session_items_for_query("new-session", None);
+        assert_eq!(items.len(), 1);
+        let create_socket_target = match &items[0].kind {
+            CommandPaletteItemKind::TmuxSessionCreateAndAttach { socket_target, .. } => {
+                Some(socket_target)
+            }
+            _ => None,
+        }
+        .expect("expected create-and-attach row");
+        assert_eq!(create_socket_target, &TmuxSocketTarget::DedicatedTermy);
     }
 
     #[test]
     fn back_from_tmux_rename_input_resets_query_and_source_session() {
         let mut state = CommandPaletteState::new(false);
-        state.begin_tmux_session_rename("work");
+        state.begin_tmux_session_rename("work", TmuxSocketTarget::DedicatedTermy);
         state.input_mut().set_text("next".to_string());
 
         assert!(state.back_from_tmux_rename_input());

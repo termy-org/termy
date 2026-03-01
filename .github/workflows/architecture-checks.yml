@@ -23,3 +23,21 @@ jobs:
 
       - name: Run boundary checks
         run: ./scripts/check-boundaries.sh
+
+  tmux-integration:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install tmux + just
+        run: brew install tmux just
+
+      - name: Run tmux integration tests
+        run: just test-tmux-integration

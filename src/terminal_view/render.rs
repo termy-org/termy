@@ -823,6 +823,29 @@ impl Render for TerminalView {
                             .into_any_element(),
                     );
                 }
+
+                if pane.degraded {
+                    // Hydration degraded panes still function, but this marker makes
+                    // the warning state persistent until the next successful snapshot.
+                    let degraded_accent = gpui::Hsla {
+                        h: 0.09,
+                        s: 0.92,
+                        l: 0.58,
+                        a: self.scaled_chrome_alpha(0.68),
+                    };
+                    pane_focus_accents.push(
+                        div()
+                            .id(SharedString::from(format!("pane-degraded-accent-{}", pane.id)))
+                            .absolute()
+                            .left(px(pane_left))
+                            .top(px(pane_top))
+                            .w(px(pane_width))
+                            .h(px(pane_height))
+                            .border_1()
+                            .border_color(degraded_accent)
+                            .into_any_element(),
+                    );
+                }
             }
         }
 

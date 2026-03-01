@@ -413,6 +413,7 @@ struct TerminalPane {
     top: u16,
     width: u16,
     height: u16,
+    degraded: bool,
     terminal: Terminal,
 }
 
@@ -982,6 +983,7 @@ impl TerminalView {
             top: 0,
             width: cols.max(1),
             height: rows.max(1),
+            degraded: false,
             terminal,
         };
         TerminalTab {
@@ -1009,13 +1011,6 @@ impl TerminalView {
             .flat_map(|tab| tab.panes.iter())
             .find(|pane| pane.id == pane_id)
             .map(|pane| &pane.terminal)
-    }
-
-    fn pane_ref_by_id(&self, pane_id: &str) -> Option<&TerminalPane> {
-        self.tabs
-            .iter()
-            .flat_map(|tab| tab.panes.iter())
-            .find(|pane| pane.id == pane_id)
     }
 
     fn is_active_pane_id(&self, pane_id: &str) -> bool {

@@ -2,7 +2,8 @@ use super::*;
 use gpui::point;
 use state::{
     command_palette_next_scroll_y, command_palette_target_scroll_y,
-    ordered_theme_ids_for_palette, CommandPaletteItem, CommandPaletteItemKind,
+    ordered_theme_ids_for_palette, CommandPaletteItem, CommandPaletteItemKind, TmuxSessionRow,
+    TmuxSessionStatusHint,
 };
 use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavailableReason};
 use termy_terminal_ui::{TmuxClient, TmuxLaunchTarget, TmuxSocketTarget};
@@ -164,14 +165,50 @@ impl TerminalView {
         Some(self.tmux_runtime().client.session_name().to_string())
     }
 
-    fn tmux_socket_target_for_session_palette(&self) -> TmuxSocketTarget {
-        if !self.runtime_uses_tmux() {
-            return TmuxSocketTarget::Default;
+    fn tmux_socket_targets_for_session_palette_for_launch(
+        runtime_uses_tmux: bool,
+        launch: Option<&TmuxLaunchTarget>,
+    ) -> Vec<TmuxSocketTarget> {
+        if !runtime_uses_tmux {
+            // When native runtime is active we must still discover persistent managed
+            // sessions on the dedicated socket, otherwise detach->reattach can miss them.
+            return vec![TmuxSocketTarget::DedicatedTermy, TmuxSocketTarget::Default];
         }
 
-        match &self.tmux_runtime().config.launch {
-            TmuxLaunchTarget::Managed { .. } => TmuxSocketTarget::DedicatedTermy,
-            TmuxLaunchTarget::Session { socket, .. } => socket.clone(),
+        let Some(launch) = launch else {
+            return vec![TmuxSocketTarget::Default];
+        };
+
+        match launch {
+            TmuxLaunchTarget::Managed { .. } => vec![TmuxSocketTarget::DedicatedTermy],
+            TmuxLaunchTarget::Session { socket, .. } => vec![socket.clone()],
+        }
+    }
+
+    fn tmux_socket_targets_for_session_palette(&self) -> Vec<TmuxSocketTarget> {
+        let launch = self
+            .runtime
+            .as_tmux()
+            .map(|runtime| &runtime.config.launch);
+        Self::tmux_socket_targets_for_session_palette_for_launch(self.runtime_uses_tmux(), launch)
+    }
+
+    fn tmux_primary_socket_target_for_session_palette(&self) -> TmuxSocketTarget {
+        self.tmux_socket_targets_for_session_palette()
+            .into_iter()
+            .next()
+            .unwrap_or(TmuxSocketTarget::Default)
+    }
+
+    fn tmux_session_list_error_is_ignorable(error: &str) -> bool {
+        error.contains("no server running on")
+    }
+
+    fn tmux_socket_target_display_name(socket_target: &TmuxSocketTarget) -> String {
+        match socket_target {
+            TmuxSocketTarget::DedicatedTermy => "termy".to_string(),
+            TmuxSocketTarget::Default => "default".to_string(),
+            TmuxSocketTarget::Named(name) => name.clone(),
         }
     }
 
@@ -192,12 +229,43 @@ impl TerminalView {
     }
 
     fn reload_tmux_session_palette_items(&mut self) -> Result<(), String> {
-        let socket_target = self.tmux_socket_target_for_session_palette();
+        let socket_targets = self.tmux_socket_targets_for_session_palette();
+        let create_socket_target = socket_targets
+            .first()
+            .cloned()
+            .unwrap_or(TmuxSocketTarget::Default);
         let binary = self.tmux_binary_for_session_palette()?;
-        let sessions = TmuxClient::list_sessions(binary.as_str(), socket_target.clone())
-            .map_err(|error| error.to_string())?;
-        self.command_palette.set_tmux_sessions(socket_target, sessions);
-        Ok(())
+        let mut rows = Vec::<TmuxSessionRow>::new();
+        let mut failures = Vec::<String>::new();
+
+        for socket_target in socket_targets {
+            match TmuxClient::list_sessions(binary.as_str(), socket_target.clone()) {
+                Ok(sessions) => {
+                    rows.extend(sessions.into_iter().map(|summary| TmuxSessionRow {
+                        summary,
+                        socket_target: socket_target.clone(),
+                    }));
+                }
+                Err(error) => {
+                    let error_text = error.to_string();
+                    if !Self::tmux_session_list_error_is_ignorable(&error_text) {
+                        failures.push(format!(
+                            "{} socket: {error_text}",
+                            Self::tmux_socket_target_display_name(&socket_target)
+                        ));
+                    }
+                }
+            }
+        }
+
+        self.command_palette
+            .set_tmux_session_rows(rows, create_socket_target);
+
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures.join(" | "))
+        }
     }
 
     fn command_palette_theme_items(&self) -> Vec<CommandPaletteItem> {
@@ -227,7 +295,10 @@ impl TerminalView {
                 // Keep the tmux session palette usable when list-sessions fails by
                 // preserving the selected socket target and rendering intent-specific rows.
                 self.command_palette
-                    .set_tmux_sessions(self.tmux_socket_target_for_session_palette(), Vec::new());
+                    .set_tmux_session_rows(
+                        Vec::new(),
+                        self.tmux_primary_socket_target_for_session_palette(),
+                    );
                 termy_toast::error(format!("Failed to list tmux sessions: {error}"));
             }
         }
@@ -545,7 +616,7 @@ impl TerminalView {
                 session_name.as_str(),
                 socket_target,
                 item.enabled,
-                item.status_hint,
+                item.tmux_status_hint,
                 cx,
             ),
             CommandPaletteItemKind::TmuxSessionRenameSelect {
@@ -555,7 +626,7 @@ impl TerminalView {
                 session_name.as_str(),
                 socket_target,
                 item.enabled,
-                item.status_hint,
+                item.tmux_status_hint,
                 cx,
             ),
             CommandPaletteItemKind::TmuxSessionRenameApply {
@@ -567,7 +638,7 @@ impl TerminalView {
                 next_session_name.as_str(),
                 socket_target,
                 item.enabled,
-                item.status_hint,
+                item.tmux_status_hint,
                 cx,
             ),
             CommandPaletteItemKind::TmuxSessionKill {
@@ -577,19 +648,23 @@ impl TerminalView {
                 session_name.as_str(),
                 socket_target,
                 item.enabled,
-                item.status_hint,
+                item.tmux_status_hint,
                 cx,
             ),
         }
     }
 
-    fn command_palette_disabled_tmux_session_message(status_hint: Option<&str>) -> &'static str {
+    fn command_palette_disabled_tmux_session_message(
+        status_hint: Option<TmuxSessionStatusHint>,
+    ) -> &'static str {
         match status_hint {
-            Some("active session") => {
+            Some(TmuxSessionStatusHint::ActiveSession) => {
                 "Detach or switch tmux session before renaming or killing the active session"
             }
-            Some("name required") => "tmux session name cannot be empty",
-            Some("unchanged") => "New tmux session name must differ from current name",
+            Some(TmuxSessionStatusHint::NameRequired) => "tmux session name cannot be empty",
+            Some(TmuxSessionStatusHint::NameUnchanged) => {
+                "New tmux session name must differ from current name"
+            }
             _ => "tmux session action is unavailable",
         }
     }
@@ -635,7 +710,7 @@ impl TerminalView {
         session_name: &str,
         socket_target: TmuxSocketTarget,
         enabled: bool,
-        status_hint: Option<&str>,
+        status_hint: Option<TmuxSessionStatusHint>,
         cx: &mut Context<Self>,
     ) {
         if !enabled {
@@ -665,9 +740,9 @@ impl TerminalView {
     fn select_tmux_session_for_rename_from_palette(
         &mut self,
         session_name: &str,
-        _socket_target: TmuxSocketTarget,
+        socket_target: TmuxSocketTarget,
         enabled: bool,
-        status_hint: Option<&str>,
+        status_hint: Option<TmuxSessionStatusHint>,
         cx: &mut Context<Self>,
     ) {
         if !enabled {
@@ -676,7 +751,8 @@ impl TerminalView {
             return;
         }
 
-        self.command_palette.begin_tmux_session_rename(session_name);
+        self.command_palette
+            .begin_tmux_session_rename(session_name, socket_target);
         self.refresh_command_palette_matches(false, cx);
         cx.notify();
     }
@@ -684,7 +760,10 @@ impl TerminalView {
     fn refresh_tmux_session_palette_after_lifecycle_action(&mut self, cx: &mut Context<Self>) {
         if let Err(error) = self.reload_tmux_session_palette_items() {
             self.command_palette
-                .set_tmux_sessions(self.tmux_socket_target_for_session_palette(), Vec::new());
+                .set_tmux_session_rows(
+                    Vec::new(),
+                    self.tmux_primary_socket_target_for_session_palette(),
+                );
             termy_toast::error(format!("Failed to list tmux sessions: {error}"));
         }
         self.refresh_command_palette_matches(false, cx);
@@ -697,7 +776,7 @@ impl TerminalView {
         next_session_name: &str,
         socket_target: TmuxSocketTarget,
         enabled: bool,
-        status_hint: Option<&str>,
+        status_hint: Option<TmuxSessionStatusHint>,
         cx: &mut Context<Self>,
     ) {
         if !enabled {
@@ -741,7 +820,7 @@ impl TerminalView {
         session_name: &str,
         socket_target: TmuxSocketTarget,
         enabled: bool,
-        status_hint: Option<&str>,
+        status_hint: Option<TmuxSessionStatusHint>,
         cx: &mut Context<Self>,
     ) {
         if !enabled {
@@ -886,6 +965,35 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_session_palette_prioritizes_managed_socket_discovery_order() {
+        assert_eq!(
+            TerminalView::tmux_socket_targets_for_session_palette_for_launch(false, None),
+            vec![TmuxSocketTarget::DedicatedTermy, TmuxSocketTarget::Default]
+        );
+    }
+
+    #[test]
+    fn tmux_runtime_session_palette_uses_active_runtime_socket() {
+        assert_eq!(
+            TerminalView::tmux_socket_targets_for_session_palette_for_launch(
+                true,
+                Some(&TmuxLaunchTarget::Managed { persistence: true }),
+            ),
+            vec![TmuxSocketTarget::DedicatedTermy]
+        );
+        assert_eq!(
+            TerminalView::tmux_socket_targets_for_session_palette_for_launch(
+                true,
+                Some(&TmuxLaunchTarget::Session {
+                    name: "work".to_string(),
+                    socket: TmuxSocketTarget::Named("work".to_string()),
+                }),
+            ),
+            vec![TmuxSocketTarget::Named("work".to_string())]
+        );
+    }
 
     #[test]
     fn escape_action_is_mode_dependent() {

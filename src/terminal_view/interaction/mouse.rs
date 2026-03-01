@@ -118,17 +118,11 @@ impl TerminalView {
         if step_delta == 0 {
             return false;
         }
-        let before_geometry = self
-            .pane_ref_by_id(pane_id.as_str())
-            .map(|pane| (pane.left, pane.top, pane.width, pane.height));
-
         let mut completed_steps = 0i32;
-        let mut failed = false;
         for _ in 0..step_delta.unsigned_abs() {
             if self.tmux_resize_pane_step(pane_id.as_str(), axis, step_delta.is_positive()) {
                 completed_steps += 1;
             } else {
-                failed = true;
                 break;
             }
         }
@@ -145,20 +139,7 @@ impl TerminalView {
         if let Some(drag) = self.pane_resize_drag.as_mut() {
             drag.applied_steps += applied_delta;
         }
-        let refreshed = self.refresh_tmux_snapshot();
-        if refreshed
-            && !failed
-            && before_geometry
-                == self
-                    .pane_ref_by_id(pane_id.as_str())
-                    .map(|pane| (pane.left, pane.top, pane.width, pane.height))
-        {
-            termy_toast::info("Pane cannot resize further");
-        }
-        if failed {
-            return refreshed;
-        }
-        refreshed
+        true
     }
 
     pub(in super::super) fn handle_mouse_down(

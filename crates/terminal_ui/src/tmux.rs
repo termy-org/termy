@@ -5,7 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use std::{
@@ -109,6 +109,7 @@ pub struct TmuxSessionSummary {
 pub enum TmuxNotification {
     Output { pane_id: String, bytes: Vec<u8> },
     NeedsRefresh,
+    Warning(String),
     Exit(Option<String>),
 }
 
@@ -170,23 +171,37 @@ impl std::fmt::Display for TmuxControlError {
 
 impl std::error::Error for TmuxControlError {}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ControlCommandResult {
+    output: String,
+}
+
 #[derive(Debug)]
 struct ControlRequest {
     command: String,
-    response_tx: Option<Sender<std::result::Result<(), TmuxControlError>>>,
+    completion_token: String,
+    response_tx: Option<Sender<std::result::Result<ControlCommandResult, TmuxControlError>>>,
 }
 
 #[derive(Debug)]
 struct PendingCommand {
     command: String,
-    response_tx: Option<Sender<std::result::Result<(), TmuxControlError>>>,
+    completion_token: String,
+    response_tx: Option<Sender<std::result::Result<ControlCommandResult, TmuxControlError>>>,
     completion_tx: Sender<()>,
 }
 
 #[derive(Debug)]
 enum ActiveControlCommand {
-    Tracked(PendingCommand),
+    Tracked(TrackedPendingCommand),
     Untracked,
+}
+
+#[derive(Debug)]
+struct TrackedPendingCommand {
+    pending: PendingCommand,
+    output: String,
+    is_error: bool,
 }
 
 #[derive(Debug)]
@@ -199,6 +214,7 @@ struct ControlCommandBlock {
 struct NotificationCoalescer {
     queued: VecDeque<TmuxNotification>,
     has_refresh_queued: bool,
+    has_warning_queued: bool,
     queued_output_bytes: usize,
     max_output_bytes: usize,
 }
@@ -214,32 +230,96 @@ impl NotificationCoalescer {
         Self {
             queued: VecDeque::new(),
             has_refresh_queued: false,
+            has_warning_queued: false,
             queued_output_bytes: 0,
             max_output_bytes,
         }
     }
 
+    fn queue_refresh_if_missing(&mut self) {
+        if !self.has_refresh_queued {
+            self.has_refresh_queued = true;
+            self.queued.push_back(TmuxNotification::NeedsRefresh);
+        }
+    }
+
+    fn queue_backpressure_warning_if_missing(&mut self, dropped_bytes: usize) {
+        if self.has_warning_queued {
+            return;
+        }
+
+        self.has_warning_queued = true;
+        self.queued.push_back(TmuxNotification::Warning(format!(
+            "tmux output backlog exceeded {} bytes; dropped {} stale byte(s) and forced refresh",
+            self.max_output_bytes, dropped_bytes
+        )));
+    }
+
+    fn drop_oldest_output_chunk(&mut self) -> Option<usize> {
+        let output_index = self
+            .queued
+            .iter()
+            .position(|notification| matches!(notification, TmuxNotification::Output { .. }))?;
+        let removed = self.queued.remove(output_index)?;
+        match removed {
+            TmuxNotification::Output { bytes, .. } => {
+                let dropped = bytes.len();
+                self.queued_output_bytes = self.queued_output_bytes.saturating_sub(dropped);
+                Some(dropped)
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_output_backpressure(&mut self, dropped_bytes: usize) {
+        self.queue_refresh_if_missing();
+        self.queue_backpressure_warning_if_missing(dropped_bytes);
+    }
+
     fn push(&mut self, notification: TmuxNotification) -> std::result::Result<(), TmuxControlError> {
         match notification {
             TmuxNotification::NeedsRefresh => {
-                if !self.has_refresh_queued {
-                    self.has_refresh_queued = true;
-                    self.queued.push_back(TmuxNotification::NeedsRefresh);
-                }
+                self.queue_refresh_if_missing();
             }
             TmuxNotification::Output { pane_id, bytes } => {
                 if bytes.is_empty() {
                     return Ok(());
                 }
 
-                let queued_output_bytes = self.queued_output_bytes.checked_add(bytes.len()).ok_or_else(|| {
-                    TmuxControlError::channel("tmux notification output backlog byte-count overflowed")
-                })?;
+                let mut queued_output_bytes = match self.queued_output_bytes.checked_add(bytes.len()) {
+                    Some(value) => value,
+                    None => {
+                        // The pending byte count overflowed arithmetic bounds. Drop the
+                        // newest burst, request a refresh, and keep the runtime alive.
+                        self.handle_output_backpressure(bytes.len());
+                        return Ok(());
+                    }
+                };
+
                 if queued_output_bytes > self.max_output_bytes {
-                    return Err(TmuxControlError::channel(format!(
-                        "tmux notification output backlog exceeded {} bytes",
-                        self.max_output_bytes
-                    )));
+                    let mut bytes_to_free = queued_output_bytes.saturating_sub(self.max_output_bytes);
+                    while bytes_to_free > 0 {
+                        let Some(dropped) = self.drop_oldest_output_chunk() else {
+                            break;
+                        };
+                        self.handle_output_backpressure(dropped);
+                        bytes_to_free = bytes_to_free.saturating_sub(dropped);
+                    }
+
+                    queued_output_bytes = match self.queued_output_bytes.checked_add(bytes.len()) {
+                        Some(value) => value,
+                        None => {
+                            self.handle_output_backpressure(bytes.len());
+                            return Ok(());
+                        }
+                    };
+
+                    if queued_output_bytes > self.max_output_bytes {
+                        // Single bursts can be larger than the byte cap. Drop the burst
+                        // and force a refresh instead of exiting tmux runtime.
+                        self.handle_output_backpressure(bytes.len());
+                        return Ok(());
+                    }
                 }
 
                 if let Some(TmuxNotification::Output {
@@ -257,11 +337,18 @@ impl NotificationCoalescer {
                 self.queued.push_back(TmuxNotification::Output { pane_id, bytes });
                 self.queued_output_bytes = queued_output_bytes;
             }
+            TmuxNotification::Warning(message) => {
+                if !self.has_warning_queued {
+                    self.has_warning_queued = true;
+                    self.queued.push_back(TmuxNotification::Warning(message));
+                }
+            }
             TmuxNotification::Exit(reason) => {
                 // Exit is terminal for the UI client. Drop stale backlog so the
                 // consumer sees one deterministic shutdown signal.
                 self.queued.clear();
                 self.has_refresh_queued = false;
+                self.has_warning_queued = false;
                 self.queued_output_bytes = 0;
                 self.queued.push_back(TmuxNotification::Exit(reason));
             }
@@ -278,6 +365,9 @@ impl NotificationCoalescer {
             }
             TmuxNotification::Output { bytes, .. } => {
                 self.queued_output_bytes = self.queued_output_bytes.saturating_sub(bytes.len());
+            }
+            TmuxNotification::Warning(_) => {
+                self.has_warning_queued = false;
             }
             TmuxNotification::Exit(_) => {}
         }
@@ -436,7 +526,10 @@ const NOTIFICATION_COALESCER_OUTPUT_BYTES_BOUND: usize = 512 * 1024;
 const SEND_INPUT_CHUNKED_HEX_BYTES: usize = 256;
 const SEND_INPUT_BULK_THRESHOLD_BYTES: usize = 2048;
 const SEND_INPUT_BULK_HEX_BYTES: usize = 2048;
+const CONTROL_COMPLETION_TOKEN_PREFIX: &str = "__termy_cmd_done_";
 const SNAPSHOT_FIELD_SEP: char = '\u{1f}';
+
+static CONTROL_COMPLETION_TOKEN_COUNTER: AtomicU64 = AtomicU64::new(1);
 const MANAGED_SESSION_WINDOW_OPTION_BASE_OVERRIDES: [(&str, &str); 2] = [
     ("pane-border-status", "off"),
     ("pane-border-format", ""),
@@ -654,7 +747,7 @@ fn claim_pending_for_command_begin(
 
 fn complete_pending_command(
     pending: PendingCommand,
-    response: std::result::Result<(), TmuxControlError>,
+    response: std::result::Result<ControlCommandResult, TmuxControlError>,
 ) {
     if let Some(response_tx) = pending.response_tx {
         let _ = response_tx.send(response);
@@ -666,9 +759,9 @@ fn map_command_completion_response(
     command: &str,
     is_error: bool,
     output: String,
-) -> std::result::Result<(), TmuxControlError> {
+) -> std::result::Result<ControlCommandResult, TmuxControlError> {
     if !is_error {
-        return Ok(());
+        return Ok(ControlCommandResult { output });
     }
 
     let trimmed = output.trim();
@@ -677,6 +770,16 @@ fn map_command_completion_response(
     } else {
         trimmed.to_string()
     }))
+}
+
+fn append_command_output_chunk(accumulator: &mut String, chunk: &str) {
+    if chunk.is_empty() {
+        return;
+    }
+    if !accumulator.is_empty() {
+        accumulator.push('\n');
+    }
+    accumulator.push_str(chunk);
 }
 
 impl TmuxClient {
@@ -749,13 +852,17 @@ impl TmuxClient {
             let mut stdin = child_stdin;
             while let Ok(request) = request_rx.recv() {
                 let command = request.command;
+                let completion_token = request.completion_token;
                 let response_tx = request.response_tx;
                 let (completion_tx, completion_rx) = flume::bounded(1);
                 let response_tx_for_write_error = response_tx.clone();
                 let completion_tx_for_write_error = completion_tx.clone();
+                let command_with_token =
+                    command_with_completion_token(command.as_str(), completion_token.as_str());
 
                 match pending_tx.try_send(PendingCommand {
                     command: command.clone(),
+                    completion_token,
                     response_tx,
                     completion_tx,
                 }) {
@@ -776,7 +883,7 @@ impl TmuxClient {
                     }
                 }
 
-                if stdin.write_all(command.as_bytes()).is_err() {
+                if stdin.write_all(command_with_token.as_bytes()).is_err() {
                     if let Some(response_tx) = response_tx_for_write_error {
                         let _ = response_tx.send(Err(TmuxControlError::channel(
                             "failed to write command to tmux control stdin",
@@ -824,9 +931,9 @@ impl TmuxClient {
                  pending_rx: &Receiver<PendingCommand>,
                  error: TmuxControlError| {
                     if let Some(active_command) = current_command.take()
-                        && let ActiveControlCommand::Tracked(pending) = active_command
+                        && let ActiveControlCommand::Tracked(tracked) = active_command
                     {
-                        fail_pending(pending, error.clone());
+                        fail_pending(tracked.pending, error.clone());
                     }
                     while let Ok(pending) = pending_rx.try_recv() {
                         fail_pending(pending, error.clone());
@@ -927,26 +1034,22 @@ impl TmuxClient {
                         }
                     }
                     ControlStateEvent::CommandBegin => {
-                        // This explicit handoff removes race-based pending matching:
-                        // the reader binds each %begin block to exactly one writer-issued request.
                         if current_command.is_some() {
-                            fail_with_exit(
-                                &mut current_command,
-                                &pending_rx,
-                                &notifications_tx,
-                                &fatal_exit_tx,
-                                &mut notifications,
-                                event_wakeup_tx.as_ref(),
-                                TmuxControlError::protocol(
-                                    "received %begin while another command was still pending",
-                                ),
-                            );
-                            break;
+                            // Requests can be composed as `cmd1 ; cmd2`, and tmux may emit
+                            // a separate begin/end block for each sub-command. Keep the same
+                            // pending request active until its completion token is observed.
+                            continue;
                         }
 
                         match claim_pending_for_command_begin(&pending_rx) {
                             Ok(Some(pending)) => {
-                                current_command = Some(ActiveControlCommand::Tracked(pending));
+                                current_command = Some(ActiveControlCommand::Tracked(
+                                    TrackedPendingCommand {
+                                        pending,
+                                        output: String::new(),
+                                        is_error: false,
+                                    },
+                                ));
                             }
                             Ok(None) => {
                                 // tmux may emit unsolicited startup/control blocks before the
@@ -984,13 +1087,28 @@ impl TmuxClient {
                             break;
                         };
 
-                        let ActiveControlCommand::Tracked(pending) = active_command else {
+                        let ActiveControlCommand::Tracked(mut tracked) = active_command else {
                             continue;
                         };
 
-                        let response =
-                            map_command_completion_response(&pending.command, is_error, output);
-                        complete_pending_command(pending, response);
+                        let Some(output_chunk) = split_control_completion_token(
+                            output.as_str(),
+                            tracked.pending.completion_token.as_str(),
+                        ) else {
+                            append_command_output_chunk(&mut tracked.output, output.as_str());
+                            tracked.is_error |= is_error;
+                            current_command = Some(ActiveControlCommand::Tracked(tracked));
+                            continue;
+                        };
+
+                        append_command_output_chunk(&mut tracked.output, output_chunk.as_str());
+                        tracked.is_error |= is_error;
+                        let response = map_command_completion_response(
+                            &tracked.pending.command,
+                            tracked.is_error,
+                            tracked.output,
+                        );
+                        complete_pending_command(tracked.pending, response);
                     }
                     ControlStateEvent::Exit(reason) => {
                         fail_all_pending(
@@ -1062,6 +1180,7 @@ impl TmuxClient {
         // channel binds it to the correct client deterministically.
         self.send_control_command_wait(command.as_str())
             .with_context(|| format!("tmux status command failed: {command}"))
+            .map(|_| ())
     }
 
     pub fn session_name(&self) -> &str {
@@ -1473,20 +1592,24 @@ impl TmuxClient {
     fn send_control_command_async(&self, command: &str) -> Result<()> {
         self.enqueue_control_request(ControlRequest {
             command: command.to_string(),
+            completion_token: next_control_completion_token(),
             response_tx: None,
         })
     }
 
-    fn send_control_command_wait(&self, command: &str) -> Result<()> {
-        const CONTROL_COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
-
+    fn send_control_command_wait_with_timeout(
+        &self,
+        command: &str,
+        timeout: Duration,
+    ) -> Result<ControlCommandResult> {
         let (response_tx, response_rx) = flume::bounded(1);
         self.enqueue_control_request(ControlRequest {
             command: command.to_string(),
+            completion_token: next_control_completion_token(),
             response_tx: Some(response_tx),
         })?;
 
-        let response = response_rx.recv_timeout(CONTROL_COMMAND_TIMEOUT).map_err(|_| {
+        let response = response_rx.recv_timeout(timeout).map_err(|_| {
             anyhow!(TmuxControlError::channel(format!(
                 "timed out waiting for command completion: '{}'",
                 command
@@ -1495,23 +1618,29 @@ impl TmuxClient {
         response.map_err(anyhow::Error::new)
     }
 
+    fn send_control_command_wait(&self, command: &str) -> Result<ControlCommandResult> {
+        const CONTROL_COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
+        self.send_control_command_wait_with_timeout(command, CONTROL_COMMAND_TIMEOUT)
+    }
+
     fn run_control_capture_args(&self, args: &[&str]) -> Result<String> {
-        let output = self
-            .run_tmux_command(args)
-            .with_context(|| format!("tmux capture command failed: {}", tmux_command_line(args)))?;
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        const CONTROL_CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
+        let command = tmux_command_line(args);
+        let response = self
+            .send_control_command_wait_with_timeout(command.as_str(), CONTROL_CAPTURE_TIMEOUT)
+            .with_context(|| format!("tmux capture command failed: {command}"))?;
+        Ok(response.output)
     }
 
     fn run_control_status_args(&self, args: &[&str]) -> Result<()> {
-        self.run_tmux_command(args)
-            .with_context(|| format!("tmux status command failed: {}", tmux_command_line(args)))?;
-        Ok(())
-    }
-
-    fn run_control_status_args_via_control(&self, args: &[&str]) -> Result<()> {
         let command = tmux_command_line(args);
         self.send_control_command_wait(command.as_str())
             .with_context(|| format!("tmux status command failed: {command}"))
+            .map(|_| ())
+    }
+
+    fn run_control_status_args_via_control(&self, args: &[&str]) -> Result<()> {
+        self.run_control_status_args(args)
     }
 
     fn run_tmux_command(&self, args: &[&str]) -> Result<std::process::Output> {
@@ -1726,6 +1855,29 @@ fn tmux_command_line(args: &[&str]) -> String {
         .map(|arg| quote_tmux_arg(arg))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn next_control_completion_token() -> String {
+    let id = CONTROL_COMPLETION_TOKEN_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{CONTROL_COMPLETION_TOKEN_PREFIX}{id}")
+}
+
+fn command_with_completion_token(command: &str, completion_token: &str) -> String {
+    format!(
+        "{command} ; display-message -p {}",
+        quote_tmux_arg(completion_token)
+    )
+}
+
+fn split_control_completion_token(output: &str, completion_token: &str) -> Option<String> {
+    if output == completion_token {
+        return Some(String::new());
+    }
+
+    let token_suffix = format!("\n{completion_token}");
+    output
+        .strip_suffix(token_suffix.as_str())
+        .map(ToOwned::to_owned)
 }
 
 fn choose_send_input_mode(bytes_len: usize) -> (SendInputMode, usize) {
@@ -2148,7 +2300,7 @@ mod tests {
         ActiveControlCommand, ControlRequest, ControlStateEvent, ControlStateMachine,
         NotificationCoalescer, PERSISTENT_SESSION_NAME, PendingCommand, SNAPSHOT_FIELD_SEP,
         SendInputMode, TmuxClient, TmuxControlErrorKind, TmuxLaunchTarget, TmuxNotification,
-        TmuxRuntimeConfig, TmuxShutdownMode, TmuxSocketTarget,
+        TmuxRuntimeConfig, TmuxShutdownMode, TmuxSocketTarget, TrackedPendingCommand,
         capture_full_pane_args, capture_viewport_pane_args, choose_send_input_mode,
         claim_pending_for_command_begin, complete_pending_command,
         flush_notification_coalescer, managed_session_name, map_command_completion_response,
@@ -2245,7 +2397,7 @@ mod tests {
     }
 
     #[test]
-    fn notification_coalescer_reports_backpressure_when_output_backlog_exceeds_limit() {
+    fn notification_coalescer_drops_stale_output_and_emits_warning_on_backpressure() {
         let mut c = NotificationCoalescer::with_output_byte_limit(4);
         c.push(TmuxNotification::Output {
             pane_id: "%1".to_string(),
@@ -2253,14 +2405,35 @@ mod tests {
         })
         .expect("output");
 
-        let err = c
-            .push(TmuxNotification::Output {
-                pane_id: "%1".to_string(),
-                bytes: b"e".to_vec(),
-            })
-            .expect_err("backlog should fail");
-        assert_eq!(err.kind, TmuxControlErrorKind::Channel);
-        assert!(err.message.contains("backlog exceeded"));
+        c.push(TmuxNotification::Output {
+            pane_id: "%2".to_string(),
+            bytes: b"efgh".to_vec(),
+        })
+        .expect("backpressure handling should keep runtime alive");
+
+        let drained = c.drain();
+        assert!(
+            drained
+                .iter()
+                .any(|notification| matches!(notification, TmuxNotification::NeedsRefresh)),
+            "backpressure should force a refresh"
+        );
+        assert!(
+            drained
+                .iter()
+                .any(|notification| matches!(notification, TmuxNotification::Warning(_))),
+            "backpressure should emit an explicit warning"
+        );
+        assert!(
+            drained
+                .iter()
+                .any(|notification| matches!(
+                    notification,
+                    TmuxNotification::Output { pane_id, bytes }
+                    if pane_id == "%2" && bytes == b"efgh"
+                )),
+            "newest output burst should survive after stale-drop cutover"
+        );
     }
 
     #[test]
@@ -2299,6 +2472,7 @@ mod tests {
         request_tx
             .try_send(ControlRequest {
                 command: "first".to_string(),
+                completion_token: "tok-first".to_string(),
                 response_tx: None,
             })
             .expect("seed queue");
@@ -2307,6 +2481,7 @@ mod tests {
             &request_tx,
             ControlRequest {
                 command: "second".to_string(),
+                completion_token: "tok-second".to_string(),
                 response_tx: None,
             },
         )
@@ -2326,7 +2501,11 @@ mod tests {
             ControlStateEvent::CommandBegin
         );
         let mut active_command = match claim_pending_for_command_begin(&pending_rx).expect("claim") {
-            Some(pending) => Some(ActiveControlCommand::Tracked(pending)),
+            Some(pending) => Some(ActiveControlCommand::Tracked(TrackedPendingCommand {
+                pending,
+                output: String::new(),
+                is_error: false,
+            })),
             None => Some(ActiveControlCommand::Untracked),
         };
         assert!(matches!(active_command, Some(ActiveControlCommand::Untracked)));
@@ -2348,6 +2527,7 @@ mod tests {
         pending_tx
             .send(PendingCommand {
                 command: "list-windows".to_string(),
+                completion_token: "tok-list-windows".to_string(),
                 response_tx: Some(response_tx),
                 completion_tx,
             })
@@ -2358,7 +2538,11 @@ mod tests {
             ControlStateEvent::CommandBegin
         );
         active_command = match claim_pending_for_command_begin(&pending_rx).expect("claim") {
-            Some(pending) => Some(ActiveControlCommand::Tracked(pending)),
+            Some(pending) => Some(ActiveControlCommand::Tracked(TrackedPendingCommand {
+                pending,
+                output: String::new(),
+                is_error: false,
+            })),
             None => Some(ActiveControlCommand::Untracked),
         };
         assert!(matches!(
@@ -2367,22 +2551,27 @@ mod tests {
         ));
         assert_eq!(sm.on_line(b"ok").expect("command output"), ControlStateEvent::None);
         let (is_error, output) = expect_command_complete(sm.on_line(b"%end 2 2 0").expect("end"));
-        let pending = match active_command.take().expect("tracked command") {
-            ActiveControlCommand::Tracked(pending) => pending,
+        let tracked = match active_command.take().expect("tracked command") {
+            ActiveControlCommand::Tracked(tracked) => tracked,
             ActiveControlCommand::Untracked => panic!("tracked request became untracked"),
         };
-        let response = map_command_completion_response(&pending.command, is_error, output);
-        complete_pending_command(pending, response);
+        let response = map_command_completion_response(&tracked.pending.command, is_error, output);
+        complete_pending_command(tracked.pending, response);
 
         assert!(completion_rx.recv_timeout(Duration::from_millis(50)).is_ok());
         let result = response_rx
             .recv_timeout(Duration::from_millis(50))
             .expect("response sent");
-        result.expect("tracked command should succeed");
+        let completion = result.expect("tracked command should succeed");
+        assert_eq!(completion.output, "ok");
     }
 
     #[test]
     fn command_completion_response_maps_error_output_to_runtime_error() {
+        let success = map_command_completion_response("list-windows", false, "row".to_string())
+            .expect("successful completion should preserve output");
+        assert_eq!(success.output, "row");
+
         let error = map_command_completion_response("kill-pane", true, "pane not found\n".to_string())
             .expect_err("error completion should fail");
         assert_eq!(error.kind, TmuxControlErrorKind::Runtime);

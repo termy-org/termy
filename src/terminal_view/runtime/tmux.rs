@@ -58,14 +58,39 @@ fn tmux_detach_transition_decision(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TmuxPostActionRefresh {
+    ImmediateSnapshot,
+    EventDriven,
+}
+
+fn tmux_hydration_warning_message(failures: &[String]) -> Option<String> {
+    if failures.is_empty() {
+        return None;
+    }
+
+    let preview = failures
+        .iter()
+        .take(3)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let suffix = if failures.len() > 3 { ", ..." } else { "" };
+    Some(format!(
+        "tmux pane restore degraded for {} pane(s): {preview}{suffix}",
+        failures.len()
+    ))
+}
+
 impl TerminalPane {
-    fn from_tmux_state(state: &TmuxPaneState, terminal: Terminal) -> Self {
+    fn from_tmux_state(state: &TmuxPaneState, terminal: Terminal, degraded: bool) -> Self {
         Self {
             id: state.id.clone(),
             left: state.left,
             top: state.top,
             width: state.width,
             height: state.height,
+            degraded,
             terminal,
         }
     }
@@ -435,6 +460,43 @@ impl TerminalView {
         true
     }
 
+    fn run_tmux_action_with_refresh<F>(
+        &mut self,
+        error_prefix: &str,
+        refresh: TmuxPostActionRefresh,
+        clear_selection: bool,
+        cx: &mut Context<Self>,
+        action: F,
+    ) -> bool
+    where
+        F: FnOnce(&TmuxClient) -> anyhow::Result<()>,
+    {
+        if !self.run_tmux_action(error_prefix, action) {
+            return false;
+        }
+
+        match refresh {
+            TmuxPostActionRefresh::ImmediateSnapshot => {
+                if !self.refresh_tmux_snapshot() {
+                    return false;
+                }
+                if clear_selection {
+                    self.clear_selection();
+                }
+                cx.notify();
+                true
+            }
+            TmuxPostActionRefresh::EventDriven => {
+                if clear_selection {
+                    self.clear_selection();
+                }
+                let _ = self.event_wakeup_tx.try_send(());
+                cx.notify();
+                true
+            }
+        }
+    }
+
     pub(in super::super) fn tmux_send_input_to_active_pane(&self, input: &[u8]) -> bool {
         let Some(active_pane_id) = self.active_pane_id() else {
             return false;
@@ -449,19 +511,23 @@ impl TerminalView {
     }
 
     pub(in super::super) fn tmux_resize_pane_step(
-        &self,
+        &mut self,
         pane_id: &str,
         axis: PaneResizeAxis,
         positive_direction: bool,
     ) -> bool {
-        self.run_tmux_action("Failed to resize pane", |tmux_client| {
+        let resized = self.run_tmux_action("Failed to resize pane", |tmux_client| {
             match (axis, positive_direction) {
                 (PaneResizeAxis::Horizontal, true) => tmux_client.resize_pane_right(pane_id, 1),
                 (PaneResizeAxis::Horizontal, false) => tmux_client.resize_pane_left(pane_id, 1),
                 (PaneResizeAxis::Vertical, true) => tmux_client.resize_pane_down(pane_id, 1),
                 (PaneResizeAxis::Vertical, false) => tmux_client.resize_pane_up(pane_id, 1),
             }
-        })
+        });
+        if resized {
+            let _ = self.event_wakeup_tx.try_send(());
+        }
+        resized
     }
 
     pub(in super::super) fn tmux_reorder_tab(&mut self, from: usize, to: usize) -> bool {
@@ -605,76 +671,18 @@ impl TerminalView {
         }
     }
 
-    fn tmux_pane_geometry_signature(&self, pane_id: &str) -> Option<(u16, u16, u16, u16)> {
-        let pane = self.pane_ref_by_id(pane_id)?;
-        Some((pane.left, pane.top, pane.width, pane.height))
-    }
-
-    fn tmux_apply_focus_snapshot(
-        &mut self,
-        previous_pane_id: &str,
-        no_change_message: Option<&str>,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        if !self.refresh_tmux_snapshot() {
-            return false;
-        }
-
-        let focused_pane_changed = self.active_pane_id() != Some(previous_pane_id);
-        if !focused_pane_changed {
-            if let Some(message) = no_change_message {
-                termy_toast::info(message);
-            }
-            cx.notify();
-            return false;
-        }
-
-        self.clear_selection();
-        cx.notify();
-        true
-    }
-
-    fn tmux_apply_resize_snapshot(
-        &mut self,
-        pane_id: &str,
-        before: (u16, u16, u16, u16),
-        blocked_message: &str,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        if !self.refresh_tmux_snapshot() {
-            return false;
-        }
-
-        let changed = self
-            .tmux_pane_geometry_signature(pane_id)
-            .is_some_and(|after| after != before);
-        if !changed {
-            termy_toast::info(blocked_message);
-        }
-        cx.notify();
-        changed
-    }
-
     pub(in super::super) fn tmux_focus_pane_target(
         &mut self,
         pane_id: &str,
         cx: &mut Context<Self>,
     ) -> bool {
-        let previous_pane_id = self.active_pane_id().map(ToOwned::to_owned);
-        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
-            tmux_client.select_pane(pane_id)
-        }) {
-            return false;
-        }
-
-        if let Some(previous_pane_id) = previous_pane_id {
-            self.tmux_apply_focus_snapshot(previous_pane_id.as_str(), None, cx)
-        } else if self.refresh_tmux_snapshot() {
-            cx.notify();
-            true
-        } else {
-            false
-        }
+        self.run_tmux_action_with_refresh(
+            "Failed to focus pane",
+            TmuxPostActionRefresh::EventDriven,
+            true,
+            cx,
+            |tmux_client| tmux_client.select_pane(pane_id),
+        )
     }
 
     pub(in super::super) fn tmux_split_active_pane_vertical(
@@ -684,17 +692,13 @@ impl TerminalView {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if !self.run_tmux_action("Failed to split pane", |tmux_client| {
-            tmux_client.split_vertical(pane_id.as_str())
-        }) {
-            return false;
-        }
-        let refreshed = self.refresh_tmux_snapshot();
-        if refreshed {
-            self.clear_selection();
-            cx.notify();
-        }
-        refreshed
+        self.run_tmux_action_with_refresh(
+            "Failed to split pane",
+            TmuxPostActionRefresh::ImmediateSnapshot,
+            true,
+            cx,
+            |tmux_client| tmux_client.split_vertical(pane_id.as_str()),
+        )
     }
 
     pub(in super::super) fn tmux_split_active_pane_horizontal(
@@ -704,101 +708,90 @@ impl TerminalView {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if !self.run_tmux_action("Failed to split pane", |tmux_client| {
-            tmux_client.split_horizontal(pane_id.as_str())
-        }) {
-            return false;
-        }
-        let refreshed = self.refresh_tmux_snapshot();
-        if refreshed {
-            self.clear_selection();
-            cx.notify();
-        }
-        refreshed
+        self.run_tmux_action_with_refresh(
+            "Failed to split pane",
+            TmuxPostActionRefresh::ImmediateSnapshot,
+            true,
+            cx,
+            |tmux_client| tmux_client.split_horizontal(pane_id.as_str()),
+        )
     }
 
     pub(in super::super) fn tmux_close_active_pane(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if !self.run_tmux_action("Failed to close pane", |tmux_client| {
-            tmux_client.close_pane(pane_id.as_str())
-        }) {
-            return false;
-        }
-        let refreshed = self.refresh_tmux_snapshot();
-        if refreshed {
-            self.clear_selection();
-            cx.notify();
-        }
-        refreshed
+        self.run_tmux_action_with_refresh(
+            "Failed to close pane",
+            TmuxPostActionRefresh::ImmediateSnapshot,
+            true,
+            cx,
+            |tmux_client| tmux_client.close_pane(pane_id.as_str()),
+        )
     }
 
     pub(in super::super) fn tmux_focus_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
-            tmux_client.focus_pane_left(pane_id.as_str())
-        }) {
-            return false;
-        }
-        self.tmux_apply_focus_snapshot(pane_id.as_str(), Some("No pane to the left"), cx)
+        self.run_tmux_action_with_refresh(
+            "Failed to focus pane",
+            TmuxPostActionRefresh::EventDriven,
+            true,
+            cx,
+            |tmux_client| tmux_client.focus_pane_left(pane_id.as_str()),
+        )
     }
 
     pub(in super::super) fn tmux_focus_pane_right(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
-            tmux_client.focus_pane_right(pane_id.as_str())
-        }) {
-            return false;
-        }
-        self.tmux_apply_focus_snapshot(pane_id.as_str(), Some("No pane to the right"), cx)
+        self.run_tmux_action_with_refresh(
+            "Failed to focus pane",
+            TmuxPostActionRefresh::EventDriven,
+            true,
+            cx,
+            |tmux_client| tmux_client.focus_pane_right(pane_id.as_str()),
+        )
     }
 
     pub(in super::super) fn tmux_focus_pane_up(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
-            tmux_client.focus_pane_up(pane_id.as_str())
-        }) {
-            return false;
-        }
-        self.tmux_apply_focus_snapshot(pane_id.as_str(), Some("No pane above"), cx)
+        self.run_tmux_action_with_refresh(
+            "Failed to focus pane",
+            TmuxPostActionRefresh::EventDriven,
+            true,
+            cx,
+            |tmux_client| tmux_client.focus_pane_up(pane_id.as_str()),
+        )
     }
 
     pub(in super::super) fn tmux_focus_pane_down(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
-            tmux_client.focus_pane_down(pane_id.as_str())
-        }) {
-            return false;
-        }
-        self.tmux_apply_focus_snapshot(pane_id.as_str(), Some("No pane below"), cx)
+        self.run_tmux_action_with_refresh(
+            "Failed to focus pane",
+            TmuxPostActionRefresh::EventDriven,
+            true,
+            cx,
+            |tmux_client| tmux_client.focus_pane_down(pane_id.as_str()),
+        )
     }
 
     pub(in super::super) fn tmux_resize_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        let Some(before) = self.tmux_pane_geometry_signature(pane_id.as_str()) else {
-            return false;
-        };
-        if !self.run_tmux_action("Failed to resize pane", |tmux_client| {
-            tmux_client.resize_pane_left(pane_id.as_str(), 1)
-        }) {
-            return false;
-        }
-        self.tmux_apply_resize_snapshot(
-            pane_id.as_str(),
-            before,
-            "Pane cannot resize further to the left",
+        self.run_tmux_action_with_refresh(
+            "Failed to resize pane",
+            TmuxPostActionRefresh::EventDriven,
+            false,
             cx,
+            |tmux_client| tmux_client.resize_pane_left(pane_id.as_str(), 1),
         )
     }
 
@@ -806,19 +799,12 @@ impl TerminalView {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        let Some(before) = self.tmux_pane_geometry_signature(pane_id.as_str()) else {
-            return false;
-        };
-        if !self.run_tmux_action("Failed to resize pane", |tmux_client| {
-            tmux_client.resize_pane_right(pane_id.as_str(), 1)
-        }) {
-            return false;
-        }
-        self.tmux_apply_resize_snapshot(
-            pane_id.as_str(),
-            before,
-            "Pane cannot resize further to the right",
+        self.run_tmux_action_with_refresh(
+            "Failed to resize pane",
+            TmuxPostActionRefresh::EventDriven,
+            false,
             cx,
+            |tmux_client| tmux_client.resize_pane_right(pane_id.as_str(), 1),
         )
     }
 
@@ -826,19 +812,12 @@ impl TerminalView {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        let Some(before) = self.tmux_pane_geometry_signature(pane_id.as_str()) else {
-            return false;
-        };
-        if !self.run_tmux_action("Failed to resize pane", |tmux_client| {
-            tmux_client.resize_pane_up(pane_id.as_str(), 1)
-        }) {
-            return false;
-        }
-        self.tmux_apply_resize_snapshot(
-            pane_id.as_str(),
-            before,
-            "Pane cannot resize further upward",
+        self.run_tmux_action_with_refresh(
+            "Failed to resize pane",
+            TmuxPostActionRefresh::EventDriven,
+            false,
             cx,
+            |tmux_client| tmux_client.resize_pane_up(pane_id.as_str(), 1),
         )
     }
 
@@ -846,19 +825,12 @@ impl TerminalView {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        let Some(before) = self.tmux_pane_geometry_signature(pane_id.as_str()) else {
-            return false;
-        };
-        if !self.run_tmux_action("Failed to resize pane", |tmux_client| {
-            tmux_client.resize_pane_down(pane_id.as_str(), 1)
-        }) {
-            return false;
-        }
-        self.tmux_apply_resize_snapshot(
-            pane_id.as_str(),
-            before,
-            "Pane cannot resize further downward",
+        self.run_tmux_action_with_refresh(
+            "Failed to resize pane",
+            TmuxPostActionRefresh::EventDriven,
+            false,
             cx,
+            |tmux_client| tmux_client.resize_pane_down(pane_id.as_str(), 1),
         )
     }
 
@@ -869,16 +841,13 @@ impl TerminalView {
         let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
             return false;
         };
-        if !self.run_tmux_action("Failed to toggle pane zoom", |tmux_client| {
-            tmux_client.toggle_pane_zoom(pane_id.as_str())
-        }) {
-            return false;
-        }
-        let refreshed = self.refresh_tmux_snapshot();
-        if refreshed {
-            cx.notify();
-        }
-        refreshed
+        self.run_tmux_action_with_refresh(
+            "Failed to toggle pane zoom",
+            TmuxPostActionRefresh::ImmediateSnapshot,
+            false,
+            cx,
+            |tmux_client| tmux_client.toggle_pane_zoom(pane_id.as_str()),
+        )
     }
 
     fn terminal_size_for_pane_state(
@@ -906,7 +875,7 @@ impl TerminalView {
         scrollback_history: usize,
         cell_size: Option<Size<Pixels>>,
         hydration_mode: TmuxPaneHydrationMode,
-    ) -> Terminal {
+    ) -> (Terminal, Option<String>) {
         let terminal = Terminal::new_tmux(
             Self::terminal_size_for_pane_state(pane, cell_size),
             scrollback_history,
@@ -919,17 +888,23 @@ impl TerminalView {
             TmuxPaneHydrationMode::FullHistory => tmux_client.capture_pane(&pane.id),
         };
 
-        if let Ok(capture) = capture {
-            terminal.feed_output(&capture);
-            if matches!(hydration_mode, TmuxPaneHydrationMode::ViewportOnly) {
-                let cursor_row = pane.cursor_y.min(pane.height.saturating_sub(1)).saturating_add(1);
-                let cursor_col = pane.cursor_x.min(pane.width.saturating_sub(1)).saturating_add(1);
-                let cursor_escape = format!("\u{1b}[{};{}H", cursor_row, cursor_col);
-                terminal.feed_output(cursor_escape.as_bytes());
+        match capture {
+            Ok(capture) => {
+                terminal.feed_output(&capture);
+                if matches!(hydration_mode, TmuxPaneHydrationMode::ViewportOnly) {
+                    let cursor_row = pane.cursor_y.min(pane.height.saturating_sub(1)).saturating_add(1);
+                    let cursor_col = pane.cursor_x.min(pane.width.saturating_sub(1)).saturating_add(1);
+                    let cursor_escape = format!("\u{1b}[{};{}H", cursor_row, cursor_col);
+                    terminal.feed_output(cursor_escape.as_bytes());
+                }
+                (terminal, None)
+            }
+            Err(error) => {
+                // Snapshot-driven pane rehydrate must stay non-fatal: create an empty
+                // terminal buffer, mark the pane degraded, and surface one warning later.
+                (terminal, Some(error.to_string()))
             }
         }
-
-        terminal
     }
 
     fn tmux_pane_hydration_mode_for_launch(
@@ -976,20 +951,28 @@ impl TerminalView {
         }
 
         let mut new_tabs = Vec::new();
+        let mut hydration_failures = Vec::<String>::new();
         for window in &snapshot.windows {
             let mut panes = Vec::new();
             for pane_state in &window.panes {
-                let terminal = if let Some(existing) = existing_terminals.remove(&pane_state.id) {
-                    existing
+                let (terminal, degraded, hydration_error) =
+                    if let Some(existing) = existing_terminals.remove(&pane_state.id) {
+                        (existing, false, None)
                 } else {
-                    Self::hydrate_pane_terminal(
-                        &self.tmux_runtime().client,
-                        pane_state,
-                        self.terminal_runtime.scrollback_history,
-                        self.cell_size,
-                        hydration_mode,
-                    )
-                };
+                        let (terminal, hydration_error) = Self::hydrate_pane_terminal(
+                            &self.tmux_runtime().client,
+                            pane_state,
+                            self.terminal_runtime.scrollback_history,
+                            self.cell_size,
+                            hydration_mode,
+                        );
+                        (terminal, hydration_error.is_some(), hydration_error)
+                    };
+
+                if let Some(hydration_error) = hydration_error {
+                    hydration_failures.push(format!("{} ({hydration_error})", pane_state.id));
+                }
+
                 let next_size = Self::terminal_size_for_pane_state(pane_state, self.cell_size);
                 let current_size = terminal.size();
                 if current_size.cols != next_size.cols
@@ -999,7 +982,7 @@ impl TerminalView {
                 {
                     terminal.resize(next_size);
                 }
-                panes.push(TerminalPane::from_tmux_state(pane_state, terminal));
+                panes.push(TerminalPane::from_tmux_state(pane_state, terminal, degraded));
             }
 
             let tab_id = previous_ids
@@ -1072,6 +1055,10 @@ impl TerminalView {
         }
         self.mark_tab_strip_layout_dirty();
         self.scroll_active_tab_into_view();
+
+        if let Some(message) = tmux_hydration_warning_message(&hydration_failures) {
+            termy_toast::warning(message);
+        }
     }
 
     pub(in super::super) fn apply_tmux_snapshot(&mut self, snapshot: TmuxSnapshot) {
@@ -1265,6 +1252,10 @@ impl TerminalView {
                 TmuxNotification::NeedsRefresh => {
                     needs_refresh = true;
                 }
+                TmuxNotification::Warning(message) => {
+                    termy_toast::warning(message);
+                    should_redraw = true;
+                }
                 TmuxNotification::Exit(reason) => {
                     let reason = Some(
                         reason.unwrap_or_else(|| "tmux control mode exited".to_string()),
@@ -1405,5 +1396,23 @@ mod tests {
             },
         );
         assert_eq!(mode, TmuxPaneHydrationMode::ViewportOnly);
+    }
+
+    #[test]
+    fn tmux_hydration_warning_message_is_none_for_empty_failures() {
+        assert!(tmux_hydration_warning_message(&[]).is_none());
+    }
+
+    #[test]
+    fn tmux_hydration_warning_message_truncates_preview_after_three_entries() {
+        let failures = vec![
+            "%1 (capture timeout)".to_string(),
+            "%2 (capture timeout)".to_string(),
+            "%3 (capture timeout)".to_string(),
+            "%4 (capture timeout)".to_string(),
+        ];
+        let message = tmux_hydration_warning_message(&failures).expect("warning expected");
+        assert!(message.contains("4 pane(s)"));
+        assert!(message.contains("%1 (capture timeout), %2 (capture timeout), %3 (capture timeout), ..."));
     }
 }
