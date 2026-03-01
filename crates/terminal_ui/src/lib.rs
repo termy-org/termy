@@ -13,5 +13,6 @@ pub use runtime::{
 };
 pub use tmux::{
     TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,
+    TmuxShutdownMode,
     TmuxSessionSummary, TmuxSnapshot, TmuxSocketTarget, TmuxWindowState,
 };

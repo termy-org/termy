@@ -1,13 +1,15 @@
 #![cfg(unix)]
 
 use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::path::PathBuf;
-use std::process;
+use std::process::{self, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use termy_terminal_ui::{
     TmuxClient, TmuxLaunchTarget, TmuxRuntimeConfig, TmuxSnapshot, TmuxWindowState,
@@ -15,6 +17,7 @@ use termy_terminal_ui::{
 
 const TEST_COLS: u16 = 149;
 const TEST_ROWS: u16 = 39;
+const TEST_SOCKET_NAME: &str = "termy";
 
 fn tmux_test_guard() -> std::sync::MutexGuard<'static, ()> {
     static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
@@ -38,27 +41,16 @@ set -euo pipefail\n\
 args=(\"$@\")\n\
 is_control_start=0\n\
 has_attach=0\n\
-socket_name=\"\"\n\
-session_name=\"\"\n\
 for ((i=0; i<${#args[@]}; i++)); do\n\
   arg=\"${args[$i]}\"\n\
-  if [[ \"$arg\" == \"-L\" && $((i+1)) -lt ${#args[@]} ]]; then\n\
-    socket_name=\"${args[$((i+1))]}\"\n\
-  fi\n\
   if [[ \"$arg\" == \"-CC\" && $((i+1)) -lt ${#args[@]} && \"${args[$((i+1))]}\" == \"new-session\" ]]; then\n\
     is_control_start=1\n\
   fi\n\
   if [[ \"$arg\" == \"-A\" ]]; then\n\
     has_attach=1\n\
   fi\n\
-  if [[ \"$arg\" == \"-s\" && $((i+1)) -lt ${#args[@]} ]]; then\n\
-    session_name=\"${args[$((i+1))]}\"\n\
-  fi\n\
 done\n\
 if [[ $is_control_start -eq 1 ]]; then\n\
-  if [[ -n \"$socket_name\" && -n \"$session_name\" ]]; then\n\
-    tmux -L \"$socket_name\" -f /dev/null new-session -d -s \"$session_name\" >/dev/null 2>&1 || true\n\
-  fi\n\
   if [[ $has_attach -eq 0 ]]; then\n\
     args+=(\"-A\")\n\
   fi\n\
@@ -85,39 +77,155 @@ fn tmux_preflight(binary: &str) {
     });
 }
 
-fn ensure_isolated_tmux_tmpdir() {
-    let now_ns = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
-    let short_suffix = now_ns % 1_000_000;
-    let tmux_tmpdir = PathBuf::from("/tmp").join(format!("ttmx-{}-{short_suffix}", process::id()));
-    std::fs::create_dir_all(&tmux_tmpdir).expect("failed to create isolated TMUX_TMPDIR");
-
-    // Keep integration tests isolated from any user/server state that might
-    // also use `-L termy` by forcing tmux socket files into a dedicated tmpdir.
-    // Also clear nested-session hints so local tests behave consistently even
-    // when invoked from inside another tmux session.
-    unsafe { env::remove_var("TMUX") };
-    unsafe { env::set_var("TMUX_TMPDIR", &tmux_tmpdir) };
+fn kill_test_server(binary: &str, tmux_tmpdir: &Path) {
+    let _ = Command::new(binary)
+        .env_remove("TMUX")
+        .env("TMUX_TMPDIR", tmux_tmpdir)
+        .arg("-L")
+        .arg(TEST_SOCKET_NAME)
+        .arg("kill-server")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
-fn new_tmux_client(binary: &str) -> TmuxClient {
+struct IsolatedTmuxEnvGuard {
+    previous_tmux: Option<OsString>,
+    previous_tmux_tmpdir: Option<OsString>,
+    tmux_tmpdir: PathBuf,
+    binary: String,
+}
+
+impl IsolatedTmuxEnvGuard {
+    fn new(binary: &str) -> Self {
+        let previous_tmux = env::var_os("TMUX");
+        let previous_tmux_tmpdir = env::var_os("TMUX_TMPDIR");
+
+        let now_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let short_suffix = now_ns % 1_000_000;
+        let tmux_tmpdir = PathBuf::from("/tmp").join(format!("ttmx-{}-{short_suffix}", process::id()));
+        fs::create_dir_all(&tmux_tmpdir).expect("failed to create isolated TMUX_TMPDIR");
+
+        // Keep integration tests isolated from user/session state that may also
+        // use `-L termy`. Clearing TMUX avoids nested-session hints from parent shells.
+        unsafe { env::remove_var("TMUX") };
+        unsafe { env::set_var("TMUX_TMPDIR", &tmux_tmpdir) };
+
+        Self {
+            previous_tmux,
+            previous_tmux_tmpdir,
+            tmux_tmpdir,
+            binary: binary.to_string(),
+        }
+    }
+}
+
+impl Drop for IsolatedTmuxEnvGuard {
+    fn drop(&mut self) {
+        kill_test_server(self.binary.as_str(), self.tmux_tmpdir.as_path());
+        let _ = fs::remove_dir_all(&self.tmux_tmpdir);
+
+        if let Some(previous_tmux) = self.previous_tmux.take() {
+            unsafe { env::set_var("TMUX", previous_tmux) };
+        } else {
+            unsafe { env::remove_var("TMUX") };
+        }
+
+        if let Some(previous_tmux_tmpdir) = self.previous_tmux_tmpdir.take() {
+            unsafe { env::set_var("TMUX_TMPDIR", previous_tmux_tmpdir) };
+        } else {
+            unsafe { env::remove_var("TMUX_TMPDIR") };
+        }
+    }
+}
+
+fn isolated_tmux_tmpdir_from_env() -> PathBuf {
+    PathBuf::from(
+        env::var_os("TMUX_TMPDIR")
+            .expect("TMUX_TMPDIR must be set by IsolatedTmuxEnvGuard before launching tmux tests"),
+    )
+}
+
+fn ensure_clean_test_server(binary: &str) {
+    let tmux_tmpdir = isolated_tmux_tmpdir_from_env();
+    kill_test_server(binary, tmux_tmpdir.as_path());
+}
+
+fn ensure_isolated_tmux_tmpdir(binary: &str) -> IsolatedTmuxEnvGuard {
+    IsolatedTmuxEnvGuard::new(binary)
+}
+
+fn run_tmux_test_socket_output(binary: &str, args: &[&str]) -> std::process::Output {
+    Command::new(binary)
+        .env_remove("TMUX")
+        .env("TMUX_TMPDIR", isolated_tmux_tmpdir_from_env())
+        .arg("-L")
+        .arg(TEST_SOCKET_NAME)
+        .args(args)
+        .output()
+        .expect("failed to execute tmux command for test socket")
+}
+
+fn tmux_client_count(binary: &str) -> usize {
+    let output = run_tmux_test_socket_output(binary, &["list-clients", "-F", "#{client_pid}\t#{client_name}"]);
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return stdout.lines().filter(|line| !line.trim().is_empty()).count();
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim();
+    if stderr.contains("no current client") || stderr.contains("no server running on") {
+        return 0;
+    }
+    panic!("list-clients failed for test socket: {}", stderr);
+}
+
+fn tmux_has_session(binary: &str, session_name: &str) -> bool {
+    let output = run_tmux_test_socket_output(binary, &["has-session", "-t", session_name]);
+    if output.status.success() {
+        return true;
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim();
+    if stderr.contains("can't find session") || stderr.contains("no server running on") {
+        return false;
+    }
+    panic!(
+        "has-session failed for test socket and session '{}': {}",
+        session_name, stderr
+    );
+}
+
+fn wait_for_tmux_settle() {
+    thread::sleep(Duration::from_millis(180));
+}
+
+fn new_tmux_client_with_persistence_clean(binary: &str, persistence: bool) -> TmuxClient {
+    ensure_clean_test_server(binary);
+    new_tmux_client_with_persistence_live(binary, persistence)
+}
+
+fn new_tmux_client_with_persistence_live(binary: &str, persistence: bool) -> TmuxClient {
     let mut last_error = None::<String>;
 
     for _attempt in 0..6 {
         let config = TmuxRuntimeConfig {
             binary: binary.to_string(),
-            launch: TmuxLaunchTarget::Managed { persistence: true },
+            launch: TmuxLaunchTarget::Managed { persistence },
             show_active_pane_border: false,
         };
         match TmuxClient::new(config, TEST_COLS, TEST_ROWS, None) {
             Ok(client) => return client,
             Err(error) => {
                 last_error = Some(format!("{error:#}"));
-                // The control socket/session can be briefly unavailable right
-                // after spawn on busy systems; keep retries bounded and explicit.
-                thread::sleep(std::time::Duration::from_millis(120));
+                // Live reconnect/handoff tests require a stable server/session.
+                // Keep retries bounded but do not reset socket state here.
+                thread::sleep(Duration::from_millis(120));
             }
         }
     }
@@ -127,6 +235,10 @@ fn new_tmux_client(binary: &str) -> TmuxClient {
         binary,
         last_error.unwrap_or_else(|| "unknown startup failure".to_string())
     );
+}
+
+fn new_tmux_client(binary: &str) -> TmuxClient {
+    new_tmux_client_with_persistence_clean(binary, true)
 }
 
 fn active_window(snapshot: &TmuxSnapshot) -> &TmuxWindowState {
@@ -180,8 +292,8 @@ fn assert_window_geometry_within_bounds(window: &TmuxWindowState, cols: u16, row
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn tmux_split_vertical_then_horizontal_refresh_snapshot_parses_nested_layout() {
     let _guard = tmux_test_guard();
-    ensure_isolated_tmux_tmpdir();
     let binary = tmux_test_binary();
+    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let client = new_tmux_client(binary.as_str());
@@ -236,8 +348,8 @@ fn tmux_split_vertical_then_horizontal_refresh_snapshot_parses_nested_layout() {
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn tmux_repeated_split_refresh_cycles_remain_parseable() {
     let _guard = tmux_test_guard();
-    ensure_isolated_tmux_tmpdir();
     let binary = tmux_test_binary();
+    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let client = new_tmux_client(binary.as_str());
@@ -288,8 +400,8 @@ fn tmux_repeated_split_refresh_cycles_remain_parseable() {
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn tmux_capture_viewport_preserves_wrapped_input_rows() {
     let _guard = tmux_test_guard();
-    ensure_isolated_tmux_tmpdir();
     let binary = tmux_test_binary();
+    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let client = new_tmux_client(binary.as_str());
@@ -333,5 +445,108 @@ fn tmux_capture_viewport_preserves_wrapped_input_rows() {
         !capture_text.contains(wrapped_input),
         "capture unexpectedly joined wrapped rows; expected raw viewport wrapping: '{}'",
         capture_text
+    );
+}
+
+#[test]
+#[ignore = "requires local tmux 3.3+; run explicitly"]
+fn managed_nonpersistent_drop_kills_session() {
+    let _guard = tmux_test_guard();
+    let binary = tmux_test_binary();
+    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    tmux_preflight(binary.as_str());
+
+    let client = new_tmux_client_with_persistence_clean(binary.as_str(), false);
+    let session_name = client.session_name().to_string();
+    assert!(tmux_has_session(binary.as_str(), session_name.as_str()));
+    assert_eq!(tmux_client_count(binary.as_str()), 1);
+
+    drop(client);
+    wait_for_tmux_settle();
+
+    assert!(
+        !tmux_has_session(binary.as_str(), session_name.as_str()),
+        "non-persistent managed session '{}' must be torn down on drop",
+        session_name
+    );
+    assert_eq!(
+        tmux_client_count(binary.as_str()),
+        0,
+        "no tmux clients should remain after non-persistent drop"
+    );
+}
+
+#[test]
+#[ignore = "requires local tmux 3.3+; run explicitly"]
+fn managed_persistent_drop_keeps_session_but_removes_client() {
+    let _guard = tmux_test_guard();
+    let binary = tmux_test_binary();
+    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    tmux_preflight(binary.as_str());
+
+    let client = new_tmux_client_with_persistence_clean(binary.as_str(), true);
+    let session_name = client.session_name().to_string();
+    assert!(tmux_has_session(binary.as_str(), session_name.as_str()));
+    assert_eq!(tmux_client_count(binary.as_str()), 1);
+
+    drop(client);
+    wait_for_tmux_settle();
+
+    assert!(
+        tmux_has_session(binary.as_str(), session_name.as_str()),
+        "persistent managed session '{}' must survive drop",
+        session_name
+    );
+    assert_eq!(
+        tmux_client_count(binary.as_str()),
+        0,
+        "persistent drop must not leave control clients attached"
+    );
+}
+
+#[test]
+#[ignore = "requires local tmux 3.3+; run explicitly"]
+fn repeated_reconnect_does_not_increase_client_count() {
+    let _guard = tmux_test_guard();
+    let binary = tmux_test_binary();
+    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    tmux_preflight(binary.as_str());
+
+    let mut client = new_tmux_client_with_persistence_clean(binary.as_str(), true);
+    assert_eq!(
+        tmux_client_count(binary.as_str()),
+        1,
+        "baseline must start with one control client"
+    );
+
+    for _ in 0..4 {
+        let next_client = new_tmux_client_with_persistence_live(binary.as_str(), true);
+        assert!(
+            tmux_client_count(binary.as_str()) <= 2,
+            "handoff should temporarily have at most two clients"
+        );
+        client
+            .shutdown_default()
+            .expect("previous client cleanup should succeed during reconnect");
+        wait_for_tmux_settle();
+        assert_eq!(
+            tmux_client_count(binary.as_str()),
+            1,
+            "reconnect must converge back to exactly one control client"
+        );
+        client = next_client;
+    }
+
+    drop(client);
+    wait_for_tmux_settle();
+
+    assert_eq!(
+        tmux_client_count(binary.as_str()),
+        0,
+        "final persistent client drop must detach all control clients"
+    );
+    assert!(
+        tmux_has_session(binary.as_str(), "termy"),
+        "persistent session must remain after reconnect loop"
     );
 }

@@ -5,6 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use std::{
@@ -43,6 +44,12 @@ pub enum TmuxLaunchTarget {
         name: String,
         socket: TmuxSocketTarget,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TmuxShutdownMode {
+    DetachOnly,
+    DetachAndTeardownSession,
 }
 
 impl Default for TmuxRuntimeConfig {
@@ -395,7 +402,10 @@ pub struct TmuxClient {
     session_name: String,
     socket_target: TmuxSocketTarget,
     show_active_pane_border: bool,
-    teardown_on_drop: bool,
+    control_client_pid: u32,
+    shutdown_mode_on_drop: TmuxShutdownMode,
+    shutdown_in_progress: AtomicBool,
+    shutdown_completed: AtomicBool,
     request_tx: Sender<ControlRequest>,
     notifications_rx: Receiver<TmuxNotification>,
     fatal_exit_rx: Receiver<Option<String>>,
@@ -406,7 +416,7 @@ struct SessionLaunchPlan {
     session_name: String,
     socket_target: TmuxSocketTarget,
     attach_existing: bool,
-    teardown_on_drop: bool,
+    shutdown_mode_on_drop: TmuxShutdownMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -678,14 +688,14 @@ impl TmuxClient {
                         session_name: PERSISTENT_SESSION_NAME.to_string(),
                         socket_target: TmuxSocketTarget::DedicatedTermy,
                         attach_existing: true,
-                        teardown_on_drop: false,
+                        shutdown_mode_on_drop: TmuxShutdownMode::DetachOnly,
                     }
                 } else {
                     SessionLaunchPlan {
                         session_name: managed_session_name(),
                         socket_target: TmuxSocketTarget::DedicatedTermy,
                         attach_existing: false,
-                        teardown_on_drop: true,
+                        shutdown_mode_on_drop: TmuxShutdownMode::DetachAndTeardownSession,
                     }
                 }
             }
@@ -693,7 +703,7 @@ impl TmuxClient {
                 session_name: name.trim().to_string(),
                 socket_target: socket.clone(),
                 attach_existing: true,
-                teardown_on_drop: false,
+                shutdown_mode_on_drop: TmuxShutdownMode::DetachOnly,
             },
         }
     }
@@ -729,6 +739,7 @@ impl TmuxClient {
         let (notifications_tx, notifications_rx) =
             bounded::<TmuxNotification>(NOTIFICATION_QUEUE_BOUND);
         let (fatal_exit_tx, fatal_exit_rx) = bounded::<Option<String>>(FATAL_EXIT_QUEUE_BOUND);
+        let control_client_pid = child.id();
 
         std::thread::spawn(move || {
             let _ = child.wait();
@@ -1027,7 +1038,10 @@ impl TmuxClient {
             session_name: launch_plan.session_name,
             socket_target: launch_plan.socket_target,
             show_active_pane_border: config.show_active_pane_border,
-            teardown_on_drop: launch_plan.teardown_on_drop,
+            control_client_pid,
+            shutdown_mode_on_drop: launch_plan.shutdown_mode_on_drop,
+            shutdown_in_progress: AtomicBool::new(false),
+            shutdown_completed: AtomicBool::new(false),
             request_tx,
             notifications_rx,
             fatal_exit_rx,
@@ -1193,7 +1207,127 @@ impl TmuxClient {
     }
 
     pub fn detach_client(&self) -> Result<()> {
-        self.run_control_status_args(&["detach-client"])
+        let Some(client_name) = self.resolve_control_client_name_by_pid()? else {
+            return Ok(());
+        };
+
+        match self.run_control_status_args(&["detach-client", "-t", client_name.as_str()]) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                if is_tmux_missing_client_error(&error) || is_tmux_no_server_error(&error) {
+                    // The targeted control client already disappeared between list and detach.
+                    return Ok(());
+                }
+                Err(error)
+            }
+        }
+    }
+
+    pub fn shutdown(&self, mode: TmuxShutdownMode) -> Result<()> {
+        self.run_shutdown_attempt(|| self.shutdown_impl(mode))
+    }
+
+    pub fn shutdown_default(&self) -> Result<()> {
+        self.shutdown(self.shutdown_mode_on_drop)
+    }
+
+    fn run_shutdown_attempt<F>(&self, shutdown_action: F) -> Result<()>
+    where
+        F: FnOnce() -> Result<()>,
+    {
+        if self.shutdown_completed.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
+        if self.shutdown_in_progress.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+
+        // Another thread may have completed shutdown between our optimistic
+        // completion check and acquiring the in-progress flag.
+        if self.shutdown_completed.load(Ordering::Acquire) {
+            self.shutdown_in_progress.store(false, Ordering::Release);
+            return Ok(());
+        }
+
+        let result = shutdown_action();
+        if result.is_ok() {
+            self.shutdown_completed.store(true, Ordering::Release);
+        }
+        // Failures must unlock retries so drop/reconnect can attempt cleanup again.
+        self.shutdown_in_progress.store(false, Ordering::Release);
+        result
+    }
+
+    fn shutdown_impl(&self, mode: TmuxShutdownMode) -> Result<()> {
+        run_shutdown_actions(
+            mode,
+            self.session_name.as_str(),
+            || {
+                self.detach_client().with_context(|| {
+                    format!(
+                        "failed to detach tmux control client for session '{}'",
+                        self.session_name
+                    )
+                })
+            },
+            || {
+                // Isolated managed sessions are ephemeral. Teardown is always attempted in
+                // this mode, even if detach failed, so stale sessions cannot accumulate.
+                let teardown_result = Self::kill_session(
+                    self.tmux_binary.as_str(),
+                    self.socket_target.clone(),
+                    self.session_name.as_str(),
+                );
+                normalize_shutdown_teardown_result(self.session_name.as_str(), teardown_result)
+            },
+        )
+    }
+
+    fn resolve_control_client_name_by_pid(&self) -> Result<Option<String>> {
+        let output =
+            match self.run_tmux_command(&["list-clients", "-F", "#{client_pid}\t#{client_name}"]) {
+                Ok(output) => output,
+                Err(error) => {
+                    if is_tmux_no_server_error(&error) {
+                        return Ok(None);
+                    }
+                    return Err(error).context("failed to resolve tmux control client identity");
+                }
+            };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines().filter(|line| !line.trim().is_empty()) {
+            let Some((pid_raw, client_name_raw)) = line.split_once('\t') else {
+                return Err(anyhow!(
+                    "invalid tmux list-clients row while resolving control client pid {}: '{}'",
+                    self.control_client_pid,
+                    line
+                ));
+            };
+            let pid = pid_raw.trim().parse::<u32>().with_context(|| {
+                format!(
+                    "invalid tmux client pid '{}' while resolving control client pid {}",
+                    pid_raw.trim(),
+                    self.control_client_pid
+                )
+            })?;
+
+            if pid != self.control_client_pid {
+                continue;
+            }
+
+            let client_name = client_name_raw.trim();
+            if client_name.is_empty() {
+                return Err(anyhow!(
+                    "tmux client pid {} has empty client_name",
+                    self.control_client_pid
+                ));
+            }
+            return Ok(Some(client_name.to_string()));
+        }
+
+        Ok(None)
     }
 
     pub fn send_input(&self, pane_id: &str, bytes: &[u8]) -> Result<()> {
@@ -1374,6 +1508,12 @@ impl TmuxClient {
         Ok(())
     }
 
+    fn run_control_status_args_via_control(&self, args: &[&str]) -> Result<()> {
+        let command = tmux_command_line(args);
+        self.send_control_command_wait(command.as_str())
+            .with_context(|| format!("tmux status command failed: {command}"))
+    }
+
     fn run_tmux_command(&self, args: &[&str]) -> Result<std::process::Output> {
         run_tmux_command_with_socket(self.tmux_binary.as_str(), &self.socket_target, args)
             .with_context(|| {
@@ -1389,7 +1529,7 @@ impl TmuxClient {
         let session = self.session_name.as_str();
         let all_windows_target = format!("{session}:*");
 
-        self.run_control_status_args(&[
+        self.run_control_status_args_via_control(&[
             "set-environment",
             "-t",
             session,
@@ -1397,7 +1537,7 @@ impl TmuxClient {
             "0",
         ])
         .context("failed to disable termy shell integration env in tmux session")?;
-        self.run_control_status_args(&[
+        self.run_control_status_args_via_control(&[
             "set-environment",
             "-u",
             "-t",
@@ -1405,7 +1545,7 @@ impl TmuxClient {
             "TERMY_TAB_TITLE_PREFIX",
         ])
         .context("failed to clear termy shell title prefix env in tmux session")?;
-        self.run_control_status_args(&[
+        self.run_control_status_args_via_control(&[
             "set-environment",
             "-t",
             session,
@@ -1414,20 +1554,20 @@ impl TmuxClient {
         ])
         .context("failed to disable zsh prompt eol mark env in tmux session")?;
 
-        self.run_control_status_args(&["set-option", "-q", "-t", session, "status", "off"])
+        self.run_control_status_args_via_control(&["set-option", "-q", "-t", session, "status", "off"])
             .context("failed to disable tmux status line for managed session")?;
         for command in managed_session_window_option_override_commands(
             all_windows_target.as_str(),
             self.show_active_pane_border,
         ) {
-            self.run_control_status_args(&command).with_context(|| {
+            self.run_control_status_args_via_control(&command).with_context(|| {
                 format!(
                     "failed to apply tmux managed-session window option override '{}={}'",
                     command[4], command[5]
                 )
             })?;
         }
-        self.run_control_status_args(&["refresh-client"])
+        self.run_control_status_args_via_control(&["refresh-client"])
             .context("failed to refresh tmux client after managed-session ui configuration")?;
 
         Ok(())
@@ -1436,15 +1576,16 @@ impl TmuxClient {
 
 impl Drop for TmuxClient {
     fn drop(&mut self) {
-        if !self.teardown_on_drop {
-            return;
-        }
-
-        let command = tmux_command_line(&["kill-session", "-t", self.session_name.as_str()]);
-        if let Err(error) = self.send_control_command_wait(command.as_str()) {
+        if let Err(error) = self.shutdown_default() {
+            let action = match self.shutdown_mode_on_drop {
+                TmuxShutdownMode::DetachOnly => "detach tmux control client",
+                TmuxShutdownMode::DetachAndTeardownSession => {
+                    "detach tmux control client and teardown managed session"
+                }
+            };
             eprintln!(
-                "Termy shutdown warning: failed to kill managed tmux session '{}': {}",
-                self.session_name, error
+                "Termy shutdown warning: failed to {} '{}': {}",
+                action, self.session_name, error
             );
         }
     }
@@ -1521,6 +1662,64 @@ fn run_tmux_command_with_socket(
     }
 
     Ok(output)
+}
+
+fn is_tmux_missing_client_error(error: &anyhow::Error) -> bool {
+    error.to_string().contains("can't find client")
+}
+
+fn is_tmux_missing_session_error(error: &anyhow::Error) -> bool {
+    error.to_string().contains("can't find session")
+}
+
+fn is_tmux_no_server_error(error: &anyhow::Error) -> bool {
+    error.to_string().contains("no server running on")
+}
+
+fn normalize_shutdown_teardown_result(session_name: &str, result: Result<()>) -> Result<()> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(error)
+            if is_tmux_missing_session_error(&error) || is_tmux_no_server_error(&error) =>
+        {
+            // Teardown mode is idempotent. If session/server is already gone,
+            // cleanup is complete and should not block hard cutovers.
+            Ok(())
+        }
+        Err(error) => Err(error).with_context(|| {
+            format!("failed to teardown tmux managed session '{}'", session_name)
+        }),
+    }
+}
+
+fn run_shutdown_actions<DetachFn, TeardownFn>(
+    mode: TmuxShutdownMode,
+    session_name: &str,
+    detach: DetachFn,
+    teardown: TeardownFn,
+) -> Result<()>
+where
+    DetachFn: FnOnce() -> Result<()>,
+    TeardownFn: FnOnce() -> Result<()>,
+{
+    let detach_result = detach();
+    let teardown_result = if matches!(mode, TmuxShutdownMode::DetachAndTeardownSession) {
+        Some(teardown())
+    } else {
+        None
+    };
+
+    match (detach_result, teardown_result) {
+        (Ok(()), None) => Ok(()),
+        (Err(detach_error), None) => Err(detach_error),
+        (Ok(()), Some(Ok(()))) => Ok(()),
+        (Err(detach_error), Some(Ok(()))) => Err(detach_error),
+        (Ok(()), Some(Err(teardown_error))) => Err(teardown_error),
+        (Err(detach_error), Some(Err(teardown_error))) => Err(anyhow!(
+            "failed shutdown for tmux session '{}': detach failed: {detach_error:#}; teardown failed: {teardown_error:#}",
+            session_name
+        )),
+    }
 }
 
 fn tmux_command_line(args: &[&str]) -> String {
@@ -1950,16 +2149,21 @@ mod tests {
         ActiveControlCommand, ControlRequest, ControlStateEvent, ControlStateMachine,
         NotificationCoalescer, PERSISTENT_SESSION_NAME, PendingCommand, SNAPSHOT_FIELD_SEP,
         SendInputMode, TmuxClient, TmuxControlErrorKind, TmuxLaunchTarget, TmuxNotification,
-        TmuxRuntimeConfig, TmuxSocketTarget,
+        TmuxRuntimeConfig, TmuxShutdownMode, TmuxSocketTarget,
         capture_full_pane_args, capture_viewport_pane_args, choose_send_input_mode,
         claim_pending_for_command_begin, complete_pending_command,
         flush_notification_coalescer, managed_session_name, map_command_completion_response,
         managed_session_window_option_override_commands, managed_session_window_option_overrides,
         parse_output_notification, parse_session_summaries, parse_snapshot, parse_version_prefix,
         quote_tmux_arg,
+        normalize_shutdown_teardown_result,
+        run_shutdown_actions,
         signal_fatal_exit, strip_legacy_title_sequences, try_enqueue_control_request,
         unescape_tmux_payload,
     };
+    use anyhow::anyhow;
+    use std::cell::Cell;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
     fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -1970,6 +2174,25 @@ mod tests {
         match event {
             ControlStateEvent::CommandComplete { is_error, output } => (is_error, output),
             other => panic!("expected command completion event, got {other:?}"),
+        }
+    }
+
+    fn test_tmux_client(shutdown_mode_on_drop: TmuxShutdownMode) -> TmuxClient {
+        let (request_tx, _request_rx) = flume::bounded::<ControlRequest>(1);
+        let (_notifications_tx, notifications_rx) = flume::bounded::<TmuxNotification>(1);
+        let (_fatal_exit_tx, fatal_exit_rx) = flume::bounded::<Option<String>>(1);
+        TmuxClient {
+            tmux_binary: "tmux".to_string(),
+            session_name: "test-session".to_string(),
+            socket_target: TmuxSocketTarget::DedicatedTermy,
+            show_active_pane_border: false,
+            control_client_pid: 0,
+            shutdown_mode_on_drop,
+            shutdown_in_progress: AtomicBool::new(false),
+            shutdown_completed: AtomicBool::new(false),
+            request_tx,
+            notifications_rx,
+            fatal_exit_rx,
         }
     }
 
@@ -2174,7 +2397,6 @@ mod tests {
 
     #[test]
     fn poll_notifications_prioritizes_dedicated_fatal_exit_signal() {
-        let (request_tx, _request_rx) = flume::bounded::<ControlRequest>(1);
         let (notifications_tx, notifications_rx) = flume::bounded::<TmuxNotification>(4);
         let (fatal_exit_tx, fatal_exit_rx) = flume::bounded::<Option<String>>(1);
         notifications_tx
@@ -2188,16 +2410,10 @@ mod tests {
             .expect("queue stale refresh");
         signal_fatal_exit(&fatal_exit_tx, Some("control-mode failure".to_string()));
 
-        let client = TmuxClient {
-            tmux_binary: "tmux".to_string(),
-            session_name: "test-session".to_string(),
-            socket_target: TmuxSocketTarget::DedicatedTermy,
-            show_active_pane_border: false,
-            teardown_on_drop: false,
-            request_tx,
-            notifications_rx,
-            fatal_exit_rx,
-        };
+        let mut client = test_tmux_client(TmuxShutdownMode::DetachOnly);
+        client.notifications_rx = notifications_rx;
+        client.fatal_exit_rx = fatal_exit_rx;
+        client.shutdown_completed.store(true, Ordering::Release);
         let notifications = client.poll_notifications();
         assert_eq!(
             notifications,
@@ -2205,6 +2421,136 @@ mod tests {
                 "control-mode failure".to_string()
             ))]
         );
+    }
+
+    #[test]
+    fn shutdown_latch_resets_after_failed_attempt() {
+        let client = test_tmux_client(TmuxShutdownMode::DetachOnly);
+        let attempts = Cell::new(0usize);
+
+        let first = client.run_shutdown_attempt(|| {
+            attempts.set(attempts.get() + 1);
+            Err(anyhow!("forced shutdown failure"))
+        });
+        assert!(first.is_err());
+        assert_eq!(attempts.get(), 1);
+        assert!(!client.shutdown_in_progress.load(Ordering::Acquire));
+        assert!(!client.shutdown_completed.load(Ordering::Acquire));
+
+        let second = client.run_shutdown_attempt(|| {
+            attempts.set(attempts.get() + 1);
+            Ok(())
+        });
+        assert!(second.is_ok());
+        assert_eq!(attempts.get(), 2);
+        assert!(client.shutdown_completed.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn successful_shutdown_keeps_latch_completed() {
+        let client = test_tmux_client(TmuxShutdownMode::DetachOnly);
+        let attempts = Cell::new(0usize);
+
+        let first = client.run_shutdown_attempt(|| {
+            attempts.set(attempts.get() + 1);
+            Ok(())
+        });
+        assert!(first.is_ok());
+        assert_eq!(attempts.get(), 1);
+        assert!(client.shutdown_completed.load(Ordering::Acquire));
+
+        let second = client.run_shutdown_attempt(|| {
+            attempts.set(attempts.get() + 1);
+            Err(anyhow!("must not execute after successful shutdown"))
+        });
+        assert!(second.is_ok());
+        assert_eq!(attempts.get(), 1);
+    }
+
+    #[test]
+    fn teardown_mode_attempts_teardown_even_when_detach_fails() {
+        let teardown_called = Cell::new(false);
+        let result = run_shutdown_actions(
+            TmuxShutdownMode::DetachAndTeardownSession,
+            "test-session",
+            || Err(anyhow!("forced detach failure")),
+            || {
+                teardown_called.set(true);
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert!(teardown_called.get());
+    }
+
+    #[test]
+    fn teardown_result_is_idempotent_when_session_is_already_missing() {
+        let result = normalize_shutdown_teardown_result(
+            "test-session",
+            Err(anyhow!("tmux session kill failed: can't find session: test-session")),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn teardown_result_is_idempotent_when_server_is_already_gone() {
+        let result = normalize_shutdown_teardown_result(
+            "test-session",
+            Err(anyhow!(
+                "tmux session kill failed: no server running on /tmp/tmux-501/termy"
+            )),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_shutdown_actions_includes_both_failures_when_detach_and_teardown_fail() {
+        let result = run_shutdown_actions(
+            TmuxShutdownMode::DetachAndTeardownSession,
+            "test-session",
+            || Err(anyhow!("forced detach failure")),
+            || Err(anyhow!("forced teardown failure")),
+        );
+        let error = result.expect_err("both failures should produce a combined error");
+        let message = error.to_string();
+        assert!(message.contains("forced detach failure"));
+        assert!(message.contains("forced teardown failure"));
+    }
+
+    #[test]
+    fn shutdown_retry_after_forced_detach_failure_can_still_teardown() {
+        let client = test_tmux_client(TmuxShutdownMode::DetachAndTeardownSession);
+        let teardown_attempts = Cell::new(0usize);
+
+        let first = client.run_shutdown_attempt(|| {
+            run_shutdown_actions(
+                TmuxShutdownMode::DetachAndTeardownSession,
+                "test-session",
+                || Err(anyhow!("forced detach failure")),
+                || {
+                    teardown_attempts.set(teardown_attempts.get() + 1);
+                    Err(anyhow!("forced teardown failure"))
+                },
+            )
+        });
+        assert!(first.is_err());
+        assert_eq!(teardown_attempts.get(), 1);
+        assert!(!client.shutdown_completed.load(Ordering::Acquire));
+
+        let second = client.run_shutdown_attempt(|| {
+            run_shutdown_actions(
+                TmuxShutdownMode::DetachAndTeardownSession,
+                "test-session",
+                || Ok(()),
+                || {
+                    teardown_attempts.set(teardown_attempts.get() + 1);
+                    Ok(())
+                },
+            )
+        });
+        assert!(second.is_ok());
+        assert_eq!(teardown_attempts.get(), 2);
+        assert!(client.shutdown_completed.load(Ordering::Acquire));
     }
 
     #[test]
@@ -2595,7 +2941,7 @@ mod tests {
         assert_eq!(plan.session_name, PERSISTENT_SESSION_NAME);
         assert_eq!(plan.socket_target, TmuxSocketTarget::DedicatedTermy);
         assert!(plan.attach_existing);
-        assert!(!plan.teardown_on_drop);
+        assert_eq!(plan.shutdown_mode_on_drop, TmuxShutdownMode::DetachOnly);
     }
 
     #[test]
@@ -2608,7 +2954,10 @@ mod tests {
         assert!(plan.session_name.starts_with("termy-"));
         assert_eq!(plan.socket_target, TmuxSocketTarget::DedicatedTermy);
         assert!(!plan.attach_existing);
-        assert!(plan.teardown_on_drop);
+        assert_eq!(
+            plan.shutdown_mode_on_drop,
+            TmuxShutdownMode::DetachAndTeardownSession
+        );
     }
 
     #[test]
@@ -2624,7 +2973,7 @@ mod tests {
         assert_eq!(plan.session_name, "work");
         assert_eq!(plan.socket_target, TmuxSocketTarget::Named("work".to_string()));
         assert!(plan.attach_existing);
-        assert!(!plan.teardown_on_drop);
+        assert_eq!(plan.shutdown_mode_on_drop, TmuxShutdownMode::DetachOnly);
     }
 
     #[test]

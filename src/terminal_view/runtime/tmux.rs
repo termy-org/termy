@@ -12,6 +12,46 @@ enum TmuxSnapshotRefreshMode {
     Immediate,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TmuxCutoverCleanupDecision {
+    Proceed,
+    AbortOldCleanupFailure,
+    AbortOldAndNewCleanupFailure,
+}
+
+fn tmux_cutover_cleanup_decision(
+    old_cleanup_succeeded: bool,
+    new_cleanup_succeeded: bool,
+) -> TmuxCutoverCleanupDecision {
+    if old_cleanup_succeeded {
+        TmuxCutoverCleanupDecision::Proceed
+    } else if new_cleanup_succeeded {
+        TmuxCutoverCleanupDecision::AbortOldCleanupFailure
+    } else {
+        TmuxCutoverCleanupDecision::AbortOldAndNewCleanupFailure
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TmuxDetachTransitionDecision {
+    AbortNativeRuntimeStart,
+    AbortTmuxShutdown,
+    CommitNativeTransition,
+}
+
+fn tmux_detach_transition_decision(
+    native_runtime_started: bool,
+    shutdown_succeeded: bool,
+) -> TmuxDetachTransitionDecision {
+    if !native_runtime_started {
+        TmuxDetachTransitionDecision::AbortNativeRuntimeStart
+    } else if !shutdown_succeeded {
+        TmuxDetachTransitionDecision::AbortTmuxShutdown
+    } else {
+        TmuxDetachTransitionDecision::CommitNativeTransition
+    }
+}
+
 impl TerminalPane {
     fn from_tmux_state(state: &TmuxPaneState, terminal: Terminal) -> Self {
         Self {
@@ -149,18 +189,45 @@ impl TerminalView {
         let snapshot = match tmux_client.refresh_snapshot() {
             Ok(snapshot) => snapshot,
             Err(error) => {
+                if let Err(cleanup_error) = tmux_client.shutdown_default() {
+                    termy_toast::error(format!(
+                        "failed to fetch tmux snapshot: {error}; cleanup failed: {cleanup_error}"
+                    ));
+                    return false;
+                }
                 termy_toast::error(format!("failed to fetch tmux snapshot: {error}"));
                 return false;
             }
         };
 
         if self.runtime_uses_tmux()
-            && let Err(error) = self.tmux_runtime().client.detach_client()
+            && let Err(error) = self
+                .tmux_runtime()
+                .client
+                .shutdown_default()
         {
-            // Switching tmux sessions must detach the previous control client.
-            // If this cleanup fails, proceed with the new attach but surface a warning
-            // so stale attached-client counts are explainable and recoverable.
-            termy_toast::info(format!("previous tmux client cleanup failed: {error}"));
+            // Switching sessions must be a hard cutover. If the previous client
+            // cannot be detached, abort and explicitly cleanup the freshly spawned
+            // client to avoid accumulating orphaned control clients.
+            let new_cleanup_result = tmux_client.shutdown_default();
+            match tmux_cutover_cleanup_decision(false, new_cleanup_result.is_ok()) {
+                TmuxCutoverCleanupDecision::AbortOldAndNewCleanupFailure => {
+                    let cleanup_error = new_cleanup_result
+                        .expect_err("new cleanup error must be present when decision is combined failure");
+                    termy_toast::error(format!(
+                        "failed to cleanup previous tmux client before attach: {error}; \
+                         failed to cleanup new tmux client: {cleanup_error}"
+                    ));
+                    return false;
+                }
+                TmuxCutoverCleanupDecision::AbortOldCleanupFailure => {
+                    termy_toast::error(format!(
+                        "failed to cleanup previous tmux client before attach: {error}"
+                    ));
+                    return false;
+                }
+                TmuxCutoverCleanupDecision::Proceed => {}
+            }
         }
 
         self.runtime = RuntimeState::Tmux(TmuxRuntime::new(
@@ -177,6 +244,24 @@ impl TerminalView {
         true
     }
 
+    fn commit_tmux_runtime_to_native(
+        &mut self,
+        native_tab: TerminalTab,
+        cx: &mut Context<Self>,
+    ) {
+        self.runtime = RuntimeState::Native;
+        self.tabs = vec![native_tab];
+        self.active_tab = 0;
+        self.next_tab_id = self.tabs[0].id.saturating_add(1);
+        self.refresh_tab_title(0);
+        self.mark_tab_strip_layout_dirty();
+        self.reset_tab_interaction_state();
+        self.clear_selection();
+        self.scroll_active_tab_into_view();
+        self.refresh_runtime_capability_surfaces(cx);
+        cx.notify();
+    }
+
     fn transition_tmux_runtime_to_native(
         &mut self,
         size: TerminalSize,
@@ -190,17 +275,7 @@ impl TerminalView {
             }
         };
 
-        self.runtime = RuntimeState::Native;
-        self.tabs = vec![native_tab];
-        self.active_tab = 0;
-        self.next_tab_id = self.tabs[0].id.saturating_add(1);
-        self.refresh_tab_title(0);
-        self.mark_tab_strip_layout_dirty();
-        self.reset_tab_interaction_state();
-        self.clear_selection();
-        self.scroll_active_tab_into_view();
-        self.refresh_runtime_capability_surfaces(cx);
-        cx.notify();
+        self.commit_tmux_runtime_to_native(native_tab, cx);
         true
     }
 
@@ -210,16 +285,32 @@ impl TerminalView {
         }
 
         let size = self.active_terminal().size();
-        if let Err(error) = self.tmux_runtime().client.detach_client() {
-            termy_toast::error(format!("Failed to detach tmux session: {error}"));
-            return false;
-        }
+        let native_tab = match self.create_native_runtime_tab_for_size(size) {
+            Ok(tab) => tab,
+            Err(error) => {
+                termy_toast::error(format!("Failed to start native runtime: {error}"));
+                return false;
+            }
+        };
 
-        let transitioned = self.transition_tmux_runtime_to_native(size, cx);
-        if transitioned {
-            termy_toast::success("Detached tmux session");
+        let shutdown_result = self.tmux_runtime().client.shutdown_default();
+        match tmux_detach_transition_decision(true, shutdown_result.is_ok()) {
+            TmuxDetachTransitionDecision::CommitNativeTransition => {
+                self.commit_tmux_runtime_to_native(native_tab, cx);
+                termy_toast::success("Detached tmux session");
+                true
+            }
+            TmuxDetachTransitionDecision::AbortTmuxShutdown => {
+                let error = shutdown_result.expect_err(
+                    "shutdown error must be present when decision aborts tmux shutdown",
+                );
+                termy_toast::error(format!("Failed to detach tmux session: {error}"));
+                false
+            }
+            TmuxDetachTransitionDecision::AbortNativeRuntimeStart => {
+                unreachable!("native runtime is already initialized at this stage")
+            }
         }
-        transitioned
     }
 
     pub(in super::super) fn recover_from_tmux_runtime_exit(
@@ -273,11 +364,43 @@ impl TerminalView {
 
         let cols = self.tmux_runtime().client_cols.max(1);
         let rows = self.tmux_runtime().client_rows.max(1);
-        match TmuxClient::new(next_config.clone(), cols, rows, Some(self.event_wakeup_tx.clone())) {
-            Ok(client) => {
+        match TmuxClient::new(
+            next_config.clone(),
+            cols,
+            rows,
+            Some(self.event_wakeup_tx.clone()),
+        ) {
+            Ok(next_client) => {
+                if let Err(error) = self
+                    .tmux_runtime()
+                    .client
+                    .shutdown_default()
+                {
+                    let new_cleanup_result = next_client.shutdown_default();
+                    match tmux_cutover_cleanup_decision(false, new_cleanup_result.is_ok()) {
+                        TmuxCutoverCleanupDecision::AbortOldAndNewCleanupFailure => {
+                            let cleanup_error = new_cleanup_result.expect_err(
+                                "new cleanup error must be present when decision is combined failure",
+                            );
+                            termy_toast::error(format!(
+                                "tmux reconnect failed while cleaning previous client: {error}; \
+                                 failed to cleanup new client: {cleanup_error}"
+                            ));
+                            return;
+                        }
+                        TmuxCutoverCleanupDecision::AbortOldCleanupFailure => {
+                            termy_toast::error(format!(
+                                "tmux reconnect failed while cleaning previous client: {error}"
+                            ));
+                            return;
+                        }
+                        TmuxCutoverCleanupDecision::Proceed => {}
+                    }
+                }
+
                 let runtime = self.tmux_runtime_mut();
                 runtime.config = next_config;
-                runtime.client = client;
+                runtime.client = next_client;
                 runtime.resize_scheduler.clear();
                 runtime.resize_wakeup_scheduled = false;
                 runtime.title_refresh_deadline = None;
@@ -1141,6 +1264,38 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tmux_cutover_cleanup_decision_distinguishes_old_only_vs_combined_failure() {
+        assert_eq!(
+            tmux_cutover_cleanup_decision(true, true),
+            TmuxCutoverCleanupDecision::Proceed
+        );
+        assert_eq!(
+            tmux_cutover_cleanup_decision(false, true),
+            TmuxCutoverCleanupDecision::AbortOldCleanupFailure
+        );
+        assert_eq!(
+            tmux_cutover_cleanup_decision(false, false),
+            TmuxCutoverCleanupDecision::AbortOldAndNewCleanupFailure
+        );
+    }
+
+    #[test]
+    fn tmux_detach_transition_decision_requires_native_and_shutdown_success() {
+        assert_eq!(
+            tmux_detach_transition_decision(false, false),
+            TmuxDetachTransitionDecision::AbortNativeRuntimeStart
+        );
+        assert_eq!(
+            tmux_detach_transition_decision(true, false),
+            TmuxDetachTransitionDecision::AbortTmuxShutdown
+        );
+        assert_eq!(
+            tmux_detach_transition_decision(true, true),
+            TmuxDetachTransitionDecision::CommitNativeTransition
+        );
+    }
 
     #[test]
     fn tmux_snapshot_refresh_mode_is_debounced_when_deadline_has_elapsed() {

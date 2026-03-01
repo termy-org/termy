@@ -18,6 +18,22 @@ pub(super) enum RuntimeKind {
     Tmux,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TmuxStartupSnapshotCleanupDecision {
+    ContinueToFatalExit,
+    EmitCleanupWarningAndExit,
+}
+
+fn tmux_startup_snapshot_cleanup_decision(
+    cleanup_succeeded: bool,
+) -> TmuxStartupSnapshotCleanupDecision {
+    if cleanup_succeeded {
+        TmuxStartupSnapshotCleanupDecision::ContinueToFatalExit
+    } else {
+        TmuxStartupSnapshotCleanupDecision::EmitCleanupWarningAndExit
+    }
+}
+
 impl RuntimeKind {
     pub(super) const fn uses_tmux(self) -> bool {
         matches!(self, Self::Tmux)
@@ -132,6 +148,22 @@ impl TerminalView {
                 let initial_snapshot = match tmux_client.refresh_snapshot() {
                     Ok(snapshot) => snapshot,
                     Err(error) => {
+                        // `present_and_exit` terminates the process without running
+                        // destructors. Explicit shutdown avoids leaking a control
+                        // client when startup fails after tmux launch succeeds.
+                        let cleanup_result = tmux_client.shutdown_default();
+                        if matches!(
+                            tmux_startup_snapshot_cleanup_decision(cleanup_result.is_ok()),
+                            TmuxStartupSnapshotCleanupDecision::EmitCleanupWarningAndExit
+                        ) {
+                            let cleanup_error = cleanup_result.expect_err(
+                                "cleanup error must be present when startup decision emits warning",
+                            );
+                            eprintln!(
+                                "Termy startup warning: failed to cleanup tmux client after \
+                                 snapshot startup failure: {cleanup_error}"
+                            );
+                        }
                         StartupBlocker::TmuxInitialSnapshot(format!("{error:#}")).present_and_exit()
                     }
                 };
@@ -167,5 +199,22 @@ impl TerminalView {
                 (RuntimeState::Native, None, Some(native_terminal))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_snapshot_cleanup_decision_only_warns_when_cleanup_fails() {
+        assert_eq!(
+            tmux_startup_snapshot_cleanup_decision(true),
+            TmuxStartupSnapshotCleanupDecision::ContinueToFatalExit
+        );
+        assert_eq!(
+            tmux_startup_snapshot_cleanup_decision(false),
+            TmuxStartupSnapshotCleanupDecision::EmitCleanupWarningAndExit
+        );
     }
 }
