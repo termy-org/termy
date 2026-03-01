@@ -64,3 +64,6 @@ check-config-doc:
 
 check-boundaries:
     ./scripts/check-boundaries.sh
+
+test-tmux-integration:
+    cargo test -p termy_terminal_ui --test tmux_split_integration -- --ignored --nocapture --test-threads=1
