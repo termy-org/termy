@@ -50,7 +50,7 @@ mod titles;
 #[cfg(target_os = "macos")]
 mod update_toasts;
 
-use command_palette::{CommandPaletteMode, CommandPaletteState};
+use command_palette::{CommandPaletteMode, CommandPaletteState, TmuxSessionIntent};
 use inline_input::{InlineInputAlignment, InlineInputState};
 use runtime::{RuntimeKind, RuntimeState, TmuxRuntime};
 pub(crate) use tab_strip::constants::*;

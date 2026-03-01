@@ -476,6 +476,26 @@ define_commands!(
         ))
     ),
     (
+        RenameTmuxSession,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Rename tmux Session",
+            "tmux rename session",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        KillTmuxSession,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Kill tmux Session",
+            "tmux kill close session",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
         SplitPaneVertical,
         TERMINAL_CONTEXT,
         Some(palette(
@@ -1212,6 +1232,8 @@ mod tests {
 
         let mut expected = vec![
             "detach_tmux_session",
+            "rename_tmux_session",
+            "kill_tmux_session",
             "split_pane_vertical",
             "split_pane_horizontal",
             "close_pane",

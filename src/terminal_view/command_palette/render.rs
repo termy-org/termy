@@ -55,8 +55,11 @@ impl TerminalView {
                     self.command_palette_shortcut(*action, window)
                 }
                 CommandPaletteItemKind::Theme(_)
-                | CommandPaletteItemKind::TmuxSessionAttach { .. }
-                | CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. } => None,
+                | CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }
+                | CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. }
+                | CommandPaletteItemKind::TmuxSessionRenameSelect { .. }
+                | CommandPaletteItemKind::TmuxSessionRenameApply { .. }
+                | CommandPaletteItemKind::TmuxSessionKill { .. } => None,
             };
             let title = item.title.clone();
             let status_hint = item.status_hint;
@@ -162,14 +165,28 @@ impl TerminalView {
         let mode_title = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Commands".to_string(),
             CommandPaletteMode::Themes => format!("Theme: {}", self.theme_id),
-            CommandPaletteMode::TmuxSessions => "tmux Sessions".to_string(),
+            CommandPaletteMode::TmuxSessions => match self.command_palette.tmux_session_intent() {
+                TmuxSessionIntent::AttachOrSwitch => "tmux Sessions".to_string(),
+                TmuxSessionIntent::RenameSelect => "tmux Sessions: Rename".to_string(),
+                TmuxSessionIntent::RenameInput => "tmux Sessions: Rename".to_string(),
+                TmuxSessionIntent::Kill => "tmux Sessions: Kill".to_string(),
+            },
         };
         let footer_hint = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Enter: Run  Esc: Close  Up/Down: Navigate",
             CommandPaletteMode::Themes => "Enter: Apply Theme  Esc: Back  Up/Down: Navigate",
-            CommandPaletteMode::TmuxSessions => {
-                "Enter: Attach/Create Session  Esc: Back  Up/Down: Navigate"
-            }
+            CommandPaletteMode::TmuxSessions => match self.command_palette.tmux_session_intent() {
+                TmuxSessionIntent::AttachOrSwitch => {
+                    "Enter: Attach/Create Session  Esc: Back  Up/Down: Navigate"
+                }
+                TmuxSessionIntent::RenameSelect => {
+                    "Enter: Select Session  Esc: Back  Up/Down: Navigate"
+                }
+                TmuxSessionIntent::RenameInput => {
+                    "Enter: Rename Session  Esc: Back  Up/Down: Navigate"
+                }
+                TmuxSessionIntent::Kill => "Enter: Kill Session  Esc: Back  Up/Down: Navigate",
+            },
         };
         let style = CommandPaletteStyle::resolve(self);
         let input_font = Font {

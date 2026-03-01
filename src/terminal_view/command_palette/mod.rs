@@ -11,12 +11,13 @@ mod render;
 mod state;
 mod style;
 
-pub(super) use state::{CommandPaletteMode, CommandPaletteState};
+pub(super) use state::{CommandPaletteMode, CommandPaletteState, TmuxSessionIntent};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CommandPaletteEscapeAction {
     ClosePalette,
     BackToCommands,
+    BackToTmuxRenameSelect,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,8 +150,18 @@ impl TerminalView {
             CommandPaletteMode::Themes => self.command_palette_theme_items(),
             CommandPaletteMode::TmuxSessions => self
                 .command_palette
-                .tmux_session_items_for_query(self.command_palette.input().text()),
+                .tmux_session_items_for_query(
+                    self.command_palette.input().text(),
+                    self.tmux_active_session_name_for_session_palette().as_deref(),
+                ),
         }
+    }
+
+    fn tmux_active_session_name_for_session_palette(&self) -> Option<String> {
+        if !self.runtime_uses_tmux() {
+            return None;
+        }
+        Some(self.tmux_runtime().client.session_name().to_string())
     }
 
     fn tmux_socket_target_for_session_palette(&self) -> TmuxSocketTarget {
@@ -213,8 +224,8 @@ impl TerminalView {
         self.command_palette.clear_shortcut_cache();
         if mode == CommandPaletteMode::TmuxSessions {
             if let Err(error) = self.reload_tmux_session_palette_items() {
-                // Keep palette usable when list-sessions fails by allowing query-based
-                // attach/create rows against the selected socket target.
+                // Keep the tmux session palette usable when list-sessions fails by
+                // preserving the selected socket target and rendering intent-specific rows.
                 self.command_palette
                     .set_tmux_sessions(self.tmux_socket_target_for_session_palette(), Vec::new());
                 termy_toast::error(format!("Failed to list tmux sessions: {error}"));
@@ -254,6 +265,16 @@ impl TerminalView {
         self.apply_command_palette_mode_setup(mode, false, cx);
     }
 
+    pub(super) fn open_tmux_session_palette_with_intent(
+        &mut self,
+        intent: TmuxSessionIntent,
+        cx: &mut Context<Self>,
+    ) {
+        self.command_palette.open(CommandPaletteMode::TmuxSessions);
+        self.command_palette.set_tmux_session_intent(intent);
+        self.apply_command_palette_mode_setup(CommandPaletteMode::TmuxSessions, false, cx);
+    }
+
     pub(super) fn open_command_palette(&mut self, cx: &mut Context<Self>) {
         self.open_command_palette_in_mode(CommandPaletteMode::Commands, cx);
     }
@@ -276,7 +297,10 @@ impl TerminalView {
         if self.command_palette.mode() == CommandPaletteMode::TmuxSessions {
             let items = self
                 .command_palette
-                .tmux_session_items_for_query(self.command_palette.input().text());
+                .tmux_session_items_for_query(
+                    self.command_palette.input().text(),
+                    self.tmux_active_session_name_for_session_palette().as_deref(),
+                );
             self.command_palette.set_items(items);
         } else {
             self.command_palette.refilter_current_query();
@@ -409,10 +433,22 @@ impl TerminalView {
 
         match nav_key {
             CommandPaletteNavKey::Escape => {
-                match Self::command_palette_escape_action(self.command_palette.mode()) {
+                match Self::command_palette_escape_action(
+                    self.command_palette.mode(),
+                    self.command_palette.tmux_session_intent(),
+                ) {
                     CommandPaletteEscapeAction::ClosePalette => self.close_command_palette(cx),
                     CommandPaletteEscapeAction::BackToCommands => {
                         self.set_command_palette_mode(CommandPaletteMode::Commands, false, cx);
+                    }
+                    CommandPaletteEscapeAction::BackToTmuxRenameSelect => {
+                        if self.command_palette.back_from_tmux_rename_input() {
+                            self.apply_command_palette_mode_setup(
+                                CommandPaletteMode::TmuxSessions,
+                                false,
+                                cx,
+                            );
+                        }
                     }
                 }
             }
@@ -436,10 +472,19 @@ impl TerminalView {
         }
     }
 
-    fn command_palette_escape_action(mode: CommandPaletteMode) -> CommandPaletteEscapeAction {
+    fn command_palette_escape_action(
+        mode: CommandPaletteMode,
+        tmux_session_intent: TmuxSessionIntent,
+    ) -> CommandPaletteEscapeAction {
         match mode {
             CommandPaletteMode::Commands => CommandPaletteEscapeAction::ClosePalette,
-            CommandPaletteMode::Themes | CommandPaletteMode::TmuxSessions => {
+            CommandPaletteMode::Themes => CommandPaletteEscapeAction::BackToCommands,
+            CommandPaletteMode::TmuxSessions
+                if tmux_session_intent == TmuxSessionIntent::RenameInput =>
+            {
+                CommandPaletteEscapeAction::BackToTmuxRenameSelect
+            }
+            CommandPaletteMode::TmuxSessions => {
                 CommandPaletteEscapeAction::BackToCommands
             }
         }
@@ -489,14 +534,63 @@ impl TerminalView {
             CommandPaletteItemKind::Theme(theme_id) => {
                 self.select_theme_from_palette(theme_id.as_str(), cx)
             }
-            CommandPaletteItemKind::TmuxSessionAttach {
+            CommandPaletteItemKind::TmuxSessionAttachOrSwitch {
                 session_name,
                 socket_target,
             }
             | CommandPaletteItemKind::TmuxSessionCreateAndAttach {
                 session_name,
                 socket_target,
-            } => self.attach_tmux_session_from_palette(session_name.as_str(), socket_target, cx),
+            } => self.attach_tmux_session_from_palette(
+                session_name.as_str(),
+                socket_target,
+                item.enabled,
+                item.status_hint,
+                cx,
+            ),
+            CommandPaletteItemKind::TmuxSessionRenameSelect {
+                session_name,
+                socket_target,
+            } => self.select_tmux_session_for_rename_from_palette(
+                session_name.as_str(),
+                socket_target,
+                item.enabled,
+                item.status_hint,
+                cx,
+            ),
+            CommandPaletteItemKind::TmuxSessionRenameApply {
+                current_session_name,
+                next_session_name,
+                socket_target,
+            } => self.rename_tmux_session_from_palette(
+                current_session_name.as_str(),
+                next_session_name.as_str(),
+                socket_target,
+                item.enabled,
+                item.status_hint,
+                cx,
+            ),
+            CommandPaletteItemKind::TmuxSessionKill {
+                session_name,
+                socket_target,
+            } => self.kill_tmux_session_from_palette(
+                session_name.as_str(),
+                socket_target,
+                item.enabled,
+                item.status_hint,
+                cx,
+            ),
+        }
+    }
+
+    fn command_palette_disabled_tmux_session_message(status_hint: Option<&str>) -> &'static str {
+        match status_hint {
+            Some("active session") => {
+                "Detach or switch tmux session before renaming or killing the active session"
+            }
+            Some("name required") => "tmux session name cannot be empty",
+            Some("unchanged") => "New tmux session name must differ from current name",
+            _ => "tmux session action is unavailable",
         }
     }
 
@@ -540,11 +634,20 @@ impl TerminalView {
         &mut self,
         session_name: &str,
         socket_target: TmuxSocketTarget,
+        enabled: bool,
+        status_hint: Option<&str>,
         cx: &mut Context<Self>,
     ) {
+        if !enabled {
+            termy_toast::info(Self::command_palette_disabled_tmux_session_message(status_hint));
+            cx.notify();
+            return;
+        }
+
         let session_name = session_name.trim();
         if session_name.is_empty() {
             termy_toast::error("tmux session name cannot be empty");
+            cx.notify();
             return;
         }
 
@@ -557,6 +660,123 @@ impl TerminalView {
             termy_toast::success(format!("Attached tmux session \"{session_name}\""));
             cx.notify();
         }
+    }
+
+    fn select_tmux_session_for_rename_from_palette(
+        &mut self,
+        session_name: &str,
+        _socket_target: TmuxSocketTarget,
+        enabled: bool,
+        status_hint: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        if !enabled {
+            termy_toast::info(Self::command_palette_disabled_tmux_session_message(status_hint));
+            cx.notify();
+            return;
+        }
+
+        self.command_palette.begin_tmux_session_rename(session_name);
+        self.refresh_command_palette_matches(false, cx);
+        cx.notify();
+    }
+
+    fn refresh_tmux_session_palette_after_lifecycle_action(&mut self, cx: &mut Context<Self>) {
+        if let Err(error) = self.reload_tmux_session_palette_items() {
+            self.command_palette
+                .set_tmux_sessions(self.tmux_socket_target_for_session_palette(), Vec::new());
+            termy_toast::error(format!("Failed to list tmux sessions: {error}"));
+        }
+        self.refresh_command_palette_matches(false, cx);
+        cx.notify();
+    }
+
+    fn rename_tmux_session_from_palette(
+        &mut self,
+        current_session_name: &str,
+        next_session_name: &str,
+        socket_target: TmuxSocketTarget,
+        enabled: bool,
+        status_hint: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        if !enabled {
+            termy_toast::info(Self::command_palette_disabled_tmux_session_message(status_hint));
+            cx.notify();
+            return;
+        }
+
+        let binary = match self.tmux_binary_for_session_palette() {
+            Ok(binary) => binary,
+            Err(error) => {
+                termy_toast::error(error);
+                cx.notify();
+                return;
+            }
+        };
+
+        if let Err(error) = TmuxClient::rename_session(
+            binary.as_str(),
+            socket_target,
+            current_session_name,
+            next_session_name,
+        ) {
+            termy_toast::error(format!("Failed to rename tmux session: {error}"));
+            cx.notify();
+            return;
+        }
+
+        self.command_palette.set_tmux_session_intent(TmuxSessionIntent::RenameSelect);
+        self.command_palette.input_mut().clear();
+        termy_toast::success(format!(
+            "Renamed tmux session \"{}\" to \"{}\"",
+            current_session_name,
+            next_session_name.trim()
+        ));
+        self.refresh_tmux_session_palette_after_lifecycle_action(cx);
+    }
+
+    fn kill_tmux_session_from_palette(
+        &mut self,
+        session_name: &str,
+        socket_target: TmuxSocketTarget,
+        enabled: bool,
+        status_hint: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        if !enabled {
+            termy_toast::info(Self::command_palette_disabled_tmux_session_message(status_hint));
+            cx.notify();
+            return;
+        }
+
+        let confirmed = termy_native_sdk::confirm(
+            "Kill tmux Session",
+            &format!(
+                "Kill tmux session \"{session_name}\"? This will close all windows and panes in that session."
+            ),
+        );
+        if !confirmed {
+            return;
+        }
+
+        let binary = match self.tmux_binary_for_session_palette() {
+            Ok(binary) => binary,
+            Err(error) => {
+                termy_toast::error(error);
+                cx.notify();
+                return;
+            }
+        };
+
+        if let Err(error) = TmuxClient::kill_session(binary.as_str(), socket_target, session_name) {
+            termy_toast::error(format!("Failed to kill tmux session: {error}"));
+            cx.notify();
+            return;
+        }
+
+        termy_toast::success(format!("Killed tmux session \"{session_name}\""));
+        self.refresh_tmux_session_palette_after_lifecycle_action(cx);
     }
 
     fn execute_command_palette_action(
@@ -592,6 +812,8 @@ impl TerminalView {
             | CommandAction::AttachTmuxSession
             | CommandAction::DetachTmuxSession
             | CommandAction::SwitchTmuxSession
+            | CommandAction::RenameTmuxSession
+            | CommandAction::KillTmuxSession
             | CommandAction::AppInfo
             | CommandAction::NativeSdkExample
             | CommandAction::RestartApp
@@ -636,6 +858,8 @@ impl TerminalView {
             CommandAction::SwitchTheme
                 | CommandAction::AttachTmuxSession
                 | CommandAction::SwitchTmuxSession
+                | CommandAction::RenameTmuxSession
+                | CommandAction::KillTmuxSession
         )
     }
 }
@@ -647,16 +871,32 @@ mod tests {
     #[test]
     fn escape_action_is_mode_dependent() {
         assert_eq!(
-            TerminalView::command_palette_escape_action(CommandPaletteMode::Commands),
+            TerminalView::command_palette_escape_action(
+                CommandPaletteMode::Commands,
+                TmuxSessionIntent::AttachOrSwitch,
+            ),
             CommandPaletteEscapeAction::ClosePalette
         );
         assert_eq!(
-            TerminalView::command_palette_escape_action(CommandPaletteMode::Themes),
+            TerminalView::command_palette_escape_action(
+                CommandPaletteMode::Themes,
+                TmuxSessionIntent::AttachOrSwitch,
+            ),
             CommandPaletteEscapeAction::BackToCommands
         );
         assert_eq!(
-            TerminalView::command_palette_escape_action(CommandPaletteMode::TmuxSessions),
+            TerminalView::command_palette_escape_action(
+                CommandPaletteMode::TmuxSessions,
+                TmuxSessionIntent::AttachOrSwitch,
+            ),
             CommandPaletteEscapeAction::BackToCommands
+        );
+        assert_eq!(
+            TerminalView::command_palette_escape_action(
+                CommandPaletteMode::TmuxSessions,
+                TmuxSessionIntent::RenameInput,
+            ),
+            CommandPaletteEscapeAction::BackToTmuxRenameSelect
         );
     }
 
@@ -679,7 +919,7 @@ mod tests {
     }
 
     #[test]
-    fn switch_theme_is_the_only_action_that_keeps_palette_open() {
+    fn palette_mode_actions_keep_palette_open() {
         assert!(TerminalView::command_palette_should_stay_open(
             CommandAction::SwitchTheme
         ));
@@ -688,6 +928,12 @@ mod tests {
         ));
         assert!(TerminalView::command_palette_should_stay_open(
             CommandAction::SwitchTmuxSession
+        ));
+        assert!(TerminalView::command_palette_should_stay_open(
+            CommandAction::RenameTmuxSession
+        ));
+        assert!(TerminalView::command_palette_should_stay_open(
+            CommandAction::KillTmuxSession
         ));
         assert!(!TerminalView::command_palette_should_stay_open(
             CommandAction::NewTab

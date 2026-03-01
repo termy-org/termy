@@ -1018,6 +1018,10 @@ impl TmuxClient {
             .with_context(|| format!("tmux status command failed: {command}"))
     }
 
+    pub fn session_name(&self) -> &str {
+        self.session_name.as_str()
+    }
+
     pub fn poll_notifications(&self) -> Vec<TmuxNotification> {
         let mut coalescer = NotificationCoalescer::with_output_byte_limit(usize::MAX);
         let mut coalescer_error = None::<String>;
@@ -1248,6 +1252,52 @@ impl TmuxClient {
         })?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         parse_session_summaries(stdout.as_ref())
+    }
+
+    pub fn rename_session(
+        binary: &str,
+        socket_target: TmuxSocketTarget,
+        current_session_name: &str,
+        next_session_name: &str,
+    ) -> Result<()> {
+        let current_session_name = current_session_name.trim();
+        if current_session_name.is_empty() {
+            return Err(anyhow!("tmux current session name cannot be empty"));
+        }
+
+        let next_session_name = next_session_name.trim();
+        if next_session_name.is_empty() {
+            return Err(anyhow!("tmux new session name cannot be empty"));
+        }
+
+        run_tmux_command_with_socket(
+            binary,
+            &socket_target,
+            &["rename-session", "-t", current_session_name, next_session_name],
+        )
+        .with_context(|| {
+            format!(
+                "tmux session rename failed: {}",
+                tmux_command_line(&["rename-session", "-t", current_session_name, next_session_name])
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn kill_session(binary: &str, socket_target: TmuxSocketTarget, session_name: &str) -> Result<()> {
+        let session_name = session_name.trim();
+        if session_name.is_empty() {
+            return Err(anyhow!("tmux session name cannot be empty"));
+        }
+
+        run_tmux_command_with_socket(binary, &socket_target, &["kill-session", "-t", session_name])
+            .with_context(|| {
+                format!(
+                    "tmux session kill failed: {}",
+                    tmux_command_line(&["kill-session", "-t", session_name])
+                )
+            })?;
+        Ok(())
     }
 
     fn enqueue_control_request(&self, request: ControlRequest) -> Result<()> {
@@ -2455,6 +2505,42 @@ mod tests {
         let output = format!("work{sep}$1{sep}x{sep}0\n");
         let error = parse_session_summaries(output.as_str()).expect_err("invalid session row");
         assert!(error.to_string().contains("session_windows"));
+    }
+
+    #[test]
+    fn rename_session_rejects_empty_session_names() {
+        let empty_current = TmuxClient::rename_session(
+            "tmux",
+            TmuxSocketTarget::Default,
+            " ",
+            "next",
+        )
+        .expect_err("expected empty current session name failure");
+        assert!(
+            empty_current
+                .to_string()
+                .contains("tmux current session name cannot be empty")
+        );
+
+        let empty_next = TmuxClient::rename_session(
+            "tmux",
+            TmuxSocketTarget::Default,
+            "current",
+            " ",
+        )
+        .expect_err("expected empty next session name failure");
+        assert!(
+            empty_next
+                .to_string()
+                .contains("tmux new session name cannot be empty")
+        );
+    }
+
+    #[test]
+    fn kill_session_rejects_empty_session_name() {
+        let error = TmuxClient::kill_session("tmux", TmuxSocketTarget::Default, " ")
+            .expect_err("expected empty session name failure");
+        assert!(error.to_string().contains("tmux session name cannot be empty"));
     }
 
     #[test]

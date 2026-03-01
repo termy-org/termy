@@ -5,9 +5,10 @@ impl TerminalView {
     fn command_palette_mode_for_action(action: CommandAction) -> Option<CommandPaletteMode> {
         match action {
             CommandAction::SwitchTheme => Some(CommandPaletteMode::Themes),
-            CommandAction::AttachTmuxSession | CommandAction::SwitchTmuxSession => {
-                Some(CommandPaletteMode::TmuxSessions)
-            }
+            CommandAction::AttachTmuxSession
+            | CommandAction::SwitchTmuxSession
+            | CommandAction::RenameTmuxSession
+            | CommandAction::KillTmuxSession => Some(CommandPaletteMode::TmuxSessions),
             _ => None,
         }
     }
@@ -60,10 +61,13 @@ impl TerminalView {
                     self.open_command_palette_in_mode(mode, cx);
                 }
             }
-            CommandAction::AttachTmuxSession | CommandAction::SwitchTmuxSession => {
-                if let Some(mode) = Self::command_palette_mode_for_action(action) {
-                    self.open_command_palette_in_mode(mode, cx);
-                }
+            CommandAction::AttachTmuxSession | CommandAction::SwitchTmuxSession => self
+                .open_tmux_session_palette_with_intent(TmuxSessionIntent::AttachOrSwitch, cx),
+            CommandAction::RenameTmuxSession => {
+                self.open_tmux_session_palette_with_intent(TmuxSessionIntent::RenameSelect, cx)
+            }
+            CommandAction::KillTmuxSession => {
+                self.open_tmux_session_palette_with_intent(TmuxSessionIntent::Kill, cx)
             }
             CommandAction::DetachTmuxSession => {
                 if self.detach_tmux_runtime_to_native(cx) {
@@ -282,6 +286,24 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::SwitchTmuxSession, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_rename_tmux_session_action(
+        &mut self,
+        _: &commands::RenameTmuxSession,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::RenameTmuxSession, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_kill_tmux_session_action(
+        &mut self,
+        _: &commands::KillTmuxSession,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::KillTmuxSession, true, window, cx);
     }
 
     pub(in super::super) fn handle_split_pane_vertical_action(
@@ -553,6 +575,14 @@ mod tests {
         );
         assert_eq!(
             TerminalView::command_palette_mode_for_action(CommandAction::SwitchTmuxSession),
+            Some(CommandPaletteMode::TmuxSessions)
+        );
+        assert_eq!(
+            TerminalView::command_palette_mode_for_action(CommandAction::RenameTmuxSession),
+            Some(CommandPaletteMode::TmuxSessions)
+        );
+        assert_eq!(
+            TerminalView::command_palette_mode_for_action(CommandAction::KillTmuxSession),
             Some(CommandPaletteMode::TmuxSessions)
         );
         assert_eq!(

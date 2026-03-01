@@ -156,6 +156,8 @@ Related UI option:
 - `attach_tmux_session`
 - `detach_tmux_session` (tmux required)
 - `switch_tmux_session` (tmux required)
+- `rename_tmux_session` (tmux required)
+- `kill_tmux_session` (tmux required)
 - `split_pane_vertical` (tmux required)
 - `split_pane_horizontal` (tmux required)
 - `close_pane` (tmux required)

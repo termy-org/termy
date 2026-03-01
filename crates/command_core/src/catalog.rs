@@ -11,6 +11,8 @@ macro_rules! termy_command_catalog {
             (AttachTmuxSession, "attach_tmux_session"),
             (DetachTmuxSession, "detach_tmux_session"),
             (SwitchTmuxSession, "switch_tmux_session"),
+            (RenameTmuxSession, "rename_tmux_session"),
+            (KillTmuxSession, "kill_tmux_session"),
             (SplitPaneVertical, "split_pane_vertical"),
             (SplitPaneHorizontal, "split_pane_horizontal"),
             (ClosePane, "close_pane"),
@@ -105,6 +107,8 @@ macro_rules! define_command_catalog {
                     self,
                     Self::DetachTmuxSession
                         | Self::SwitchTmuxSession
+                        | Self::RenameTmuxSession
+                        | Self::KillTmuxSession
                         | Self::SplitPaneVertical
                         | Self::SplitPaneHorizontal
                         | Self::ClosePane
@@ -183,6 +187,8 @@ mod tests {
             "focus_pane_previous",
             "focus_pane_right",
             "focus_pane_up",
+            "kill_tmux_session",
+            "rename_tmux_session",
             "resize_pane_down",
             "resize_pane_left",
             "resize_pane_right",
