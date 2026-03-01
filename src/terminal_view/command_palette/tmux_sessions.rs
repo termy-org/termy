@@ -52,8 +52,23 @@ impl TerminalView {
             .unwrap_or(TmuxSocketTarget::Default)
     }
 
-    fn tmux_session_list_error_is_ignorable(error: &str) -> bool {
-        error.contains("no server running on")
+    fn tmux_session_list_error_text_is_ignorable(error: &str) -> bool {
+        let normalized = error.to_ascii_lowercase();
+        // tmux reports "socket has no server" with different stderr strings across
+        // platforms/versions ("no server running on …", "error connecting to … (No such file or
+        // directory)", "error connecting to … (Connection refused)", "failed to connect to server").
+        // Treat these as expected empty socket states.
+        normalized.contains("no server running on")
+            || normalized.contains("failed to connect to server")
+            || (normalized.contains("error connecting to")
+                && (normalized.contains("no such file or directory")
+                    || normalized.contains("connection refused")))
+    }
+
+    fn tmux_session_list_error_is_ignorable(error: &anyhow::Error) -> bool {
+        error
+            .chain()
+            .any(|cause| Self::tmux_session_list_error_text_is_ignorable(&cause.to_string()))
     }
 
     fn tmux_socket_target_display_name(socket_target: &TmuxSocketTarget) -> String {
@@ -99,8 +114,8 @@ impl TerminalView {
                     }));
                 }
                 Err(error) => {
-                    let error_text = error.to_string();
-                    if !Self::tmux_session_list_error_is_ignorable(&error_text) {
+                    if !Self::tmux_session_list_error_is_ignorable(&error) {
+                        let error_text = format!("{error:#}");
                         failures.push(format!(
                             "{} socket: {error_text}",
                             Self::tmux_socket_target_display_name(&socket_target)
@@ -312,6 +327,7 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::anyhow;
 
     #[test]
     fn native_session_palette_prioritizes_managed_socket_discovery_order() {
@@ -340,5 +356,41 @@ mod tests {
             ),
             vec![TmuxSocketTarget::Named("work".to_string())]
         );
+    }
+
+    #[test]
+    fn tmux_session_list_error_classifier_ignores_expected_no_server_variants() {
+        assert!(TerminalView::tmux_session_list_error_text_is_ignorable(
+            "no server running on /private/tmp/tmux-501/default"
+        ));
+        assert!(TerminalView::tmux_session_list_error_text_is_ignorable(
+            "error connecting to /tmp/tmux-1000/default (No such file or directory)"
+        ));
+        assert!(TerminalView::tmux_session_list_error_text_is_ignorable(
+            "failed to connect to server"
+        ));
+        assert!(TerminalView::tmux_session_list_error_text_is_ignorable(
+            "error connecting to /tmp/tmux-1000/default (Connection refused)"
+        ));
+    }
+
+    #[test]
+    fn tmux_session_list_error_classifier_preserves_real_failures() {
+        assert!(!TerminalView::tmux_session_list_error_text_is_ignorable(
+            "tmux session listing failed: list-sessions -F '#{q:session_name}'"
+        ));
+    }
+
+    #[test]
+    fn tmux_session_list_error_classifier_uses_full_error_chain() {
+        let wrapped = anyhow!("error connecting to /tmp/tmux-1000/default (No such file or directory)")
+            .context("tmux session listing failed: list-sessions -F '#{q:session_name}'");
+        assert!(TerminalView::tmux_session_list_error_is_ignorable(&wrapped));
+
+        let wrapped_real_failure = anyhow!("unsupported format string")
+            .context("tmux session listing failed: list-sessions -F '#{q:session_name}'");
+        assert!(!TerminalView::tmux_session_list_error_is_ignorable(
+            &wrapped_real_failure
+        ));
     }
 }

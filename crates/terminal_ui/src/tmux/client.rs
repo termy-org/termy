@@ -568,6 +568,18 @@ impl TmuxClient {
 
         self.run_control_status_args_via_control(&["set-option", "-q", "-t", session, "status", "off"])
             .context("failed to disable tmux status line for managed session")?;
+        // Managed persistence must survive detach->reattach even when the user's tmux
+        // config enables `destroy-unattached`, which would otherwise tear down the
+        // session as soon as Termy's control client detaches.
+        self.run_control_status_args_via_control(&[
+            "set-option",
+            "-q",
+            "-t",
+            session,
+            "destroy-unattached",
+            "off",
+        ])
+        .context("failed to disable destroy-unattached for managed session")?;
         for command in managed_session_window_option_override_commands(
             all_windows_target.as_str(),
             self.show_active_pane_border,
