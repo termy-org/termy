@@ -1,24 +1,6 @@
 use super::*;
 
 impl TerminalView {
-    fn run_tmux_action<E, F>(&self, error_prefix: &str, action: F) -> bool
-    where
-        E: std::fmt::Display,
-        F: FnOnce(&TmuxClient) -> Result<(), E>,
-    {
-        if !self.runtime_backend_mode().uses_tmux() {
-            return false;
-        }
-        let tmux_client = self.tmux_client_required();
-
-        if let Err(error) = action(tmux_client) {
-            termy_toast::error(format!("{error_prefix}: {error}"));
-            return false;
-        }
-
-        true
-    }
-
     pub(in super::super) fn execute_tab_command_action(
         &mut self,
         action: CommandAction,
@@ -125,9 +107,8 @@ impl TerminalView {
             return false;
         }
 
-        match self.runtime_backend_mode() {
-            RuntimeBackendMode::Tmux => {
-                let tmux_client = self.tmux_client_required();
+        match self.runtime_kind() {
+            RuntimeKind::Tmux => {
                 let moved_window_id = self.tabs[from].window_id.clone();
                 let mut window_order = self
                     .tabs
@@ -139,7 +120,9 @@ impl TerminalView {
                     for index in from..to {
                         let source = window_order[index].clone();
                         let target = window_order[index + 1].clone();
-                        if let Err(error) = tmux_client.swap_windows(source.as_str(), target.as_str()) {
+                        if let Err(error) =
+                            self.tmux_runtime().client.swap_windows(source.as_str(), target.as_str())
+                        {
                             termy_toast::error(format!("Failed to reorder tabs: {error}"));
                             return false;
                         }
@@ -149,7 +132,9 @@ impl TerminalView {
                     for index in (to + 1..=from).rev() {
                         let source = window_order[index].clone();
                         let target = window_order[index - 1].clone();
-                        if let Err(error) = tmux_client.swap_windows(source.as_str(), target.as_str()) {
+                        if let Err(error) =
+                            self.tmux_runtime().client.swap_windows(source.as_str(), target.as_str())
+                        {
                             termy_toast::error(format!("Failed to reorder tabs: {error}"));
                             return false;
                         }
@@ -168,7 +153,7 @@ impl TerminalView {
                     self.active_tab = index;
                 }
             }
-            RuntimeBackendMode::Native => {
+            RuntimeKind::Native => {
                 let moved_tab = self.tabs.remove(from);
                 self.tabs.insert(to, moved_tab);
                 self.active_tab = Self::remap_index_after_move(self.active_tab, from, to);
@@ -215,9 +200,11 @@ impl TerminalView {
             return false;
         };
 
-        match self.runtime_backend_mode() {
-            RuntimeBackendMode::Tmux => {
-                if !self.run_tmux_action("Failed to switch tab", TmuxClient::previous_window) {
+        match self.runtime_kind() {
+            RuntimeKind::Tmux => {
+                if !self.run_tmux_action("Failed to switch tab", |tmux_client| {
+                    tmux_client.previous_window()
+                }) {
                     return false;
                 }
                 let refreshed = self.refresh_tmux_snapshot();
@@ -228,7 +215,7 @@ impl TerminalView {
                 }
                 refreshed
             }
-            RuntimeBackendMode::Native => {
+            RuntimeKind::Native => {
                 self.switch_tab(target_index, cx);
                 true
             }
@@ -241,9 +228,11 @@ impl TerminalView {
             return false;
         };
 
-        match self.runtime_backend_mode() {
-            RuntimeBackendMode::Tmux => {
-                if !self.run_tmux_action("Failed to switch tab", TmuxClient::next_window) {
+        match self.runtime_kind() {
+            RuntimeKind::Tmux => {
+                if !self.run_tmux_action("Failed to switch tab", |tmux_client| {
+                    tmux_client.next_window()
+                }) {
                     return false;
                 }
                 let refreshed = self.refresh_tmux_snapshot();
@@ -254,7 +243,7 @@ impl TerminalView {
                 }
                 refreshed
             }
-            RuntimeBackendMode::Native => {
+            RuntimeKind::Native => {
                 self.switch_tab(target_index, cx);
                 true
             }
@@ -262,9 +251,11 @@ impl TerminalView {
     }
 
     pub(crate) fn add_tab(&mut self, cx: &mut Context<Self>) {
-        match self.runtime_backend_mode() {
-            RuntimeBackendMode::Tmux => {
-                if !self.run_tmux_action("Failed to create tab", TmuxClient::new_window) {
+        match self.runtime_kind() {
+            RuntimeKind::Tmux => {
+                if !self.run_tmux_action("Failed to create tab", |tmux_client| {
+                    tmux_client.new_window()
+                }) {
                     return;
                 }
 
@@ -274,7 +265,7 @@ impl TerminalView {
                     cx.notify();
                 }
             }
-            RuntimeBackendMode::Native => {
+            RuntimeKind::Native => {
                 let size = self.active_terminal().size();
                 let terminal = match Terminal::new_native(
                     size,
@@ -320,7 +311,7 @@ impl TerminalView {
             return;
         }
 
-        if self.runtime_backend_mode().uses_tmux() {
+        if self.runtime_kind().uses_tmux() {
             let window_id = self.tabs[index].window_id.clone();
             if !self.run_tmux_action("Failed to close tab", |tmux_client| {
                 tmux_client.kill_window(window_id.as_str())
@@ -406,7 +397,7 @@ impl TerminalView {
             return;
         }
 
-        if self.runtime_backend_mode().uses_tmux() {
+        if self.runtime_kind().uses_tmux() {
             let window_id = self.tabs[index].window_id.clone();
             if !self.run_tmux_action("Failed to switch tab", |tmux_client| {
                 tmux_client.select_window(window_id.as_str())
@@ -454,7 +445,7 @@ impl TerminalView {
             return;
         };
 
-        if self.runtime_backend_mode().uses_tmux() {
+        if self.runtime_kind().uses_tmux() {
             let trimmed = self.rename_input.text().trim();
             if !trimmed.is_empty() {
                 let renamed = Self::truncate_tab_title(trimmed);
@@ -654,7 +645,7 @@ impl TerminalView {
     }
 
     fn focus_pane_cycle(&mut self, step: i32, cx: &mut Context<Self>) -> bool {
-        if !self.runtime_backend_mode().uses_tmux() {
+        if !self.runtime_kind().uses_tmux() {
             return false;
         }
 

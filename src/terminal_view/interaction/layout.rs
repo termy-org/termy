@@ -83,7 +83,7 @@ impl TerminalView {
         let terminal_width = (viewport_width - (padding_x * 2.0)).max(cell_width * 2.0);
         let terminal_height =
             (viewport_height - self.chrome_height() - (padding_y * 2.0)).max(cell_height);
-        let backend_mode = self.runtime_backend_mode();
+        let backend_mode = self.runtime_kind();
         let edge_to_edge_grid =
             !backend_mode.uses_tmux() && self.active_terminal().alternate_screen_mode();
         let cols = if edge_to_edge_grid {
@@ -100,26 +100,14 @@ impl TerminalView {
         .max(1.0) as u16;
 
         match backend_mode {
-            RuntimeBackendMode::Tmux => {
-                if self.tmux_client_cols != cols || self.tmux_client_rows != rows {
-                    match self.runtime_backend().set_client_size(cols, rows) {
-                        Ok(true) => {
-                            self.tmux_client_cols = cols;
-                            self.tmux_client_rows = rows;
-                            // Snapshot convergence is scheduled asynchronously so UI resize never blocks.
-                            self.request_tmux_resize_convergence(cols, rows);
-                        }
-                        Ok(false) => return,
-                        Err(error) => {
-                            termy_toast::error(format!("tmux resize failed: {error}"));
-                        }
+            RuntimeKind::Tmux => {
+                if self.tmux_client_cols() != cols || self.tmux_client_rows() != rows {
+                    if let Err(error) = self.sync_tmux_client_size(cols, rows) {
+                        termy_toast::error(format!("tmux resize failed: {error}"));
                     }
                 }
             }
-            RuntimeBackendMode::Native => {
-                self.clear_tmux_resize_convergence();
-                self.tmux_client_cols = cols;
-                self.tmux_client_rows = rows;
+            RuntimeKind::Native => {
                 for tab in &mut self.tabs {
                     if let Some(pane) = tab.panes.get_mut(0) {
                         pane.left = 0;

@@ -36,11 +36,12 @@ impl TerminalView {
 
             let near_left = (x - left).abs() <= DIVIDER_HIT_MARGIN_PX && pane.left > 0;
             let near_right = (x - right).abs() <= DIVIDER_HIT_MARGIN_PX
-                && (u32::from(pane.left) + u32::from(pane.width)) < u32::from(self.tmux_client_cols);
+                && (u32::from(pane.left) + u32::from(pane.width))
+                    < u32::from(self.tmux_client_cols());
             let near_top = (y - top).abs() <= DIVIDER_HIT_MARGIN_PX && pane.top > 0;
             let near_bottom = (y - bottom).abs() <= DIVIDER_HIT_MARGIN_PX
                 && (u32::from(pane.top) + u32::from(pane.height))
-                    < u32::from(self.tmux_client_rows);
+                    < u32::from(self.tmux_client_rows());
 
             if near_left || near_right {
                 let distance = (x - if near_left { left } else { right }).abs();
@@ -123,21 +124,20 @@ impl TerminalView {
 
         let mut completed_steps = 0i32;
         let mut failed = false;
-        let Some(tmux_client) = self.tmux_client() else {
-            return false;
-        };
         for _ in 0..step_delta.unsigned_abs() {
             let result = match (axis, step_delta.is_positive()) {
                 (PaneResizeAxis::Horizontal, true) => {
-                    tmux_client.resize_pane_right(pane_id.as_str(), 1)
+                    self.tmux_runtime().client.resize_pane_right(pane_id.as_str(), 1)
                 }
                 (PaneResizeAxis::Horizontal, false) => {
-                    tmux_client.resize_pane_left(pane_id.as_str(), 1)
+                    self.tmux_runtime().client.resize_pane_left(pane_id.as_str(), 1)
                 }
                 (PaneResizeAxis::Vertical, true) => {
-                    tmux_client.resize_pane_down(pane_id.as_str(), 1)
+                    self.tmux_runtime().client.resize_pane_down(pane_id.as_str(), 1)
                 }
-                (PaneResizeAxis::Vertical, false) => tmux_client.resize_pane_up(pane_id.as_str(), 1),
+                (PaneResizeAxis::Vertical, false) => {
+                    self.tmux_runtime().client.resize_pane_up(pane_id.as_str(), 1)
+                }
             };
             match result {
                 Ok(()) => completed_steps += 1,

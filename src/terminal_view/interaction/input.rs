@@ -2,15 +2,20 @@ use super::*;
 
 impl TerminalView {
     fn send_input_to_active_pane(&self, input: &[u8]) -> bool {
-        match self
-            .runtime_backend()
-            .send_input(self.active_terminal(), self.active_pane_id(), input)
-        {
-            Ok(wrote) => wrote,
-            Err(error) => {
-                termy_toast::error(format!("Input write failed: {error}"));
-                false
+        if self.runtime_uses_tmux() {
+            let Some(active_pane_id) = self.active_pane_id() else {
+                return false;
+            };
+            match self.tmux_runtime().client.send_input(active_pane_id, input) {
+                Ok(()) => true,
+                Err(error) => {
+                    termy_toast::error(format!("Input write failed: {error}"));
+                    false
+                }
             }
+        } else {
+            self.active_terminal().write_input(input);
+            true
         }
     }
 
@@ -29,7 +34,7 @@ impl TerminalView {
 
         self.prepare_terminal_input_write(cx);
         if self.send_input_to_active_pane(input) {
-            if self.runtime_backend_mode().uses_tmux() {
+            if self.runtime_uses_tmux() {
                 self.schedule_tmux_title_refresh();
             }
         }
@@ -101,7 +106,7 @@ impl TerminalView {
         };
 
         if wrote_input {
-            if self.runtime_backend_mode().uses_tmux() {
+            if self.runtime_uses_tmux() {
                 self.schedule_tmux_title_refresh();
             }
         }
