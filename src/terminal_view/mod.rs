@@ -27,7 +27,8 @@ use termy_search::SearchState;
 use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
     TerminalCursorStyle, TerminalEvent, TerminalGrid, TerminalRuntimeConfig, TerminalSize,
-    WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
+    TmuxLaunchTarget, WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line,
+    keystroke_to_input,
 };
 use termy_toast::ToastManager;
 
@@ -1617,13 +1618,21 @@ impl TerminalView {
         let next_runtime_kind = Self::runtime_kind_from_app_config(&config);
         let tmux_enabled_changed = config.tmux_enabled != self.tmux_enabled_config;
         if next_runtime_kind != self.runtime_kind() && tmux_enabled_changed {
-            termy_toast::info("Runtime change saved. Restart Termy to apply tmux mode updates.");
+            termy_toast::info(
+                "tmux startup default saved. Use Attach/Detach tmux Session commands to switch runtime now.",
+            );
         }
         self.tmux_enabled_config = config.tmux_enabled;
         self.configured_working_dir = config.working_dir.clone();
         self.terminal_runtime = Self::runtime_config_from_app_config(&config);
-        if self.runtime_uses_tmux() {
+        let reconnect_managed_tmux = self.runtime_uses_tmux()
+            && matches!(self.tmux_runtime().config.launch, TmuxLaunchTarget::Managed { .. });
+        if reconnect_managed_tmux {
             self.reconnect_tmux_runtime(Self::tmux_runtime_from_app_config(&config));
+        } else if self.runtime_uses_tmux() {
+            // Session-attached runtime keeps its explicit launch target across config reloads.
+            // Only update the binary path used for external tmux command invocations.
+            self.tmux_runtime_mut().config.binary = config.tmux_binary.trim().to_string();
         }
         self.font_family = config.font_family.into();
         self.base_font_size = config.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);

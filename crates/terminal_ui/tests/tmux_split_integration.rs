@@ -9,7 +9,9 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use termy_terminal_ui::{TmuxClient, TmuxRuntimeConfig, TmuxSnapshot, TmuxWindowState};
+use termy_terminal_ui::{
+    TmuxClient, TmuxLaunchTarget, TmuxRuntimeConfig, TmuxSnapshot, TmuxWindowState,
+};
 
 const TEST_COLS: u16 = 149;
 const TEST_ROWS: u16 = 39;
@@ -105,8 +107,8 @@ fn new_tmux_client(binary: &str) -> TmuxClient {
 
     for _attempt in 0..6 {
         let config = TmuxRuntimeConfig {
-            persistence: true,
             binary: binary.to_string(),
+            launch: TmuxLaunchTarget::Managed { persistence: true },
         };
         match TmuxClient::new(config, TEST_COLS, TEST_ROWS, None) {
             Ok(client) => return client,

@@ -2,17 +2,27 @@ use super::super::*;
 use crate::config::SHELL_DECIDE_THEME_ID;
 use gpui::UniformListScrollHandle;
 use std::collections::HashMap;
+use termy_terminal_ui::{TmuxSessionSummary, TmuxSocketTarget};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in super::super) enum CommandPaletteMode {
     Commands,
     Themes,
+    TmuxSessions,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum CommandPaletteItemKind {
     Command(CommandAction),
     Theme(String),
+    TmuxSessionAttach {
+        session_name: String,
+        socket_target: TmuxSocketTarget,
+    },
+    TmuxSessionCreateAndAttach {
+        session_name: String,
+        socket_target: TmuxSocketTarget,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,6 +67,50 @@ impl CommandPaletteItem {
             kind: CommandPaletteItemKind::Theme(theme_id),
         }
     }
+
+    pub(super) fn tmux_session(summary: &TmuxSessionSummary, socket_target: &TmuxSocketTarget) -> Self {
+        let title = format!(
+            "{}  ({} window{}, {} attached)",
+            summary.name,
+            summary.window_count,
+            if summary.window_count == 1 { "" } else { "s" },
+            summary.attached_clients
+        );
+        let keywords = format!(
+            "tmux attach switch session {}",
+            summary.name.replace('-', " ")
+        );
+        Self {
+            title,
+            keywords,
+            enabled: true,
+            status_hint: None,
+            kind: CommandPaletteItemKind::TmuxSessionAttach {
+                session_name: summary.name.clone(),
+                socket_target: socket_target.clone(),
+            },
+        }
+    }
+
+    pub(super) fn tmux_session_create_and_attach(
+        session_name: &str,
+        socket_target: &TmuxSocketTarget,
+    ) -> Self {
+        let session_name = session_name.trim().to_string();
+        Self {
+            title: format!("Attach/Create \"{}\"", session_name),
+            keywords: format!(
+                "tmux attach create switch session {}",
+                session_name.replace('-', " ")
+            ),
+            enabled: true,
+            status_hint: None,
+            kind: CommandPaletteItemKind::TmuxSessionCreateAndAttach {
+                session_name,
+                socket_target: socket_target.clone(),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +128,8 @@ pub(in super::super) struct CommandPaletteState {
     scroll_last_tick: Option<Instant>,
     show_keybinds: bool,
     shortcut_cache: HashMap<CommandAction, Option<String>>,
+    tmux_sessions: Vec<TmuxSessionSummary>,
+    tmux_socket_target: TmuxSocketTarget,
 }
 
 impl CommandPaletteState {
@@ -92,6 +148,8 @@ impl CommandPaletteState {
             scroll_last_tick: None,
             show_keybinds,
             shortcut_cache: HashMap::new(),
+            tmux_sessions: Vec::new(),
+            tmux_socket_target: TmuxSocketTarget::Default,
         }
     }
 
@@ -150,6 +208,43 @@ impl CommandPaletteState {
 
     pub(super) fn clear_shortcut_cache(&mut self) {
         self.shortcut_cache.clear();
+    }
+
+    pub(super) fn set_tmux_sessions(
+        &mut self,
+        socket_target: TmuxSocketTarget,
+        mut sessions: Vec<TmuxSessionSummary>,
+    ) {
+        sessions.sort_unstable_by(|left, right| left.name.cmp(&right.name));
+        sessions.dedup_by(|left, right| left.name == right.name);
+        self.tmux_socket_target = socket_target;
+        self.tmux_sessions = sessions;
+    }
+
+    pub(super) fn tmux_session_items_for_query(&self, query: &str) -> Vec<CommandPaletteItem> {
+        let mut items = self
+            .tmux_sessions
+            .iter()
+            .map(|session| CommandPaletteItem::tmux_session(session, &self.tmux_socket_target))
+            .collect::<Vec<_>>();
+
+        let query = query.trim();
+        if query.is_empty() {
+            return items;
+        }
+
+        let exact_match = self
+            .tmux_sessions
+            .iter()
+            .any(|session| session.name.eq_ignore_ascii_case(query));
+        if !exact_match {
+            items.insert(
+                0,
+                CommandPaletteItem::tmux_session_create_and_attach(query, &self.tmux_socket_target),
+            );
+        }
+
+        items
     }
 
     pub(super) fn refilter_current_query(&mut self) {
@@ -447,7 +542,9 @@ mod tests {
             .into_iter()
             .filter_map(|index| match items[index].kind {
                 CommandPaletteItemKind::Command(action) => Some(action),
-                CommandPaletteItemKind::Theme(_) => None,
+                CommandPaletteItemKind::Theme(_)
+                | CommandPaletteItemKind::TmuxSessionAttach { .. }
+                | CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. } => None,
             })
             .collect();
 
@@ -474,7 +571,9 @@ mod tests {
             .into_iter()
             .filter_map(|index| match items[index].kind {
                 CommandPaletteItemKind::Command(action) => Some(action),
-                CommandPaletteItemKind::Theme(_) => None,
+                CommandPaletteItemKind::Theme(_)
+                | CommandPaletteItemKind::TmuxSessionAttach { .. }
+                | CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. } => None,
             })
             .collect();
 
@@ -591,6 +690,34 @@ mod tests {
             ordered_with_missing_current,
             vec!["tokyo-night", "dracula", "nord", SHELL_DECIDE_THEME_ID]
         );
+    }
+
+    #[test]
+    fn tmux_session_items_add_create_row_only_when_query_has_no_exact_match() {
+        let mut state = CommandPaletteState::new(false);
+        state.set_tmux_sessions(
+            TmuxSocketTarget::Default,
+            vec![TmuxSessionSummary {
+                name: "work".to_string(),
+                id: "$1".to_string(),
+                window_count: 2,
+                attached_clients: 1,
+            }],
+        );
+
+        let with_exact = state.tmux_session_items_for_query("work");
+        assert_eq!(with_exact.len(), 1);
+        assert!(matches!(
+            with_exact[0].kind,
+            CommandPaletteItemKind::TmuxSessionAttach { .. }
+        ));
+
+        let with_new = state.tmux_session_items_for_query("new-session");
+        assert_eq!(with_new.len(), 2);
+        assert!(matches!(
+            with_new[0].kind,
+            CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. }
+        ));
     }
 
     #[test]

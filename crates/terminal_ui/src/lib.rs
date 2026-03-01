@@ -11,4 +11,7 @@ pub use runtime::{
     TabTitleShellIntegration, Terminal, TerminalEvent, TerminalRuntimeConfig, TerminalSize,
     WorkingDirFallback, keystroke_to_input,
 };
-pub use tmux::{TmuxClient, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig, TmuxSnapshot, TmuxWindowState};
+pub use tmux::{
+    TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,
+    TmuxSessionSummary, TmuxSnapshot, TmuxSocketTarget, TmuxWindowState,
+};

@@ -13,18 +13,18 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_tab`
-- `secondary-d` -> `split_pane_vertical` (tmux required; restart required)
-- `secondary-shift-d` -> `split_pane_horizontal` (tmux required; restart required)
-- `secondary-shift-w` -> `close_pane` (tmux required; restart required)
-- `secondary-alt-left` -> `focus_pane_left` (tmux required; restart required)
-- `secondary-alt-right` -> `focus_pane_right` (tmux required; restart required)
-- `secondary-alt-up` -> `focus_pane_up` (tmux required; restart required)
-- `secondary-alt-down` -> `focus_pane_down` (tmux required; restart required)
-- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required; restart required)
-- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required; restart required)
-- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required; restart required)
-- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required; restart required)
-- `secondary-enter` -> `toggle_pane_zoom` (tmux required; restart required)
+- `secondary-d` -> `split_pane_vertical` (tmux required)
+- `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
+- `secondary-shift-w` -> `close_pane` (tmux required)
+- `secondary-alt-left` -> `focus_pane_left` (tmux required)
+- `secondary-alt-right` -> `focus_pane_right` (tmux required)
+- `secondary-alt-up` -> `focus_pane_up` (tmux required)
+- `secondary-alt-down` -> `focus_pane_down` (tmux required)
+- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required)
+- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required)
+- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required)
+- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required)
+- `secondary-enter` -> `toggle_pane_zoom` (tmux required)
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -43,18 +43,18 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_tab`
-- `secondary-d` -> `split_pane_vertical` (tmux required; restart required)
-- `secondary-shift-d` -> `split_pane_horizontal` (tmux required; restart required)
-- `secondary-shift-w` -> `close_pane` (tmux required; restart required)
-- `secondary-alt-left` -> `focus_pane_left` (tmux required; restart required)
-- `secondary-alt-right` -> `focus_pane_right` (tmux required; restart required)
-- `secondary-alt-up` -> `focus_pane_up` (tmux required; restart required)
-- `secondary-alt-down` -> `focus_pane_down` (tmux required; restart required)
-- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required; restart required)
-- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required; restart required)
-- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required; restart required)
-- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required; restart required)
-- `secondary-enter` -> `toggle_pane_zoom` (tmux required; restart required)
+- `secondary-d` -> `split_pane_vertical` (tmux required)
+- `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
+- `secondary-shift-w` -> `close_pane` (tmux required)
+- `secondary-alt-left` -> `focus_pane_left` (tmux required)
+- `secondary-alt-right` -> `focus_pane_right` (tmux required)
+- `secondary-alt-up` -> `focus_pane_up` (tmux required)
+- `secondary-alt-down` -> `focus_pane_down` (tmux required)
+- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required)
+- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required)
+- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required)
+- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required)
+- `secondary-enter` -> `toggle_pane_zoom` (tmux required)
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -72,18 +72,18 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_tab`
-- `secondary-d` -> `split_pane_vertical` (tmux required; restart required)
-- `secondary-shift-d` -> `split_pane_horizontal` (tmux required; restart required)
-- `secondary-shift-w` -> `close_pane` (tmux required; restart required)
-- `secondary-alt-left` -> `focus_pane_left` (tmux required; restart required)
-- `secondary-alt-right` -> `focus_pane_right` (tmux required; restart required)
-- `secondary-alt-up` -> `focus_pane_up` (tmux required; restart required)
-- `secondary-alt-down` -> `focus_pane_down` (tmux required; restart required)
-- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required; restart required)
-- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required; restart required)
-- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required; restart required)
-- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required; restart required)
-- `secondary-enter` -> `toggle_pane_zoom` (tmux required; restart required)
+- `secondary-d` -> `split_pane_vertical` (tmux required)
+- `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
+- `secondary-shift-w` -> `close_pane` (tmux required)
+- `secondary-alt-left` -> `focus_pane_left` (tmux required)
+- `secondary-alt-right` -> `focus_pane_right` (tmux required)
+- `secondary-alt-up` -> `focus_pane_up` (tmux required)
+- `secondary-alt-down` -> `focus_pane_down` (tmux required)
+- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required)
+- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required)
+- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required)
+- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required)
+- `secondary-enter` -> `toggle_pane_zoom` (tmux required)
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -101,18 +101,18 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_tab`
-- `secondary-d` -> `split_pane_vertical` (tmux required; restart required)
-- `secondary-shift-d` -> `split_pane_horizontal` (tmux required; restart required)
-- `secondary-shift-w` -> `close_pane` (tmux required; restart required)
-- `secondary-alt-left` -> `focus_pane_left` (tmux required; restart required)
-- `secondary-alt-right` -> `focus_pane_right` (tmux required; restart required)
-- `secondary-alt-up` -> `focus_pane_up` (tmux required; restart required)
-- `secondary-alt-down` -> `focus_pane_down` (tmux required; restart required)
-- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required; restart required)
-- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required; restart required)
-- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required; restart required)
-- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required; restart required)
-- `secondary-enter` -> `toggle_pane_zoom` (tmux required; restart required)
+- `secondary-d` -> `split_pane_vertical` (tmux required)
+- `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
+- `secondary-shift-w` -> `close_pane` (tmux required)
+- `secondary-alt-left` -> `focus_pane_left` (tmux required)
+- `secondary-alt-right` -> `focus_pane_right` (tmux required)
+- `secondary-alt-up` -> `focus_pane_up` (tmux required)
+- `secondary-alt-down` -> `focus_pane_down` (tmux required)
+- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required)
+- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required)
+- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required)
+- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required)
+- `secondary-enter` -> `toggle_pane_zoom` (tmux required)
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -153,20 +153,23 @@ Related UI option:
 - `move_tab_right`
 - `switch_tab_left`
 - `switch_tab_right`
-- `split_pane_vertical` (tmux required; restart required)
-- `split_pane_horizontal` (tmux required; restart required)
-- `close_pane` (tmux required; restart required)
-- `focus_pane_left` (tmux required; restart required)
-- `focus_pane_right` (tmux required; restart required)
-- `focus_pane_up` (tmux required; restart required)
-- `focus_pane_down` (tmux required; restart required)
-- `focus_pane_next` (tmux required; restart required)
-- `focus_pane_previous` (tmux required; restart required)
-- `resize_pane_left` (tmux required; restart required)
-- `resize_pane_right` (tmux required; restart required)
-- `resize_pane_up` (tmux required; restart required)
-- `resize_pane_down` (tmux required; restart required)
-- `toggle_pane_zoom` (tmux required; restart required)
+- `attach_tmux_session`
+- `detach_tmux_session` (tmux required)
+- `switch_tmux_session` (tmux required)
+- `split_pane_vertical` (tmux required)
+- `split_pane_horizontal` (tmux required)
+- `close_pane` (tmux required)
+- `focus_pane_left` (tmux required)
+- `focus_pane_right` (tmux required)
+- `focus_pane_up` (tmux required)
+- `focus_pane_down` (tmux required)
+- `focus_pane_next` (tmux required)
+- `focus_pane_previous` (tmux required)
+- `resize_pane_left` (tmux required)
+- `resize_pane_right` (tmux required)
+- `resize_pane_up` (tmux required)
+- `resize_pane_down` (tmux required)
+- `toggle_pane_zoom` (tmux required)
 - `minimize_window`
 - `rename_tab`
 - `app_info`

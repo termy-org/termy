@@ -54,7 +54,9 @@ impl TerminalView {
                 CommandPaletteItemKind::Command(action) => {
                     self.command_palette_shortcut(*action, window)
                 }
-                CommandPaletteItemKind::Theme(_) => None,
+                CommandPaletteItemKind::Theme(_)
+                | CommandPaletteItemKind::TmuxSessionAttach { .. }
+                | CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. } => None,
             };
             let title = item.title.clone();
             let status_hint = item.status_hint;
@@ -160,10 +162,14 @@ impl TerminalView {
         let mode_title = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Commands".to_string(),
             CommandPaletteMode::Themes => format!("Theme: {}", self.theme_id),
+            CommandPaletteMode::TmuxSessions => "tmux Sessions".to_string(),
         };
         let footer_hint = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Enter: Run  Esc: Close  Up/Down: Navigate",
             CommandPaletteMode::Themes => "Enter: Apply Theme  Esc: Back  Up/Down: Navigate",
+            CommandPaletteMode::TmuxSessions => {
+                "Enter: Attach/Create Session  Esc: Back  Up/Down: Navigate"
+            }
         };
         let style = CommandPaletteStyle::resolve(self);
         let input_font = Font {

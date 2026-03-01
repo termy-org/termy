@@ -14,15 +14,41 @@ use std::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TmuxRuntimeConfig {
-    pub persistence: bool,
     pub binary: String,
+    pub launch: TmuxLaunchTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TmuxSocketTarget {
+    DedicatedTermy,
+    Default,
+    Named(String),
+}
+
+impl TmuxSocketTarget {
+    fn socket_name(&self) -> Option<&str> {
+        match self {
+            Self::DedicatedTermy => Some(TERMY_TMUX_SOCKET_NAME),
+            Self::Default => None,
+            Self::Named(name) => Some(name.as_str()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TmuxLaunchTarget {
+    Managed { persistence: bool },
+    Session {
+        name: String,
+        socket: TmuxSocketTarget,
+    },
 }
 
 impl Default for TmuxRuntimeConfig {
     fn default() -> Self {
         Self {
-            persistence: false,
             binary: "tmux".to_string(),
+            launch: TmuxLaunchTarget::Managed { persistence: false },
         }
     }
 }
@@ -60,6 +86,14 @@ pub struct TmuxSnapshot {
     pub session_name: String,
     pub session_id: Option<String>,
     pub windows: Vec<TmuxWindowState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TmuxSessionSummary {
+    pub name: String,
+    pub id: String,
+    pub window_count: u16,
+    pub attached_clients: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -357,6 +391,7 @@ fn strip_control_line_wrappers(mut line: &[u8]) -> &[u8] {
 pub struct TmuxClient {
     tmux_binary: String,
     session_name: String,
+    socket_target: TmuxSocketTarget,
     teardown_on_drop: bool,
     request_tx: Sender<ControlRequest>,
     notifications_rx: Receiver<TmuxNotification>,
@@ -366,6 +401,7 @@ pub struct TmuxClient {
 #[derive(Debug, Clone)]
 struct SessionLaunchPlan {
     session_name: String,
+    socket_target: TmuxSocketTarget,
     attach_existing: bool,
     teardown_on_drop: bool,
 }
@@ -388,6 +424,15 @@ const SEND_INPUT_CHUNKED_HEX_BYTES: usize = 256;
 const SEND_INPUT_BULK_THRESHOLD_BYTES: usize = 2048;
 const SEND_INPUT_BULK_HEX_BYTES: usize = 2048;
 const SNAPSHOT_FIELD_SEP: char = '\u{1f}';
+const SESSION_SNAPSHOT_FORMAT: &str = concat!(
+    "#{q:session_name}",
+    "\u{1f}",
+    "#{session_id}",
+    "\u{1f}",
+    "#{session_windows}",
+    "\u{1f}",
+    "#{session_attached}",
+);
 const WINDOW_SNAPSHOT_FORMAT: &str = concat!(
     "#{window_id}",
     "\u{1f}",
@@ -430,6 +475,7 @@ const PANE_SNAPSHOT_FORMAT: &str = concat!(
 #[cfg(unix)]
 fn spawn_tmux_control_mode(
     config: &TmuxRuntimeConfig,
+    socket_target: &TmuxSocketTarget,
     session_name: &str,
     attach_existing: bool,
 ) -> Result<(std::process::Child, File, File)> {
@@ -448,13 +494,8 @@ fn spawn_tmux_control_mode(
     let child_stderr = user;
 
     let mut command = Command::new(config.binary.as_str());
-    // Use a dedicated socket so Termy control-mode runtime is isolated from any
-    // user/default tmux server state and can start reliably.
-    command
-        .arg("-L")
-        .arg(TERMY_TMUX_SOCKET_NAME)
-        .arg("-CC")
-        .arg("new-session");
+    append_socket_args(&mut command, socket_target);
+    command.arg("-CC").arg("new-session");
     if attach_existing {
         command.arg("-A");
     }
@@ -484,6 +525,12 @@ fn spawn_tmux_control_mode(
         .context("failed to clone tmux pty controller for writer")?;
 
     Ok((child, writer, controller))
+}
+
+fn append_socket_args(command: &mut Command, socket_target: &TmuxSocketTarget) {
+    if let Some(socket_name) = socket_target.socket_name() {
+        command.arg("-L").arg(socket_name);
+    }
 }
 
 fn try_enqueue_control_request(
@@ -593,18 +640,30 @@ fn map_command_completion_response(
 
 impl TmuxClient {
     fn launch_plan(config: &TmuxRuntimeConfig) -> SessionLaunchPlan {
-        if config.persistence {
-            SessionLaunchPlan {
-                session_name: PERSISTENT_SESSION_NAME.to_string(),
+        match &config.launch {
+            TmuxLaunchTarget::Managed { persistence } => {
+                if *persistence {
+                    SessionLaunchPlan {
+                        session_name: PERSISTENT_SESSION_NAME.to_string(),
+                        socket_target: TmuxSocketTarget::DedicatedTermy,
+                        attach_existing: true,
+                        teardown_on_drop: false,
+                    }
+                } else {
+                    SessionLaunchPlan {
+                        session_name: managed_session_name(),
+                        socket_target: TmuxSocketTarget::DedicatedTermy,
+                        attach_existing: false,
+                        teardown_on_drop: true,
+                    }
+                }
+            }
+            TmuxLaunchTarget::Session { name, socket } => SessionLaunchPlan {
+                session_name: name.trim().to_string(),
+                socket_target: socket.clone(),
                 attach_existing: true,
                 teardown_on_drop: false,
-            }
-        } else {
-            SessionLaunchPlan {
-                session_name: managed_session_name(),
-                attach_existing: false,
-                teardown_on_drop: true,
-            }
+            },
         }
     }
 
@@ -621,9 +680,15 @@ impl TmuxClient {
         }
 
         let launch_plan = Self::launch_plan(&config);
+        let enforce_managed_session_ui =
+            matches!(&config.launch, TmuxLaunchTarget::Managed { .. });
+        if launch_plan.session_name.trim().is_empty() {
+            return Err(anyhow!("tmux session name cannot be empty"));
+        }
         #[cfg(unix)]
         let (mut child, child_stdin, child_stdout) = spawn_tmux_control_mode(
             &config,
+            &launch_plan.socket_target,
             launch_plan.session_name.as_str(),
             launch_plan.attach_existing,
         )?;
@@ -929,19 +994,28 @@ impl TmuxClient {
         let client = Self {
             tmux_binary: config.binary,
             session_name: launch_plan.session_name,
+            socket_target: launch_plan.socket_target,
             teardown_on_drop: launch_plan.teardown_on_drop,
             request_tx,
             notifications_rx,
             fatal_exit_rx,
         };
-        client.enforce_native_session_ui()?;
+        if enforce_managed_session_ui {
+            client.enforce_native_session_ui()?;
+        }
         client.set_client_size(cols, rows)?;
         Ok(client)
     }
 
     pub fn set_client_size(&self, cols: u16, rows: u16) -> Result<()> {
         let size = format!("{}x{}", cols, rows);
-        self.run_control_status_args(&["refresh-client", "-C", size.as_str()])
+        let command = tmux_command_line(&["refresh-client", "-C", size.as_str()]);
+        // `refresh-client -C` operates on the *current control client*.
+        // Running it as an out-of-band tmux process can fail with no client
+        // context during attach/re-attach; issuing it through the active control
+        // channel binds it to the correct client deterministically.
+        self.send_control_command_wait(command.as_str())
+            .with_context(|| format!("tmux status command failed: {command}"))
     }
 
     pub fn poll_notifications(&self) -> Vec<TmuxNotification> {
@@ -1082,6 +1156,10 @@ impl TmuxClient {
         self.run_control_status_args(&["resize-pane", "-Z", "-t", pane_id])
     }
 
+    pub fn detach_client(&self) -> Result<()> {
+        self.run_control_status_args(&["detach-client"])
+    }
+
     pub fn send_input(&self, pane_id: &str, bytes: &[u8]) -> Result<()> {
         if bytes.is_empty() {
             return Ok(());
@@ -1176,6 +1254,25 @@ impl TmuxClient {
         Ok(())
     }
 
+    pub fn list_sessions(
+        binary: &str,
+        socket_target: TmuxSocketTarget,
+    ) -> Result<Vec<TmuxSessionSummary>> {
+        let output = run_tmux_command_with_socket(
+            binary,
+            &socket_target,
+            &["list-sessions", "-F", SESSION_SNAPSHOT_FORMAT],
+        )
+        .with_context(|| {
+            format!(
+                "tmux session listing failed: {}",
+                tmux_command_line(&["list-sessions", "-F", SESSION_SNAPSHOT_FORMAT])
+            )
+        })?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        parse_session_summaries(stdout.as_ref())
+    }
+
     fn enqueue_control_request(&self, request: ControlRequest) -> Result<()> {
         try_enqueue_control_request(&self.request_tx, request).map_err(anyhow::Error::new)
     }
@@ -1219,35 +1316,14 @@ impl TmuxClient {
     }
 
     fn run_tmux_command(&self, args: &[&str]) -> Result<std::process::Output> {
-        let output = Command::new(self.tmux_binary.as_str())
-            .arg("-L")
-            .arg(TERMY_TMUX_SOCKET_NAME)
-            .args(args)
-            .output()
+        run_tmux_command_with_socket(self.tmux_binary.as_str(), &self.socket_target, args)
             .with_context(|| {
                 format!(
                     "failed to execute tmux command via '{}': {}",
                     self.tmux_binary,
                     tmux_command_line(args)
                 )
-            })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stderr = stderr.trim();
-            if stderr.is_empty() {
-                return Err(anyhow!(
-                    "tmux command exited with status {}",
-                    output
-                        .status
-                        .code()
-                        .map_or_else(|| "signal".to_string(), |code| code.to_string())
-                ));
-            }
-            return Err(anyhow!("{stderr}"));
-        }
-
-        Ok(output)
+            })
     }
 
     fn enforce_native_session_ui(&self) -> Result<()> {
@@ -1328,6 +1404,33 @@ fn managed_session_name() -> String {
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     format!("termy-{}-{}", std::process::id(), now_ns)
+}
+
+fn run_tmux_command_with_socket(
+    binary: &str,
+    socket_target: &TmuxSocketTarget,
+    args: &[&str],
+) -> Result<std::process::Output> {
+    let mut command = Command::new(binary);
+    append_socket_args(&mut command, socket_target);
+    let output = command.args(args).output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            return Err(anyhow!(
+                "tmux command exited with status {}",
+                output
+                    .status
+                    .code()
+                    .map_or_else(|| "signal".to_string(), |code| code.to_string())
+            ));
+        }
+        return Err(anyhow!("{stderr}"));
+    }
+
+    Ok(output)
 }
 
 fn tmux_command_line(args: &[&str]) -> String {
@@ -1484,6 +1587,30 @@ fn parse_snapshot_i32(value: &str, field: &str, kind: &str, line: &str) -> Resul
     value
         .parse::<i32>()
         .with_context(|| format!("invalid {field} in tmux {kind} line: '{}'", line))
+}
+
+fn parse_session_summaries(output: &str) -> Result<Vec<TmuxSessionSummary>> {
+    let mut sessions = Vec::new();
+
+    for line in output.lines().filter(|line| !line.trim().is_empty()) {
+        let [name, id, window_count, attached_clients] =
+            parse_snapshot_fields::<4>(line, "session")?;
+        let window_count = parse_snapshot_u16(&window_count, "session_windows", "session", line)?;
+        let attached_clients = parse_snapshot_u16(
+            &attached_clients,
+            "session_attached",
+            "session",
+            line,
+        )?;
+        sessions.push(TmuxSessionSummary {
+            name,
+            id,
+            window_count,
+            attached_clients,
+        });
+    }
+
+    Ok(sessions)
 }
 
 fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> Result<TmuxSnapshot> {
@@ -1732,10 +1859,12 @@ mod tests {
     use super::{
         ActiveControlCommand, ControlRequest, ControlStateEvent, ControlStateMachine,
         NotificationCoalescer, PERSISTENT_SESSION_NAME, PendingCommand, SNAPSHOT_FIELD_SEP,
-        SendInputMode, TmuxClient, TmuxControlErrorKind, TmuxNotification, TmuxRuntimeConfig,
+        SendInputMode, TmuxClient, TmuxControlErrorKind, TmuxLaunchTarget, TmuxNotification,
+        TmuxRuntimeConfig, TmuxSocketTarget,
         choose_send_input_mode, claim_pending_for_command_begin, complete_pending_command,
         flush_notification_coalescer, managed_session_name, map_command_completion_response,
-        parse_output_notification, parse_snapshot, parse_version_prefix, quote_tmux_arg,
+        parse_output_notification, parse_session_summaries, parse_snapshot, parse_version_prefix,
+        quote_tmux_arg,
         signal_fatal_exit, strip_legacy_title_sequences, try_enqueue_control_request,
         unescape_tmux_payload,
     };
@@ -1970,6 +2099,7 @@ mod tests {
         let client = TmuxClient {
             tmux_binary: "tmux".to_string(),
             session_name: "test-session".to_string(),
+            socket_target: TmuxSocketTarget::DedicatedTermy,
             teardown_on_drop: false,
             request_tx,
             notifications_rx,
@@ -2290,6 +2420,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_session_summaries_builds_session_rows() {
+        let sep = SNAPSHOT_FIELD_SEP;
+        let output = format!(
+            "work{sep}$1{sep}3{sep}1\nsandbox{sep}$2{sep}1{sep}0\n",
+        );
+        let sessions = parse_session_summaries(output.as_str()).expect("sessions");
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(sessions[0].name, "work");
+        assert_eq!(sessions[0].window_count, 3);
+        assert_eq!(sessions[0].attached_clients, 1);
+        assert_eq!(sessions[1].name, "sandbox");
+    }
+
+    #[test]
+    fn parse_session_summaries_rejects_non_numeric_fields() {
+        let sep = SNAPSHOT_FIELD_SEP;
+        let output = format!("work{sep}$1{sep}x{sep}0\n");
+        let error = parse_session_summaries(output.as_str()).expect_err("invalid session row");
+        assert!(error.to_string().contains("session_windows"));
+    }
+
+    #[test]
     fn tmux_version_parser_accepts_patch_suffixes() {
         assert_eq!(parse_version_prefix("3.6a"), Some((3, 6)));
         assert_eq!(parse_version_prefix("3.3"), Some((3, 3)));
@@ -2307,10 +2459,11 @@ mod tests {
     #[test]
     fn persistent_launch_plan_reuses_fixed_session_without_teardown() {
         let plan = TmuxClient::launch_plan(&TmuxRuntimeConfig {
-            persistence: true,
             binary: "tmux".to_string(),
+            launch: TmuxLaunchTarget::Managed { persistence: true },
         });
         assert_eq!(plan.session_name, PERSISTENT_SESSION_NAME);
+        assert_eq!(plan.socket_target, TmuxSocketTarget::DedicatedTermy);
         assert!(plan.attach_existing);
         assert!(!plan.teardown_on_drop);
     }
@@ -2318,12 +2471,28 @@ mod tests {
     #[test]
     fn isolated_launch_plan_uses_fresh_session_and_teardown() {
         let plan = TmuxClient::launch_plan(&TmuxRuntimeConfig {
-            persistence: false,
             binary: "tmux".to_string(),
+            launch: TmuxLaunchTarget::Managed { persistence: false },
         });
         assert!(plan.session_name.starts_with("termy-"));
+        assert_eq!(plan.socket_target, TmuxSocketTarget::DedicatedTermy);
         assert!(!plan.attach_existing);
         assert!(plan.teardown_on_drop);
+    }
+
+    #[test]
+    fn explicit_session_launch_plan_uses_requested_target_without_teardown() {
+        let plan = TmuxClient::launch_plan(&TmuxRuntimeConfig {
+            binary: "tmux".to_string(),
+            launch: TmuxLaunchTarget::Session {
+                name: "work".to_string(),
+                socket: TmuxSocketTarget::Named("work".to_string()),
+            },
+        });
+        assert_eq!(plan.session_name, "work");
+        assert_eq!(plan.socket_target, TmuxSocketTarget::Named("work".to_string()));
+        assert!(plan.attach_existing);
+        assert!(!plan.teardown_on_drop);
     }
 
     #[test]

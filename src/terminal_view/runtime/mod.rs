@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use flume::Sender;
-use termy_terminal_ui::{TmuxClient, TmuxRuntimeConfig, TmuxSnapshot};
+use termy_terminal_ui::{TmuxClient, TmuxLaunchTarget, TmuxRuntimeConfig, TmuxSnapshot};
 
 use crate::startup::StartupBlocker;
 
@@ -98,8 +98,10 @@ impl TerminalView {
 
     pub(super) fn tmux_runtime_from_app_config(config: &AppConfig) -> TmuxRuntimeConfig {
         TmuxRuntimeConfig {
-            persistence: config.tmux_persistence,
             binary: config.tmux_binary.trim().to_string(),
+            launch: TmuxLaunchTarget::Managed {
+                persistence: config.tmux_persistence,
+            },
         }
     }
 

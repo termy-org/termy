@@ -5,6 +5,7 @@ use state::{
     ordered_theme_ids_for_palette, CommandPaletteItem, CommandPaletteItemKind,
 };
 use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavailableReason};
+use termy_terminal_ui::{TmuxClient, TmuxLaunchTarget, TmuxSocketTarget};
 
 mod render;
 mod state;
@@ -146,7 +147,46 @@ impl TerminalView {
                 )
             }
             CommandPaletteMode::Themes => self.command_palette_theme_items(),
+            CommandPaletteMode::TmuxSessions => self
+                .command_palette
+                .tmux_session_items_for_query(self.command_palette.input().text()),
         }
+    }
+
+    fn tmux_socket_target_for_session_palette(&self) -> TmuxSocketTarget {
+        if !self.runtime_uses_tmux() {
+            return TmuxSocketTarget::Default;
+        }
+
+        match &self.tmux_runtime().config.launch {
+            TmuxLaunchTarget::Managed { .. } => TmuxSocketTarget::DedicatedTermy,
+            TmuxLaunchTarget::Session { socket, .. } => socket.clone(),
+        }
+    }
+
+    fn tmux_binary_for_session_palette(&mut self) -> Result<String, String> {
+        let binary = if self.runtime_uses_tmux() {
+            self.tmux_runtime().config.binary.trim().to_string()
+        } else {
+            let loaded = config::load_runtime_config(
+                &mut self.last_config_error_message,
+                "Failed to read config for tmux session listing",
+            );
+            loaded.config.tmux_binary.trim().to_string()
+        };
+        if binary.is_empty() {
+            return Err("tmux_binary must not be empty".to_string());
+        }
+        Ok(binary)
+    }
+
+    fn reload_tmux_session_palette_items(&mut self) -> Result<(), String> {
+        let socket_target = self.tmux_socket_target_for_session_palette();
+        let binary = self.tmux_binary_for_session_palette()?;
+        let sessions = TmuxClient::list_sessions(binary.as_str(), socket_target.clone())
+            .map_err(|error| error.to_string())?;
+        self.command_palette.set_tmux_sessions(socket_target, sessions);
+        Ok(())
     }
 
     fn command_palette_theme_items(&self) -> Vec<CommandPaletteItem> {
@@ -171,6 +211,15 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.command_palette.clear_shortcut_cache();
+        if mode == CommandPaletteMode::TmuxSessions {
+            if let Err(error) = self.reload_tmux_session_palette_items() {
+                // Keep palette usable when list-sessions fails by allowing query-based
+                // attach/create rows against the selected socket target.
+                self.command_palette
+                    .set_tmux_sessions(self.tmux_socket_target_for_session_palette(), Vec::new());
+                termy_toast::error(format!("Failed to list tmux sessions: {error}"));
+            }
+        }
         let items = self.command_palette_items_for_mode(mode);
         self.command_palette.set_items(items);
         self.inline_input_selecting = false;
@@ -224,7 +273,14 @@ impl TerminalView {
         animate_selection: bool,
         cx: &mut Context<Self>,
     ) {
-        self.command_palette.refilter_current_query();
+        if self.command_palette.mode() == CommandPaletteMode::TmuxSessions {
+            let items = self
+                .command_palette
+                .tmux_session_items_for_query(self.command_palette.input().text());
+            self.command_palette.set_items(items);
+        } else {
+            self.command_palette.refilter_current_query();
+        }
         let len = self.command_palette.filtered_len();
 
         if len == 0 {
@@ -383,7 +439,9 @@ impl TerminalView {
     fn command_palette_escape_action(mode: CommandPaletteMode) -> CommandPaletteEscapeAction {
         match mode {
             CommandPaletteMode::Commands => CommandPaletteEscapeAction::ClosePalette,
-            CommandPaletteMode::Themes => CommandPaletteEscapeAction::BackToCommands,
+            CommandPaletteMode::Themes | CommandPaletteMode::TmuxSessions => {
+                CommandPaletteEscapeAction::BackToCommands
+            }
         }
     }
 
@@ -431,6 +489,14 @@ impl TerminalView {
             CommandPaletteItemKind::Theme(theme_id) => {
                 self.select_theme_from_palette(theme_id.as_str(), cx)
             }
+            CommandPaletteItemKind::TmuxSessionAttach {
+                session_name,
+                socket_target,
+            }
+            | CommandPaletteItemKind::TmuxSessionCreateAndAttach {
+                session_name,
+                socket_target,
+            } => self.attach_tmux_session_from_palette(session_name.as_str(), socket_target, cx),
         }
     }
 
@@ -446,9 +512,7 @@ impl TerminalView {
         );
 
         match availability.reason {
-            Some(CommandUnavailableReason::RequiresTmuxRuntime) => {
-                "Enable tmux integration and restart to use this command"
-            }
+            Some(CommandUnavailableReason::RequiresTmuxRuntime) => "Attach a tmux session to use this command",
             Some(CommandUnavailableReason::InstallCliAlreadyInstalled) => "CLI is already installed",
             None => "Command is currently unavailable",
         }
@@ -469,6 +533,29 @@ impl TerminalView {
                 termy_toast::error(error);
                 cx.notify();
             }
+        }
+    }
+
+    fn attach_tmux_session_from_palette(
+        &mut self,
+        session_name: &str,
+        socket_target: TmuxSocketTarget,
+        cx: &mut Context<Self>,
+    ) {
+        let session_name = session_name.trim();
+        if session_name.is_empty() {
+            termy_toast::error("tmux session name cannot be empty");
+            return;
+        }
+
+        let launch = TmuxLaunchTarget::Session {
+            name: session_name.to_string(),
+            socket: socket_target,
+        };
+        if self.attach_tmux_runtime(launch, cx) {
+            self.close_command_palette(cx);
+            termy_toast::success(format!("Attached tmux session \"{session_name}\""));
+            cx.notify();
         }
     }
 
@@ -502,6 +589,9 @@ impl TerminalView {
             CommandAction::ImportColors => {}
             CommandAction::Quit
             | CommandAction::SwitchTheme
+            | CommandAction::AttachTmuxSession
+            | CommandAction::DetachTmuxSession
+            | CommandAction::SwitchTmuxSession
             | CommandAction::AppInfo
             | CommandAction::NativeSdkExample
             | CommandAction::RestartApp
@@ -541,7 +631,12 @@ impl TerminalView {
     }
 
     fn command_palette_should_stay_open(action: CommandAction) -> bool {
-        action == CommandAction::SwitchTheme
+        matches!(
+            action,
+            CommandAction::SwitchTheme
+                | CommandAction::AttachTmuxSession
+                | CommandAction::SwitchTmuxSession
+        )
     }
 }
 
@@ -557,6 +652,10 @@ mod tests {
         );
         assert_eq!(
             TerminalView::command_palette_escape_action(CommandPaletteMode::Themes),
+            CommandPaletteEscapeAction::BackToCommands
+        );
+        assert_eq!(
+            TerminalView::command_palette_escape_action(CommandPaletteMode::TmuxSessions),
             CommandPaletteEscapeAction::BackToCommands
         );
     }
@@ -583,6 +682,12 @@ mod tests {
     fn switch_theme_is_the_only_action_that_keeps_palette_open() {
         assert!(TerminalView::command_palette_should_stay_open(
             CommandAction::SwitchTheme
+        ));
+        assert!(TerminalView::command_palette_should_stay_open(
+            CommandAction::AttachTmuxSession
+        ));
+        assert!(TerminalView::command_palette_should_stay_open(
+            CommandAction::SwitchTmuxSession
         ));
         assert!(!TerminalView::command_palette_should_stay_open(
             CommandAction::NewTab
@@ -649,7 +754,7 @@ mod tests {
                 true,
                 false,
             ),
-            "Enable tmux integration and restart to use this command"
+            "Attach a tmux session to use this command"
         );
     }
 }

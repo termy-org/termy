@@ -6,6 +6,8 @@ use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavai
 
 const INSTALL_CLI_TITLE: &str = "Install CLI";
 const INSTALL_CLI_INSTALLED_TITLE: &str = "Install CLI (Installed)";
+const DETACH_TMUX_SESSION_REQUIRED_TITLE: &str = "Detach tmux Session (tmux required)";
+const SWITCH_TMUX_SESSION_REQUIRED_TITLE: &str = "Switch tmux Session… (tmux required)";
 const SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE: &str = "Split Pane Vertical (tmux required)";
 const SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE: &str = "Split Pane Horizontal (tmux required)";
 const CLOSE_PANE_TMUX_REQUIRED_TITLE: &str = "Close Pane (tmux required)";
@@ -92,6 +94,8 @@ fn menu_item_title(
 
 fn tmux_required_menu_title(action: CommandAction) -> Option<&'static str> {
     match action {
+        CommandAction::DetachTmuxSession => Some(DETACH_TMUX_SESSION_REQUIRED_TITLE),
+        CommandAction::SwitchTmuxSession => Some(SWITCH_TMUX_SESSION_REQUIRED_TITLE),
         CommandAction::SplitPaneVertical => Some(SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE),
         CommandAction::SplitPaneHorizontal => Some(SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE),
         CommandAction::ClosePane => Some(CLOSE_PANE_TMUX_REQUIRED_TITLE),
@@ -103,9 +107,10 @@ fn tmux_required_menu_title(action: CommandAction) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CLOSE_PANE_TMUX_REQUIRED_TITLE, FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE,
-        INSTALL_CLI_INSTALLED_TITLE, INSTALL_CLI_TITLE, SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE,
-        SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE, app_menus,
+        CLOSE_PANE_TMUX_REQUIRED_TITLE, DETACH_TMUX_SESSION_REQUIRED_TITLE,
+        FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE, INSTALL_CLI_INSTALLED_TITLE, INSTALL_CLI_TITLE,
+        SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE, SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE,
+        SWITCH_TMUX_SESSION_REQUIRED_TITLE, app_menus,
     };
     use crate::commands::CommandAction;
     use gpui::{MenuItem, OsAction};
@@ -274,6 +279,9 @@ mod tests {
                 "Close Tab",
                 "Rename Tab",
                 "<separator>",
+                "Attach tmux Session…",
+                DETACH_TMUX_SESSION_REQUIRED_TITLE,
+                SWITCH_TMUX_SESSION_REQUIRED_TITLE,
                 SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE,
                 SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE,
                 CLOSE_PANE_TMUX_REQUIRED_TITLE,
@@ -301,7 +309,9 @@ mod tests {
         assert!(
             !all_menu_titles.iter().any(|title| matches!(
                 title.as_str(),
-                "Split Pane Vertical"
+                "Detach tmux Session"
+                    | "Switch tmux Session…"
+                    | "Split Pane Vertical"
                     | "Split Pane Horizontal"
                     | "Close Pane"
                     | "Focus Next Pane"

@@ -8,6 +8,9 @@ macro_rules! termy_command_catalog {
             (MoveTabRight, "move_tab_right"),
             (SwitchTabLeft, "switch_tab_left"),
             (SwitchTabRight, "switch_tab_right"),
+            (AttachTmuxSession, "attach_tmux_session"),
+            (DetachTmuxSession, "detach_tmux_session"),
+            (SwitchTmuxSession, "switch_tmux_session"),
             (SplitPaneVertical, "split_pane_vertical"),
             (SplitPaneHorizontal, "split_pane_horizontal"),
             (ClosePane, "close_pane"),
@@ -100,7 +103,9 @@ macro_rules! define_command_catalog {
             pub const fn is_tmux_only(self) -> bool {
                 matches!(
                     self,
-                    Self::SplitPaneVertical
+                    Self::DetachTmuxSession
+                        | Self::SwitchTmuxSession
+                        | Self::SplitPaneVertical
                         | Self::SplitPaneHorizontal
                         | Self::ClosePane
                         | Self::FocusPaneLeft
@@ -171,6 +176,7 @@ mod tests {
 
         let mut expected = vec![
             "close_pane",
+            "detach_tmux_session",
             "focus_pane_down",
             "focus_pane_left",
             "focus_pane_next",
@@ -183,6 +189,7 @@ mod tests {
             "resize_pane_up",
             "split_pane_horizontal",
             "split_pane_vertical",
+            "switch_tmux_session",
             "toggle_pane_zoom",
         ];
         expected.sort_unstable();
