@@ -60,6 +60,11 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - tmux executable path or binary name
 - Group: `TMUX`
 
+`tmux_show_active_pane_border`
+- Default: `false`
+- Show active tmux pane border highlight in managed sessions
+- Group: `TMUX`
+
 `shell`
 - Default: unset
 - Executable used for new sessions
@@ -118,7 +123,7 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 
 `pane_focus_strength`
 - Default: `0.35`
-- Strength of active pane emphasis (0.0 to 1.0)
+- Strength of active pane emphasis (0.0 to 2.0)
 - Group: `UI`
 
 `command_palette_show_keybinds`

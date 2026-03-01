@@ -16,6 +16,7 @@ use std::{
 pub struct TmuxRuntimeConfig {
     pub binary: String,
     pub launch: TmuxLaunchTarget,
+    pub show_active_pane_border: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -49,6 +50,7 @@ impl Default for TmuxRuntimeConfig {
         Self {
             binary: "tmux".to_string(),
             launch: TmuxLaunchTarget::Managed { persistence: false },
+            show_active_pane_border: false,
         }
     }
 }
@@ -392,6 +394,7 @@ pub struct TmuxClient {
     tmux_binary: String,
     session_name: String,
     socket_target: TmuxSocketTarget,
+    show_active_pane_border: bool,
     teardown_on_drop: bool,
     request_tx: Sender<ControlRequest>,
     notifications_rx: Receiver<TmuxNotification>,
@@ -424,6 +427,15 @@ const SEND_INPUT_CHUNKED_HEX_BYTES: usize = 256;
 const SEND_INPUT_BULK_THRESHOLD_BYTES: usize = 2048;
 const SEND_INPUT_BULK_HEX_BYTES: usize = 2048;
 const SNAPSHOT_FIELD_SEP: char = '\u{1f}';
+const MANAGED_SESSION_WINDOW_OPTION_BASE_OVERRIDES: [(&str, &str); 2] = [
+    ("pane-border-status", "off"),
+    ("pane-border-format", ""),
+];
+const MANAGED_SESSION_WINDOW_OPTION_ACTIVE_BORDER_OFF_OVERRIDES: [(&str, &str); 3] = [
+    ("pane-border-indicators", "off"),
+    ("pane-border-style", "fg=default,bg=default"),
+    ("pane-active-border-style", "fg=default,bg=default"),
+];
 const SESSION_SNAPSHOT_FORMAT: &str = concat!(
     "#{q:session_name}",
     "\u{1f}",
@@ -525,6 +537,25 @@ fn spawn_tmux_control_mode(
         .context("failed to clone tmux pty controller for writer")?;
 
     Ok((child, writer, controller))
+}
+
+fn managed_session_window_option_overrides(
+    show_active_pane_border: bool,
+) -> Vec<(&'static str, &'static str)> {
+    let mut overrides = MANAGED_SESSION_WINDOW_OPTION_BASE_OVERRIDES.to_vec();
+    if !show_active_pane_border {
+        overrides.extend_from_slice(&MANAGED_SESSION_WINDOW_OPTION_ACTIVE_BORDER_OFF_OVERRIDES);
+    }
+    overrides
+}
+
+fn managed_session_window_option_override_commands<'a>(
+    all_windows_target: &'a str,
+    show_active_pane_border: bool,
+) -> impl Iterator<Item = [&'a str; 6]> + 'a {
+    managed_session_window_option_overrides(show_active_pane_border)
+        .into_iter()
+        .map(move |(option, value)| ["set-window-option", "-q", "-t", all_windows_target, option, value])
 }
 
 fn append_socket_args(command: &mut Command, socket_target: &TmuxSocketTarget) {
@@ -995,6 +1026,7 @@ impl TmuxClient {
             tmux_binary: config.binary,
             session_name: launch_plan.session_name,
             socket_target: launch_plan.socket_target,
+            show_active_pane_border: config.show_active_pane_border,
             teardown_on_drop: launch_plan.teardown_on_drop,
             request_tx,
             notifications_rx,
@@ -1384,24 +1416,17 @@ impl TmuxClient {
 
         self.run_control_status_args(&["set-option", "-q", "-t", session, "status", "off"])
             .context("failed to disable tmux status line for managed session")?;
-        self.run_control_status_args(&[
-            "set-window-option",
-            "-q",
-            "-t",
+        for command in managed_session_window_option_override_commands(
             all_windows_target.as_str(),
-            "pane-border-status",
-            "off",
-        ])
-        .context("failed to disable tmux pane border status for managed session")?;
-        self.run_control_status_args(&[
-            "set-window-option",
-            "-q",
-            "-t",
-            all_windows_target.as_str(),
-            "pane-border-format",
-            "",
-        ])
-        .context("failed to clear tmux pane border format for managed session")?;
+            self.show_active_pane_border,
+        ) {
+            self.run_control_status_args(&command).with_context(|| {
+                format!(
+                    "failed to apply tmux managed-session window option override '{}={}'",
+                    command[4], command[5]
+                )
+            })?;
+        }
         self.run_control_status_args(&["refresh-client"])
             .context("failed to refresh tmux client after managed-session ui configuration")?;
 
@@ -1929,6 +1954,7 @@ mod tests {
         capture_full_pane_args, capture_viewport_pane_args, choose_send_input_mode,
         claim_pending_for_command_begin, complete_pending_command,
         flush_notification_coalescer, managed_session_name, map_command_completion_response,
+        managed_session_window_option_override_commands, managed_session_window_option_overrides,
         parse_output_notification, parse_session_summaries, parse_snapshot, parse_version_prefix,
         quote_tmux_arg,
         signal_fatal_exit, strip_legacy_title_sequences, try_enqueue_control_request,
@@ -2166,6 +2192,7 @@ mod tests {
             tmux_binary: "tmux".to_string(),
             session_name: "test-session".to_string(),
             socket_target: TmuxSocketTarget::DedicatedTermy,
+            show_active_pane_border: false,
             teardown_on_drop: false,
             request_tx,
             notifications_rx,
@@ -2563,6 +2590,7 @@ mod tests {
         let plan = TmuxClient::launch_plan(&TmuxRuntimeConfig {
             binary: "tmux".to_string(),
             launch: TmuxLaunchTarget::Managed { persistence: true },
+            show_active_pane_border: false,
         });
         assert_eq!(plan.session_name, PERSISTENT_SESSION_NAME);
         assert_eq!(plan.socket_target, TmuxSocketTarget::DedicatedTermy);
@@ -2575,6 +2603,7 @@ mod tests {
         let plan = TmuxClient::launch_plan(&TmuxRuntimeConfig {
             binary: "tmux".to_string(),
             launch: TmuxLaunchTarget::Managed { persistence: false },
+            show_active_pane_border: false,
         });
         assert!(plan.session_name.starts_with("termy-"));
         assert_eq!(plan.socket_target, TmuxSocketTarget::DedicatedTermy);
@@ -2590,6 +2619,7 @@ mod tests {
                 name: "work".to_string(),
                 socket: TmuxSocketTarget::Named("work".to_string()),
             },
+            show_active_pane_border: false,
         });
         assert_eq!(plan.session_name, "work");
         assert_eq!(plan.socket_target, TmuxSocketTarget::Named("work".to_string()));
@@ -2641,5 +2671,120 @@ mod tests {
                 "%2",
             ]
         );
+    }
+
+    #[test]
+    fn managed_session_window_option_overrides_include_active_border_neutralization() {
+        let overrides = managed_session_window_option_overrides(false);
+        assert!(overrides.contains(&("pane-border-status", "off")));
+        assert!(overrides.contains(&("pane-border-format", "")));
+        assert!(overrides.contains(&("pane-border-indicators", "off")));
+        assert!(overrides.contains(&("pane-border-style", "fg=default,bg=default")));
+        assert!(overrides.contains(&("pane-active-border-style", "fg=default,bg=default")));
+    }
+
+    #[test]
+    fn managed_session_window_option_override_commands_include_expected_target_and_flags() {
+        let target = "termy:*";
+        let commands = managed_session_window_option_override_commands(target, false)
+            .collect::<Vec<[&str; 6]>>();
+        assert!(commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-border-status",
+            "off",
+        ]));
+        assert!(commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-border-format",
+            "",
+        ]));
+        assert!(commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-border-indicators",
+            "off",
+        ]));
+        assert!(commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-border-style",
+            "fg=default,bg=default",
+        ]));
+        assert!(commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-active-border-style",
+            "fg=default,bg=default",
+        ]));
+    }
+
+    #[test]
+    fn managed_session_window_option_overrides_skip_active_border_neutralization_when_enabled() {
+        let overrides = managed_session_window_option_overrides(true);
+        assert!(overrides.contains(&("pane-border-status", "off")));
+        assert!(overrides.contains(&("pane-border-format", "")));
+        assert!(!overrides.contains(&("pane-border-indicators", "off")));
+        assert!(!overrides.contains(&("pane-border-style", "fg=default,bg=default")));
+        assert!(!overrides.contains(&("pane-active-border-style", "fg=default,bg=default")));
+    }
+
+    #[test]
+    fn managed_session_window_option_override_commands_skip_active_border_neutralization_when_enabled()
+    {
+        let target = "termy:*";
+        let commands = managed_session_window_option_override_commands(target, true)
+            .collect::<Vec<[&str; 6]>>();
+        assert!(commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-border-status",
+            "off",
+        ]));
+        assert!(commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-border-format",
+            "",
+        ]));
+        assert!(!commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-border-indicators",
+            "off",
+        ]));
+        assert!(!commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-border-style",
+            "fg=default,bg=default",
+        ]));
+        assert!(!commands.contains(&[
+            "set-window-option",
+            "-q",
+            "-t",
+            target,
+            "pane-active-border-style",
+            "fg=default,bg=default",
+        ]));
     }
 }

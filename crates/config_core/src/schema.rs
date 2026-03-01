@@ -300,6 +300,7 @@ define_root_settings! {
     (TmuxEnabled, "tmux_enabled", [], Terminal, "TMUX", "Tmux Enabled", "Enable tmux runtime integration", ["tmux", "runtime", "integration", "enabled"], RootSettingValueKind::Boolean, false),
     (TmuxPersistence, "tmux_persistence", [], Terminal, "TMUX", "Tmux Persistence", "Reuse tmux tabs and panes across app restarts", ["tmux", "session", "persistence", "restart"], RootSettingValueKind::Boolean, false),
     (TmuxBinary, "tmux_binary", [], Terminal, "TMUX", "Tmux Binary", "tmux executable path or binary name", ["tmux", "binary", "path"], RootSettingValueKind::Text, false),
+    (TmuxShowActivePaneBorder, "tmux_show_active_pane_border", [], Terminal, "TMUX", "Show Active Pane Border", "Show active tmux pane border highlight in managed sessions", ["tmux", "pane", "border", "highlight"], RootSettingValueKind::Boolean, false),
     (WorkingDir, "working_dir", [], Advanced, "STARTUP", "Working Directory", "Initial directory for new sessions", ["working directory", "cwd", "startup", "path"], RootSettingValueKind::Text, false),
     (WorkingDirFallback, "working_dir_fallback", ["default_working_dir"], Advanced, "STARTUP", "Working Directory Fallback", "Directory used when working_dir is unset", ["working directory", "fallback", "cwd", "startup"], RootSettingValueKind::Enum, false),
     (WarnOnQuitWithRunningProcess, "warn_on_quit_with_running_process", [], Advanced, "SAFETY", "Warn On Quit", "Warn before quitting when a tab has an active process", ["quit", "warning", "safety", "process"], RootSettingValueKind::Boolean, false),
@@ -332,7 +333,7 @@ define_root_settings! {
     (ScrollbackHistory, "scrollback_history", ["scrollback"], Terminal, "SCROLLING", "Scrollback History", "Lines retained in terminal scrollback", ["scrollback", "history", "buffer", "lines"], RootSettingValueKind::Numeric, false),
     (InactiveTabScrollback, "inactive_tab_scrollback", [], Terminal, "SCROLLING", "Inactive Tab Scrollback", "Scrollback limit for inactive tabs", ["scrollback", "inactive", "tabs"], RootSettingValueKind::Numeric, false),
     (PaneFocusEffect, "pane_focus_effect", [], Terminal, "UI", "Pane Focus Effect", "How inactive panes are visually dimmed when a pane is active", ["pane", "focus", "dimming", "effect"], RootSettingValueKind::Enum, false),
-    (PaneFocusStrength, "pane_focus_strength", [], Terminal, "UI", "Pane Focus Strength", "Strength of active pane emphasis (0.0 to 1.0)", ["pane", "focus", "strength", "dimming"], RootSettingValueKind::Numeric, false),
+    (PaneFocusStrength, "pane_focus_strength", [], Terminal, "UI", "Pane Focus Strength", "Strength of active pane emphasis (0.0 to 2.0)", ["pane", "focus", "strength", "dimming"], RootSettingValueKind::Numeric, false),
     (CommandPaletteShowKeybinds, "command_palette_show_keybinds", [], Terminal, "UI", "Show Keybindings In Palette", "Show shortcut badges in command palette rows", ["palette", "keybinds", "shortcuts"], RootSettingValueKind::Boolean, false),
     (Keybind, "keybind", [], Keybindings, "KEYBINDS", "Keybind Directive", "Keybinding override directive", ["keybind", "shortcut", "command"], RootSettingValueKind::Special, true),
 }
@@ -391,6 +392,9 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::TmuxEnabled => Some(config.tmux_enabled.to_string()),
         RootSettingId::TmuxPersistence => Some(config.tmux_persistence.to_string()),
         RootSettingId::TmuxBinary => Some(config.tmux_binary.clone()),
+        RootSettingId::TmuxShowActivePaneBorder => {
+            Some(config.tmux_show_active_pane_border.to_string())
+        }
         RootSettingId::WorkingDir => config.working_dir.clone(),
         RootSettingId::WorkingDirFallback => Some(match config.working_dir_fallback {
             WorkingDirFallback::Home => "home".to_string(),

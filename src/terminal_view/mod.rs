@@ -128,6 +128,7 @@ const SEARCH_INPUT_SELECTION_ALPHA: f32 = 0.30;
 const PANE_FOCUS_ANIMATION_MS: u64 = 140;
 const PANE_FOCUS_ANIMATION_FRAME_MS: u64 = 16;
 const PANE_FOCUS_ANIMATION_DURATION: Duration = Duration::from_millis(PANE_FOCUS_ANIMATION_MS);
+const MAX_PANE_FOCUS_STRENGTH: f32 = 2.0;
 
 type TabId = u64;
 
@@ -636,7 +637,7 @@ fn pane_divider_color(chrome_background: gpui::Rgba, foreground: gpui::Rgba) -> 
 }
 
 fn pane_focus_strength_factor(pane_focus_strength: f32) -> f32 {
-    pane_focus_strength.clamp(0.0, 1.0)
+    pane_focus_strength.clamp(0.0, MAX_PANE_FOCUS_STRENGTH)
 }
 
 fn pane_focus_preset(effect: PaneFocusEffect) -> Option<PaneFocusPreset> {
@@ -759,6 +760,7 @@ pub struct TerminalView {
     terminal_runtime: TerminalRuntimeConfig,
     runtime: RuntimeState,
     tmux_enabled_config: bool,
+    tmux_show_active_pane_border: bool,
     config_path: Option<PathBuf>,
     config_fingerprint: Option<u64>,
     last_config_error_message: Option<String>,
@@ -1498,6 +1500,7 @@ impl TerminalView {
             terminal_runtime,
             runtime,
             tmux_enabled_config: config.tmux_enabled,
+            tmux_show_active_pane_border: config.tmux_show_active_pane_border,
             config_path,
             config_fingerprint,
             last_config_error_message,
@@ -1623,6 +1626,7 @@ impl TerminalView {
             );
         }
         self.tmux_enabled_config = config.tmux_enabled;
+        self.tmux_show_active_pane_border = config.tmux_show_active_pane_border;
         self.configured_working_dir = config.working_dir.clone();
         self.terminal_runtime = Self::runtime_config_from_app_config(&config);
         let reconnect_managed_tmux = self.runtime_uses_tmux()
@@ -2011,6 +2015,11 @@ mod tests {
             (preset.active_border_alpha * high_strength)
                 > (preset.active_border_alpha * low_strength)
         );
+    }
+
+    #[test]
+    fn pane_focus_strength_factor_clamps_to_extended_upper_bound() {
+        assert_eq!(pane_focus_strength_factor(2.5), MAX_PANE_FOCUS_STRENGTH);
     }
 
     #[test]

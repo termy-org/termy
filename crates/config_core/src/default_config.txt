@@ -7,6 +7,8 @@ tmux_enabled = false
 tmux_persistence = false
 # tmux executable path or binary name
 tmux_binary = tmux
+# Show active tmux pane border highlight in managed sessions
+tmux_show_active_pane_border = false
 # Initial directory for new sessions
 # working_dir = none
 # Directory used when working_dir is unset
@@ -71,7 +73,7 @@ scrollback_history = 2000
 # inactive_tab_scrollback = none
 # How inactive panes are visually dimmed when a pane is active
 pane_focus_effect = soft_spotlight
-# Strength of active pane emphasis (0.0 to 1.0)
+# Strength of active pane emphasis (0.0 to 2.0)
 pane_focus_strength = 0.35
 # Show shortcut badges in command palette rows
 command_palette_show_keybinds = true

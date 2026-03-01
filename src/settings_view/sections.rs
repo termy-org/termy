@@ -249,9 +249,12 @@ impl SettingsWindow {
     pub(super) fn render_terminal_tmux_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let enabled_meta = Self::setting_metadata_or_fallback("tmux_enabled");
         let persistence_meta = Self::setting_metadata_or_fallback("tmux_persistence");
+        let show_active_border_meta =
+            Self::setting_metadata_or_fallback("tmux_show_active_pane_border");
         let binary_meta = Self::setting_metadata_or_fallback("tmux_binary");
         let tmux_enabled = self.config.tmux_enabled;
         let tmux_persistence = self.config.tmux_persistence;
+        let tmux_show_active_pane_border = self.config.tmux_show_active_pane_border;
         let binary = self.config.tmux_binary.clone();
 
         let mut group = div()
@@ -295,6 +298,27 @@ impl SettingsWindow {
                     {
                         Ok(()) => {
                             view.config.tmux_persistence = next;
+                            termy_toast::success("Saved");
+                        }
+                        Err(error) => termy_toast::error(error),
+                    }
+                },
+            ))
+            .child(self.render_setting_row(
+                "tmux_show_active_pane_border",
+                "tmux_show_active_pane_border-toggle",
+                show_active_border_meta.title,
+                show_active_border_meta.description,
+                tmux_show_active_pane_border,
+                cx,
+                |view, _cx| {
+                    let next = !view.config.tmux_show_active_pane_border;
+                    match config::set_root_setting(
+                        RootSettingId::TmuxShowActivePaneBorder,
+                        &next.to_string(),
+                    ) {
+                        Ok(()) => {
+                            view.config.tmux_show_active_pane_border = next;
                             termy_toast::success("Saved");
                         }
                         Err(error) => termy_toast::error(error),

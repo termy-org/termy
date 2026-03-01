@@ -241,6 +241,7 @@ fn enum_keys_parse_table_driven() {
 
 #[derive(Clone, Copy)]
 enum BoolField {
+    TmuxShowActivePaneBorder,
     ShowTermyInTitlebar,
     CursorBlink,
     BackgroundBlur,
@@ -252,6 +253,7 @@ enum BoolField {
 impl BoolField {
     fn key(self) -> &'static str {
         match self {
+            Self::TmuxShowActivePaneBorder => "tmux_show_active_pane_border",
             Self::ShowTermyInTitlebar => "show_termy_in_titlebar",
             Self::CursorBlink => "cursor_blink",
             Self::BackgroundBlur => "background_blur",
@@ -263,6 +265,7 @@ impl BoolField {
 
     fn read(self, config: &AppConfig) -> bool {
         match self {
+            Self::TmuxShowActivePaneBorder => config.tmux_show_active_pane_border,
             Self::ShowTermyInTitlebar => config.show_termy_in_titlebar,
             Self::CursorBlink => config.cursor_blink,
             Self::BackgroundBlur => config.background_blur,
@@ -277,6 +280,7 @@ impl BoolField {
 fn bool_keys_parse_table_driven() {
     let defaults = AppConfig::default();
     let fields = [
+        BoolField::TmuxShowActivePaneBorder,
         BoolField::ShowTermyInTitlebar,
         BoolField::CursorBlink,
         BoolField::BackgroundBlur,
@@ -378,7 +382,7 @@ fn numeric_keys_parse_table_driven() {
     );
 
     assert_eq!(parse("pane_focus_strength = -0.5\n").pane_focus_strength, 0.0);
-    assert_eq!(parse("pane_focus_strength = 4\n").pane_focus_strength, 1.0);
+    assert_eq!(parse("pane_focus_strength = 4\n").pane_focus_strength, 2.0);
     let nan_pane_focus_strength = parse_report("pane_focus_strength = NaN\n");
     assert_eq!(
         nan_pane_focus_strength.config.pane_focus_strength,
@@ -434,12 +438,14 @@ fn tmux_runtime_options_parse() {
     let config = parse(
         "tmux_enabled = true\n\
          tmux_persistence = true\n\
+         tmux_show_active_pane_border = true\n\
          tmux_binary = /opt/homebrew/bin/tmux\n\
          working_dir_fallback = process\n",
     );
 
     assert!(config.tmux_enabled);
     assert!(config.tmux_persistence);
+    assert!(config.tmux_show_active_pane_border);
     assert_eq!(config.tmux_binary, "/opt/homebrew/bin/tmux");
     assert_eq!(config.working_dir_fallback, WorkingDirFallback::Process);
 }

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::color_keys::{ColorEntryError, apply_color_entry};
 use crate::constants::{
-    MAX_MOUSE_SCROLL_MULTIPLIER, MAX_SCROLLBACK_HISTORY, MIN_MOUSE_SCROLL_MULTIPLIER,
-    SHELL_DECIDE_THEME_ID, VALID_SECTIONS,
+    MAX_MOUSE_SCROLL_MULTIPLIER, MAX_PANE_FOCUS_STRENGTH, MAX_SCROLLBACK_HISTORY,
+    MIN_MOUSE_SCROLL_MULTIPLIER, SHELL_DECIDE_THEME_ID, VALID_SECTIONS,
 };
 use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
@@ -152,6 +152,13 @@ impl AppConfig {
                         "a non-empty string",
                     ) {
                         config.tmux_binary = parsed;
+                    }
+                }
+                RootSettingId::TmuxShowActivePaneBorder => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.tmux_show_active_pane_border = parsed;
                     }
                 }
                 RootSettingId::WorkingDir => {
@@ -484,17 +491,17 @@ impl AppConfig {
                         line_number,
                         key,
                         value,
-                        "a number between 0.0 and 1.0",
+                        "a number between 0.0 and 2.0",
                     ) {
                         if parsed.is_finite() {
-                            config.pane_focus_strength = parsed.clamp(0.0, 1.0);
+                            config.pane_focus_strength = parsed.clamp(0.0, MAX_PANE_FOCUS_STRENGTH);
                         } else {
                             push_invalid_value(
                                 &mut diagnostics,
                                 line_number,
                                 key,
                                 value,
-                                "a number between 0.0 and 1.0",
+                                "a number between 0.0 and 2.0",
                             );
                         }
                     }

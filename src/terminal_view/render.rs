@@ -33,6 +33,18 @@ fn desaturate_rgb(color: gpui::Rgba, amount: f32) -> gpui::Rgba {
     }
 }
 
+fn effective_pane_focus_active_border_alpha(
+    active_border_alpha: f32,
+    runtime_uses_tmux: bool,
+    tmux_show_active_pane_border: bool,
+) -> f32 {
+    if runtime_uses_tmux && !tmux_show_active_pane_border {
+        0.0
+    } else {
+        active_border_alpha
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct TerminalScrollbarOverlayFrame {
     left: f32,
@@ -593,7 +605,7 @@ impl Render for TerminalView {
                     pane_inactive_fg_blend,
                     pane_inactive_bg_blend,
                     pane_inactive_desaturate,
-                    pane_active_border_alpha,
+                    raw_pane_active_border_alpha,
                 ) = if let Some((preset, strength)) = pane_focus_config {
                     let inactive_scale = strength * pane_inactive_focus;
                     let active_scale = strength * pane_active_focus;
@@ -606,6 +618,13 @@ impl Render for TerminalView {
                 } else {
                     (0.0, 0.0, 0.0, 0.0)
                 };
+                // tmux mode already has pane boundary affordances; layering Termy's active-pane
+                // outline on top creates a second full-frame box around the active pane.
+                let pane_active_border_alpha = effective_pane_focus_active_border_alpha(
+                    raw_pane_active_border_alpha,
+                    self.runtime_uses_tmux(),
+                    self.tmux_show_active_pane_border,
+                );
                 let pane_focus_target_bg = colors.background;
                 let estimated_cells = cols.saturating_mul(rows);
                 let mut cells_to_render: Vec<CellRenderInfo> = Vec::with_capacity(estimated_cells);
@@ -1271,5 +1290,23 @@ mod tests {
         assert_eq!(frame.top, surface.origin_y);
         assert_eq!(frame.width, TERMINAL_SCROLLBAR_GUTTER_WIDTH);
         assert_eq!(frame.height, surface.height);
+    }
+
+    #[test]
+    fn pane_focus_active_border_alpha_is_zero_in_tmux_runtime() {
+        let alpha = effective_pane_focus_active_border_alpha(0.38, true, false);
+        assert_eq!(alpha, 0.0);
+    }
+
+    #[test]
+    fn pane_focus_active_border_alpha_is_unchanged_in_native_runtime() {
+        let alpha = effective_pane_focus_active_border_alpha(0.38, false, false);
+        assert_eq!(alpha, 0.38);
+    }
+
+    #[test]
+    fn pane_focus_active_border_alpha_is_unchanged_when_tmux_border_is_enabled() {
+        let alpha = effective_pane_focus_active_border_alpha(0.38, true, true);
+        assert_eq!(alpha, 0.38);
     }
 }

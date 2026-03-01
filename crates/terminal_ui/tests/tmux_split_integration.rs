@@ -109,6 +109,7 @@ fn new_tmux_client(binary: &str) -> TmuxClient {
         let config = TmuxRuntimeConfig {
             binary: binary.to_string(),
             launch: TmuxLaunchTarget::Managed { persistence: true },
+            show_active_pane_border: false,
         };
         match TmuxClient::new(config, TEST_COLS, TEST_ROWS, None) {
             Ok(client) => return client,

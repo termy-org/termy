@@ -270,12 +270,16 @@ impl SettingsWindow {
                 if !parsed.is_finite() {
                     return Err("Pane focus strength must be a finite number".to_string());
                 }
-                let normalized = if has_percent_suffix || parsed > 1.0 {
+                let normalized = if has_percent_suffix {
+                    parsed / 100.0
+                } else if parsed > 2.0 {
+                    // Values beyond the configured max are interpreted as percent shorthand,
+                    // so `150` still maps to `1.5` while explicit values like `1.5` stay exact.
                     parsed / 100.0
                 } else {
                     parsed
                 }
-                .clamp(0.0, 1.0);
+                .clamp(0.0, 2.0);
                 self.config.pane_focus_strength = normalized;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::PaneFocusStrength,

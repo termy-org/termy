@@ -108,16 +108,26 @@ impl TerminalView {
         launch: TmuxLaunchTarget,
         cx: &mut Context<Self>,
     ) -> bool {
-        let binary = if self.runtime_uses_tmux() {
-            self.tmux_runtime().config.binary.clone()
+        let (binary, show_active_pane_border) = if self.runtime_uses_tmux() {
+            (
+                self.tmux_runtime().config.binary.clone(),
+                self.tmux_runtime().config.show_active_pane_border,
+            )
         } else {
             let loaded = config::load_runtime_config(
                 &mut self.last_config_error_message,
                 "Failed to read config for tmux attach",
             );
-            loaded.config.tmux_binary.trim().to_string()
+            (
+                loaded.config.tmux_binary.trim().to_string(),
+                loaded.config.tmux_show_active_pane_border,
+            )
         };
-        let runtime_config = TmuxRuntimeConfig { binary, launch };
+        let runtime_config = TmuxRuntimeConfig {
+            binary,
+            launch,
+            show_active_pane_border,
+        };
         if let Err(error) = TmuxClient::verify_tmux_version(runtime_config.binary.as_str(), 3, 3) {
             termy_toast::error(format!("tmux preflight failed: {error}"));
             return false;

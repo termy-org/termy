@@ -102,6 +102,7 @@ impl TerminalView {
             launch: TmuxLaunchTarget::Managed {
                 persistence: config.tmux_persistence,
             },
+            show_active_pane_border: config.tmux_show_active_pane_border,
         }
     }
 

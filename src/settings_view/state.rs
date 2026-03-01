@@ -446,7 +446,7 @@ impl SettingsWindow {
                 NumericStepSpec {
                     delta: 0.05,
                     min: 0.0,
-                    max: 1.0,
+                    max: 2.0,
                 },
             ),
             _ => unreachable!("invalid terminal field"),
