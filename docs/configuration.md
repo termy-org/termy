@@ -131,6 +131,11 @@ Termy reads configuration from `~/.config/termy/config.txt`.
 - Template for command-derived tab titles
 - Group: `TAB TITLES`
 
+Tmux runtime title behavior:
+- `shell` source is derived from the active pane (`pane_current_path` / `pane_current_command`)
+- `explicit` is not auto-populated from tmux `window_name`
+- Manual tmux renames (`automatic-rename=off`) map to `manual`
+
 `tab_close_visibility`
 - Default: `active_hover`
 - When tab close buttons are visible
@@ -259,4 +264,3 @@ Use `[colors]` to override theme colors with `#RRGGBB` values.
 `bright_white`
 - Aliases: `brightwhite`, `color15`
 - ANSI bright white
-

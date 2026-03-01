@@ -39,6 +39,8 @@ pub struct TmuxPaneState {
     pub height: u16,
     pub cursor_x: u16,
     pub cursor_y: u16,
+    pub current_path: String,
+    pub current_command: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +50,7 @@ pub struct TmuxWindowState {
     pub name: String,
     pub layout: String,
     pub is_active: bool,
+    pub automatic_rename: bool,
     pub active_pane_id: Option<String>,
     pub panes: Vec<TmuxPaneState>,
 }
@@ -486,7 +489,7 @@ impl TmuxClient {
             "-t",
             self.session_name.as_str(),
             "-F",
-            "#{window_id}\t#{window_index}\t#{window_name}\t#{window_layout}\t#{window_active}",
+            "#{window_id}\t#{window_index}\t#{window_name}\t#{window_layout}\t#{window_active}\t#{automatic-rename}",
         ])?;
 
         let panes_output = self.run_control_capture_args(&[
@@ -495,7 +498,7 @@ impl TmuxClient {
             "-t",
             self.session_name.as_str(),
             "-F",
-            "#{pane_id}\t#{window_id}\t#{session_id}\t#{pane_active}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}",
+            "#{pane_id}\t#{window_id}\t#{session_id}\t#{pane_active}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{pane_current_path}\t#{pane_current_command}",
         ])?;
 
         parse_snapshot(&self.session_name, &windows_output, &panes_output)
@@ -874,6 +877,14 @@ fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> Result<Tmux
             .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
             .parse::<u16>()
             .with_context(|| format!("invalid cursor_y in '{}'", line))?;
+        let current_path = parts
+            .next()
+            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
+            .to_string();
+        let current_command = parts
+            .next()
+            .ok_or_else(|| anyhow!("invalid tmux pane line: '{}'", line))?
+            .to_string();
 
         if parts.next().is_some() {
             return Err(anyhow!("invalid tmux pane line: '{}'", line));
@@ -897,6 +908,8 @@ fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> Result<Tmux
                 height,
                 cursor_x,
                 cursor_y,
+                current_path,
+                current_command,
             });
     }
 
@@ -924,6 +937,10 @@ fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> Result<Tmux
             .next()
             .ok_or_else(|| anyhow!("invalid tmux window line: '{}'", line))?
             == "1";
+        let automatic_rename = parts
+            .next()
+            .ok_or_else(|| anyhow!("invalid tmux window line: '{}'", line))?
+            == "1";
         if parts.next().is_some() {
             return Err(anyhow!("invalid tmux window line: '{}'", line));
         }
@@ -941,6 +958,7 @@ fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> Result<Tmux
             name,
             layout,
             is_active,
+            automatic_rename,
             active_pane_id,
             panes: window_panes,
         });
@@ -1166,15 +1184,19 @@ mod tests {
 
     #[test]
     fn parse_snapshot_builds_windows_and_panes() {
-        let windows = "@1\t0\tone\tlayout-a\t1\n@2\t1\ttwo\tlayout-b\t0\n";
-        let panes = "%1\t@1\t$1\t1\t0\t0\t80\t24\t13\t22\n%2\t@2\t$1\t1\t0\t0\t60\t24\t7\t2\n%3\t@2\t$1\t0\t61\t0\t19\t24\t3\t8\n";
+        let windows = "@1\t0\tone\tlayout-a\t1\t1\n@2\t1\ttwo\tlayout-b\t0\t0\n";
+        let panes = "%1\t@1\t$1\t1\t0\t0\t80\t24\t13\t22\t/tmp\tzsh\n%2\t@2\t$1\t1\t0\t0\t60\t24\t7\t2\t/work\tsleep\n%3\t@2\t$1\t0\t61\t0\t19\t24\t3\t8\t/work\tzsh\n";
         let snapshot = parse_snapshot("termy", windows, panes).expect("snapshot");
         assert_eq!(snapshot.windows.len(), 2);
         assert_eq!(snapshot.windows[0].id, "@1");
         assert_eq!(snapshot.windows[0].panes.len(), 1);
         assert_eq!(snapshot.windows[1].panes.len(), 2);
+        assert!(snapshot.windows[0].automatic_rename);
+        assert!(!snapshot.windows[1].automatic_rename);
         assert_eq!(snapshot.windows[0].panes[0].cursor_x, 13);
         assert_eq!(snapshot.windows[0].panes[0].cursor_y, 22);
+        assert_eq!(snapshot.windows[0].panes[0].current_path, "/tmp");
+        assert_eq!(snapshot.windows[1].panes[0].current_command, "sleep");
     }
 
     #[test]

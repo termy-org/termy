@@ -28,7 +28,9 @@ impl TerminalView {
         }
 
         self.prepare_terminal_input_write(cx);
-        let _ = self.send_input_to_active_pane(input);
+        if self.send_input_to_active_pane(input) {
+            self.schedule_tmux_title_refresh();
+        }
     }
 
     fn sanitize_bracketed_paste_input(input: &[u8]) -> Option<Vec<u8>> {
@@ -72,16 +74,21 @@ impl TerminalView {
         }
 
         self.prepare_terminal_input_write(cx);
+        let mut wrote_input = false;
         if self.active_terminal().bracketed_paste_mode() {
-            let _ = self.send_input_to_active_pane(b"\x1b[200~");
+            wrote_input |= self.send_input_to_active_pane(b"\x1b[200~");
             if let Some(sanitized) = Self::sanitize_bracketed_paste_input(input) {
-                let _ = self.send_input_to_active_pane(&sanitized);
+                wrote_input |= self.send_input_to_active_pane(&sanitized);
             } else {
-                let _ = self.send_input_to_active_pane(input);
+                wrote_input |= self.send_input_to_active_pane(input);
             }
-            let _ = self.send_input_to_active_pane(b"\x1b[201~");
+            wrote_input |= self.send_input_to_active_pane(b"\x1b[201~");
         } else {
-            let _ = self.send_input_to_active_pane(input);
+            wrote_input = self.send_input_to_active_pane(input);
+        }
+
+        if wrote_input {
+            self.schedule_tmux_title_refresh();
         }
     }
 

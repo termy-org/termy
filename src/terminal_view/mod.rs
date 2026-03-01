@@ -62,6 +62,7 @@ const DEFAULT_TAB_TITLE: &str = "Terminal";
 const CONFIG_WATCH_INTERVAL_MS: u64 = 750;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 530;
 const TMUX_POLL_INTERVAL_MS: u64 = 16;
+const TMUX_TITLE_REFRESH_DEBOUNCE_MS: u64 = 120;
 const SELECTION_BG_ALPHA: f32 = 0.35;
 const DIM_TEXT_FACTOR: f32 = 0.66;
 #[cfg(target_os = "macos")]
@@ -146,6 +147,13 @@ enum PaneResizeAxis {
     Vertical,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TmuxSnapshotRefreshMode {
+    None,
+    Debounced,
+    Immediate,
+}
+
 #[derive(Clone, Debug)]
 struct PaneResizeDragState {
     pane_id: String,
@@ -222,20 +230,8 @@ struct TerminalTab {
 }
 
 impl TerminalTab {
-    fn from_tmux_window(
-        id: TabId,
-        window: &TmuxWindowState,
-        panes: Vec<TerminalPane>,
-        predicted_prompt_title: Option<String>,
-    ) -> Self {
-        let title = if window.name.trim().is_empty() {
-            predicted_prompt_title
-                .as_deref()
-                .unwrap_or(DEFAULT_TAB_TITLE)
-                .to_string()
-        } else {
-            window.name.clone()
-        };
+    fn from_tmux_window(id: TabId, window: &TmuxWindowState, panes: Vec<TerminalPane>) -> Self {
+        let title = DEFAULT_TAB_TITLE.to_string();
         let title_text_width = 0.0;
         let sticky_title_width = TerminalView::tab_display_width_for_text_px_without_close_with_max(
             title_text_width,
@@ -255,7 +251,7 @@ impl TerminalTab {
                 .unwrap_or_default(),
             panes,
             manual_title: None,
-            explicit_title: predicted_prompt_title,
+            explicit_title: None,
             shell_title: None,
             title,
             title_text_width,
@@ -552,6 +548,7 @@ pub struct TerminalView {
     tmux_client: TmuxClient,
     tmux_client_cols: u16,
     tmux_client_rows: u16,
+    tmux_title_refresh_deadline: Option<Instant>,
     config_path: Option<PathBuf>,
     config_fingerprint: Option<u64>,
     last_config_error_message: Option<String>,
@@ -748,8 +745,23 @@ impl TerminalView {
                 .get(&window.id)
                 .copied()
                 .unwrap_or_else(|| self.allocate_tab_id());
-            let mut tab = TerminalTab::from_tmux_window(tab_id, window, panes, None);
-            tab.explicit_title = Some(window.name.clone());
+            let active_pane_state = window
+                .active_pane_id
+                .as_deref()
+                .and_then(|pane_id| window.panes.iter().find(|pane| pane.id == pane_id))
+                .or_else(|| window.panes.first());
+            let manual_title = (!window.automatic_rename)
+                .then_some(window.name.trim())
+                .and_then(|name| (!name.is_empty()).then(|| Self::truncate_tab_title(name)));
+            let shell_title = active_pane_state
+                .and_then(|pane| Self::derive_tmux_shell_title(&self.tab_title, pane));
+            let running_process = active_pane_state
+                .is_some_and(|pane| !Self::is_shell_command(pane.current_command.as_str()));
+
+            let mut tab = TerminalTab::from_tmux_window(tab_id, window, panes);
+            tab.manual_title = manual_title;
+            tab.shell_title = shell_title;
+            tab.running_process = running_process;
             new_tabs.push(tab);
         }
 
@@ -1275,6 +1287,7 @@ impl TerminalView {
             tmux_client,
             tmux_client_cols: initial_cols,
             tmux_client_rows: initial_rows,
+            tmux_title_refresh_deadline: None,
             config_path,
             config_fingerprint,
             last_config_error_message,
@@ -1382,6 +1395,7 @@ impl TerminalView {
                 Ok(client) => {
                     self.tmux_runtime = next_tmux_runtime;
                     self.tmux_client = client;
+                    self.tmux_title_refresh_deadline = None;
                     let _ = self.refresh_tmux_snapshot();
                 }
                 Err(error) => {
@@ -1543,6 +1557,28 @@ impl TerminalView {
         }
     }
 
+    pub(super) fn schedule_tmux_title_refresh(&mut self) {
+        self.tmux_title_refresh_deadline = Some(
+            Instant::now() + Duration::from_millis(TMUX_TITLE_REFRESH_DEBOUNCE_MS),
+        );
+    }
+
+    fn tmux_snapshot_refresh_mode(
+        needs_refresh: bool,
+        title_refresh_deadline: Option<Instant>,
+        now: Instant,
+    ) -> TmuxSnapshotRefreshMode {
+        if needs_refresh {
+            return TmuxSnapshotRefreshMode::Immediate;
+        }
+
+        if title_refresh_deadline.is_some_and(|deadline| now >= deadline) {
+            return TmuxSnapshotRefreshMode::Debounced;
+        }
+
+        TmuxSnapshotRefreshMode::None
+    }
+
     fn process_terminal_events(&mut self, cx: &mut Context<Self>) -> bool {
         let mut should_redraw = false;
         let mut needs_refresh = false;
@@ -1554,6 +1590,7 @@ impl TerminalView {
                         terminal.feed_output(&bytes);
                         if self.is_active_pane_id(&pane_id) {
                             should_redraw = true;
+                            self.schedule_tmux_title_refresh();
                         }
                     }
                 }
@@ -1568,8 +1605,16 @@ impl TerminalView {
             }
         }
 
-        if needs_refresh && self.refresh_tmux_snapshot() {
-            should_redraw = true;
+        let now = Instant::now();
+        match Self::tmux_snapshot_refresh_mode(needs_refresh, self.tmux_title_refresh_deadline, now)
+        {
+            TmuxSnapshotRefreshMode::Immediate | TmuxSnapshotRefreshMode::Debounced => {
+                self.tmux_title_refresh_deadline = None;
+                if self.refresh_tmux_snapshot() {
+                    should_redraw = true;
+                }
+            }
+            TmuxSnapshotRefreshMode::None => {}
         }
 
         should_redraw
@@ -1737,5 +1782,38 @@ mod tests {
             TerminalView::refreshed_install_cli_availability(false, true);
         assert!(!next_available);
         assert!(!changed);
+    }
+
+    #[test]
+    fn tmux_snapshot_refresh_mode_is_debounced_when_deadline_has_elapsed() {
+        let now = Instant::now();
+        let mode = TerminalView::tmux_snapshot_refresh_mode(
+            false,
+            Some(now - Duration::from_millis(1)),
+            now,
+        );
+        assert_eq!(mode, TmuxSnapshotRefreshMode::Debounced);
+    }
+
+    #[test]
+    fn tmux_snapshot_refresh_mode_is_none_when_deadline_has_not_elapsed() {
+        let now = Instant::now();
+        let mode = TerminalView::tmux_snapshot_refresh_mode(
+            false,
+            Some(now + Duration::from_millis(5)),
+            now,
+        );
+        assert_eq!(mode, TmuxSnapshotRefreshMode::None);
+    }
+
+    #[test]
+    fn tmux_snapshot_refresh_mode_prioritizes_immediate_refresh_over_debounce() {
+        let now = Instant::now();
+        let mode = TerminalView::tmux_snapshot_refresh_mode(
+            true,
+            Some(now - Duration::from_millis(1)),
+            now,
+        );
+        assert_eq!(mode, TmuxSnapshotRefreshMode::Immediate);
     }
 }
