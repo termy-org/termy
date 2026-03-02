@@ -14,7 +14,7 @@ impl StartupBlocker {
         };
 
         format!(
-            "Termy cannot continue because {reason}.\n\nError:\n{error}\n\nRecovery:\n- Open your config and set tmux_enabled = false to start in native mode.\n- If tmux integration is desired, set tmux_binary to tmux 3.3 or newer.\n- Save the config and restart Termy, then use Attach tmux Session when ready."
+            "Termy cannot continue because {reason}.\n\nError:\n{error}\n\nRecovery:\n- Open your config and set tmux_enabled = false to start in native mode.\n- If tmux integration is desired, set tmux_binary to tmux 3.3 or newer.\n- Save the config and restart Termy, then use tmux Sessions… when ready."
         )
     }
 
@@ -38,7 +38,7 @@ mod tests {
         let message = StartupBlocker::TmuxPreflight("tmux 3.3+ required".to_string()).message();
         assert!(message.contains("tmux 3.3+ required"));
         assert!(message.contains("tmux_enabled"));
-        assert!(message.contains("Attach tmux Session"));
+        assert!(message.contains("tmux Sessions…"));
         assert!(message.contains("restart"));
     }
 

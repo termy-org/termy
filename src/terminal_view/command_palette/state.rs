@@ -24,6 +24,9 @@ pub(super) enum CommandPaletteItemKind {
         session_name: String,
         socket_target: TmuxSocketTarget,
     },
+    TmuxSessionDetachCurrent,
+    TmuxSessionOpenRenameMode,
+    TmuxSessionOpenKillMode,
     TmuxSessionRenameSelect {
         session_name: String,
         socket_target: TmuxSocketTarget,

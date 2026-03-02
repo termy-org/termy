@@ -6,6 +6,9 @@ const TMUX_SESSION_NAME_REQUIRED_HINT: &str = "name required";
 const TMUX_SESSION_NAME_UNCHANGED_HINT: &str = "unchanged";
 const TMUX_SOCKET_DEFAULT_LABEL: &str = "default";
 const TMUX_SOCKET_DEDICATED_LABEL: &str = "termy";
+const TMUX_DETACH_CURRENT_TITLE: &str = "Detach Current Session";
+const TMUX_OPEN_RENAME_MODE_TITLE: &str = "Rename Session…";
+const TMUX_OPEN_KILL_MODE_TITLE: &str = "Kill Session…";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TmuxSessionStatusHint {
@@ -173,7 +176,7 @@ impl CommandPaletteItem {
     ) -> Self {
         let session_name = session_name.trim().to_string();
         Self {
-            title: format!("Attach/Create \"{}\"", session_name),
+            title: format!("Create tmux Session \"{}\"", session_name),
             keywords: format!(
                 "tmux attach create switch session {}",
                 session_name.replace('-', " ")
@@ -185,6 +188,39 @@ impl CommandPaletteItem {
                 session_name,
                 socket_target: socket_target.clone(),
             },
+        }
+    }
+
+    pub(super) fn tmux_session_detach_current() -> Self {
+        Self {
+            title: TMUX_DETACH_CURRENT_TITLE.to_string(),
+            keywords: "tmux detach current session".to_string(),
+            enabled: true,
+            status_hint: None,
+            tmux_status_hint: None,
+            kind: CommandPaletteItemKind::TmuxSessionDetachCurrent,
+        }
+    }
+
+    pub(super) fn tmux_session_open_rename_mode() -> Self {
+        Self {
+            title: TMUX_OPEN_RENAME_MODE_TITLE.to_string(),
+            keywords: "tmux rename session".to_string(),
+            enabled: true,
+            status_hint: None,
+            tmux_status_hint: None,
+            kind: CommandPaletteItemKind::TmuxSessionOpenRenameMode,
+        }
+    }
+
+    pub(super) fn tmux_session_open_kill_mode() -> Self {
+        Self {
+            title: TMUX_OPEN_KILL_MODE_TITLE.to_string(),
+            keywords: "tmux kill session".to_string(),
+            enabled: true,
+            status_hint: None,
+            tmux_status_hint: None,
+            kind: CommandPaletteItemKind::TmuxSessionOpenKillMode,
         }
     }
 }
@@ -264,7 +300,16 @@ impl CommandPaletteState {
 
                 let query = query.trim();
                 if query.is_empty() {
-                    return items;
+                    let mut utility_items = Vec::new();
+                    if active_session_name.is_some() {
+                        utility_items.push(CommandPaletteItem::tmux_session_detach_current());
+                    }
+                    if !self.tmux_session_rows.is_empty() {
+                        utility_items.push(CommandPaletteItem::tmux_session_open_rename_mode());
+                        utility_items.push(CommandPaletteItem::tmux_session_open_kill_mode());
+                    }
+                    utility_items.extend(items);
+                    return utility_items;
                 }
 
                 let exact_match = self
@@ -272,13 +317,10 @@ impl CommandPaletteState {
                     .iter()
                     .any(|row| row.summary.name.eq_ignore_ascii_case(query));
                 if !exact_match {
-                    items.insert(
-                        0,
-                        CommandPaletteItem::tmux_session_create_and_attach(
-                            query,
-                            &self.tmux_create_socket_target,
-                        ),
-                    );
+                    items.push(CommandPaletteItem::tmux_session_create_and_attach(
+                        query,
+                        &self.tmux_create_socket_target,
+                    ));
                 }
 
                 items
@@ -354,6 +396,10 @@ mod tests {
         assert_eq!(with_new.len(), 2);
         assert!(matches!(
             with_new[0].kind,
+            CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }
+        ));
+        assert!(matches!(
+            with_new[1].kind,
             CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. }
         ));
     }
@@ -506,5 +552,68 @@ mod tests {
         assert_eq!(state.tmux_session_intent(), TmuxSessionIntent::RenameSelect);
         assert!(state.tmux_rename_source_session().is_none());
         assert!(state.input().text().is_empty());
+    }
+
+    #[test]
+    fn tmux_attach_intent_empty_query_prepends_utility_rows() {
+        let mut state = CommandPaletteState::new(false);
+        state.set_tmux_session_rows(
+            vec![tmux_row("work", TmuxSocketTarget::Default)],
+            TmuxSocketTarget::Default,
+        );
+
+        let items = state.tmux_session_items_for_query("", Some("work"));
+        assert!(matches!(
+            items.first().map(|item| &item.kind),
+            Some(CommandPaletteItemKind::TmuxSessionDetachCurrent)
+        ));
+        assert!(matches!(
+            items.get(1).map(|item| &item.kind),
+            Some(CommandPaletteItemKind::TmuxSessionOpenRenameMode)
+        ));
+        assert!(matches!(
+            items.get(2).map(|item| &item.kind),
+            Some(CommandPaletteItemKind::TmuxSessionOpenKillMode)
+        ));
+    }
+
+    #[test]
+    fn tmux_attach_intent_hides_detach_utility_when_runtime_is_native() {
+        let mut state = CommandPaletteState::new(false);
+        state.set_tmux_session_rows(
+            vec![tmux_row("work", TmuxSocketTarget::Default)],
+            TmuxSocketTarget::Default,
+        );
+
+        let items = state.tmux_session_items_for_query("", None);
+        assert!(!items.iter().any(|item| matches!(
+            item.kind,
+            CommandPaletteItemKind::TmuxSessionDetachCurrent
+        )));
+        assert!(items.iter().any(|item| matches!(
+            item.kind,
+            CommandPaletteItemKind::TmuxSessionOpenRenameMode
+        )));
+        assert!(items.iter().any(|item| matches!(
+            item.kind,
+            CommandPaletteItemKind::TmuxSessionOpenKillMode
+        )));
+    }
+
+    #[test]
+    fn tmux_attach_intent_hides_utility_rows_when_query_is_non_empty() {
+        let mut state = CommandPaletteState::new(false);
+        state.set_tmux_session_rows(
+            vec![tmux_row("work", TmuxSocketTarget::Default)],
+            TmuxSocketTarget::Default,
+        );
+
+        let items = state.tmux_session_items_for_query("wo", Some("work"));
+        assert!(!items.iter().any(|item| matches!(
+            item.kind,
+            CommandPaletteItemKind::TmuxSessionDetachCurrent
+                | CommandPaletteItemKind::TmuxSessionOpenRenameMode
+                | CommandPaletteItemKind::TmuxSessionOpenKillMode
+        )));
     }
 }

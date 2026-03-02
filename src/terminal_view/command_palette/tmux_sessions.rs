@@ -150,7 +150,7 @@ impl TerminalView {
         }
     }
 
-    pub(super) fn attach_tmux_session_from_palette(
+    pub(super) fn activate_tmux_session_from_palette(
         &mut self,
         session_name: &str,
         socket_target: TmuxSocketTarget,
@@ -180,6 +180,29 @@ impl TerminalView {
             termy_toast::success(format!("Attached tmux session \"{session_name}\""));
             cx.notify();
         }
+    }
+
+    pub(super) fn detach_current_tmux_session_from_palette(&mut self, cx: &mut Context<Self>) {
+        if self.detach_tmux_runtime_to_native(cx) {
+            self.close_command_palette(cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn open_tmux_session_rename_mode_from_palette(&mut self, cx: &mut Context<Self>) {
+        self.command_palette
+            .set_tmux_session_intent(TmuxSessionIntent::RenameSelect);
+        self.command_palette.input_mut().clear();
+        self.refresh_command_palette_matches(false, cx);
+        cx.notify();
+    }
+
+    pub(super) fn open_tmux_session_kill_mode_from_palette(&mut self, cx: &mut Context<Self>) {
+        self.command_palette
+            .set_tmux_session_intent(TmuxSessionIntent::Kill);
+        self.command_palette.input_mut().clear();
+        self.refresh_command_palette_matches(false, cx);
+        cx.notify();
     }
 
     pub(super) fn select_tmux_session_for_rename_from_palette(
@@ -215,7 +238,7 @@ impl TerminalView {
         cx.notify();
     }
 
-    pub(super) fn rename_tmux_session_from_palette(
+    pub(super) fn apply_tmux_session_rename_from_palette(
         &mut self,
         current_session_name: &str,
         next_session_name: &str,
@@ -261,7 +284,7 @@ impl TerminalView {
         self.refresh_tmux_session_palette_after_lifecycle_action(cx);
     }
 
-    pub(super) fn kill_tmux_session_from_palette(
+    pub(super) fn confirm_kill_tmux_session_from_palette(
         &mut self,
         session_name: &str,
         socket_target: TmuxSocketTarget,

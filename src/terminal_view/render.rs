@@ -1218,11 +1218,7 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_move_tab_right_action))
                     .on_action(cx.listener(Self::handle_switch_tab_left_action))
                     .on_action(cx.listener(Self::handle_switch_tab_right_action))
-                    .on_action(cx.listener(Self::handle_attach_tmux_session_action))
-                    .on_action(cx.listener(Self::handle_detach_tmux_session_action))
-                    .on_action(cx.listener(Self::handle_switch_tmux_session_action))
-                    .on_action(cx.listener(Self::handle_rename_tmux_session_action))
-                    .on_action(cx.listener(Self::handle_kill_tmux_session_action))
+                    .on_action(cx.listener(Self::handle_manage_tmux_sessions_action))
                     // GPUI grays out unavailable menu actions, so we only register
                     // File menu pane handlers when the tmux runtime is active.
                     .when(self.runtime_uses_tmux(), |s| {

@@ -493,13 +493,22 @@ impl TerminalView {
             | CommandPaletteItemKind::TmuxSessionCreateAndAttach {
                 session_name,
                 socket_target,
-            } => self.attach_tmux_session_from_palette(
+            } => self.activate_tmux_session_from_palette(
                 session_name.as_str(),
                 socket_target,
                 item.enabled,
                 item.tmux_status_hint,
                 cx,
             ),
+            CommandPaletteItemKind::TmuxSessionDetachCurrent => {
+                self.detach_current_tmux_session_from_palette(cx)
+            }
+            CommandPaletteItemKind::TmuxSessionOpenRenameMode => {
+                self.open_tmux_session_rename_mode_from_palette(cx)
+            }
+            CommandPaletteItemKind::TmuxSessionOpenKillMode => {
+                self.open_tmux_session_kill_mode_from_palette(cx)
+            }
             CommandPaletteItemKind::TmuxSessionRenameSelect {
                 session_name,
                 socket_target,
@@ -514,7 +523,7 @@ impl TerminalView {
                 current_session_name,
                 next_session_name,
                 socket_target,
-            } => self.rename_tmux_session_from_palette(
+            } => self.apply_tmux_session_rename_from_palette(
                 current_session_name.as_str(),
                 next_session_name.as_str(),
                 socket_target,
@@ -525,7 +534,7 @@ impl TerminalView {
             CommandPaletteItemKind::TmuxSessionKill {
                 session_name,
                 socket_target,
-            } => self.kill_tmux_session_from_palette(
+            } => self.confirm_kill_tmux_session_from_palette(
                 session_name.as_str(),
                 socket_target,
                 item.enabled,
@@ -601,11 +610,7 @@ impl TerminalView {
             CommandAction::ImportColors => {}
             CommandAction::Quit
             | CommandAction::SwitchTheme
-            | CommandAction::AttachTmuxSession
-            | CommandAction::DetachTmuxSession
-            | CommandAction::SwitchTmuxSession
-            | CommandAction::RenameTmuxSession
-            | CommandAction::KillTmuxSession
+            | CommandAction::ManageTmuxSessions
             | CommandAction::AppInfo
             | CommandAction::NativeSdkExample
             | CommandAction::RestartApp
@@ -648,10 +653,7 @@ impl TerminalView {
         matches!(
             action,
             CommandAction::SwitchTheme
-                | CommandAction::AttachTmuxSession
-                | CommandAction::SwitchTmuxSession
-                | CommandAction::RenameTmuxSession
-                | CommandAction::KillTmuxSession
+                | CommandAction::ManageTmuxSessions
         )
     }
 }
@@ -716,16 +718,7 @@ mod tests {
             CommandAction::SwitchTheme
         ));
         assert!(TerminalView::command_palette_should_stay_open(
-            CommandAction::AttachTmuxSession
-        ));
-        assert!(TerminalView::command_palette_should_stay_open(
-            CommandAction::SwitchTmuxSession
-        ));
-        assert!(TerminalView::command_palette_should_stay_open(
-            CommandAction::RenameTmuxSession
-        ));
-        assert!(TerminalView::command_palette_should_stay_open(
-            CommandAction::KillTmuxSession
+            CommandAction::ManageTmuxSessions
         ));
         assert!(!TerminalView::command_palette_should_stay_open(
             CommandAction::NewTab
@@ -756,6 +749,24 @@ mod tests {
             .expect("missing Install CLI in unavailable command palette state");
         assert!(!unavailable_install_cli.enabled);
         assert_eq!(unavailable_install_cli.status_hint, Some("Installed"));
+    }
+
+    #[test]
+    fn tmux_query_surfaces_only_tmux_sessions_entry() {
+        let items = TerminalView::command_palette_command_items_for_state(true, true);
+        let filtered_indices = super::state::filter_command_palette_item_indices_by_query(
+            &items,
+            "tmux",
+        );
+        let filtered_actions = filtered_indices
+            .into_iter()
+            .filter_map(|index| match items[index].kind {
+                CommandPaletteItemKind::Command(action) => Some(action),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(filtered_actions, vec![CommandAction::ManageTmuxSessions]);
     }
 
     #[test]

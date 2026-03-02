@@ -57,6 +57,9 @@ impl TerminalView {
                 CommandPaletteItemKind::Theme(_)
                 | CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }
                 | CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. }
+                | CommandPaletteItemKind::TmuxSessionDetachCurrent
+                | CommandPaletteItemKind::TmuxSessionOpenRenameMode
+                | CommandPaletteItemKind::TmuxSessionOpenKillMode
                 | CommandPaletteItemKind::TmuxSessionRenameSelect { .. }
                 | CommandPaletteItemKind::TmuxSessionRenameApply { .. }
                 | CommandPaletteItemKind::TmuxSessionKill { .. } => None,
@@ -177,7 +180,7 @@ impl TerminalView {
             CommandPaletteMode::Themes => "Enter: Apply Theme  Esc: Back  Up/Down: Navigate",
             CommandPaletteMode::TmuxSessions => match self.command_palette.tmux_session_intent() {
                 TmuxSessionIntent::AttachOrSwitch => {
-                    "Enter: Attach/Create Session  Esc: Back  Up/Down: Navigate"
+                    "Enter: Open/Create/Manage Session  Esc: Back  Up/Down: Navigate"
                 }
                 TmuxSessionIntent::RenameSelect => {
                     "Enter: Select Session  Esc: Back  Up/Down: Navigate"
@@ -193,6 +196,14 @@ impl TerminalView {
             family: self.font_family.clone(),
             ..Font::default()
         };
+        let empty_state_message = if self.command_palette.mode() == CommandPaletteMode::TmuxSessions
+            && self.command_palette.tmux_session_intent() == TmuxSessionIntent::AttachOrSwitch
+            && self.command_palette.input().text().trim().is_empty()
+        {
+            "No tmux sessions found. Type a name and press Enter to create one."
+        } else {
+            "No matching items"
+        };
 
         let list = if item_count == 0 {
             div()
@@ -203,7 +214,7 @@ impl TerminalView {
                         .py(px(8.0))
                         .text_size(px(12.0))
                         .text_color(style.muted_text)
-                        .child("No matching items"),
+                        .child(empty_state_message),
                 )
                 .into_any_element()
         } else {

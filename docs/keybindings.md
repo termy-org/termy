@@ -153,11 +153,7 @@ Related UI option:
 - `move_tab_right`
 - `switch_tab_left`
 - `switch_tab_right`
-- `attach_tmux_session`
-- `detach_tmux_session` (tmux required)
-- `switch_tmux_session` (tmux required)
-- `rename_tmux_session` (tmux required)
-- `kill_tmux_session` (tmux required)
+- `manage_tmux_sessions`
 - `split_pane_vertical` (tmux required)
 - `split_pane_horizontal` (tmux required)
 - `close_pane` (tmux required)

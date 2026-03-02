@@ -428,72 +428,20 @@ define_commands!(
         ))
     ),
     (
-        AttachTmuxSession,
+        ManageTmuxSessions,
         TERMINAL_CONTEXT,
         Some(palette(
-            "Attach tmux Session",
-            "tmux attach session",
+            "Manage tmux Sessions",
+            "tmux sessions attach switch create manage",
             CommandPaletteVisibility::Always
         )),
         Some(menu(
             MenuRoot::File,
             1,
-            "Attach tmux Session…",
+            "tmux Sessions…",
             MenuVisibility::Always,
             MenuActionRole::Normal
         ))
-    ),
-    (
-        DetachTmuxSession,
-        TERMINAL_CONTEXT,
-        Some(palette(
-            "Detach tmux Session",
-            "tmux detach session",
-            CommandPaletteVisibility::Always
-        )),
-        Some(menu(
-            MenuRoot::File,
-            1,
-            "Detach tmux Session",
-            MenuVisibility::Always,
-            MenuActionRole::Normal
-        ))
-    ),
-    (
-        SwitchTmuxSession,
-        TERMINAL_CONTEXT,
-        Some(palette(
-            "Switch tmux Session",
-            "tmux switch session",
-            CommandPaletteVisibility::Always
-        )),
-        Some(menu(
-            MenuRoot::File,
-            1,
-            "Switch tmux Session…",
-            MenuVisibility::Always,
-            MenuActionRole::Normal
-        ))
-    ),
-    (
-        RenameTmuxSession,
-        TERMINAL_CONTEXT,
-        Some(palette(
-            "Rename tmux Session",
-            "tmux rename session",
-            CommandPaletteVisibility::Always
-        )),
-        None
-    ),
-    (
-        KillTmuxSession,
-        TERMINAL_CONTEXT,
-        Some(palette(
-            "Kill tmux Session",
-            "tmux kill close session",
-            CommandPaletteVisibility::Always
-        )),
-        None
     ),
     (
         SplitPaneVertical,
@@ -1130,7 +1078,7 @@ mod tests {
             .iter()
             .map(|entry| entry.section)
             .collect::<Vec<_>>();
-        assert_eq!(sections, [0, 0, 0, 1, 1, 1, 1, 1, 1, 1]);
+        assert_eq!(sections, [0, 0, 0, 1, 1, 1, 1, 1]);
     }
 
     #[test]
@@ -1231,13 +1179,9 @@ mod tests {
         actual.sort_unstable();
 
         let mut expected = vec![
-            "detach_tmux_session",
-            "rename_tmux_session",
-            "kill_tmux_session",
             "split_pane_vertical",
             "split_pane_horizontal",
             "close_pane",
-            "switch_tmux_session",
             "focus_pane_left",
             "focus_pane_right",
             "focus_pane_up",

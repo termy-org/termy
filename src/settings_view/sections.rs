@@ -275,7 +275,7 @@ impl SettingsWindow {
                         Ok(()) => {
                             view.config.tmux_enabled = next;
                             termy_toast::success(
-                                "Saved. Use Attach/Detach tmux Session commands to switch runtime now.",
+                                "Saved. Use Manage tmux Sessions to switch runtime now.",
                             );
                         }
                         Err(error) => termy_toast::error(error),
