@@ -748,10 +748,7 @@ impl SettingsWindow {
                 termy_config_core::PaneFocusEffect::Minimal => "minimal",
             }
             .to_string(),
-            EditableField::PaneFocusStrength => format!(
-                "{}",
-                (self.config.pane_focus_strength * 100.0).round() as i32
-            ),
+            EditableField::PaneFocusStrength => format!("{}", self.pane_focus_strength_display_percent()),
             EditableField::TabFallbackTitle => self.config.tab_title.fallback.clone(),
             EditableField::TabTitlePriority => self
                 .config
@@ -801,6 +798,12 @@ impl SettingsWindow {
                 .map(|rgb| format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b))
                 .unwrap_or_default(),
         }
+    }
+
+    pub(super) fn pane_focus_strength_display_percent(&self) -> i32 {
+        // Normalize internal 0.0..=2.0 strength to a cleaner 0..=100 UI scale
+        // without changing the stored value range or step behavior.
+        ((self.config.pane_focus_strength.clamp(0.0, 2.0) / 2.0) * 100.0).round() as i32
     }
 
 

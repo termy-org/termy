@@ -649,8 +649,11 @@ impl Render for SettingsWindow {
             .font_family(self.config.font_family.clone())
             .child(self.render_sidebar(cx))
             .child(
+                // Keep the shared content pane shrink-safe so wide rows cannot
+                // push controls or the scrollbar lane off-canvas.
                 div()
                     .flex_1()
+                    .min_w(px(0.0))
                     .h_full()
                     .flex()
                     .items_start()
@@ -658,6 +661,7 @@ impl Render for SettingsWindow {
                         div()
                             .id("settings-content-scroll")
                             .flex_1()
+                            .min_w(px(0.0))
                             .h_full()
                             .overflow_y_scroll()
                             .track_scroll(&self.content_scroll_handle)

@@ -61,6 +61,87 @@ impl SettingsWindow {
         let padding_x_meta = Self::setting_metadata_or_fallback("padding_x");
         let padding_y_meta = Self::setting_metadata_or_fallback("padding_y");
 
+        let theme_rows = vec![self.render_editable_row(
+                "theme",
+                EditableField::Theme,
+                theme_meta.title,
+                theme_meta.description,
+                theme,
+                cx,
+            )];
+        let theme_group = self.render_settings_group("THEME", theme_rows);
+
+        let window_rows = vec![
+            self.render_setting_row(
+                    "background_blur",
+                    "blur-toggle",
+                    blur_meta.title,
+                    blur_meta.description,
+                    background_blur,
+                    cx,
+                    |view, _cx| {
+                        let next = !view.config.background_blur;
+                        match config::set_root_setting(
+                            RootSettingId::BackgroundBlur,
+                            &next.to_string(),
+                        ) {
+                            Ok(()) => {
+                                view.config.background_blur = next;
+                                termy_toast::success("Saved");
+                            }
+                            Err(error) => termy_toast::error(error),
+                        }
+                    },
+                ),
+            self.render_background_opacity_row(
+                "background_opacity",
+                opacity_meta.title,
+                opacity_meta.description,
+                cx,
+            ),
+        ];
+        let window_group = self.render_settings_group("WINDOW", window_rows);
+
+        let font_rows = vec![
+            self.render_editable_row(
+                "font_family",
+                EditableField::FontFamily,
+                font_family_meta.title,
+                font_family_meta.description,
+                font_family,
+                cx,
+            ),
+            self.render_editable_row(
+                "font_size",
+                EditableField::FontSize,
+                font_size_meta.title,
+                font_size_meta.description,
+                format!("{}px", font_size as i32),
+                cx,
+            ),
+        ];
+        let font_group = self.render_settings_group("FONT", font_rows);
+
+        let padding_rows = vec![
+            self.render_editable_row(
+                "padding_x",
+                EditableField::PaddingX,
+                padding_x_meta.title,
+                padding_x_meta.description,
+                format!("{}px", padding_x as i32),
+                cx,
+            ),
+            self.render_editable_row(
+                "padding_y",
+                EditableField::PaddingY,
+                padding_y_meta.title,
+                padding_y_meta.description,
+                format!("{}px", padding_y as i32),
+                cx,
+            ),
+        ];
+        let padding_group = self.render_settings_group("PADDING", padding_rows);
+
         div()
             .flex()
             .flex_col()
@@ -71,77 +152,23 @@ impl SettingsWindow {
                 SettingsSection::Appearance,
                 cx,
             ))
-            .child(self.render_group_header("THEME"))
-            .child(self.render_editable_row(
-                "theme",
-                EditableField::Theme,
-                theme_meta.title,
-                theme_meta.description,
-                theme,
-                cx,
-            ))
-            .child(self.render_group_header("WINDOW"))
-            .child(self.render_setting_row(
-                "background_blur",
-                "blur-toggle",
-                blur_meta.title,
-                blur_meta.description,
-                background_blur,
-                cx,
-                |view, _cx| {
-                    let next = !view.config.background_blur;
-                    match config::set_root_setting(
-                        RootSettingId::BackgroundBlur,
-                        &next.to_string(),
-                    ) {
-                        Ok(()) => {
-                            view.config.background_blur = next;
-                            termy_toast::success("Saved");
-                        }
-                        Err(error) => termy_toast::error(error),
-                    }
-                },
-            ))
-            .child(self.render_background_opacity_row(
-                "background_opacity",
-                opacity_meta.title,
-                opacity_meta.description,
-                cx,
-            ))
-            .child(self.render_group_header("FONT"))
-            .child(self.render_editable_row(
-                "font_family",
-                EditableField::FontFamily,
-                font_family_meta.title,
-                font_family_meta.description,
-                font_family,
-                cx,
-            ))
-            .child(self.render_editable_row(
-                "font_size",
-                EditableField::FontSize,
-                font_size_meta.title,
-                font_size_meta.description,
-                format!("{}px", font_size as i32),
-                cx,
-            ))
-            .child(self.render_group_header("PADDING"))
-            .child(self.render_editable_row(
-                "padding_x",
-                EditableField::PaddingX,
-                padding_x_meta.title,
-                padding_x_meta.description,
-                format!("{}px", padding_x as i32),
-                cx,
-            ))
-            .child(self.render_editable_row(
-                "padding_y",
-                EditableField::PaddingY,
-                padding_y_meta.title,
-                padding_y_meta.description,
-                format!("{}px", padding_y as i32),
-                cx,
-            ))
+            .child(theme_group)
+            .child(window_group)
+            .child(font_group)
+            .child(padding_group)
+    }
+
+    pub(super) fn render_settings_group(
+        &self,
+        title: &'static str,
+        rows: Vec<AnyElement>,
+    ) -> AnyElement {
+        // Keep group composition consistent across settings tabs (header + rows in normal flow)
+        // to avoid spacing drift and width forcing regressions.
+        div()
+            .child(self.render_group_header(title))
+            .children(rows)
+            .into_any_element()
     }
 
     pub(super) fn render_terminal_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -163,15 +190,12 @@ impl SettingsWindow {
     }
 
     pub(super) fn render_terminal_cursor_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let cursor_blink_meta =
-            Self::setting_metadata_or_fallback("cursor_blink");
-        let cursor_style_meta =
-            Self::setting_metadata_or_fallback("cursor_style");
+        let cursor_blink_meta = Self::setting_metadata_or_fallback("cursor_blink");
+        let cursor_style_meta = Self::setting_metadata_or_fallback("cursor_style");
         let cursor_blink = self.config.cursor_blink;
 
-        div()
-            .child(self.render_group_header("CURSOR"))
-            .child(self.render_setting_row(
+        let rows = vec![
+            self.render_setting_row(
                 "cursor_blink",
                 "cursor_blink-toggle",
                 cursor_blink_meta.title,
@@ -188,23 +212,23 @@ impl SettingsWindow {
                         Err(error) => termy_toast::error(error),
                     }
                 },
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "cursor_style",
                 EditableField::CursorStyle,
                 cursor_style_meta.title,
                 cursor_style_meta.description,
                 self.editable_field_value(EditableField::CursorStyle),
                 cx,
-            ))
-            .into_any_element()
+            ),
+        ];
+        self.render_settings_group("CURSOR", rows)
     }
 
     pub(super) fn render_terminal_shell_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let shell_meta = Self::setting_metadata_or_fallback("shell");
         let term_meta = Self::setting_metadata_or_fallback("term");
-        let colorterm_meta =
-            Self::setting_metadata_or_fallback("colorterm");
+        let colorterm_meta = Self::setting_metadata_or_fallback("colorterm");
         let shell = self
             .config
             .shell
@@ -217,33 +241,33 @@ impl SettingsWindow {
             .clone()
             .unwrap_or_else(|| "Disabled".to_string());
 
-        div()
-            .child(self.render_group_header("SHELL"))
-            .child(self.render_editable_row(
+        let rows = vec![
+            self.render_editable_row(
                 "shell",
                 EditableField::Shell,
                 shell_meta.title,
                 shell_meta.description,
                 shell,
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "term",
                 EditableField::Term,
                 term_meta.title,
                 term_meta.description,
                 term,
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "colorterm",
                 EditableField::Colorterm,
                 colorterm_meta.title,
                 colorterm_meta.description,
                 colorterm,
                 cx,
-            ))
-            .into_any_element()
+            ),
+        ];
+        self.render_settings_group("SHELL", rows)
     }
 
     pub(super) fn render_terminal_tmux_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -257,35 +281,27 @@ impl SettingsWindow {
         let tmux_show_active_pane_border = self.config.tmux_show_active_pane_border;
         let binary = self.config.tmux_binary.clone();
 
-        let mut group = div()
-            .child(self.render_group_header("TMUX"))
-            .child(self.render_setting_row(
-                "tmux_enabled",
-                "tmux_enabled-toggle",
-                enabled_meta.title,
-                enabled_meta.description,
-                tmux_enabled,
-                cx,
-                |view, _cx| {
-                    let next = !view.config.tmux_enabled;
-                    match config::set_root_setting(RootSettingId::TmuxEnabled, &next.to_string()) {
-                        Ok(()) => {
-                            view.config.tmux_enabled = next;
-                            termy_toast::success(
-                                "Saved. Use Manage tmux Sessions to switch runtime now.",
-                            );
-                        }
-                        Err(error) => termy_toast::error(error),
+        let mut rows = vec![self.render_setting_row(
+            "tmux_enabled",
+            "tmux_enabled-toggle",
+            enabled_meta.title,
+            enabled_meta.description,
+            tmux_enabled,
+            cx,
+            |view, _cx| {
+                let next = !view.config.tmux_enabled;
+                match config::set_root_setting(RootSettingId::TmuxEnabled, &next.to_string()) {
+                    Ok(()) => {
+                        view.config.tmux_enabled = next;
+                        termy_toast::success("Saved. Use Manage tmux Sessions to switch runtime now.");
                     }
-                },
-            ));
+                    Err(error) => termy_toast::error(error),
+                }
+            },
+        )];
 
-        if !tmux_enabled {
-            return group.into_any_element();
-        }
-
-        group = group
-            .child(self.render_setting_row(
+        if tmux_enabled {
+            rows.push(self.render_setting_row(
                 "tmux_persistence",
                 "tmux_persistence-toggle",
                 persistence_meta.title,
@@ -294,8 +310,7 @@ impl SettingsWindow {
                 cx,
                 |view, _cx| {
                     let next = !view.config.tmux_persistence;
-                    match config::set_root_setting(RootSettingId::TmuxPersistence, &next.to_string())
-                    {
+                    match config::set_root_setting(RootSettingId::TmuxPersistence, &next.to_string()) {
                         Ok(()) => {
                             view.config.tmux_persistence = next;
                             termy_toast::success("Saved");
@@ -304,9 +319,7 @@ impl SettingsWindow {
                     }
                 },
             ));
-
-        group = group
-            .child(self.render_setting_row(
+            rows.push(self.render_setting_row(
                 "tmux_show_active_pane_border",
                 "tmux_show_active_pane_border-toggle",
                 show_active_border_meta.title,
@@ -326,8 +339,8 @@ impl SettingsWindow {
                         Err(error) => termy_toast::error(error),
                     }
                 },
-            ))
-            .child(self.render_editable_row(
+            ));
+            rows.push(self.render_editable_row(
                 "tmux_binary",
                 EditableField::TmuxBinary,
                 binary_meta.title,
@@ -335,8 +348,9 @@ impl SettingsWindow {
                 binary,
                 cx,
             ));
+        }
 
-        group.into_any_element()
+        self.render_settings_group("TMUX", rows)
     }
 
     pub(super) fn render_terminal_scrolling_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -350,77 +364,76 @@ impl SettingsWindow {
         let inactive_scrollback = self.config.inactive_tab_scrollback.unwrap_or(0);
         let scroll_mult = self.config.mouse_scroll_multiplier;
 
-        div()
-            .child(self.render_group_header("SCROLLING"))
-            .child(self.render_editable_row(
+        let rows = vec![
+            self.render_editable_row(
                 "scrollback_history",
                 EditableField::ScrollbackHistory,
                 scrollback_meta.title,
                 scrollback_meta.description,
                 format!("{} lines", scrollback),
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "inactive_tab_scrollback",
                 EditableField::InactiveTabScrollback,
                 inactive_scrollback_meta.title,
                 inactive_scrollback_meta.description,
                 format!("{} lines", inactive_scrollback),
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "mouse_scroll_multiplier",
                 EditableField::ScrollMultiplier,
                 scroll_mult_meta.title,
                 scroll_mult_meta.description,
                 format!("{}x", scroll_mult),
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "scrollbar_visibility",
                 EditableField::ScrollbarVisibility,
                 scrollbar_visibility_meta.title,
                 scrollbar_visibility_meta.description,
                 self.editable_field_value(EditableField::ScrollbarVisibility),
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "scrollbar_style",
                 EditableField::ScrollbarStyle,
                 scrollbar_style_meta.title,
                 scrollbar_style_meta.description,
                 self.editable_field_value(EditableField::ScrollbarStyle),
                 cx,
-            ))
-            .into_any_element()
+            ),
+        ];
+        self.render_settings_group("SCROLLING", rows)
     }
 
     pub(super) fn render_terminal_ui_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let pane_focus_effect_meta = Self::setting_metadata_or_fallback("pane_focus_effect");
         let pane_focus_strength_meta = Self::setting_metadata_or_fallback("pane_focus_strength");
         let palette_meta = Self::setting_metadata_or_fallback("command_palette_show_keybinds");
-        let pane_focus_strength_percent = (self.config.pane_focus_strength * 100.0).round() as i32;
+        let pane_focus_strength_percent = self.pane_focus_strength_display_percent();
         let command_palette_show_keybinds = self.config.command_palette_show_keybinds;
 
-        div()
-            .child(self.render_group_header("UI"))
-            .child(self.render_editable_row(
+        let rows = vec![
+            self.render_editable_row(
                 "pane_focus_effect",
                 EditableField::PaneFocusEffect,
                 pane_focus_effect_meta.title,
                 pane_focus_effect_meta.description,
                 self.editable_field_value(EditableField::PaneFocusEffect),
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "pane_focus_strength",
                 EditableField::PaneFocusStrength,
                 pane_focus_strength_meta.title,
                 pane_focus_strength_meta.description,
                 format!("{}%", pane_focus_strength_percent),
                 cx,
-            ))
-            .child(self.render_setting_row(
+            ),
+            self.render_setting_row(
                 "command_palette_show_keybinds",
                 "command_palette_show_keybinds-toggle",
                 palette_meta.title,
@@ -440,8 +453,9 @@ impl SettingsWindow {
                         Err(error) => termy_toast::error(error),
                     }
                 },
-            ))
-            .into_any_element()
+            ),
+        ];
+        self.render_settings_group("UI", rows)
     }
 
     pub(super) fn render_tabs_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -478,17 +492,16 @@ impl SettingsWindow {
         let command_format_meta =
             Self::setting_metadata_or_fallback("tab_title_command_format");
 
-        div()
-            .child(self.render_group_header("TAB TITLES"))
-            .child(self.render_editable_row(
+        let rows = vec![
+            self.render_editable_row(
                 "tab_title_mode",
                 EditableField::TabTitleMode,
                 title_mode_meta.title,
                 title_mode_meta.description,
                 self.editable_field_value(EditableField::TabTitleMode),
                 cx,
-            ))
-            .child(self.render_setting_row(
+            ),
+            self.render_setting_row(
                 "tab_title_shell_integration",
                 "tab_title_shell_integration-toggle",
                 shell_integration_meta.title,
@@ -508,48 +521,50 @@ impl SettingsWindow {
                         Err(error) => termy_toast::error(error),
                     }
                 },
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "tab_title_fallback",
                 EditableField::TabFallbackTitle,
                 fallback_meta.title,
                 fallback_meta.description,
                 fallback,
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "tab_title_priority",
                 EditableField::TabTitlePriority,
                 title_priority_meta.title,
                 title_priority_meta.description,
                 title_priority,
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "tab_title_explicit_prefix",
                 EditableField::TabTitleExplicitPrefix,
                 explicit_prefix_meta.title,
                 explicit_prefix_meta.description,
                 explicit_prefix,
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "tab_title_prompt_format",
                 EditableField::TabTitlePromptFormat,
                 prompt_format_meta.title,
                 prompt_format_meta.description,
                 prompt_format,
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "tab_title_command_format",
                 EditableField::TabTitleCommandFormat,
                 command_format_meta.title,
                 command_format_meta.description,
                 command_format,
                 cx,
-            ))
-            .into_any_element()
+            ),
+        ];
+
+        self.render_settings_group("TAB TITLES", rows)
     }
 
     pub(super) fn render_tabs_strip_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -558,34 +573,33 @@ impl SettingsWindow {
         let close_visibility_meta = Self::setting_metadata_or_fallback("tab_close_visibility");
         let width_mode_meta = Self::setting_metadata_or_fallback("tab_width_mode");
 
-        div()
-            .child(self.render_group_header("TAB STRIP"))
-            .child(self.render_editable_row(
+        let rows = vec![
+            self.render_editable_row(
                 "tab_close_visibility",
                 EditableField::TabCloseVisibility,
                 close_visibility_meta.title,
                 close_visibility_meta.description,
                 close_visibility,
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "tab_width_mode",
                 EditableField::TabWidthMode,
                 width_mode_meta.title,
                 width_mode_meta.description,
                 width_mode,
                 cx,
-            ))
-            .into_any_element()
+            ),
+        ];
+
+        self.render_settings_group("TAB STRIP", rows)
     }
 
     pub(super) fn render_tabs_titlebar_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let show_termy = self.config.show_termy_in_titlebar;
         let show_termy_meta = Self::setting_metadata_or_fallback("show_termy_in_titlebar");
 
-        div()
-            .child(self.render_group_header("TITLE BAR"))
-            .child(self.render_setting_row(
+        let rows = vec![self.render_setting_row(
                 "show_termy_in_titlebar",
                 "show_termy_in_titlebar-toggle",
                 show_termy_meta.title,
@@ -605,8 +619,9 @@ impl SettingsWindow {
                         Err(error) => termy_toast::error(error),
                     }
                 },
-            ))
-            .into_any_element()
+            )];
+
+        self.render_settings_group("TITLE BAR", rows)
     }
 
     pub(super) fn render_advanced_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -640,35 +655,27 @@ impl SettingsWindow {
             .filter(|path| !path.trim().is_empty())
             .unwrap_or_else(|| "config path not set".to_string());
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(self.render_section_header(
-                "Advanced",
-                "Advanced configuration options",
-                SettingsSection::Advanced,
-                cx,
-            ))
-            .child(self.render_group_header("STARTUP"))
-            .child(self.render_editable_row(
+        let startup_rows = vec![
+            self.render_editable_row(
                 "working_dir",
                 EditableField::WorkingDirectory,
                 working_dir_meta.title,
                 working_dir_meta.description,
                 working_dir,
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "working_dir_fallback",
                 EditableField::WorkingDirFallback,
                 working_dir_fallback_meta.title,
                 working_dir_fallback_meta.description,
                 working_dir_fallback,
                 cx,
-            ))
-            .child(self.render_group_header("SAFETY"))
-            .child(self.render_setting_row(
+            ),
+        ];
+        let startup_group = self.render_settings_group("STARTUP", startup_rows);
+
+        let safety_rows = vec![self.render_setting_row(
                 "warn_on_quit_with_running_process",
                 "warn_on_quit-toggle",
                 warn_on_quit_meta.title,
@@ -688,74 +695,94 @@ impl SettingsWindow {
                         Err(error) => termy_toast::error(error),
                     }
                 },
-            ))
-            .child(self.render_group_header("WINDOW"))
-            .child(self.render_editable_row(
+            )];
+        let safety_group = self.render_settings_group("SAFETY", safety_rows);
+
+        let window_rows = vec![
+            self.render_editable_row(
                 "window_width",
                 EditableField::WindowWidth,
                 window_width_meta.title,
                 window_width_meta.description,
                 format!("{}px", window_width as i32),
                 cx,
-            ))
-            .child(self.render_editable_row(
+            ),
+            self.render_editable_row(
                 "window_height",
                 EditableField::WindowHeight,
                 window_height_meta.title,
                 window_height_meta.description,
                 format!("{}px", window_height as i32),
                 cx,
-            ))
-            .child(self.render_group_header("CONFIG FILE"))
+            ),
+        ];
+        let window_group = self.render_settings_group("WINDOW", window_rows);
+
+        let config_file_card = div()
+            .py_4()
+            .px_4()
+            .rounded(px(0.0))
+            .bg(bg_card)
+            .border_1()
+            .border_color(border_color)
+            .flex()
+            .flex_col()
+            .gap_2()
             .child(
                 div()
-                    .py_4()
-                    .px_4()
-                    .rounded(px(0.0))
-                    .bg(bg_card)
-                    .border_1()
-                    .border_color(border_color)
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(text_muted)
-                            .child("To change these settings, edit the config file:"),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(text_secondary)
-                            .child(config_path_display),
-                    )
-                    .child(
-                        div()
-                            .id("open-config-btn")
-                            .mt_2()
-                            .px_4()
-                            .py_2()
-                            .rounded(px(0.0))
-                            .bg(accent)
-                            .text_sm()
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(button_text)
-                            .cursor_pointer()
-                            .hover(move |s| s.bg(accent_hover).text_color(button_hover_text))
-                            .child("Open Config File")
-                            .on_click(cx.listener(|_view, _, _, cx| {
-                                if let Err(error) = crate::config::open_config_file() {
-                                    log::error!(
-                                        "Failed to open config file from settings: {}",
-                                        error
-                                    );
-                                    termy_toast::error(error.to_string());
-                                }
-                                cx.notify();
-                            })),
-                    ),
+                    .text_sm()
+                    .text_color(text_muted)
+                    .child("To change these settings, edit the config file:"),
             )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_secondary)
+                    .child(config_path_display),
+            )
+            .child(
+                div()
+                    .id("open-config-btn")
+                    .mt_2()
+                    .px_4()
+                    .py_2()
+                    .rounded(px(0.0))
+                    .bg(accent)
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(button_text)
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(accent_hover).text_color(button_hover_text))
+                    .child("Open Config File")
+                    .on_click(cx.listener(|_view, _, _, cx| {
+                        if let Err(error) = crate::config::open_config_file() {
+                            log::error!(
+                                "Failed to open config file from settings: {}",
+                                error
+                            );
+                            termy_toast::error(error.to_string());
+                        }
+                        cx.notify();
+                    })),
+            )
+            .into_any_element();
+
+        let config_group = self.render_settings_group("CONFIG FILE", vec![config_file_card]);
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(self.render_section_header(
+                "Advanced",
+                "Advanced configuration options",
+                SettingsSection::Advanced,
+                cx,
+            ))
+            .child(startup_group)
+            .child(safety_group)
+            .child(window_group)
+            .child(config_group)
     }
 
 }

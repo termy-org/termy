@@ -33,7 +33,6 @@ impl SettingsWindow {
                 SettingsSection::Colors,
                 cx,
             ))
-            .child(self.render_group_header("OVERRIDES"))
-            .children(rows)
+            .child(self.render_settings_group("OVERRIDES", rows))
     }
 }
