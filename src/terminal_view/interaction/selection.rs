@@ -113,10 +113,11 @@ fn selected_text_from_terminal(
                 continue;
             }
 
-            let mut rendered: String = line[col_start..=col_end].iter().collect();
-            while rendered.ends_with(' ') {
-                rendered.pop();
-            }
+            let rendered = line[col_start..=col_end]
+                .iter()
+                .collect::<String>()
+                .trim_end()
+                .to_string();
             lines.push(rendered);
         }
     });
