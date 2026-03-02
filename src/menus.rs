@@ -274,7 +274,7 @@ mod tests {
                 "Close Tab",
                 "Rename Tab",
                 "<separator>",
-                "tmux Sessions…",
+                "Manage tmux Sessions…",
                 SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE,
                 SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE,
                 CLOSE_PANE_TMUX_REQUIRED_TITLE,

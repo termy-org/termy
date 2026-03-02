@@ -57,6 +57,15 @@ fn run_tmux_test_socket_output(binary: &str, args: &[&str]) -> std::process::Out
         .expect("failed to execute tmux command for test socket")
 }
 
+fn assert_tmux_test_socket_command_succeeds(binary: &str, args: &[&str], context: &str) {
+    let output = run_tmux_test_socket_output(binary, args);
+    assert!(
+        output.status.success(),
+        "{context} failed: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+}
+
 fn tmux_client_count(binary: &str) -> usize {
     let output = run_tmux_test_socket_output(binary, &["list-clients", "-F", "#{client_pid}\t#{client_name}"]);
     if output.status.success() {
@@ -282,6 +291,99 @@ fn tmux_repeated_split_refresh_cycles_remain_parseable() {
 
         assert_window_geometry_within_bounds(after_window, TEST_COLS, TEST_ROWS);
     }
+}
+
+#[test]
+#[ignore = "requires local tmux 3.3+; run explicitly"]
+fn tmux_new_window_after_inserts_immediately_after_target_window() {
+    let _guard = tmux_test_guard();
+    let binary = tmux_test_binary();
+    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    tmux_preflight(binary.as_str());
+
+    let client = new_tmux_client(binary.as_str());
+    let session_name = client.session_name().to_string();
+
+    assert_tmux_test_socket_command_succeeds(
+        binary.as_str(),
+        &["new-window", "-d", "-t", session_name.as_str()],
+        "seed second window",
+    );
+    assert_tmux_test_socket_command_succeeds(
+        binary.as_str(),
+        &["new-window", "-d", "-t", session_name.as_str()],
+        "seed third window",
+    );
+
+    let seeded_snapshot = client
+        .refresh_snapshot()
+        .expect("seeded snapshot should parse");
+    assert_eq!(
+        seeded_snapshot.windows.len(),
+        3,
+        "expected 3 windows after seeding, got {}",
+        seeded_snapshot.windows.len()
+    );
+
+    let middle_window_id = seeded_snapshot.windows[1].id.clone();
+    client
+        .select_window(middle_window_id.as_str())
+        .expect("selecting middle window should succeed");
+
+    let before_insert = client
+        .refresh_snapshot()
+        .expect("snapshot before insert-after should parse");
+    let middle_position_before = before_insert
+        .windows
+        .iter()
+        .position(|window| window.id == middle_window_id)
+        .expect("middle window should exist before insert-after");
+    let right_neighbor_before = before_insert
+        .windows
+        .get(middle_position_before + 1)
+        .map(|window| window.id.clone())
+        .expect("middle window must have a right neighbor in seeded layout");
+
+    client
+        .new_window_after(middle_window_id.as_str())
+        .expect("insert-after target window should succeed");
+
+    let after_insert = client
+        .refresh_snapshot()
+        .expect("snapshot after insert-after should parse");
+    assert_eq!(
+        after_insert.windows.len(),
+        before_insert.windows.len() + 1,
+        "insert-after should add exactly one window"
+    );
+
+    let inserted_window = active_window(&after_insert);
+    let inserted_position = after_insert
+        .windows
+        .iter()
+        .position(|window| window.id == inserted_window.id)
+        .expect("active inserted window should exist after insert-after");
+    let middle_position_after = after_insert
+        .windows
+        .iter()
+        .position(|window| window.id == middle_window_id)
+        .expect("middle target window should remain after insert-after");
+
+    assert_eq!(
+        inserted_position,
+        middle_position_after + 1,
+        "inserted window should be immediately right of target window"
+    );
+
+    let right_neighbor_after = after_insert
+        .windows
+        .get(inserted_position + 1)
+        .map(|window| window.id.as_str());
+    assert_eq!(
+        right_neighbor_after,
+        Some(right_neighbor_before.as_str()),
+        "existing right neighbor should shift right by one slot"
+    );
 }
 
 #[test]

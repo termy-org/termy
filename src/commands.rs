@@ -438,7 +438,7 @@ define_commands!(
         Some(menu(
             MenuRoot::File,
             1,
-            "tmux Sessions…",
+            "Manage tmux Sessions…",
             MenuVisibility::Always,
             MenuActionRole::Normal
         ))

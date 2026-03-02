@@ -147,7 +147,6 @@ impl TerminalView {
         let refreshed = self.refresh_tmux_snapshot();
         if refreshed {
             self.clear_selection();
-            self.scroll_active_tab_into_view();
             cx.notify();
         }
         refreshed
@@ -163,20 +162,26 @@ impl TerminalView {
         let refreshed = self.refresh_tmux_snapshot();
         if refreshed {
             self.clear_selection();
-            self.scroll_active_tab_into_view();
             cx.notify();
         }
         refreshed
     }
 
     pub(in crate::terminal_view) fn tmux_add_tab(&mut self, cx: &mut Context<Self>) {
-        if !self.run_tmux_action("Failed to create tab", |tmux_client| tmux_client.new_window()) {
+        let Some(active_window_id) = self.tabs.get(self.active_tab).map(|tab| tab.window_id.clone())
+        else {
+            termy_toast::error("Failed to create tab: active tmux window is unavailable");
+            return;
+        };
+
+        if !self.run_tmux_action("Failed to create tab", |tmux_client| {
+            tmux_client.new_window_after(active_window_id.as_str())
+        }) {
             return;
         }
 
         if self.refresh_tmux_snapshot() {
             self.reset_tab_interaction_state();
-            self.scroll_active_tab_into_view();
             cx.notify();
         }
     }
@@ -192,7 +197,6 @@ impl TerminalView {
         if self.refresh_tmux_snapshot() {
             self.reset_tab_drag_state();
             self.clear_selection();
-            self.scroll_active_tab_into_view();
             cx.notify();
         }
     }
@@ -209,7 +213,6 @@ impl TerminalView {
             self.reset_tab_rename_state();
             self.reset_tab_drag_state();
             self.clear_selection();
-            self.scroll_active_tab_into_view();
             cx.notify();
         }
     }

@@ -405,7 +405,14 @@ impl TerminalView {
 
         let geometry = layout.geometry;
         let tab_strip_viewport_width = geometry.tabs_viewport_width;
-        self.sync_tab_display_widths_for_viewport_if_needed(tab_strip_viewport_width);
+        let widths_changed =
+            self.sync_tab_display_widths_for_viewport_if_needed(tab_strip_viewport_width);
+        if widths_changed {
+            // Width updates can move the active tab offscreen (especially after
+            // tmux snapshot/title sync). Snap once here to keep parity with
+            // non-tmux active-tab visibility without overriding manual scrolling.
+            self.scroll_active_tab_into_view();
+        }
         let content_width = self
             .tab_strip_fixed_content_width()
             .max(tab_strip_viewport_width);

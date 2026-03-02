@@ -198,7 +198,7 @@ impl TerminalView {
             }
         }
         self.mark_tab_strip_layout_dirty();
-        self.scroll_active_tab_into_view();
+        self.sync_tab_strip_for_active_tab();
 
         if let Some(message) = tmux_hydration_warning_message(&hydration_failures) {
             termy_toast::warning(message);

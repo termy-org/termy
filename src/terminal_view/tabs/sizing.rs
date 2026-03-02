@@ -1,6 +1,13 @@
 use super::*;
 
 impl TerminalView {
+    pub(crate) fn sync_tab_strip_for_active_tab(&mut self) {
+        self.sync_tab_display_widths_for_viewport_if_needed(
+            self.tab_strip.layout_last_synced_viewport_width,
+        );
+        self.scroll_active_tab_into_view();
+    }
+
     pub(crate) fn tab_strip_fixed_content_width(&self) -> f32 {
         let tabs_width: f32 = self.tabs.iter().map(|tab| tab.display_width).sum();
         let gaps = TAB_ITEM_GAP * self.tabs.len().saturating_sub(1) as f32;
@@ -15,6 +22,24 @@ impl TerminalView {
         self.tab_strip_expected_max_scroll_for_viewport(
             self.tab_strip.layout_last_synced_viewport_width,
         )
+    }
+
+    fn target_scroll_for_active_tab_bounds(
+        current_scroll: f32,
+        viewport_width: f32,
+        tab_left: f32,
+        tab_right: f32,
+    ) -> f32 {
+        let mut target_scroll = current_scroll;
+        // A tab can overflow both edges after active-width recalculation.
+        // Bias right-edge overflow first so switching/creating tabs near the
+        // end does not snap backward toward the tab-strip start.
+        if tab_right > current_scroll + viewport_width {
+            target_scroll = tab_right - viewport_width;
+        } else if tab_left < current_scroll {
+            target_scroll = tab_left;
+        }
+        target_scroll
     }
 
     pub(crate) fn scroll_active_tab_into_view(&self) {
@@ -34,12 +59,12 @@ impl TerminalView {
             if index == self.active_tab {
                 let offset = self.tab_strip.scroll_handle.offset();
                 let current_scroll = -Into::<f32>::into(offset.x);
-                let mut target_scroll = current_scroll;
-                if tab_left < current_scroll {
-                    target_scroll = tab_left;
-                } else if tab_right > current_scroll + viewport_width {
-                    target_scroll = tab_right - viewport_width;
-                }
+                let target_scroll = Self::target_scroll_for_active_tab_bounds(
+                    current_scroll,
+                    viewport_width,
+                    tab_left,
+                    tab_right,
+                );
 
                 let clamped_scroll = target_scroll.clamp(0.0, max_scroll);
                 let next_offset_x = -clamped_scroll;
@@ -641,6 +666,42 @@ mod tests {
                 left: true,
                 right: true,
             }
+        );
+    }
+
+    #[test]
+    fn active_tab_target_scroll_prefers_right_overflow_when_both_edges_overflow() {
+        let current_scroll = 120.0;
+        let viewport_width = 80.0;
+        let tab_left = 100.0;
+        let tab_right = 220.0;
+
+        // Left overflow: tab_left(100) < current_scroll(120)
+        // Right overflow: tab_right(220) > current_scroll + viewport(200)
+        assert_float_eq(
+            TerminalView::target_scroll_for_active_tab_bounds(
+                current_scroll,
+                viewport_width,
+                tab_left,
+                tab_right,
+            ),
+            140.0,
+        );
+    }
+
+    #[test]
+    fn active_tab_target_scroll_uses_left_overflow_when_only_left_overflows() {
+        assert_float_eq(
+            TerminalView::target_scroll_for_active_tab_bounds(120.0, 80.0, 100.0, 180.0),
+            100.0,
+        );
+    }
+
+    #[test]
+    fn active_tab_target_scroll_uses_right_overflow_when_only_right_overflows() {
+        assert_float_eq(
+            TerminalView::target_scroll_for_active_tab_bounds(120.0, 80.0, 130.0, 230.0),
+            150.0,
         );
     }
 

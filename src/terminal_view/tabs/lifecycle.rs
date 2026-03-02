@@ -317,9 +317,6 @@ impl TerminalView {
                 self.active_tab = index;
                 if self.tab_width_mode != TabWidthMode::Stable {
                     self.mark_tab_strip_layout_dirty();
-                    self.sync_tab_display_widths_for_viewport_if_needed(
-                        self.tab_strip.layout_last_synced_viewport_width,
-                    );
                 }
 
                 if let Some(inactive_scrollback) = self.inactive_tab_scrollback {
@@ -335,7 +332,7 @@ impl TerminalView {
                 self.reset_tab_rename_state();
                 self.reset_tab_drag_state();
                 self.clear_selection();
-                self.scroll_active_tab_into_view();
+                self.sync_tab_strip_for_active_tab();
                 cx.notify();
             }
         }
