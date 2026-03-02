@@ -14,9 +14,9 @@ impl TerminalView {
             |toast_id: &mut Option<u64>, kind: termy_toast::ToastKind, msg: String| {
                 if let Some(id) = *toast_id {
                     termy_toast::update_toast(id, kind, msg);
-                    *toast_id = None;
                 } else {
-                    termy_toast::enqueue_toast(kind, msg, None);
+                    let id = termy_toast::enqueue_toast_with_id(kind, msg, None);
+                    *toast_id = Some(id);
                 }
             };
 

@@ -1,5 +1,5 @@
 use crate::colors::TerminalColors;
-use crate::config::{self, AiProvider as ConfigAiProvider, AppConfig};
+use crate::config::{self, AppConfig};
 use crate::text_input::{TextInputAlignment, TextInputElement, TextInputProvider, TextInputState};
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle, ScrollbarRange};
 use gpui::{
@@ -91,9 +91,6 @@ pub struct SettingsWindow {
     scroll_animation_token: u64,
     colors: TerminalColors,
     last_window_background_appearance: Option<WindowBackgroundAppearance>,
-    openai_model_options: Vec<String>,
-    openai_models_loading: bool,
-    openai_models_loaded_for_api_key: Option<(ConfigAiProvider, String)>,
 }
 
 impl SettingsWindow {
@@ -139,9 +136,6 @@ impl SettingsWindow {
             scroll_animation_token: 0,
             colors,
             last_window_background_appearance: None,
-            openai_model_options: Vec::new(),
-            openai_models_loading: false,
-            openai_models_loaded_for_api_key: None,
         };
         view.focus_handle.focus(window, cx);
 
@@ -184,144 +178,9 @@ impl SettingsWindow {
     }
 
     fn apply_runtime_config(&mut self, config: AppConfig) -> bool {
-        let previous_provider = self.config.ai_provider;
-        let next_provider = config.ai_provider;
-        let previous_api_key = match previous_provider {
-            ConfigAiProvider::OpenAi => self.config.openai_api_key.clone(),
-            ConfigAiProvider::Gemini => self.config.gemini_api_key.clone(),
-            ConfigAiProvider::Codex => Some(self.config.codex_api_key.clone().unwrap_or_default()),
-        };
-        let next_api_key = match next_provider {
-            ConfigAiProvider::OpenAi => config.openai_api_key.clone(),
-            ConfigAiProvider::Gemini => config.gemini_api_key.clone(),
-            ConfigAiProvider::Codex => Some(config.codex_api_key.clone().unwrap_or_default()),
-        };
-        if previous_provider != next_provider || previous_api_key != next_api_key {
-            self.openai_model_options.clear();
-            self.openai_models_loaded_for_api_key = None;
-            self.openai_models_loading = false;
-        }
         self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
         self.config = config;
         true
-    }
-
-    fn current_ai_provider(&self) -> ConfigAiProvider {
-        self.config.ai_provider
-    }
-
-    fn current_ai_api_key(&self) -> Option<String> {
-        match self.config.ai_provider {
-            ConfigAiProvider::OpenAi => self
-                .config
-                .openai_api_key
-                .clone()
-                .filter(|value| !value.trim().is_empty()),
-            ConfigAiProvider::Gemini => self
-                .config
-                .gemini_api_key
-                .clone()
-                .filter(|value| !value.trim().is_empty()),
-            ConfigAiProvider::Codex => Some(self.config.codex_api_key.clone().unwrap_or_default()),
-        }
-    }
-
-    fn refresh_openai_model_options(&mut self, force: bool, cx: &mut Context<Self>) {
-        let provider = self.current_ai_provider();
-        let Some(api_key) = self.current_ai_api_key() else {
-            self.openai_model_options.clear();
-            self.openai_models_loaded_for_api_key = None;
-            self.openai_models_loading = false;
-            return;
-        };
-
-        if self.openai_models_loading {
-            return;
-        }
-
-        let already_loaded_for_key = self.openai_models_loaded_for_api_key.as_ref().is_some_and(
-            |(loaded_provider, loaded_key)| *loaded_provider == provider && loaded_key == &api_key,
-        );
-        if !force && already_loaded_for_key {
-            return;
-        }
-
-        self.openai_models_loading = true;
-        let provider_name = match provider {
-            ConfigAiProvider::OpenAi => "OpenAI",
-            ConfigAiProvider::Gemini => "Gemini",
-            ConfigAiProvider::Codex => "Codex",
-        };
-        let loading_toast_id = termy_toast::loading(format!("Fetching {provider_name} models..."));
-        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-            let request_provider = provider;
-            let request_api_key = api_key.clone();
-            let result = smol::unblock(move || match provider {
-                ConfigAiProvider::OpenAi => {
-                    let client = termy_openai::OpenAiClient::new(api_key);
-                    client
-                        .fetch_chat_models()
-                        .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
-                        .map_err(|error| error.to_string())
-                }
-                ConfigAiProvider::Gemini => {
-                    let client = termy_gemini::GeminiClient::new(api_key);
-                    client
-                        .fetch_chat_models()
-                        .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
-                        .map_err(|error| error.to_string())
-                }
-                ConfigAiProvider::Codex => {
-                    let client = termy_codex::CodexClient::new(api_key);
-                    client
-                        .fetch_chat_models()
-                        .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
-                        .map_err(|error| error.to_string())
-                }
-            })
-            .await;
-
-            termy_toast::dismiss_toast(loading_toast_id);
-
-            let _ = cx.update(|cx| {
-                this.update(cx, |view, cx| {
-                    view.openai_models_loading = false;
-
-                    let active_provider = view.current_ai_provider();
-                    let active_api_key = view.current_ai_api_key();
-                    if active_provider != request_provider
-                        || active_api_key.as_deref() != Some(request_api_key.as_str())
-                    {
-                        return;
-                    }
-
-                    match result {
-                        Ok(mut models) => {
-                            models.sort_unstable();
-                            models.dedup();
-                            view.openai_model_options = models;
-                            view.openai_models_loaded_for_api_key =
-                                Some((request_provider, request_api_key));
-                        }
-                        Err(error) => {
-                            view.openai_model_options.clear();
-                            view.openai_models_loaded_for_api_key = None;
-                            let provider_name = match request_provider {
-                                ConfigAiProvider::OpenAi => "OpenAI",
-                                ConfigAiProvider::Gemini => "Gemini",
-                                ConfigAiProvider::Codex => "Codex",
-                            };
-                            termy_toast::error(format!(
-                                "Failed to fetch {provider_name} models: {error}"
-                            ));
-                        }
-                    }
-
-                    cx.notify();
-                })
-            });
-        })
-        .detach();
     }
 
     fn reload_config_if_changed(&mut self, _cx: &mut Context<Self>) -> bool {

@@ -1,0 +1,10 @@
+[package]
+name = "termy_claude_code"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+claude-code-sdk = "0.0.3"
+tokio = { version = "1", features = ["rt", "time"] }
+tokio-stream = "0.1"
+thiserror = "2.0"

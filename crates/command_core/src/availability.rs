@@ -4,12 +4,14 @@ use crate::CommandId;
 pub struct CommandCapabilities {
     pub tmux_runtime_active: bool,
     pub install_cli_available: bool,
+    pub ai_features_enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandUnavailableReason {
     RequiresTmuxRuntime,
     InstallCliAlreadyInstalled,
+    AiFeaturesDisabled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +21,10 @@ pub struct CommandAvailability {
 }
 
 impl CommandId {
+    pub const fn is_ai_only(self) -> bool {
+        matches!(self, Self::ToggleAiInput | Self::ToggleChatSidebar)
+    }
+
     pub const fn availability(self, caps: CommandCapabilities) -> CommandAvailability {
         if self.is_tmux_only() && !caps.tmux_runtime_active {
             return CommandAvailability {
@@ -31,6 +37,13 @@ impl CommandId {
             return CommandAvailability {
                 enabled: false,
                 reason: Some(CommandUnavailableReason::InstallCliAlreadyInstalled),
+            };
+        }
+
+        if self.is_ai_only() && !caps.ai_features_enabled {
+            return CommandAvailability {
+                enabled: false,
+                reason: Some(CommandUnavailableReason::AiFeaturesDisabled),
             };
         }
 
@@ -51,6 +64,7 @@ mod tests {
         let caps = CommandCapabilities {
             tmux_runtime_active: false,
             install_cli_available: true,
+            ai_features_enabled: true,
         };
         let availability = CommandId::SplitPaneVertical.availability(caps);
         assert!(!availability.enabled);
@@ -65,6 +79,7 @@ mod tests {
         let caps = CommandCapabilities {
             tmux_runtime_active: true,
             install_cli_available: false,
+            ai_features_enabled: true,
         };
         let availability = CommandId::InstallCli.availability(caps);
         assert!(!availability.enabled);
@@ -72,5 +87,43 @@ mod tests {
             availability.reason,
             Some(CommandUnavailableReason::InstallCliAlreadyInstalled)
         );
+    }
+
+    #[test]
+    fn command_availability_reports_ai_features_disabled() {
+        let caps = CommandCapabilities {
+            tmux_runtime_active: true,
+            install_cli_available: true,
+            ai_features_enabled: false,
+        };
+        let availability = CommandId::ToggleAiInput.availability(caps);
+        assert!(!availability.enabled);
+        assert_eq!(
+            availability.reason,
+            Some(CommandUnavailableReason::AiFeaturesDisabled)
+        );
+
+        let availability = CommandId::ToggleChatSidebar.availability(caps);
+        assert!(!availability.enabled);
+        assert_eq!(
+            availability.reason,
+            Some(CommandUnavailableReason::AiFeaturesDisabled)
+        );
+    }
+
+    #[test]
+    fn ai_commands_available_when_ai_features_enabled() {
+        let caps = CommandCapabilities {
+            tmux_runtime_active: true,
+            install_cli_available: true,
+            ai_features_enabled: true,
+        };
+        let availability = CommandId::ToggleAiInput.availability(caps);
+        assert!(availability.enabled);
+        assert_eq!(availability.reason, None);
+
+        let availability = CommandId::ToggleChatSidebar.availability(caps);
+        assert!(availability.enabled);
+        assert_eq!(availability.reason, None);
     }
 }

@@ -40,10 +40,8 @@ impl SettingsWindow {
             | EditableField::WindowHeight
             | EditableField::AiProvider
             | EditableField::AiReasoningEffort
-            | EditableField::OpenaiApiKey
             | EditableField::GeminiApiKey
             | EditableField::CodexApiKey
-            | EditableField::OpenaiModel
             | EditableField::ChatSidebarWidth => self.apply_advanced_field(field, value),
             EditableField::Color(id) => self.apply_color_field(id, value),
         }
@@ -514,37 +512,25 @@ impl SettingsWindow {
             }
             EditableField::AiProvider => {
                 let parsed = match value.to_ascii_lowercase().as_str() {
-                    "openai" => termy_config_core::AiProvider::OpenAi,
                     "gemini" => termy_config_core::AiProvider::Gemini,
                     "codex" => termy_config_core::AiProvider::Codex,
-                    _ => return Err("AI provider must be openai, gemini, or codex".to_string()),
+                    "claude_code" | "claude-code" | "claudecode" | "claude" => {
+                        termy_config_core::AiProvider::ClaudeCode
+                    }
+                    _ => {
+                        return Err("AI provider must be gemini, codex, or claude_code".to_string());
+                    }
                 };
                 self.config.ai_provider = parsed;
-                let default_model = match parsed {
-                    termy_config_core::AiProvider::OpenAi => {
-                        termy_openai::DEFAULT_MODEL.to_string()
-                    }
-                    termy_config_core::AiProvider::Gemini => {
-                        termy_gemini::DEFAULT_MODEL.to_string()
-                    }
-                    termy_config_core::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
-                };
-                self.config.openai_model = Some(default_model.clone());
-                self.openai_model_options.clear();
-                self.openai_models_loaded_for_api_key = None;
-                self.openai_models_loading = false;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::AiProvider,
                     match parsed {
-                        termy_config_core::AiProvider::OpenAi => "openai",
                         termy_config_core::AiProvider::Gemini => "gemini",
                         termy_config_core::AiProvider::Codex => "codex",
+                        termy_config_core::AiProvider::ClaudeCode => "claude_code",
                     },
                 )?;
-                config::set_root_setting(
-                    termy_config_core::RootSettingId::OpenaiModel,
-                    &default_model,
-                )
+                Ok(())
             }
             EditableField::AiReasoningEffort => {
                 let parsed = match value.to_ascii_lowercase().as_str() {
@@ -574,58 +560,22 @@ impl SettingsWindow {
                     },
                 )
             }
-            EditableField::OpenaiApiKey => {
-                if value.is_empty() {
-                    self.config.openai_api_key = None;
-                    self.openai_model_options.clear();
-                    self.openai_models_loaded_for_api_key = None;
-                    self.openai_models_loading = false;
-                    config::set_root_setting(termy_config_core::RootSettingId::OpenaiApiKey, "none")
-                } else {
-                    self.config.openai_api_key = Some(value.to_string());
-                    self.openai_model_options.clear();
-                    self.openai_models_loaded_for_api_key = None;
-                    self.openai_models_loading = false;
-                    config::set_root_setting(termy_config_core::RootSettingId::OpenaiApiKey, value)
-                }
-            }
             EditableField::GeminiApiKey => {
                 if value.is_empty() {
                     self.config.gemini_api_key = None;
-                    self.openai_model_options.clear();
-                    self.openai_models_loaded_for_api_key = None;
-                    self.openai_models_loading = false;
                     config::set_root_setting(termy_config_core::RootSettingId::GeminiApiKey, "none")
                 } else {
                     self.config.gemini_api_key = Some(value.to_string());
-                    self.openai_model_options.clear();
-                    self.openai_models_loaded_for_api_key = None;
-                    self.openai_models_loading = false;
                     config::set_root_setting(termy_config_core::RootSettingId::GeminiApiKey, value)
                 }
             }
             EditableField::CodexApiKey => {
                 if value.is_empty() {
                     self.config.codex_api_key = None;
-                    self.openai_model_options.clear();
-                    self.openai_models_loaded_for_api_key = None;
-                    self.openai_models_loading = false;
                     config::set_root_setting(termy_config_core::RootSettingId::CodexApiKey, "none")
                 } else {
                     self.config.codex_api_key = Some(value.to_string());
-                    self.openai_model_options.clear();
-                    self.openai_models_loaded_for_api_key = None;
-                    self.openai_models_loading = false;
                     config::set_root_setting(termy_config_core::RootSettingId::CodexApiKey, value)
-                }
-            }
-            EditableField::OpenaiModel => {
-                if value.is_empty() {
-                    self.config.openai_model = None;
-                    config::set_root_setting(termy_config_core::RootSettingId::OpenaiModel, "none")
-                } else {
-                    self.config.openai_model = Some(value.to_string());
-                    config::set_root_setting(termy_config_core::RootSettingId::OpenaiModel, value)
                 }
             }
             EditableField::ChatSidebarWidth => {

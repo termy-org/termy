@@ -15,9 +15,9 @@ members = [
   "crates/search",
   "crates/xtask",
   "crates/cli",
-  "crates/openai",
   "crates/gemini",
   "crates/codex",
+  "crates/claude_code",
   "crates/agent_sidebar",
 ]
 resolver = "2"
@@ -72,9 +72,9 @@ termy_native_sdk = { path = "crates/native_sdk" }
 termy_config_core = { path = "crates/config_core" }
 termy_command_core = { path = "crates/command_core" }
 termy_cli_install_core = { path = "crates/cli_install_core" }
-termy_openai = { path = "crates/openai" }
 termy_gemini = { path = "crates/gemini" }
 termy_codex = { path = "crates/codex" }
+termy_claude_code = { path = "crates/claude_code" }
 termy_agent_sidebar = { path = "crates/agent_sidebar" }
 
 [target.'cfg(target_os = "macos")'.dependencies]

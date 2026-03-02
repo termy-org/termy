@@ -77,18 +77,16 @@ pane_focus_effect = soft_spotlight
 pane_focus_strength = 0.6
 # Show shortcut badges in command palette rows
 command_palette_show_keybinds = true
+# Enable or disable all AI features
+ai_features_enabled = false
 # Provider used for AI input and model listing
-ai_provider = openai
+ai_provider = gemini
 # Reasoning effort used for AI requests
 ai_reasoning_effort = medium
-# API key for OpenAI integration
-# openai_api_key = none
 # API key for Google Gemini integration
 # gemini_api_key = none
 # Optional API key for Codex app-server integration
 # codex_api_key = none
-# Model used for AI input requests (provider-specific)
-# openai_model = gpt-5-mini
 # Width of the agent chat sidebar in pixels
 chat_sidebar_width = 360
 

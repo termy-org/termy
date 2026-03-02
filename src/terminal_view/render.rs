@@ -997,6 +997,8 @@ impl Render for TerminalView {
         let sidebar_border = overlay_style.panel_foreground(0.18);
         let sidebar_title = overlay_style.panel_foreground(1.0);
         let sidebar_text = overlay_style.panel_foreground(0.86);
+        let mut sidebar_hint_text = sidebar_text;
+        sidebar_hint_text.a *= 0.72;
         let mut sidebar_control_bg = sidebar_bg;
         sidebar_control_bg.a = 1.0;
         let mut sidebar_dropdown_bg = sidebar_bg;
@@ -1005,18 +1007,18 @@ impl Render for TerminalView {
         let active_provider = active_session
             .as_ref()
             .map(|session| session.provider)
-            .unwrap_or(termy_agent_sidebar::AgentProvider::OpenAi);
+            .unwrap_or(termy_agent_sidebar::AgentProvider::Gemini);
         let active_model = active_session
             .as_ref()
             .map(|session| session.model.clone())
             .unwrap_or_else(|| match active_provider {
-                termy_agent_sidebar::AgentProvider::OpenAi => {
-                    termy_openai::DEFAULT_MODEL.to_string()
-                }
                 termy_agent_sidebar::AgentProvider::Gemini => {
                     termy_gemini::DEFAULT_MODEL.to_string()
                 }
                 termy_agent_sidebar::AgentProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
+                termy_agent_sidebar::AgentProvider::ClaudeCode => {
+                    termy_claude_code::DEFAULT_MODEL.to_string()
+                }
             });
         let active_reasoning_effort = match self.agent_reasoning_effort {
             config::AiReasoningEffort::None => "none",
@@ -1152,28 +1154,6 @@ impl Render for TerminalView {
                                             .shadow_lg()
                                             .child(
                                                 div()
-                                                    .id("provider-option-openai")
-                                                    .px(px(12.0))
-                                                    .py(px(8.0))
-                                                    .cursor_pointer()
-                                                    .text_size(px(11.0))
-                                                    .text_color(sidebar_text)
-                                                    .rounded(px(4.0))
-                                                    .hover(|s| s.bg(gpui::rgba(0xffffff10)))
-                                                    .child("OpenAI")
-                                                    .on_mouse_down(
-                                                        MouseButton::Left,
-                                                        cx.listener(|view, _, _, cx| {
-                                                            view.set_active_agent_provider(
-                                                                config::AiProvider::OpenAi,
-                                                                cx,
-                                                            );
-                                                            cx.stop_propagation();
-                                                        }),
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
                                                     .id("provider-option-gemini")
                                                     .px(px(12.0))
                                                     .py(px(8.0))
@@ -1210,6 +1190,28 @@ impl Render for TerminalView {
                                                         cx.listener(|view, _, _, cx| {
                                                             view.set_active_agent_provider(
                                                                 config::AiProvider::Codex,
+                                                                cx,
+                                                            );
+                                                            cx.stop_propagation();
+                                                        }),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .id("provider-option-claude-code")
+                                                    .px(px(12.0))
+                                                    .py(px(8.0))
+                                                    .cursor_pointer()
+                                                    .text_size(px(11.0))
+                                                    .text_color(sidebar_text)
+                                                    .rounded(px(4.0))
+                                                    .hover(|s| s.bg(gpui::rgba(0xffffff10)))
+                                                    .child("Claude Code")
+                                                    .on_mouse_down(
+                                                        MouseButton::Left,
+                                                        cx.listener(|view, _, _, cx| {
+                                                            view.set_active_agent_provider(
+                                                                config::AiProvider::ClaudeCode,
                                                                 cx,
                                                             );
                                                             cx.stop_propagation();
@@ -1282,6 +1284,14 @@ impl Render for TerminalView {
                                             .bg(sidebar_dropdown_bg)
                                             .shadow_lg()
                                             .overflow_y_scroll()
+                                            .child(
+                                                div()
+                                                    .px(px(12.0))
+                                                    .py(px(6.0))
+                                                    .text_size(px(10.0))
+                                                    .text_color(sidebar_hint_text)
+                                                    .child("Custom: /model <model-id>"),
+                                            )
                                             .children(options.into_iter().map(|model| {
                                                 let model_value = model.clone();
                                                 div()
@@ -1889,11 +1899,13 @@ impl Render for TerminalView {
                                 .child(
                                     div()
                                         .flex_shrink_0()
-                                        .w(px(68.0))
+                                        .min_w(px(96.0))
                                         .h(px(24.0))
+                                        .mr(px(10.0))
                                         .flex()
                                         .items_center()
                                         .justify_end()
+                                        .gap(px(6.0))
                                         .children(is_copied.then(|| {
                                             let mut copied_bg = accent;
                                             copied_bg.a = 0.22;
@@ -1958,6 +1970,37 @@ impl Render for TerminalView {
                                                     ),
                                                 )
                                                 .child("Copy")
+                                        }))
+                                        .children(is_hovered.then(|| {
+                                            div()
+                                                .rounded(px(6.0))
+                                                .px(px(8.0))
+                                                .py(px(4.0))
+                                                .text_size(px(12.0))
+                                                .text_color(text)
+                                                .bg(border)
+                                                .hover(|style| style.bg(accent))
+                                                .cursor_pointer()
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    cx.listener(move |this, _event, _window, cx| {
+                                                        termy_toast::dismiss_toast(toast_id);
+                                                        if this.update_check_toast_id
+                                                            == Some(toast_id)
+                                                        {
+                                                            this.update_check_toast_id = None;
+                                                        }
+                                                        if this
+                                                            .copied_toast_feedback
+                                                            .is_some_and(|(id, _)| id == toast_id)
+                                                        {
+                                                            this.copied_toast_feedback = None;
+                                                        }
+                                                        cx.notify();
+                                                        cx.stop_propagation();
+                                                    }),
+                                                )
+                                                .child("✕")
                                         })),
                                 )
                                 .on_mouse_move(cx.listener(move |this, _event, _window, cx| {

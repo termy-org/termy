@@ -719,27 +719,17 @@ impl SettingsWindow {
         ];
         let window_group = self.render_settings_group("WINDOW", window_rows);
 
+        let ai_features_enabled_meta = Self::setting_metadata_or_fallback("ai_features_enabled");
+        let ai_features_enabled = self.config.ai_features_enabled;
         let ai_provider_meta = Self::setting_metadata_or_fallback("ai_provider");
         let ai_reasoning_effort_meta = Self::setting_metadata_or_fallback("ai_reasoning_effort");
-        let openai_api_key_meta = Self::setting_metadata_or_fallback("openai_api_key");
         let gemini_api_key_meta = Self::setting_metadata_or_fallback("gemini_api_key");
         let codex_api_key_meta = Self::setting_metadata_or_fallback("codex_api_key");
-        let openai_model_meta = Self::setting_metadata_or_fallback("openai_model");
         let chat_sidebar_width_meta = Self::setting_metadata_or_fallback("chat_sidebar_width");
         let ai_provider = self.editable_field_value(EditableField::AiProvider);
-        let (api_key_setting_key, api_key_field, api_key_title, api_key_description, api_key_value) =
-            match self.config.ai_provider {
-                termy_config_core::AiProvider::OpenAi => (
-                    "openai_api_key",
-                    EditableField::OpenaiApiKey,
-                    openai_api_key_meta.title,
-                    openai_api_key_meta.description,
-                    self.config
-                        .openai_api_key
-                        .clone()
-                        .unwrap_or_else(|| "Not configured".to_string()),
-                ),
-                termy_config_core::AiProvider::Gemini => (
+        let api_key_row = match self.config.ai_provider {
+            termy_config_core::AiProvider::Gemini => Some(
+                self.render_editable_row(
                     "gemini_api_key",
                     EditableField::GeminiApiKey,
                     gemini_api_key_meta.title,
@@ -748,8 +738,11 @@ impl SettingsWindow {
                         .gemini_api_key
                         .clone()
                         .unwrap_or_else(|| "Not configured".to_string()),
+                    cx,
                 ),
-                termy_config_core::AiProvider::Codex => (
+            ),
+            termy_config_core::AiProvider::Codex => Some(
+                self.render_editable_row(
                     "codex_api_key",
                     EditableField::CodexApiKey,
                     codex_api_key_meta.title,
@@ -758,64 +751,62 @@ impl SettingsWindow {
                         .codex_api_key
                         .clone()
                         .unwrap_or_else(|| "Not configured".to_string()),
+                    cx,
                 ),
-            };
-        let openai_model =
-            self.config
-                .openai_model
-                .clone()
-                .unwrap_or_else(|| match self.config.ai_provider {
-                    termy_config_core::AiProvider::OpenAi => {
-                        termy_openai::DEFAULT_MODEL.to_string()
-                    }
-                    termy_config_core::AiProvider::Gemini => {
-                        termy_gemini::DEFAULT_MODEL.to_string()
-                    }
-                    termy_config_core::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
-                });
+            ),
+            termy_config_core::AiProvider::ClaudeCode => None,
+        };
         let chat_sidebar_width = self.config.chat_sidebar_width;
-        let ai_rows = vec![
-            self.render_editable_row(
+        let mut ai_rows = vec![self.render_setting_row(
+            "ai_features_enabled",
+            "ai_features_enabled-toggle",
+            ai_features_enabled_meta.title,
+            ai_features_enabled_meta.description,
+            ai_features_enabled,
+            cx,
+            |view, _cx| {
+                let next = !view.config.ai_features_enabled;
+                match config::set_root_setting(RootSettingId::AiFeaturesEnabled, &next.to_string())
+                {
+                    Ok(()) => {
+                        view.config.ai_features_enabled = next;
+                        termy_toast::success("Saved");
+                    }
+                    Err(error) => termy_toast::error(error),
+                }
+            },
+        )];
+
+        // Only show other AI settings when AI features are enabled
+        if ai_features_enabled {
+            ai_rows.push(self.render_editable_row(
                 "ai_provider",
                 EditableField::AiProvider,
                 ai_provider_meta.title,
                 ai_provider_meta.description,
                 ai_provider,
                 cx,
-            ),
-            self.render_editable_row(
+            ));
+            ai_rows.push(self.render_editable_row(
                 "ai_reasoning_effort",
                 EditableField::AiReasoningEffort,
                 ai_reasoning_effort_meta.title,
                 ai_reasoning_effort_meta.description,
                 self.editable_field_value(EditableField::AiReasoningEffort),
                 cx,
-            ),
-            self.render_editable_row(
-                api_key_setting_key,
-                api_key_field,
-                api_key_title,
-                api_key_description,
-                api_key_value,
-                cx,
-            ),
-            self.render_editable_row(
-                "openai_model",
-                EditableField::OpenaiModel,
-                openai_model_meta.title,
-                openai_model_meta.description,
-                openai_model,
-                cx,
-            ),
-            self.render_editable_row(
+            ));
+            if let Some(api_key_row) = api_key_row {
+                ai_rows.push(api_key_row);
+            }
+            ai_rows.push(self.render_editable_row(
                 "chat_sidebar_width",
                 EditableField::ChatSidebarWidth,
                 chat_sidebar_width_meta.title,
                 chat_sidebar_width_meta.description,
                 format!("{}px", chat_sidebar_width as i32),
                 cx,
-            ),
-        ];
+            ));
+        }
         let ai_group = self.render_settings_group("AI", ai_rows);
 
         let config_file_card = div()

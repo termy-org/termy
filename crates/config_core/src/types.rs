@@ -240,17 +240,17 @@ impl PaneFocusEffect {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AiProvider {
     #[default]
-    OpenAi,
     Gemini,
     Codex,
+    ClaudeCode,
 }
 
 impl AiProvider {
     pub(crate) fn from_str(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
-            "openai" | "open_ai" => Some(Self::OpenAi),
             "gemini" => Some(Self::Gemini),
             "codex" => Some(Self::Codex),
+            "claude_code" | "claude-code" | "claudecode" | "claude" => Some(Self::ClaudeCode),
             _ => None,
         }
     }
@@ -324,12 +324,11 @@ pub struct AppConfig {
     pub pane_focus_effect: PaneFocusEffect,
     pub pane_focus_strength: f32,
     pub command_palette_show_keybinds: bool,
+    pub ai_features_enabled: bool,
     pub ai_provider: AiProvider,
     pub ai_reasoning_effort: AiReasoningEffort,
-    pub openai_api_key: Option<String>,
     pub gemini_api_key: Option<String>,
     pub codex_api_key: Option<String>,
-    pub openai_model: Option<String>,
     pub chat_sidebar_width: f32,
     pub keybind_lines: Vec<KeybindConfigLine>,
     pub colors: CustomColors,
@@ -377,12 +376,11 @@ impl Default for AppConfig {
             pane_focus_effect: PaneFocusEffect::default(),
             pane_focus_strength: DEFAULT_PANE_FOCUS_STRENGTH,
             command_palette_show_keybinds: true,
+            ai_features_enabled: false,
             ai_provider: AiProvider::default(),
             ai_reasoning_effort: AiReasoningEffort::default(),
-            openai_api_key: None,
             gemini_api_key: None,
             codex_api_key: None,
-            openai_model: None,
             chat_sidebar_width: DEFAULT_CHAT_SIDEBAR_WIDTH,
             keybind_lines: Vec::new(),
             colors: CustomColors::default(),

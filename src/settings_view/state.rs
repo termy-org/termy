@@ -38,10 +38,8 @@ pub(super) enum EditableField {
     WindowHeight,
     AiProvider,
     AiReasoningEffort,
-    OpenaiApiKey,
     GeminiApiKey,
     CodexApiKey,
-    OpenaiModel,
     ChatSidebarWidth,
     Color(termy_config_core::ColorSettingId),
 }
@@ -102,7 +100,6 @@ impl ActiveTextInput {
 pub(super) enum FieldCodec {
     Theme,
     FontFamily,
-    OpenAiModel,
     Enum,
     Numeric,
     Text,
@@ -128,7 +125,7 @@ impl SettingsWindow {
     pub(super) fn is_secret_field(field: EditableField) -> bool {
         matches!(
             field,
-            EditableField::OpenaiApiKey | EditableField::GeminiApiKey | EditableField::CodexApiKey
+            EditableField::GeminiApiKey | EditableField::CodexApiKey
         )
     }
 
@@ -255,10 +252,8 @@ impl SettingsWindow {
             RootSettingId::WindowHeight,
             RootSettingId::AiProvider,
             RootSettingId::AiReasoningEffort,
-            RootSettingId::OpenaiApiKey,
             RootSettingId::GeminiApiKey,
             RootSettingId::CodexApiKey,
-            RootSettingId::OpenaiModel,
             RootSettingId::ChatSidebarWidth,
         ];
 
@@ -404,10 +399,8 @@ impl SettingsWindow {
             | EditableField::WindowHeight
             | EditableField::AiProvider
             | EditableField::AiReasoningEffort
-            | EditableField::OpenaiApiKey
             | EditableField::GeminiApiKey
             | EditableField::CodexApiKey
-            | EditableField::OpenaiModel
             | EditableField::ChatSidebarWidth => Self::advanced_field_spec(field),
             EditableField::Color(_) => FieldSpec {
                 root_setting: None,
@@ -578,15 +571,8 @@ impl SettingsWindow {
             EditableField::AiReasoningEffort => {
                 Self::enum_field_spec(RootSettingId::AiReasoningEffort)
             }
-            EditableField::OpenaiApiKey => Self::text_field_spec(Some(RootSettingId::OpenaiApiKey)),
             EditableField::GeminiApiKey => Self::text_field_spec(Some(RootSettingId::GeminiApiKey)),
             EditableField::CodexApiKey => Self::text_field_spec(Some(RootSettingId::CodexApiKey)),
-            EditableField::OpenaiModel => FieldSpec {
-                root_setting: Some(RootSettingId::OpenaiModel),
-                codec: FieldCodec::OpenAiModel,
-                dropdown_click_only: false,
-                numeric_step: None,
-            },
             EditableField::ChatSidebarWidth => Self::numeric_field_spec(
                 RootSettingId::ChatSidebarWidth,
                 NumericStepSpec {
@@ -641,7 +627,7 @@ impl SettingsWindow {
     pub(super) fn field_uses_dropdown(field: EditableField) -> bool {
         matches!(
             Self::field_spec(field).codec,
-            FieldCodec::Theme | FieldCodec::FontFamily | FieldCodec::OpenAiModel | FieldCodec::Enum
+            FieldCodec::Theme | FieldCodec::FontFamily | FieldCodec::Enum
         )
     }
 
@@ -742,60 +728,8 @@ impl SettingsWindow {
                 .map(DropdownOption::raw)
                 .collect();
         }
-        if field == EditableField::OpenaiModel {
-            return self.filtered_openai_model_suggestions(query);
-        }
 
         self.filtered_enum_suggestions(field, query)
-    }
-
-    pub(super) fn filtered_openai_model_suggestions(&self, query: &str) -> Vec<DropdownOption> {
-        let trimmed_query = query.trim();
-        let normalized_query = trimmed_query.to_ascii_lowercase();
-        let normalized_compact = Self::normalize_dropdown_query_token(trimmed_query);
-
-        let mut options = self
-            .openai_model_options
-            .iter()
-            .cloned()
-            .map(DropdownOption::raw)
-            .collect::<Vec<_>>();
-
-        if normalized_query.is_empty() {
-            let current_value = self.editable_field_value(EditableField::OpenaiModel);
-            if let Some(index) = options
-                .iter()
-                .position(|option| option.value.eq_ignore_ascii_case(&current_value))
-            {
-                let selected = options.remove(index);
-                options.insert(0, selected);
-            } else if !current_value.trim().is_empty() {
-                options.insert(0, DropdownOption::raw(current_value));
-            }
-            return options;
-        }
-
-        let mut matched = options
-            .into_iter()
-            .filter(|option| {
-                let value_lower = option.value.to_ascii_lowercase();
-                let value_compact = Self::normalize_dropdown_query_token(&option.value);
-                value_lower.contains(&normalized_query)
-                    || (!normalized_compact.is_empty()
-                        && value_compact.contains(&normalized_compact))
-            })
-            .collect::<Vec<_>>();
-
-        if !trimmed_query.is_empty()
-            && !matched.iter().any(|option| {
-                option.value.eq_ignore_ascii_case(trimmed_query)
-                    || Self::normalize_dropdown_query_token(&option.value) == normalized_compact
-            })
-        {
-            matched.insert(0, DropdownOption::raw(trimmed_query.to_string()));
-        }
-
-        matched
     }
 
     pub(super) fn dropdown_display_value(&self, field: EditableField, raw_value: &str) -> String {
@@ -953,9 +887,9 @@ impl SettingsWindow {
             EditableField::WindowWidth => format!("{}", self.config.window_width.round() as i32),
             EditableField::WindowHeight => format!("{}", self.config.window_height.round() as i32),
             EditableField::AiProvider => match self.config.ai_provider {
-                termy_config_core::AiProvider::OpenAi => "openai".to_string(),
                 termy_config_core::AiProvider::Gemini => "gemini".to_string(),
                 termy_config_core::AiProvider::Codex => "codex".to_string(),
+                termy_config_core::AiProvider::ClaudeCode => "claude_code".to_string(),
             },
             EditableField::AiReasoningEffort => match self.config.ai_reasoning_effort {
                 termy_config_core::AiReasoningEffort::None => "none".to_string(),
@@ -965,25 +899,8 @@ impl SettingsWindow {
                 termy_config_core::AiReasoningEffort::High => "high".to_string(),
                 termy_config_core::AiReasoningEffort::XHigh => "xhigh".to_string(),
             },
-            EditableField::OpenaiApiKey => self.config.openai_api_key.clone().unwrap_or_default(),
             EditableField::GeminiApiKey => self.config.gemini_api_key.clone().unwrap_or_default(),
             EditableField::CodexApiKey => self.config.codex_api_key.clone().unwrap_or_default(),
-            EditableField::OpenaiModel => {
-                self.config
-                    .openai_model
-                    .clone()
-                    .unwrap_or_else(|| match self.config.ai_provider {
-                        termy_config_core::AiProvider::OpenAi => {
-                            termy_openai::DEFAULT_MODEL.to_string()
-                        }
-                        termy_config_core::AiProvider::Gemini => {
-                            termy_gemini::DEFAULT_MODEL.to_string()
-                        }
-                        termy_config_core::AiProvider::Codex => {
-                            termy_codex::DEFAULT_MODEL.to_string()
-                        }
-                    })
-            }
             EditableField::ChatSidebarWidth => {
                 format!("{}", self.config.chat_sidebar_width.round() as i32)
             }
@@ -1013,9 +930,6 @@ impl SettingsWindow {
             field,
             self.editable_field_value(field),
         ));
-        if field == EditableField::OpenaiModel {
-            self.refresh_openai_model_options(false, cx);
-        }
         self.focus_handle.focus(window, cx);
         cx.notify();
     }
@@ -1281,10 +1195,8 @@ mod tests {
             EditableField::WindowHeight,
             EditableField::AiProvider,
             EditableField::AiReasoningEffort,
-            EditableField::OpenaiApiKey,
             EditableField::GeminiApiKey,
             EditableField::CodexApiKey,
-            EditableField::OpenaiModel,
             EditableField::ChatSidebarWidth,
             EditableField::Color(termy_config_core::ColorSettingId::Foreground),
         ];

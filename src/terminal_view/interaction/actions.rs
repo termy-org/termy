@@ -26,6 +26,7 @@ impl TerminalView {
         let availability = action.availability(CommandCapabilities {
             tmux_runtime_active: self.runtime_uses_tmux(),
             install_cli_available: self.install_cli_available(),
+            ai_features_enabled: self.ai_features_enabled(),
         });
         if !availability.enabled {
             match availability.reason {
@@ -36,6 +37,11 @@ impl TerminalView {
                 }
                 Some(CommandUnavailableReason::InstallCliAlreadyInstalled) => {
                     termy_toast::info("CLI is already installed");
+                    cx.notify();
+                    return;
+                }
+                Some(CommandUnavailableReason::AiFeaturesDisabled) => {
+                    termy_toast::info("AI features are disabled in settings");
                     cx.notify();
                     return;
                 }

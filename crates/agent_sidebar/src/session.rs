@@ -2,17 +2,17 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentProvider {
-    OpenAi,
     Gemini,
     Codex,
+    ClaudeCode,
 }
 
 impl AgentProvider {
     pub fn as_label(self) -> &'static str {
         match self {
-            Self::OpenAi => "OpenAI",
             Self::Gemini => "Gemini",
             Self::Codex => "Codex",
+            Self::ClaudeCode => "Claude Code",
         }
     }
 }
@@ -20,9 +20,9 @@ impl AgentProvider {
 impl From<termy_config_core::AiProvider> for AgentProvider {
     fn from(value: termy_config_core::AiProvider) -> Self {
         match value {
-            termy_config_core::AiProvider::OpenAi => Self::OpenAi,
             termy_config_core::AiProvider::Gemini => Self::Gemini,
             termy_config_core::AiProvider::Codex => Self::Codex,
+            termy_config_core::AiProvider::ClaudeCode => Self::ClaudeCode,
         }
     }
 }
@@ -30,9 +30,9 @@ impl From<termy_config_core::AiProvider> for AgentProvider {
 impl From<AgentProvider> for termy_config_core::AiProvider {
     fn from(value: AgentProvider) -> Self {
         match value {
-            AgentProvider::OpenAi => Self::OpenAi,
             AgentProvider::Gemini => Self::Gemini,
             AgentProvider::Codex => Self::Codex,
+            AgentProvider::ClaudeCode => Self::ClaudeCode,
         }
     }
 }

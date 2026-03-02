@@ -514,6 +514,13 @@ impl AppConfig {
                         config.command_palette_show_keybinds = parsed;
                     }
                 }
+                RootSettingId::AiFeaturesEnabled => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.ai_features_enabled = parsed;
+                    }
+                }
                 RootSettingId::AiProvider => {
                     if let Some(parsed) = AiProvider::from_str(value) {
                         config.ai_provider = parsed;
@@ -523,7 +530,7 @@ impl AppConfig {
                             line_number,
                             key,
                             value,
-                            "one of: openai, gemini, codex",
+                            "one of: gemini, codex, claude_code",
                         );
                     }
                 }
@@ -540,17 +547,11 @@ impl AppConfig {
                         );
                     }
                 }
-                RootSettingId::OpenaiApiKey => {
-                    config.openai_api_key = parse_optional_string_value(value);
-                }
                 RootSettingId::GeminiApiKey => {
                     config.gemini_api_key = parse_optional_string_value(value);
                 }
                 RootSettingId::CodexApiKey => {
                     config.codex_api_key = parse_optional_string_value(value);
-                }
-                RootSettingId::OpenaiModel => {
-                    config.openai_model = parse_optional_string_value(value);
                 }
                 RootSettingId::ChatSidebarWidth => {
                     if let Some(parsed) =

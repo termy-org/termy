@@ -872,6 +872,14 @@ impl TerminalView {
         self.install_cli_available
     }
 
+    pub(super) fn ai_features_enabled(&mut self) -> bool {
+        let loaded = config::load_runtime_config(
+            &mut self.last_config_error_message,
+            "ai features enabled check",
+        );
+        loaded.config.ai_features_enabled
+    }
+
     pub(super) fn refresh_install_cli_availability(&mut self) -> bool {
         let (next_available, changed) = Self::refreshed_install_cli_availability(
             self.install_cli_available,

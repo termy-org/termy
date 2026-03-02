@@ -446,23 +446,19 @@ fn runtime_env_options_parse() {
 #[test]
 fn ai_provider_and_keys_parse() {
     let config = parse(
-        "ai_provider = codex\n\
+        "ai_provider = claude_code\n\
          ai_reasoning_effort = high\n\
-         openai_api_key = sk-openai\n\
          gemini_api_key = sk-gemini\n\
-         codex_api_key = sk-codex\n\
-         openai_model = gemini-2.0-flash\n",
+         codex_api_key = sk-codex\n",
     );
 
-    assert_eq!(config.ai_provider, AiProvider::Codex);
+    assert_eq!(config.ai_provider, AiProvider::ClaudeCode);
     assert_eq!(
         config.ai_reasoning_effort,
         crate::types::AiReasoningEffort::High
     );
-    assert_eq!(config.openai_api_key.as_deref(), Some("sk-openai"));
     assert_eq!(config.gemini_api_key.as_deref(), Some("sk-gemini"));
     assert_eq!(config.codex_api_key.as_deref(), Some("sk-codex"));
-    assert_eq!(config.openai_model.as_deref(), Some("gemini-2.0-flash"));
 }
 
 #[test]

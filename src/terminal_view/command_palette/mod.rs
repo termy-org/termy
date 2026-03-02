@@ -83,10 +83,12 @@ impl TerminalView {
         action: CommandAction,
         install_cli_available: bool,
         tmux_enabled: bool,
+        ai_features_enabled: bool,
     ) -> CommandAvailability {
         action.availability(CommandCapabilities {
             tmux_runtime_active: tmux_enabled,
             install_cli_available,
+            ai_features_enabled,
         })
     }
 
@@ -96,6 +98,7 @@ impl TerminalView {
         match reason {
             CommandUnavailableReason::RequiresTmuxRuntime => "tmux required",
             CommandUnavailableReason::InstallCliAlreadyInstalled => "Installed",
+            CommandUnavailableReason::AiFeaturesDisabled => "AI disabled",
         }
     }
 
@@ -105,11 +108,13 @@ impl TerminalView {
         keywords: &str,
         install_cli_available: bool,
         tmux_enabled: bool,
+        ai_features_enabled: bool,
     ) -> CommandPaletteItem {
         let availability = Self::command_palette_action_availability_for_state(
             action,
             install_cli_available,
             tmux_enabled,
+            ai_features_enabled,
         );
         let status_hint = availability
             .reason
@@ -127,6 +132,7 @@ impl TerminalView {
     fn command_palette_command_items_for_state(
         install_cli_available: bool,
         tmux_enabled: bool,
+        ai_features_enabled: bool,
     ) -> Vec<CommandPaletteItem> {
         CommandAction::palette_entries()
             .into_iter()
@@ -137,16 +143,18 @@ impl TerminalView {
                     entry.keywords,
                     install_cli_available,
                     tmux_enabled,
+                    ai_features_enabled,
                 )
             })
             .collect()
     }
 
-    fn command_palette_items_for_mode(&self, mode: CommandPaletteMode) -> Vec<CommandPaletteItem> {
+    fn command_palette_items_for_mode(&mut self, mode: CommandPaletteMode) -> Vec<CommandPaletteItem> {
         match mode {
             CommandPaletteMode::Commands => Self::command_palette_command_items_for_state(
                 self.install_cli_available(),
                 self.runtime_uses_tmux(),
+                self.ai_features_enabled(),
             ),
             CommandPaletteMode::Themes => self.command_palette_theme_items(),
             CommandPaletteMode::TmuxSessions => self.command_palette.tmux_session_items_for_query(
@@ -475,6 +483,7 @@ impl TerminalView {
                         action,
                         self.install_cli_available(),
                         self.runtime_uses_tmux(),
+                        self.ai_features_enabled(),
                     ));
                     cx.notify();
                     return;
@@ -546,11 +555,13 @@ impl TerminalView {
         action: CommandAction,
         install_cli_available: bool,
         tmux_enabled: bool,
+        ai_features_enabled: bool,
     ) -> &'static str {
         let availability = Self::command_palette_action_availability_for_state(
             action,
             install_cli_available,
             tmux_enabled,
+            ai_features_enabled,
         );
 
         match availability.reason {
@@ -559,6 +570,9 @@ impl TerminalView {
             }
             Some(CommandUnavailableReason::InstallCliAlreadyInstalled) => {
                 "CLI is already installed"
+            }
+            Some(CommandUnavailableReason::AiFeaturesDisabled) => {
+                "AI features are disabled in settings"
             }
             None => "Command is currently unavailable",
         }
@@ -734,8 +748,10 @@ mod tests {
 
     #[test]
     fn install_cli_command_is_present_and_tracks_availability_state() {
-        let available_items = TerminalView::command_palette_command_items_for_state(true, true);
-        let unavailable_items = TerminalView::command_palette_command_items_for_state(false, true);
+        let available_items =
+            TerminalView::command_palette_command_items_for_state(true, true, true);
+        let unavailable_items =
+            TerminalView::command_palette_command_items_for_state(false, true, true);
 
         let available_install_cli = available_items
             .iter()
@@ -760,7 +776,7 @@ mod tests {
 
     #[test]
     fn tmux_query_surfaces_only_tmux_sessions_entry() {
-        let items = TerminalView::command_palette_command_items_for_state(true, true);
+        let items = TerminalView::command_palette_command_items_for_state(true, true, true);
         let filtered_indices =
             super::state::filter_command_palette_item_indices_by_query(&items, "tmux");
         let filtered_actions = filtered_indices
@@ -776,7 +792,7 @@ mod tests {
 
     #[test]
     fn tmux_commands_are_present_but_disabled_when_tmux_runtime_is_off() {
-        let items = TerminalView::command_palette_command_items_for_state(false, false);
+        let items = TerminalView::command_palette_command_items_for_state(false, false, true);
         let split = items
             .iter()
             .find_map(|item| match item.kind {
@@ -789,11 +805,36 @@ mod tests {
     }
 
     #[test]
+    fn ai_commands_are_present_but_disabled_when_ai_features_are_off() {
+        let items = TerminalView::command_palette_command_items_for_state(true, true, false);
+        let ai_input = items
+            .iter()
+            .find_map(|item| match item.kind {
+                CommandPaletteItemKind::Command(CommandAction::ToggleAiInput) => Some(item),
+                _ => None,
+            })
+            .expect("missing AI input command");
+        assert!(!ai_input.enabled);
+        assert_eq!(ai_input.status_hint, Some("AI disabled"));
+
+        let chat_sidebar = items
+            .iter()
+            .find_map(|item| match item.kind {
+                CommandPaletteItemKind::Command(CommandAction::ToggleChatSidebar) => Some(item),
+                _ => None,
+            })
+            .expect("missing chat sidebar command");
+        assert!(!chat_sidebar.enabled);
+        assert_eq!(chat_sidebar.status_hint, Some("AI disabled"));
+    }
+
+    #[test]
     fn install_cli_disabled_message_matches_expected_copy() {
         assert_eq!(
             TerminalView::command_palette_disabled_action_message_for_state(
                 CommandAction::InstallCli,
                 false,
+                true,
                 true,
             ),
             "CLI is already installed"
@@ -807,8 +848,22 @@ mod tests {
                 CommandAction::SplitPaneVertical,
                 true,
                 false,
+                true,
             ),
             "Attach a tmux session to use this command"
+        );
+    }
+
+    #[test]
+    fn ai_disabled_message_matches_expected_copy() {
+        assert_eq!(
+            TerminalView::command_palette_disabled_action_message_for_state(
+                CommandAction::ToggleAiInput,
+                true,
+                true,
+                false,
+            ),
+            "AI features are disabled in settings"
         );
     }
 }

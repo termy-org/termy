@@ -52,18 +52,11 @@ impl TerminalView {
         .config
         .ai_provider;
         let provider = termy_agent_sidebar::AgentProvider::from(configured_provider);
-        let model = config::load_runtime_config(
-            &mut self.last_config_error_message,
-            "agent session model config load",
-        )
-        .config
-        .openai_model
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| match configured_provider {
-            config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
+        let model = match configured_provider {
             config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
             config::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
-        });
+            config::AiProvider::ClaudeCode => termy_claude_code::DEFAULT_MODEL.to_string(),
+        };
 
         self.agent_sessions.new_session(cwd, provider, model);
         self.scroll_agent_messages_to_bottom();
@@ -85,18 +78,11 @@ impl TerminalView {
         .config
         .ai_provider;
         let provider = termy_agent_sidebar::AgentProvider::from(configured_provider);
-        let model = config::load_runtime_config(
-            &mut self.last_config_error_message,
-            "agent session model config load",
-        )
-        .config
-        .openai_model
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| match configured_provider {
-            config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
+        let model = match configured_provider {
             config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
             config::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
-        });
+            config::AiProvider::ClaudeCode => termy_claude_code::DEFAULT_MODEL.to_string(),
+        };
 
         self.agent_sessions.ensure_session(cwd, provider, model)
     }
@@ -105,11 +91,11 @@ impl TerminalView {
         self.agent_sessions
             .active_session()
             .map(|session| match session.provider {
-                termy_agent_sidebar::AgentProvider::OpenAi => config::AiProvider::OpenAi,
                 termy_agent_sidebar::AgentProvider::Gemini => config::AiProvider::Gemini,
                 termy_agent_sidebar::AgentProvider::Codex => config::AiProvider::Codex,
+                termy_agent_sidebar::AgentProvider::ClaudeCode => config::AiProvider::ClaudeCode,
             })
-            .unwrap_or(config::AiProvider::OpenAi)
+            .unwrap_or(config::AiProvider::Gemini)
     }
 
     pub(super) fn ensure_agent_sidebar_ready(&mut self, cx: &mut Context<Self>) {
@@ -124,9 +110,9 @@ impl TerminalView {
     ) {
         self.ensure_active_agent_session();
         let model = match provider {
-            config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
             config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
             config::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
+            config::AiProvider::ClaudeCode => termy_claude_code::DEFAULT_MODEL.to_string(),
         };
         self.agent_sessions
             .set_active_provider(termy_agent_sidebar::AgentProvider::from(provider));
@@ -176,6 +162,15 @@ impl TerminalView {
             return;
         }
 
+        // Check if AI features are enabled
+        let loaded = config::load_runtime_config(
+            &mut self.last_config_error_message,
+            "ai input config check",
+        );
+        if !loaded.config.ai_features_enabled {
+            return;
+        }
+
         // Close other overlays
         if self.is_command_palette_open() {
             self.close_command_palette(cx);
@@ -211,12 +206,12 @@ impl TerminalView {
             "agent model options config load",
         );
         let api_key = match provider {
-            config::AiProvider::OpenAi => loaded.config.openai_api_key,
             config::AiProvider::Gemini => loaded.config.gemini_api_key,
             config::AiProvider::Codex => Some(loaded.config.codex_api_key.unwrap_or_default()),
+            config::AiProvider::ClaudeCode => Some(String::new()),
         }
         .filter(|value| {
-            if provider == config::AiProvider::Codex {
+            if provider == config::AiProvider::Codex || provider == config::AiProvider::ClaudeCode {
                 true
             } else {
                 !value.trim().is_empty()
@@ -245,15 +240,15 @@ impl TerminalView {
             let request_provider = provider;
             let request_key = api_key.clone();
             let result = smol::unblock(move || match provider {
-                config::AiProvider::OpenAi => termy_openai::OpenAiClient::new(api_key)
-                    .fetch_chat_models()
-                    .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
-                    .map_err(|error| error.to_string()),
                 config::AiProvider::Gemini => termy_gemini::GeminiClient::new(api_key)
                     .fetch_chat_models()
                     .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
                     .map_err(|error| error.to_string()),
                 config::AiProvider::Codex => termy_codex::CodexClient::new(api_key)
+                    .fetch_chat_models()
+                    .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
+                    .map_err(|error| error.to_string()),
+                config::AiProvider::ClaudeCode => termy_claude_code::ClaudeCodeClient::new()
                     .fetch_chat_models()
                     .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
                     .map_err(|error| error.to_string()),
@@ -282,9 +277,9 @@ impl TerminalView {
                             termy_toast::error(format!(
                                 "Failed to fetch {} models: {}",
                                 match request_provider {
-                                    config::AiProvider::OpenAi => "OpenAI",
                                     config::AiProvider::Gemini => "Gemini",
                                     config::AiProvider::Codex => "Codex",
+                                    config::AiProvider::ClaudeCode => "Claude Code",
                                 },
                                 error
                             ));
@@ -319,6 +314,32 @@ impl TerminalView {
             return;
         }
 
+        if let Some(custom_model) = parse_agent_model_command(&text) {
+            let model = custom_model.trim();
+            if model.is_empty() {
+                termy_toast::error("Usage: /model <model-id>");
+                return;
+            }
+
+            self.ensure_active_agent_session();
+            self.agent_sessions.set_active_model(model.to_string());
+            if !self
+                .agent_model_options
+                .iter()
+                .any(|option| option == model)
+            {
+                self.agent_model_options.push(model.to_string());
+                self.agent_model_options.sort_unstable();
+                self.agent_model_options.dedup();
+            }
+            self.agent_sidebar_input.clear();
+            self.agent_model_dropdown_open = false;
+            self.agent_reasoning_effort_dropdown_open = false;
+            termy_toast::success(format!("Agent model set to {}", model));
+            cx.notify();
+            return;
+        }
+
         let session_id = self.ensure_active_agent_session();
         let Some(session) = self.agent_sessions.active_session() else {
             termy_toast::error("No active agent session");
@@ -341,12 +362,14 @@ impl TerminalView {
         );
         let provider_config: config::AiProvider = provider.into();
         let api_key = match provider_config {
-            config::AiProvider::OpenAi => loaded.config.openai_api_key,
             config::AiProvider::Gemini => loaded.config.gemini_api_key,
             config::AiProvider::Codex => Some(loaded.config.codex_api_key.unwrap_or_default()),
+            config::AiProvider::ClaudeCode => Some(String::new()),
         }
         .filter(|value| {
-            if provider_config == config::AiProvider::Codex {
+            if provider_config == config::AiProvider::Codex
+                || provider_config == config::AiProvider::ClaudeCode
+            {
                 true
             } else {
                 !value.trim().is_empty()
@@ -358,9 +381,9 @@ impl TerminalView {
                 format!(
                     "{} API key not configured",
                     match provider_config {
-                        config::AiProvider::OpenAi => "OpenAI",
                         config::AiProvider::Gemini => "Gemini",
                         config::AiProvider::Codex => "Codex",
+                        config::AiProvider::ClaudeCode => "Claude Code",
                     }
                 ),
             );
@@ -454,13 +477,11 @@ Use this JSON format for a tool call only when needed:\n\
 Use only one command per tool call.\n\
 Current terminal context is provided in the latest user message.";
 
-            let mut openai_messages = vec![termy_openai::ChatMessage::system(system_prompt)];
             let mut gemini_messages = vec![termy_gemini::ChatMessage::system(system_prompt)];
             let mut codex_messages = vec![termy_codex::ChatMessage::system(system_prompt)];
             for (role, content) in history {
                 match role.as_str() {
                     "assistant" => {
-                        openai_messages.push(termy_openai::ChatMessage::assistant(content.clone()));
                         gemini_messages.push(termy_gemini::ChatMessage {
                             role: "assistant".to_string(),
                             content: termy_gemini::ChatContent::Text(content.clone()),
@@ -468,21 +489,12 @@ Current terminal context is provided in the latest user message.";
                         codex_messages.push(termy_codex::ChatMessage::assistant(content));
                     }
                     _ => {
-                        openai_messages.push(termy_openai::ChatMessage::user(content.clone()));
                         gemini_messages.push(termy_gemini::ChatMessage::user(content.clone()));
                         codex_messages.push(termy_codex::ChatMessage::user(content));
                     }
                 }
             }
 
-            if let Some(last) = openai_messages.last_mut()
-                && let termy_openai::ChatContent::Text(text) = &mut last.content
-            {
-                *text = format!(
-                    "{}\n\nTerminal context:\n```\n{}\n```",
-                    text, terminal_context
-                );
-            }
             if let Some(last) = gemini_messages.last_mut()
                 && let termy_gemini::ChatContent::Text(text) = &mut last.content
             {
@@ -501,10 +513,6 @@ Current terminal context is provided in the latest user message.";
             }
 
             let result = match provider_config {
-                config::AiProvider::OpenAi => {
-                    let client = termy_openai::OpenAiClient::new(api_key).with_model(model.clone());
-                    run_agent_turn_openai(&client, &cwd, openai_messages, &tx)
-                }
                 config::AiProvider::Gemini => {
                     let client = termy_gemini::GeminiClient::new(api_key).with_model(model.clone());
                     run_agent_turn_gemini(&client, &cwd, gemini_messages, &tx)
@@ -514,6 +522,11 @@ Current terminal context is provided in the latest user message.";
                         .with_model(model.clone())
                         .with_reasoning_effort(Some(reasoning_effort));
                     run_agent_turn_codex(&client, &cwd, codex_messages, &tx)
+                }
+                config::AiProvider::ClaudeCode => {
+                    let client =
+                        termy_claude_code::ClaudeCodeClient::new().with_model(model.clone());
+                    run_agent_turn_claude(&client, &text, &terminal_context, &tx)
                 }
             };
 
@@ -537,17 +550,23 @@ Current terminal context is provided in the latest user message.";
         );
         let provider = loaded.config.ai_provider;
         let api_key = match loaded.config.ai_provider {
-            config::AiProvider::OpenAi => loaded.config.openai_api_key,
             config::AiProvider::Gemini => loaded.config.gemini_api_key,
             config::AiProvider::Codex => Some(loaded.config.codex_api_key.unwrap_or_default()),
+            config::AiProvider::ClaudeCode => Some(String::new()),
         };
         let api_key = match api_key {
-            Some(key) if provider == config::AiProvider::Codex || !key.is_empty() => key,
+            Some(key)
+                if provider == config::AiProvider::Codex
+                    || provider == config::AiProvider::ClaudeCode
+                    || !key.is_empty() =>
+            {
+                key
+            }
             _ => {
                 let provider_name = match provider {
-                    config::AiProvider::OpenAi => "OpenAI",
                     config::AiProvider::Gemini => "Gemini",
                     config::AiProvider::Codex => "Codex",
+                    config::AiProvider::ClaudeCode => "Claude Code",
                 };
                 termy_toast::error(format!(
                     "{provider_name} API key not configured. Set it in Settings > Advanced > AI."
@@ -555,15 +574,11 @@ Current terminal context is provided in the latest user message.";
                 return;
             }
         };
-        let model = loaded
-            .config
-            .openai_model
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| match provider {
-                config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
-                config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
-                config::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
-            });
+        let model = match provider {
+            config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
+            config::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
+            config::AiProvider::ClaudeCode => termy_claude_code::DEFAULT_MODEL.to_string(),
+        };
         let reasoning_effort = match loaded.config.ai_reasoning_effort {
             config::AiReasoningEffort::None => "none",
             config::AiReasoningEffort::Minimal => "minimal",
@@ -589,12 +604,6 @@ Current terminal context is provided in the latest user message.";
         // Spawn async task to call OpenAI (using smol::unblock for blocking HTTP client)
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let result = smol::unblock(move || match provider {
-                config::AiProvider::OpenAi => {
-                    let client = termy_openai::OpenAiClient::new(api_key).with_model(model);
-                    client
-                        .message_with_terminal_context(&user_message, &terminal_context)
-                        .map_err(|error| error.to_string())
-                }
                 config::AiProvider::Gemini => {
                     let client = termy_gemini::GeminiClient::new(api_key).with_model(model);
                     client
@@ -605,6 +614,12 @@ Current terminal context is provided in the latest user message.";
                     let client = termy_codex::CodexClient::new(api_key)
                         .with_model(model)
                         .with_reasoning_effort(Some(reasoning_effort));
+                    client
+                        .message_with_terminal_context(&user_message, &terminal_context)
+                        .map_err(|error| error.to_string())
+                }
+                config::AiProvider::ClaudeCode => {
+                    let client = termy_claude_code::ClaudeCodeClient::new().with_model(model);
                     client
                         .message_with_terminal_context(&user_message, &terminal_context)
                         .map_err(|error| error.to_string())
@@ -787,48 +802,6 @@ enum AgentEvent {
     Done,
 }
 
-fn run_agent_turn_openai(
-    client: &termy_openai::OpenAiClient,
-    cwd: &str,
-    messages: Vec<termy_openai::ChatMessage>,
-    tx: &flume::Sender<AgentEvent>,
-) -> Result<(), String> {
-    let _ = tx.send(AgentEvent::AssistantStart);
-    let first = client
-        .chat_stream(messages.clone(), |chunk| {
-            let _ = tx.send(AgentEvent::AssistantChunk(chunk.to_string()));
-        })
-        .map_err(|error| error.to_string())?;
-
-    if let Some(tool_call) = termy_agent_sidebar::parse_run_shell_tool_call(&first) {
-        let _ = tx.send(AgentEvent::AssistantReplace(format!(
-            "Using tool: {}",
-            tool_call.command
-        )));
-        let _ = tx.send(AgentEvent::AssistantFinish);
-        let tool_output =
-            termy_agent_sidebar::execute_run_shell_tool(Path::new(cwd), &tool_call.command)?;
-        let _ = tx.send(AgentEvent::ToolOutput(tool_output.clone()));
-
-        let mut followup = messages;
-        followup.push(termy_openai::ChatMessage::assistant(first));
-        followup.push(termy_openai::ChatMessage::user(format!(
-            "Tool output:\n{}\n\nRespond to the user with the result.",
-            tool_output
-        )));
-
-        let _ = tx.send(AgentEvent::AssistantStart);
-        client
-            .chat_stream(followup, |chunk| {
-                let _ = tx.send(AgentEvent::AssistantChunk(chunk.to_string()));
-            })
-            .map_err(|error| error.to_string())?;
-        return Ok(());
-    }
-
-    Ok(())
-}
-
 fn run_agent_turn_gemini(
     client: &termy_gemini::GeminiClient,
     cwd: &str,
@@ -898,6 +871,23 @@ fn run_agent_turn_codex(
     Ok(())
 }
 
+fn run_agent_turn_claude(
+    client: &termy_claude_code::ClaudeCodeClient,
+    user_message: &str,
+    terminal_context: &str,
+    tx: &flume::Sender<AgentEvent>,
+) -> Result<(), String> {
+    let _ = tx.send(AgentEvent::AssistantStart);
+    let response = client
+        .message_with_terminal_context(user_message, terminal_context)
+        .map_err(|error| error.to_string())?;
+    let trimmed = response.trim();
+    if !trimmed.is_empty() {
+        let _ = tx.send(AgentEvent::AssistantChunk(trimmed.to_string()));
+    }
+    Ok(())
+}
+
 fn extract_line_text_for_ai(
     grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
     line_idx: i32,
@@ -964,4 +954,11 @@ fn strip_markdown_code_block(text: &str) -> String {
     }
 
     trimmed.to_string()
+}
+
+fn parse_agent_model_command(input: &str) -> Option<&str> {
+    let trimmed = input.trim();
+    trimmed
+        .strip_prefix("/model ")
+        .or_else(|| trimmed.strip_prefix("/model\t"))
 }

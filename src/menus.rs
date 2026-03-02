@@ -14,6 +14,8 @@ pub(crate) fn app_menus(install_cli_available: bool, tmux_enabled: bool) -> Vec<
     let capabilities = CommandCapabilities {
         tmux_runtime_active: tmux_enabled,
         install_cli_available,
+        // AI commands are not shown in menus, so this value doesn't matter for menu construction
+        ai_features_enabled: true,
     };
 
     CommandAction::menu_roots()
@@ -87,6 +89,8 @@ fn menu_item_title(
         Some(CommandUnavailableReason::InstallCliAlreadyInstalled) => {
             Some(INSTALL_CLI_INSTALLED_TITLE)
         }
+        // AI commands don't have menu entries, so if they're disabled, they're hidden
+        Some(CommandUnavailableReason::AiFeaturesDisabled) => None,
         None => unreachable!("disabled command must include an unavailable reason"),
     }
 }
@@ -229,6 +233,7 @@ mod tests {
         let availability = CommandAction::InstallCli.availability(CommandCapabilities {
             tmux_runtime_active: true,
             install_cli_available: false,
+            ai_features_enabled: true,
         });
         assert_eq!(
             availability.reason,
@@ -241,6 +246,7 @@ mod tests {
         let caps = CommandCapabilities {
             tmux_runtime_active: false,
             install_cli_available: true,
+            ai_features_enabled: true,
         };
         for action in [
             CommandAction::SplitPaneVertical,

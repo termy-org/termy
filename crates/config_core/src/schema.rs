@@ -298,16 +298,16 @@ pub const PANE_FOCUS_EFFECT_ENUM_CHOICES: &[EnumChoice] = &[
 
 pub const AI_PROVIDER_ENUM_CHOICES: &[EnumChoice] = &[
     EnumChoice {
-        value: "openai",
-        label: "OpenAI",
-    },
-    EnumChoice {
         value: "gemini",
         label: "Gemini",
     },
     EnumChoice {
         value: "codex",
         label: "Codex",
+    },
+    EnumChoice {
+        value: "claude_code",
+        label: "Claude Code",
     },
 ];
 
@@ -378,12 +378,11 @@ define_root_settings! {
     (PaneFocusEffect, "pane_focus_effect", [], Terminal, "UI", "Pane Focus Effect", "How inactive panes are visually dimmed when a pane is active", ["pane", "focus", "dimming", "effect"], RootSettingValueKind::Enum, false),
     (PaneFocusStrength, "pane_focus_strength", [], Terminal, "UI", "Pane Focus Strength", "Strength of active pane emphasis (0.0 to 2.0)", ["pane", "focus", "strength", "dimming"], RootSettingValueKind::Numeric, false),
     (CommandPaletteShowKeybinds, "command_palette_show_keybinds", [], Terminal, "UI", "Show Keybindings In Palette", "Show shortcut badges in command palette rows", ["palette", "keybinds", "shortcuts"], RootSettingValueKind::Boolean, false),
-    (AiProvider, "ai_provider", [], Advanced, "AI", "AI Provider", "Provider used for AI input and model listing", ["ai", "provider", "openai", "gemini", "codex"], RootSettingValueKind::Enum, false),
+    (AiFeaturesEnabled, "ai_features_enabled", [], Advanced, "AI", "AI Features", "Enable or disable all AI features", ["ai", "features", "enabled", "disabled", "toggle"], RootSettingValueKind::Boolean, false),
+    (AiProvider, "ai_provider", [], Advanced, "AI", "AI Provider", "Provider used for AI input and model listing", ["ai", "provider", "gemini", "codex", "claude", "claude-code"], RootSettingValueKind::Enum, false),
     (AiReasoningEffort, "ai_reasoning_effort", [], Advanced, "AI", "AI Reasoning Effort", "Reasoning effort used for AI requests", ["ai", "reasoning", "effort", "codex"], RootSettingValueKind::Enum, false),
-    (OpenaiApiKey, "openai_api_key", ["openai_key"], Advanced, "AI", "OpenAI API Key", "API key for OpenAI integration", ["openai", "api", "key", "ai", "gpt"], RootSettingValueKind::Text, false),
     (GeminiApiKey, "gemini_api_key", ["google_ai_api_key"], Advanced, "AI", "Gemini API Key", "API key for Google Gemini integration", ["gemini", "google", "api", "key", "ai"], RootSettingValueKind::Text, false),
     (CodexApiKey, "codex_api_key", [], Advanced, "AI", "Codex API Key", "Optional API key for Codex app-server integration", ["codex", "api", "key", "ai"], RootSettingValueKind::Text, false),
-    (OpenaiModel, "openai_model", ["ai_model"], Advanced, "AI", "AI Model", "Model used for AI input requests", ["openai", "gemini", "codex", "model", "ai", "gpt"], RootSettingValueKind::Text, false),
     (ChatSidebarWidth, "chat_sidebar_width", [], Advanced, "AI", "Chat Sidebar Width", "Width of the agent chat sidebar in pixels", ["chat", "sidebar", "agent", "ai", "width", "panel"], RootSettingValueKind::Numeric, false),
     (Keybind, "keybind", [], Keybindings, "KEYBINDS", "Keybind Directive", "Keybinding override directive", ["keybind", "shortcut", "command"], RootSettingValueKind::Special, true),
 }
@@ -534,10 +533,11 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::CommandPaletteShowKeybinds => {
             Some(config.command_palette_show_keybinds.to_string())
         }
+        RootSettingId::AiFeaturesEnabled => Some(config.ai_features_enabled.to_string()),
         RootSettingId::AiProvider => Some(match config.ai_provider {
-            AiProvider::OpenAi => "openai".to_string(),
             AiProvider::Gemini => "gemini".to_string(),
             AiProvider::Codex => "codex".to_string(),
+            AiProvider::ClaudeCode => "claude_code".to_string(),
         }),
         RootSettingId::AiReasoningEffort => Some(match config.ai_reasoning_effort {
             AiReasoningEffort::None => "none".to_string(),
@@ -547,10 +547,8 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
             AiReasoningEffort::High => "high".to_string(),
             AiReasoningEffort::XHigh => "xhigh".to_string(),
         }),
-        RootSettingId::OpenaiApiKey => config.openai_api_key.clone(),
         RootSettingId::GeminiApiKey => config.gemini_api_key.clone(),
         RootSettingId::CodexApiKey => config.codex_api_key.clone(),
-        RootSettingId::OpenaiModel => config.openai_model.clone(),
         RootSettingId::ChatSidebarWidth => Some(config.chat_sidebar_width.to_string()),
         RootSettingId::Keybind => None,
     }
@@ -648,7 +646,7 @@ mod tests {
         );
         assert_eq!(
             enum_choice_values(RootSettingId::AiProvider),
-            vec!["openai", "gemini", "codex"]
+            vec!["gemini", "codex", "claude_code"]
         );
 
         assert_eq!(

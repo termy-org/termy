@@ -1178,6 +1178,7 @@ mod tests {
         let caps = CommandCapabilities {
             tmux_runtime_active: false,
             install_cli_available: true,
+            ai_features_enabled: true,
         };
         let availability = CommandAction::SplitPaneVertical.availability(caps);
         assert!(!availability.enabled);
