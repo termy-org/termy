@@ -1,6 +1,21 @@
 use super::*;
 
 impl TerminalView {
+    pub(in super::super) fn terminal_content_position(
+        &self,
+        position: gpui::Point<Pixels>,
+    ) -> (f32, f32) {
+        let x: f32 = position.x.into();
+        let y: f32 = position.y.into();
+        // Mouse coordinates arrive in window space; subtract chrome so terminal hit-testing
+        // stays aligned with rendered rows in both native and tmux runtimes.
+        (x, Self::window_y_to_terminal_content_y(y, self.chrome_height()))
+    }
+
+    pub(in super::super) fn window_y_to_terminal_content_y(window_y: f32, chrome_height: f32) -> f32 {
+        window_y - chrome_height
+    }
+
     pub(in super::super) fn execute_layout_command_action(
         &mut self,
         action: CommandAction,
@@ -158,5 +173,20 @@ impl TerminalView {
 
     pub(in super::super) fn chrome_height(&self) -> f32 {
         Self::titlebar_height() + self.update_banner_height()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_y_to_terminal_content_y_subtracts_non_zero_chrome() {
+        assert_eq!(TerminalView::window_y_to_terminal_content_y(120.0, 34.0), 86.0);
+    }
+
+    #[test]
+    fn window_y_to_terminal_content_y_is_identity_when_chrome_is_zero() {
+        assert_eq!(TerminalView::window_y_to_terminal_content_y(120.0, 0.0), 120.0);
     }
 }

@@ -15,6 +15,20 @@ enum WheelScrollRetargetResult {
     Abort,
 }
 
+fn terminal_scrollbar_local_y_from_window_y(
+    window_y: f32,
+    chrome_height: f32,
+    surface_origin_y: f32,
+    surface_height: f32,
+) -> Option<f32> {
+    let content_y = TerminalView::window_y_to_terminal_content_y(window_y, chrome_height);
+    if content_y < surface_origin_y || content_y > surface_origin_y + surface_height {
+        return None;
+    }
+
+    Some(content_y - surface_origin_y)
+}
+
 impl TerminalView {
     fn consume_suppressed_scroll_event(
         &mut self,
@@ -173,14 +187,16 @@ impl TerminalView {
             return None;
         }
 
-        let y: f32 = position.y.into();
-        if y < surface.origin_y || y > surface.origin_y + surface.height {
-            return None;
-        }
+        let window_y: f32 = position.y.into();
+        let local_y = terminal_scrollbar_local_y_from_window_y(
+            window_y,
+            self.chrome_height(),
+            surface.origin_y,
+            surface.height,
+        )?;
 
         let layout = self.terminal_scrollbar_layout_for_track(surface.height)?;
         let metrics = layout.metrics;
-        let local_y = y - surface.origin_y;
         let thumb_hit =
             local_y >= metrics.thumb_top && local_y <= metrics.thumb_top + metrics.thumb_height;
 
@@ -267,7 +283,7 @@ impl TerminalView {
         let range = layout.range;
         let metrics = layout.metrics;
 
-        let y: f32 = position.y.into();
+        let (_, y) = self.terminal_content_position(position);
         let local_y = (y - surface.origin_y).clamp(0.0, surface.height);
         let thumb_top = (local_y - drag.thumb_grab_offset).clamp(0.0, metrics.travel);
         let changed = self.apply_terminal_scroll_offset(
@@ -408,5 +424,17 @@ mod tests {
             TerminalView::wheel_scroll_pane_decision(true, Some("%8"), Some("%3")),
             WheelScrollPaneDecision::FocusHoveredPane
         );
+    }
+
+    #[test]
+    fn terminal_scrollbar_local_y_from_window_y_subtracts_chrome_before_surface_math() {
+        let local_y = terminal_scrollbar_local_y_from_window_y(164.0, 44.0, 100.0, 300.0);
+        assert_eq!(local_y, Some(20.0));
+    }
+
+    #[test]
+    fn terminal_scrollbar_local_y_from_window_y_rejects_points_outside_surface() {
+        let local_y = terminal_scrollbar_local_y_from_window_y(120.0, 44.0, 100.0, 300.0);
+        assert_eq!(local_y, None);
     }
 }

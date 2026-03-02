@@ -9,8 +9,7 @@ impl TerminalView {
 
         let tab = self.tabs.get(self.active_tab)?;
         let (padding_x, padding_y) = self.effective_terminal_padding();
-        let x: f32 = position.x.into();
-        let y: f32 = position.y.into();
+        let (x, y) = self.terminal_content_position(position);
         let mut best: Option<(f32, PaneResizeAxis, String)> = None;
 
         for pane in &tab.panes {

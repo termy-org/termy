@@ -64,8 +64,7 @@ impl TerminalView {
     ) -> Option<(String, CellPos)> {
         let tab = self.tabs.get(self.active_tab)?;
         let (padding_x, padding_y) = self.effective_terminal_padding();
-        let x: f32 = position.x.into();
-        let y: f32 = position.y.into();
+        let (x, y) = self.terminal_content_position(position);
         let active_pane_id = tab.active_pane_id();
 
         for pane in &tab.panes {
@@ -397,5 +396,24 @@ mod tests {
             .expect("native terminal should initialize for row adapter test");
         let native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
         assert_eq!(native_row.len(), usize::from(size.cols));
+    }
+
+    #[test]
+    fn pane_row_mapping_uses_chrome_adjusted_pointer_y() {
+        let chrome_height = 34.0;
+        let padding_y = 6.0;
+        let pane_top = 1u16;
+        let cell_height = 20.0;
+        let expected_row = 2i32;
+
+        let window_y = chrome_height
+            + padding_y
+            + ((f32::from(pane_top) + expected_row as f32) * cell_height)
+            + 0.1;
+        let content_y = TerminalView::window_y_to_terminal_content_y(window_y, chrome_height);
+        let origin_y = padding_y + (f32::from(pane_top) * cell_height);
+        let row = ((content_y - origin_y) / cell_height).floor() as i32;
+
+        assert_eq!(row, expected_row);
     }
 }
