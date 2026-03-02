@@ -123,9 +123,15 @@ impl TerminalView {
             })
         };
 
-        // When clamping out-of-bounds points, prefer the active pane first so
-        // we never return a clamped hit for an inactive pane before the active pane.
+        let pointer_inside_any_pane = tab
+            .panes
+            .iter()
+            .any(|pane| evaluate_pane(pane, false).is_some());
+
+        // When clamping points that are outside all panes, prefer the active pane first
+        // so we never return a clamped hit for an inactive pane before the active pane.
         if clamp
+            && !pointer_inside_any_pane
             && let Some(active_pane_id) = active_pane_id
             && let Some(active_pane) = tab
                 .panes
@@ -424,9 +430,11 @@ mod tests {
         let native = Terminal::new_native(size, None, None, None, None)
             .expect("native terminal should initialize for row adapter test");
         native.write_input(b"printf native-row-adapter\r");
+        let expected_native_token = "native-row";
         let mut native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
         for _ in 0..40 {
-            if native_row.iter().any(|c| !c.is_whitespace()) {
+            let rendered_native_row: String = native_row.iter().collect();
+            if rendered_native_row.contains(expected_native_token) {
                 break;
             }
             thread::sleep(Duration::from_millis(25));
@@ -434,7 +442,8 @@ mod tests {
             native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
         }
         assert_eq!(native_row.len(), usize::from(size.cols));
-        assert!(native_row.iter().any(|c| !c.is_whitespace()));
+        let rendered_native_row: String = native_row.iter().collect();
+        assert!(rendered_native_row.contains(expected_native_token));
     }
 
     #[test]

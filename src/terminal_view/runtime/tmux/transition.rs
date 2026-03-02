@@ -59,14 +59,21 @@ impl TerminalView {
                 &mut self.last_config_error_message,
                 "Failed to read config for tmux attach",
             );
-            let loaded_binary = loaded.config.tmux_binary.trim().to_string();
             if loaded.loaded_from_disk {
-                self.cached_tmux_binary = (!loaded_binary.is_empty()).then_some(loaded_binary.clone());
+                let loaded_binary = loaded.config.tmux_binary.trim().to_string();
+                if !loaded_binary.is_empty() {
+                    self.cached_tmux_binary = Some(loaded_binary.clone());
+                }
+                (
+                    loaded_binary,
+                    loaded.config.tmux_show_active_pane_border,
+                )
+            } else {
+                (
+                    self.cached_tmux_binary.clone().unwrap_or_default(),
+                    self.tmux_show_active_pane_border,
+                )
             }
-            (
-                loaded_binary,
-                loaded.config.tmux_show_active_pane_border,
-            )
         };
         let runtime_config = TmuxRuntimeConfig {
             binary,

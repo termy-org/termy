@@ -250,6 +250,7 @@ impl TerminalView {
         }
 
         if self.refresh_tmux_snapshot() {
+            self.reset_tab_rename_state();
             self.reset_tab_drag_state();
             self.clear_selection();
             cx.notify();

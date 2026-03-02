@@ -65,12 +65,14 @@ impl PaneTerminal {
 
     pub fn resize(&self, new_size: TerminalSize) {
         let new_size = Self::normalized_size(new_size);
-        {
-            let mut inner = self.inner.lock();
-            inner.size = new_size;
-        }
         let term = self.cloned_term_arc();
-        term.lock().resize(new_size);
+        let mut term = term.lock();
+        let mut inner = self.inner.lock();
+        // Keep cached pane size and the backing terminal dimensions synchronized
+        // under the same critical section so concurrent readers never observe
+        // a partially-applied resize.
+        inner.size = new_size;
+        term.resize(new_size);
     }
 
     pub fn size(&self) -> TerminalSize {
