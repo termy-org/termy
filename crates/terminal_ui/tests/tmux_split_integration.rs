@@ -320,7 +320,7 @@ fn tmux_capture_full_rejoins_wrapped_input_rows() {
         .expect("send-input should succeed");
 
     let capture = client
-        .capture_pane(pane_id.as_str())
+        .capture_pane(pane_id.as_str(), 10_000)
         .expect("capture-pane full history should succeed");
     let capture_text = String::from_utf8_lossy(&capture);
 

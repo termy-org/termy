@@ -16,7 +16,10 @@ pub(crate) fn strip_control_line_wrappers(mut line: &[u8]) -> &[u8] {
     line
 }
 
-pub(crate) fn capture_full_pane_args<'a>(pane_id: &'a str) -> [&'a str; 11] {
+pub(crate) fn capture_full_pane_args<'a>(
+    pane_id: &'a str,
+    start_row: &'a str,
+) -> [&'a str; 11] {
     // Full-history hydration does not rely on tmux viewport cursor coordinates.
     // Use `-J` here so soft-wrapped rows are rejoined and do not become hard
     // line breaks after restart when pane width differs at attach time.
@@ -27,7 +30,7 @@ pub(crate) fn capture_full_pane_args<'a>(pane_id: &'a str) -> [&'a str; 11] {
         "-C",
         "-J",
         "-S",
-        "-",
+        start_row,
         "-E",
         "-",
         "-t",
@@ -166,8 +169,8 @@ mod tests {
     }
 
     #[test]
-    fn capture_full_pane_args_match_expected_shape_with_joined_wraps() {
-        let args = capture_full_pane_args("%1");
+    fn capture_full_pane_args_match_expected_shape_with_joined_wraps_and_bounded_rows() {
+        let args = capture_full_pane_args("%1", "-2060");
         assert_eq!(
             args,
             [
@@ -177,13 +180,14 @@ mod tests {
                 "-C",
                 "-J",
                 "-S",
-                "-",
+                "-2060",
                 "-E",
                 "-",
                 "-t",
                 "%1",
             ]
         );
+        assert_ne!(args[6], "-");
     }
 
     #[test]

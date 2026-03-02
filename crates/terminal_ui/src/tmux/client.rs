@@ -423,8 +423,11 @@ impl TmuxClient {
         Ok(())
     }
 
-    pub fn capture_pane(&self, pane_id: &str) -> Result<Vec<u8>> {
-        let args = capture_full_pane_args(pane_id);
+    pub fn capture_pane(&self, pane_id: &str, max_rows: usize) -> Result<Vec<u8>> {
+        // Hydration capture must stay bounded to avoid expensive full-history
+        // scans that can time out during reattach on large tmux histories.
+        let start_row = format!("-{}", max_rows.max(1));
+        let args = capture_full_pane_args(pane_id, start_row.as_str());
         let out = self.run_control_capture_args(&args)?;
         Ok(sanitize_tmux_payload(unescape_tmux_payload(
             out.trim_end().as_bytes(),

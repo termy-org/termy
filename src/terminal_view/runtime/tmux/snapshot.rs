@@ -2,6 +2,21 @@ use super::*;
 use termy_terminal_ui::{TmuxClient, TmuxPaneState, TmuxSnapshot};
 
 impl TerminalView {
+    fn hydration_capture_scrollback_history(
+        active_scrollback_history: usize,
+        inactive_tab_scrollback: Option<usize>,
+    ) -> usize {
+        inactive_tab_scrollback
+            .map(|inactive_history| inactive_history.max(active_scrollback_history))
+            .unwrap_or(active_scrollback_history)
+    }
+
+    fn hydration_capture_row_budget(scrollback_history: usize, pane_height: u16) -> usize {
+        scrollback_history
+            .saturating_add(usize::from(pane_height.max(1)))
+            .max(1)
+    }
+
     fn terminal_size_for_pane_state(
         pane: &TmuxPaneState,
         cell_size: Option<Size<Pixels>>,
@@ -36,7 +51,10 @@ impl TerminalView {
         // define cursor state. Snapshot cursor coordinates can drift relative to
         // captured rows across attach/switch timing, so we do not inject cursor
         // position escapes during hydration.
-        let capture = tmux_client.capture_pane(&pane.id);
+        // Bound capture to local retention + current viewport so hydration keeps
+        // user-visible context without paying unbounded tmux history costs.
+        let capture_rows = Self::hydration_capture_row_budget(scrollback_history, pane.height);
+        let capture = tmux_client.capture_pane(&pane.id, capture_rows);
 
         match capture {
             Ok(capture) => {
@@ -75,6 +93,10 @@ impl TerminalView {
 
         let mut new_tabs = Vec::new();
         let mut hydration_failures = Vec::<String>::new();
+        let hydration_scrollback_history = Self::hydration_capture_scrollback_history(
+            self.terminal_runtime.scrollback_history,
+            self.inactive_tab_scrollback,
+        );
         for window in &snapshot.windows {
             let mut panes = Vec::new();
             for pane_state in &window.panes {
@@ -85,7 +107,7 @@ impl TerminalView {
                         let (terminal, hydration_error) = Self::hydrate_pane_terminal(
                             &self.tmux_runtime().client,
                             pane_state,
-                            self.terminal_runtime.scrollback_history,
+                            hydration_scrollback_history,
                             self.cell_size,
                         );
                         (terminal, hydration_error.is_some(), hydration_error)
@@ -267,5 +289,43 @@ mod tests {
         let size = TerminalView::terminal_size_for_pane_state(&pane, None);
         assert_eq!(size.cols, 1);
         assert_eq!(size.rows, 1);
+    }
+
+    #[test]
+    fn hydration_capture_row_budget_includes_scrollback_and_viewport_rows() {
+        assert_eq!(TerminalView::hydration_capture_row_budget(2000, 60), 2060);
+    }
+
+    #[test]
+    fn hydration_capture_row_budget_clamps_zero_height_to_one_row() {
+        assert_eq!(TerminalView::hydration_capture_row_budget(0, 0), 1);
+    }
+
+    #[test]
+    fn hydration_capture_row_budget_saturates_on_large_inputs() {
+        assert_eq!(
+            TerminalView::hydration_capture_row_budget(usize::MAX, u16::MAX),
+            usize::MAX
+        );
+    }
+
+    #[test]
+    fn hydration_capture_scrollback_history_uses_active_when_inactive_not_set() {
+        assert_eq!(
+            TerminalView::hydration_capture_scrollback_history(2_000, None),
+            2_000
+        );
+    }
+
+    #[test]
+    fn hydration_capture_scrollback_history_uses_max_of_active_and_inactive() {
+        assert_eq!(
+            TerminalView::hydration_capture_scrollback_history(2_000, Some(4_000)),
+            4_000
+        );
+        assert_eq!(
+            TerminalView::hydration_capture_scrollback_history(2_000, Some(1_000)),
+            2_000
+        );
     }
 }
