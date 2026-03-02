@@ -1,8 +1,8 @@
 use crate::colors::TerminalColors;
 use crate::commands::{self, CommandAction};
 use crate::config::{
-    self, AppConfig, CursorStyle as AppCursorStyle, TabCloseVisibility, TabTitleConfig,
-    PaneFocusEffect, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
+    self, AppConfig, CursorStyle as AppCursorStyle, PaneFocusEffect, TabCloseVisibility,
+    TabTitleConfig, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
     TerminalScrollbarVisibility,
 };
 use crate::keybindings;
@@ -12,9 +12,9 @@ use flume::{Sender, bounded};
 use gpui::{
     AnyElement, App, AsyncApp, ClipboardItem, Context, Element, ExternalPaths, FocusHandle,
     Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, ScrollWheelEvent,
-    SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window,
-    WindowBackgroundAppearance, div, point, px,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, ScrollHandle,
+    ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase,
+    WeakEntity, Window, WindowBackgroundAppearance, div, point, px,
 };
 use std::{
     env,
@@ -817,6 +817,16 @@ pub struct TerminalView {
     // AI input state
     ai_input_open: bool,
     ai_input: InlineInputState,
+    agent_sidebar_input: InlineInputState,
+    agent_sidebar: termy_agent_sidebar::AgentSidebarMode,
+    agent_sessions: termy_agent_sidebar::AgentSessionStore,
+    agent_sidebar_input_active: bool,
+    agent_provider_dropdown_open: bool,
+    agent_model_dropdown_open: bool,
+    agent_model_options: Vec<String>,
+    agent_models_loading: bool,
+    agent_models_loaded_for_api_key: Option<(config::AiProvider, String)>,
+    agent_messages_scroll_handle: ScrollHandle,
     // Pending clipboard write from OSC 52
     pending_clipboard: Option<String>,
     quit_prompt_in_flight: bool,
@@ -974,8 +984,10 @@ impl TerminalView {
             .unwrap_or(DEFAULT_TAB_TITLE)
             .to_string();
         let title_text_width = 0.0;
-        let sticky_title_width =
-            Self::tab_display_width_for_text_px_without_close_with_max(title_text_width, TAB_MAX_WIDTH);
+        let sticky_title_width = Self::tab_display_width_for_text_px_without_close_with_max(
+            title_text_width,
+            TAB_MAX_WIDTH,
+        );
         let display_width =
             Self::tab_display_width_for_text_px_with_max(title_text_width, TAB_MAX_WIDTH);
         let pane_id = format!("%native-{tab_id}");
@@ -1023,7 +1035,9 @@ impl TerminalView {
     }
 
     fn active_pane_id(&self) -> Option<&str> {
-        self.tabs.get(self.active_tab).and_then(|tab| tab.active_pane_id())
+        self.tabs
+            .get(self.active_tab)
+            .and_then(|tab| tab.active_pane_id())
     }
 
     fn active_tab_ref(&self) -> Option<&TerminalTab> {
@@ -1121,8 +1135,9 @@ impl TerminalView {
             self.pane_focus_transition = None;
             return None;
         }
-        let progress =
-            pane_focus_ease_out(elapsed.as_secs_f32() / PANE_FOCUS_ANIMATION_DURATION.as_secs_f32());
+        let progress = pane_focus_ease_out(
+            elapsed.as_secs_f32() / PANE_FOCUS_ANIMATION_DURATION.as_secs_f32(),
+        );
         Some((
             transition.from_pane_id.clone(),
             transition.to_pane_id.clone(),
@@ -1560,6 +1575,20 @@ impl TerminalView {
             search_debounce_token: 0,
             ai_input_open: false,
             ai_input: InlineInputState::new(String::new()),
+            agent_sidebar_input: InlineInputState::new(String::new()),
+            agent_sidebar: {
+                let mut mode = termy_agent_sidebar::AgentSidebarMode::default();
+                mode.set_width(config.chat_sidebar_width);
+                mode
+            },
+            agent_sessions: termy_agent_sidebar::AgentSessionStore::default(),
+            agent_sidebar_input_active: false,
+            agent_provider_dropdown_open: false,
+            agent_model_dropdown_open: false,
+            agent_model_options: Vec::new(),
+            agent_models_loading: false,
+            agent_models_loaded_for_api_key: None,
+            agent_messages_scroll_handle: ScrollHandle::new(),
             pending_clipboard: None,
             quit_prompt_in_flight: false,
             allow_quit_without_prompt: false,
@@ -1643,7 +1672,10 @@ impl TerminalView {
         self.configured_working_dir = config.working_dir.clone();
         self.terminal_runtime = Self::runtime_config_from_app_config(&config);
         let reconnect_managed_tmux = self.runtime_uses_tmux()
-            && matches!(self.tmux_runtime().config.launch, TmuxLaunchTarget::Managed { .. });
+            && matches!(
+                self.tmux_runtime().config.launch,
+                TmuxLaunchTarget::Managed { .. }
+            );
         if reconnect_managed_tmux {
             self.reconnect_tmux_runtime(Self::tmux_runtime_from_app_config(&config));
         } else if self.runtime_uses_tmux() {
@@ -1666,6 +1698,7 @@ impl TerminalView {
         self.background_blur = config.background_blur;
         self.padding_x = config.padding_x.max(0.0);
         self.padding_y = config.padding_y.max(0.0);
+        self.agent_sidebar.set_width(config.chat_sidebar_width);
         self.mouse_scroll_multiplier = config.mouse_scroll_multiplier;
         if self.pane_focus_effect != config.pane_focus_effect
             || (self.pane_focus_strength - config.pane_focus_strength).abs() > f32::EPSILON
@@ -2008,12 +2041,10 @@ mod tests {
         let high_strength = pane_focus_strength_factor(0.8);
 
         assert!(
-            (preset.inactive_fg_blend * high_strength)
-                > (preset.inactive_fg_blend * low_strength)
+            (preset.inactive_fg_blend * high_strength) > (preset.inactive_fg_blend * low_strength)
         );
         assert!(
-            (preset.inactive_bg_blend * high_strength)
-                > (preset.inactive_bg_blend * low_strength)
+            (preset.inactive_bg_blend * high_strength) > (preset.inactive_bg_blend * low_strength)
         );
         assert!(
             (preset.active_border_alpha * high_strength)

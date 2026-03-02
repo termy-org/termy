@@ -40,6 +40,7 @@ pub(super) enum EditableField {
     OpenaiApiKey,
     GeminiApiKey,
     OpenaiModel,
+    ChatSidebarWidth,
     Color(termy_config_core::ColorSettingId),
 }
 
@@ -254,6 +255,7 @@ impl SettingsWindow {
             RootSettingId::OpenaiApiKey,
             RootSettingId::GeminiApiKey,
             RootSettingId::OpenaiModel,
+            RootSettingId::ChatSidebarWidth,
         ];
 
         match section {
@@ -399,7 +401,8 @@ impl SettingsWindow {
             | EditableField::AiProvider
             | EditableField::OpenaiApiKey
             | EditableField::GeminiApiKey
-            | EditableField::OpenaiModel => Self::advanced_field_spec(field),
+            | EditableField::OpenaiModel
+            | EditableField::ChatSidebarWidth => Self::advanced_field_spec(field),
             EditableField::Color(_) => FieldSpec {
                 root_setting: None,
                 codec: FieldCodec::Color,
@@ -574,6 +577,14 @@ impl SettingsWindow {
                 dropdown_click_only: false,
                 numeric_step: None,
             },
+            EditableField::ChatSidebarWidth => Self::numeric_field_spec(
+                RootSettingId::ChatSidebarWidth,
+                NumericStepSpec {
+                    delta: 10.0,
+                    min: 220.0,
+                    max: 900.0,
+                },
+            ),
             _ => unreachable!("invalid advanced field"),
         }
     }
@@ -950,6 +961,9 @@ impl SettingsWindow {
                         }
                     })
             }
+            EditableField::ChatSidebarWidth => {
+                format!("{}", self.config.chat_sidebar_width.round() as i32)
+            }
             EditableField::Color(id) => self
                 .custom_color_for_id(id)
                 .map(|rgb| format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b))
@@ -1095,6 +1109,15 @@ impl SettingsWindow {
                     &next.to_string(),
                 )
             }
+            EditableField::ChatSidebarWidth => {
+                let next = (self.config.chat_sidebar_width + (delta as f32 * step.delta))
+                    .clamp(step.min, step.max);
+                self.config.chat_sidebar_width = next;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::ChatSidebarWidth,
+                    &next.to_string(),
+                )
+            }
             _ => Err(format!("Unsupported numeric field: {:?}", field)),
         };
 
@@ -1237,6 +1260,7 @@ mod tests {
             EditableField::OpenaiApiKey,
             EditableField::GeminiApiKey,
             EditableField::OpenaiModel,
+            EditableField::ChatSidebarWidth,
             EditableField::Color(termy_config_core::ColorSettingId::Foreground),
         ];
 

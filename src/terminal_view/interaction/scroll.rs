@@ -30,6 +30,21 @@ fn terminal_scrollbar_local_y_from_window_y(
     Some(content_y - surface_origin_y)
 }
 
+fn wheel_event_targets_terminal_surface(
+    position: gpui::Point<Pixels>,
+    chrome_height: f32,
+    surface: TerminalViewportGeometry,
+) -> bool {
+    let x: f32 = position.x.into();
+    if x < surface.origin_x || x > surface.origin_x + surface.width {
+        return false;
+    }
+
+    let window_y: f32 = position.y.into();
+    let content_y = TerminalView::window_y_to_terminal_content_y(window_y, chrome_height);
+    content_y >= surface.origin_y && content_y <= surface.origin_y + surface.height
+}
+
 impl TerminalView {
     fn should_attempt_wheel_scroll_retarget(touch_phase: TouchPhase, delta_lines: i32) -> bool {
         matches!(touch_phase, TouchPhase::Moved) && delta_lines != 0
@@ -128,7 +143,10 @@ impl TerminalView {
         new_offset - old_offset
     }
 
-    pub(in super::super) fn terminal_scroll_delta_to_lines(&mut self, event: &ScrollWheelEvent) -> i32 {
+    pub(in super::super) fn terminal_scroll_delta_to_lines(
+        &mut self,
+        event: &ScrollWheelEvent,
+    ) -> i32 {
         match event.touch_phase {
             TouchPhase::Started => {
                 self.terminal_scroll_accumulator_y = 0.0;
@@ -164,10 +182,7 @@ impl TerminalView {
         hovered_pane_id: Option<&str>,
         active_pane_id: Option<&str>,
     ) -> WheelScrollPaneDecision {
-        if !runtime_uses_tmux
-            || hovered_pane_id.is_none()
-            || hovered_pane_id == active_pane_id
-        {
+        if !runtime_uses_tmux || hovered_pane_id.is_none() || hovered_pane_id == active_pane_id {
             WheelScrollPaneDecision::UseActivePane
         } else {
             WheelScrollPaneDecision::FocusHoveredPane
@@ -223,7 +238,8 @@ impl TerminalView {
         if gutter_width <= f32::EPSILON {
             return None;
         }
-        let scrollbar_left = (surface.origin_x + surface.width.max(0.0) - gutter_width).max(surface.origin_x);
+        let scrollbar_left =
+            (surface.origin_x + surface.width.max(0.0) - gutter_width).max(surface.origin_x);
         let scrollbar_right = scrollbar_left + gutter_width;
 
         let x: f32 = position.x.into();
@@ -356,23 +372,28 @@ impl TerminalView {
     pub(in super::super) fn handle_terminal_scroll_wheel(
         &mut self,
         event: &ScrollWheelEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.consume_suppressed_scroll_event(event.touch_phase, cx) {
             return;
         }
 
+        let Some(surface) = self.terminal_surface_geometry(window) else {
+            return;
+        };
+        if !wheel_event_targets_terminal_surface(event.position, self.chrome_height(), surface) {
+            return;
+        }
+
         cx.stop_propagation();
         let delta_lines = self.terminal_scroll_delta_to_lines(event);
-        let attempted_retarget = if Self::should_attempt_wheel_scroll_retarget(
-            event.touch_phase,
-            delta_lines,
-        ) {
-            self.retarget_scroll_wheel_pane(event.position, cx)
-        } else {
-            WheelScrollRetargetResult::Unchanged
-        };
+        let attempted_retarget =
+            if Self::should_attempt_wheel_scroll_retarget(event.touch_phase, delta_lines) {
+                self.retarget_scroll_wheel_pane(event.position, cx)
+            } else {
+                WheelScrollRetargetResult::Unchanged
+            };
         let retarget_result =
             Self::wheel_scroll_retarget_result(event.touch_phase, delta_lines, attempted_retarget);
         match retarget_result {
@@ -467,6 +488,53 @@ mod tests {
     }
 
     #[test]
+    fn wheel_event_targeting_rejects_points_outside_terminal_surface() {
+        let surface = TerminalViewportGeometry {
+            origin_x: 20.0,
+            origin_y: 40.0,
+            width: 300.0,
+            height: 200.0,
+        };
+
+        assert!(!wheel_event_targets_terminal_surface(
+            point(px(10.0), px(100.0)),
+            0.0,
+            surface
+        ));
+        assert!(!wheel_event_targets_terminal_surface(
+            point(px(40.0), px(20.0)),
+            0.0,
+            surface
+        ));
+        assert!(!wheel_event_targets_terminal_surface(
+            point(px(40.0), px(300.0)),
+            0.0,
+            surface
+        ));
+    }
+
+    #[test]
+    fn wheel_event_targeting_accounts_for_chrome_height() {
+        let surface = TerminalViewportGeometry {
+            origin_x: 0.0,
+            origin_y: 10.0,
+            width: 200.0,
+            height: 100.0,
+        };
+
+        assert!(wheel_event_targets_terminal_surface(
+            point(px(100.0), px(30.0)),
+            20.0,
+            surface
+        ));
+        assert!(!wheel_event_targets_terminal_surface(
+            point(px(100.0), px(10.0)),
+            20.0,
+            surface
+        ));
+    }
+
+    #[test]
     fn wheel_scroll_pane_decision_uses_active_for_non_tmux() {
         assert_eq!(
             TerminalView::wheel_scroll_pane_decision(false, Some("%2"), Some("%1")),
@@ -499,8 +567,7 @@ mod tests {
             true,
             Some("%8"),
         );
-        let retarget =
-            TerminalView::wheel_scroll_retarget_result(TouchPhase::Moved, 1, attempted);
+        let retarget = TerminalView::wheel_scroll_retarget_result(TouchPhase::Moved, 1, attempted);
         assert_eq!(retarget, WheelScrollRetargetResult::Switched);
     }
 
@@ -513,8 +580,7 @@ mod tests {
             false,
             Some("%3"),
         );
-        let retarget =
-            TerminalView::wheel_scroll_retarget_result(TouchPhase::Moved, 1, attempted);
+        let retarget = TerminalView::wheel_scroll_retarget_result(TouchPhase::Moved, 1, attempted);
         assert_eq!(retarget, WheelScrollRetargetResult::Abort);
     }
 
@@ -527,8 +593,7 @@ mod tests {
             true,
             Some("%8"),
         );
-        let retarget =
-            TerminalView::wheel_scroll_retarget_result(TouchPhase::Ended, 0, attempted);
+        let retarget = TerminalView::wheel_scroll_retarget_result(TouchPhase::Ended, 0, attempted);
         assert_eq!(retarget, WheelScrollRetargetResult::NotRetargeted);
     }
 

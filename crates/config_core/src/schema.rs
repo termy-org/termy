@@ -350,6 +350,7 @@ define_root_settings! {
     (OpenaiApiKey, "openai_api_key", ["openai_key"], Advanced, "AI", "OpenAI API Key", "API key for OpenAI integration", ["openai", "api", "key", "ai", "gpt"], RootSettingValueKind::Text, false),
     (GeminiApiKey, "gemini_api_key", ["google_ai_api_key"], Advanced, "AI", "Gemini API Key", "API key for Google Gemini integration", ["gemini", "google", "api", "key", "ai"], RootSettingValueKind::Text, false),
     (OpenaiModel, "openai_model", ["ai_model"], Advanced, "AI", "AI Model", "Model used for AI input requests", ["openai", "gemini", "model", "ai", "gpt"], RootSettingValueKind::Text, false),
+    (ChatSidebarWidth, "chat_sidebar_width", [], Advanced, "AI", "Chat Sidebar Width", "Width of the agent chat sidebar in pixels", ["chat", "sidebar", "agent", "ai", "width", "panel"], RootSettingValueKind::Numeric, false),
     (Keybind, "keybind", [], Keybindings, "KEYBINDS", "Keybind Directive", "Keybinding override directive", ["keybind", "shortcut", "command"], RootSettingValueKind::Special, true),
 }
 
@@ -505,6 +506,7 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::OpenaiApiKey => config.openai_api_key.clone(),
         RootSettingId::GeminiApiKey => config.gemini_api_key.clone(),
         RootSettingId::OpenaiModel => config.openai_model.clone(),
+        RootSettingId::ChatSidebarWidth => Some(config.chat_sidebar_width.to_string()),
         RootSettingId::Keybind => None,
     }
 }

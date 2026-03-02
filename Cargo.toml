@@ -17,12 +17,13 @@ members = [
   "crates/cli",
   "crates/openai",
   "crates/gemini",
+  "crates/agent_sidebar",
 ]
 resolver = "2"
 
 [package]
 name = "termy"
-version = "0.1.35"
+version = "0.1.33"
 edition = "2024"
 
 [package.metadata.bundle]
@@ -73,6 +74,7 @@ termy_command_core = { path = "crates/command_core" }
 termy_cli_install_core = { path = "crates/cli_install_core" }
 termy_openai = { path = "crates/openai" }
 termy_gemini = { path = "crates/gemini" }
+termy_agent_sidebar = { path = "crates/agent_sidebar" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Pin core-text to 21.0.0 to avoid core-graphics version conflict on macOS.
@@ -82,4 +84,6 @@ core-text = "=21.0.0"
 winresource = "0.1"
 
 [dev-dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", features = ["test-support"] }
+gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", features = [
+  "test-support",
+] }

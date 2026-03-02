@@ -67,8 +67,9 @@ impl TerminalView {
                     self.open_command_palette_in_mode(mode, cx);
                 }
             }
-            CommandAction::ManageTmuxSessions => self
-                .open_tmux_session_palette_with_intent(TmuxSessionIntent::AttachOrSwitch, cx),
+            CommandAction::ManageTmuxSessions => {
+                self.open_tmux_session_palette_with_intent(TmuxSessionIntent::AttachOrSwitch, cx)
+            }
             CommandAction::Quit => {
                 self.execute_quit_command_action(action, window, cx);
             }
@@ -134,6 +135,18 @@ impl TerminalView {
                 } else {
                     self.open_ai_input(cx);
                 }
+            }
+            CommandAction::ToggleChatSidebar => {
+                self.agent_sidebar.toggle();
+                if self.agent_sidebar.is_open() {
+                    self.agent_sidebar_input_active = true;
+                    self.ensure_agent_sidebar_ready(cx);
+                } else {
+                    self.agent_sidebar_input_active = false;
+                    self.agent_provider_dropdown_open = false;
+                    self.agent_model_dropdown_open = false;
+                }
+                cx.notify();
             }
         }
     }
@@ -541,6 +554,15 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::ToggleAiInput, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_toggle_chat_sidebar_action(
+        &mut self,
+        _: &commands::ToggleChatSidebar,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ToggleChatSidebar, true, window, cx);
     }
 }
 

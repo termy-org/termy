@@ -155,6 +155,10 @@ pub fn default_keybinds_for_platform(platform: KeybindPlatform) -> Vec<DefaultKe
             trigger: "secondary-m",
             action: CommandId::MinimizeWindow,
         });
+        bindings.push(DefaultKeybind {
+            trigger: "secondary-alt-b",
+            action: CommandId::ToggleChatSidebar,
+        });
     }
 
     if matches!(platform, KeybindPlatform::MacOs | KeybindPlatform::Windows) {
@@ -438,8 +442,7 @@ mod tests {
             let defaults = default_keybinds_for_platform(platform);
             assert!(
                 defaults.iter().any(|binding| {
-                    binding.trigger == "secondary-w"
-                        && binding.action == CommandId::ClosePaneOrTab
+                    binding.trigger == "secondary-w" && binding.action == CommandId::ClosePaneOrTab
                 }),
                 "missing secondary-w -> close_pane_or_tab on {}",
                 platform.as_str()
@@ -469,8 +472,7 @@ mod tests {
             );
             assert!(
                 defaults.iter().any(|binding| {
-                    binding.trigger == "secondary-o"
-                        && binding.action == CommandId::FocusPaneNext
+                    binding.trigger == "secondary-o" && binding.action == CommandId::FocusPaneNext
                 }),
                 "missing secondary-o -> focus_pane_next on {}",
                 platform.as_str()
@@ -484,8 +486,7 @@ mod tests {
             let defaults = default_keybinds_for_platform(platform);
             assert!(
                 !defaults.iter().any(|binding| {
-                    binding.trigger == "secondary-shift-w"
-                        && binding.action == CommandId::ClosePane
+                    binding.trigger == "secondary-shift-w" && binding.action == CommandId::ClosePane
                 }),
                 "unexpected secondary-shift-w -> close_pane on {}",
                 platform.as_str()
@@ -498,6 +499,11 @@ mod tests {
         let mac = default_keybinds_for_platform(KeybindPlatform::MacOs);
         assert!(mac.iter().any(|binding| binding.trigger == "secondary-m"
             && binding.action == CommandId::MinimizeWindow));
+        assert!(
+            mac.iter()
+                .any(|binding| binding.trigger == "secondary-alt-b"
+                    && binding.action == CommandId::ToggleChatSidebar)
+        );
         assert!(
             mac.iter().any(
                 |binding| binding.trigger == "secondary-c" && binding.action == CommandId::Copy
@@ -513,6 +519,12 @@ mod tests {
         );
         assert!(!linux.iter().any(|binding| binding.trigger == "secondary-m"
             && binding.action == CommandId::MinimizeWindow));
+        assert!(
+            !linux
+                .iter()
+                .any(|binding| binding.trigger == "secondary-alt-b"
+                    && binding.action == CommandId::ToggleChatSidebar)
+        );
     }
 
     #[test]

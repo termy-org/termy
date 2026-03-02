@@ -5535,7 +5535,7 @@ dependencies = [
 
 [[package]]
 name = "termy"
-version = "0.1.35"
+version = "0.1.33"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -5552,6 +5552,7 @@ dependencies = [
  "serde_json",
  "smol",
  "tempfile",
+ "termy_agent_sidebar",
  "termy_auto_update",
  "termy_auto_update_ui",
  "termy_cli_install_core",
@@ -5565,6 +5566,15 @@ dependencies = [
  "termy_themes",
  "termy_toast",
  "winresource",
+]
+
+[[package]]
+name = "termy_agent_sidebar"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "serde_json",
+ "termy_config_core",
 ]
 
 [[package]]

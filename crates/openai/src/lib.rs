@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::{BufRead, BufReader};
 use thiserror::Error;
 
 pub const DEFAULT_MODEL: &str = "gpt-5-mini";
@@ -97,11 +98,39 @@ struct ChatRequest {
     temperature: Option<f32>,
 }
 
+#[derive(Debug, Serialize)]
+struct StreamChatRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+}
+
 #[derive(Debug, Deserialize)]
 struct ChatResponse {
     choices: Option<Vec<Choice>>,
     #[serde(default)]
     error: Option<ApiErrorResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamChatResponse {
+    choices: Option<Vec<StreamChoice>>,
+    #[serde(default)]
+    error: Option<ApiErrorResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamChoice {
+    delta: StreamDelta,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamDelta {
+    content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -192,6 +221,84 @@ impl OpenAiClient {
             .and_then(|choices| choices.into_iter().next())
             .and_then(|choice| choice.message.content)
             .ok_or(OpenAiError::NoContent)
+    }
+
+    pub fn chat_stream<F>(
+        &self,
+        messages: Vec<ChatMessage>,
+        on_chunk: F,
+    ) -> Result<String, OpenAiError>
+    where
+        F: FnMut(&str),
+    {
+        self.chat_stream_with_options(messages, None, None, on_chunk)
+    }
+
+    /// Blocking streaming chat API call. Calls `on_chunk` for each text chunk.
+    pub fn chat_stream_with_options<F>(
+        &self,
+        messages: Vec<ChatMessage>,
+        max_tokens: Option<u32>,
+        temperature: Option<f32>,
+        mut on_chunk: F,
+    ) -> Result<String, OpenAiError>
+    where
+        F: FnMut(&str),
+    {
+        let request = StreamChatRequest {
+            model: self.model.clone(),
+            messages,
+            stream: true,
+            max_tokens,
+            temperature,
+        };
+
+        let response = ureq::post("https://api.openai.com/v1/chat/completions")
+            .set("Authorization", &format!("Bearer {}", self.api_key))
+            .set("Content-Type", "application/json")
+            .send_json(&request)?;
+        let reader = response.into_reader();
+        let mut buffered = BufReader::new(reader);
+        let mut line = String::new();
+        let mut output = String::new();
+
+        loop {
+            line.clear();
+            if buffered.read_line(&mut line)? == 0 {
+                break;
+            }
+
+            let trimmed = line.trim();
+            if !trimmed.starts_with("data:") {
+                continue;
+            }
+
+            let payload = trimmed.trim_start_matches("data:").trim();
+            if payload.is_empty() {
+                continue;
+            }
+            if payload == "[DONE]" {
+                break;
+            }
+
+            let chunk: StreamChatResponse = serde_json::from_str(payload)?;
+            if let Some(error) = chunk.error {
+                return Err(OpenAiError::ApiError {
+                    message: error.message,
+                });
+            }
+
+            if let Some(content) = chunk
+                .choices
+                .and_then(|choices| choices.into_iter().next())
+                .and_then(|choice| choice.delta.content)
+            {
+                on_chunk(&content);
+                output.push_str(&content);
+            }
+        }
+
+        Ok(output)
     }
 
     /// Simple message without any context

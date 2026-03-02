@@ -49,6 +49,7 @@ macro_rules! termy_command_catalog {
             (ToggleSearchRegex, "toggle_search_regex"),
             (InstallCli, "install_cli"),
             (ToggleAiInput, "toggle_ai_input"),
+            (ToggleChatSidebar, "toggle_chat_sidebar"),
         }
     };
 }

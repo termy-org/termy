@@ -106,7 +106,9 @@ struct TerminalScrollbarOverlayFrame {
     height: f32,
 }
 
-fn terminal_scrollbar_overlay_frame(surface: TerminalViewportGeometry) -> TerminalScrollbarOverlayFrame {
+fn terminal_scrollbar_overlay_frame(
+    surface: TerminalViewportGeometry,
+) -> TerminalScrollbarOverlayFrame {
     let surface_width = surface.width.max(0.0);
     let effective_gutter = TERMINAL_SCROLLBAR_GUTTER_WIDTH.min(surface_width);
     let left = (surface.origin_x + surface_width - effective_gutter).max(surface.origin_x);
@@ -657,7 +659,8 @@ impl Render for TerminalView {
                 }
                 let is_active_pane = active_pane_id.as_deref() == Some(pane.id.as_str());
                 let (pane_inactive_focus, pane_active_focus) = if pane_focus_enabled {
-                    if let Some((from_pane_id, to_pane_id, progress)) = pane_focus_transition.as_ref()
+                    if let Some((from_pane_id, to_pane_id, progress)) =
+                        pane_focus_transition.as_ref()
                     {
                         if pane.id == *from_pane_id {
                             (*progress, 1.0 - *progress)
@@ -676,19 +679,19 @@ impl Render for TerminalView {
                 };
                 let (pane_focus_transform, raw_pane_active_border_alpha) =
                     if let Some((preset, strength)) = pane_focus_config {
-                    let inactive_scale = strength * pane_inactive_focus;
-                    let active_scale = strength * pane_active_focus;
-                    (
-                        CellColorTransform {
-                            fg_blend: preset.inactive_fg_blend * inactive_scale,
-                            bg_blend: preset.inactive_bg_blend * inactive_scale,
-                            desaturate: preset.inactive_desaturate * inactive_scale,
-                        },
-                        preset.active_border_alpha * active_scale,
-                    )
-                } else {
-                    (CellColorTransform::default(), 0.0)
-                };
+                        let inactive_scale = strength * pane_inactive_focus;
+                        let active_scale = strength * pane_active_focus;
+                        (
+                            CellColorTransform {
+                                fg_blend: preset.inactive_fg_blend * inactive_scale,
+                                bg_blend: preset.inactive_bg_blend * inactive_scale,
+                                desaturate: preset.inactive_desaturate * inactive_scale,
+                            },
+                            preset.active_border_alpha * active_scale,
+                        )
+                    } else {
+                        (CellColorTransform::default(), 0.0)
+                    };
                 // Palette backdrop uses the same inactive-pane transform path to keep one
                 // consistent dimming model and avoid a separate full-screen color overlay.
                 let cell_color_transform =
@@ -834,11 +837,13 @@ impl Render for TerminalView {
 
                 // Keep divider-boundary comparisons in the same geometry space as the
                 // pane pixels computed above to avoid drift from mixed sources.
-                let pane_right_cells =
-                    ((pane_left + pane_width - effective_padding_x) / cell_width).round().max(0.0) as u32;
-                let pane_bottom_cells =
-                    ((pane_top + pane_height - effective_padding_y) / cell_height).round().max(0.0)
-                        as u32;
+                let pane_right_cells = ((pane_left + pane_width - effective_padding_x) / cell_width)
+                    .round()
+                    .max(0.0) as u32;
+                let pane_bottom_cells = ((pane_top + pane_height - effective_padding_y)
+                    / cell_height)
+                    .round()
+                    .max(0.0) as u32;
 
                 if multi_pane && pane_right_cells < max_right_cells {
                     if let Some(gap_cells) = Self::pane_right_gap_cells(pane, &active_tab.panes) {
@@ -914,7 +919,10 @@ impl Render for TerminalView {
                     };
                     pane_focus_accents.push(
                         div()
-                            .id(SharedString::from(format!("pane-degraded-accent-{}", pane.id)))
+                            .id(SharedString::from(format!(
+                                "pane-degraded-accent-{}",
+                                pane.id
+                            )))
                             .absolute()
                             .left(px(pane_left))
                             .top(px(pane_top))
@@ -971,6 +979,414 @@ impl Render for TerminalView {
             .children(pane_dividers)
             .children(pane_focus_accents)
             .into_any_element();
+        let overlay_style = self.overlay_style();
+        let sidebar_bg =
+            overlay_style.panel_background_with_floor(0.92, COMMAND_PALETTE_PANEL_SOLID_ALPHA);
+        let sidebar_border = overlay_style.panel_foreground(0.18);
+        let sidebar_title = overlay_style.panel_foreground(1.0);
+        let sidebar_text = overlay_style.panel_foreground(0.86);
+        let active_session = self.agent_sessions.active_session().cloned();
+        let active_provider = active_session
+            .as_ref()
+            .map(|session| session.provider)
+            .unwrap_or(termy_agent_sidebar::AgentProvider::OpenAi);
+        let active_model = active_session
+            .as_ref()
+            .map(|session| session.model.clone())
+            .unwrap_or_else(|| termy_openai::DEFAULT_MODEL.to_string());
+        let sidebar_input_font = Font {
+            family: self.font_family.clone(),
+            ..Font::default()
+        };
+        let sidebar_composer = div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(
+                div()
+                    .relative()
+                    .w_full()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .px(px(8.0))
+                    .py(px(6.0))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.agent_sidebar_input_active = true;
+                            cx.stop_propagation();
+                            cx.notify();
+                        }),
+                    )
+                    .child(self.render_inline_input_layer(
+                        sidebar_input_font,
+                        px(12.0),
+                        sidebar_text.into(),
+                        sidebar_title.into(),
+                        InlineInputAlignment::Left,
+                        cx,
+                    ))
+                    .when(self.agent_sidebar_input.text().is_empty(), |s| {
+                        s.child(
+                            div()
+                                .absolute()
+                                .left(px(8.0))
+                                .top(px(6.0))
+                                .text_size(px(11.0))
+                                .text_color(sidebar_text)
+                                .child("Message agent..."),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .gap(px(6.0))
+                    .child(
+                        div().text_size(px(10.0)).text_color(sidebar_text).child(
+                            if self.agent_models_loading {
+                                "Loading models..."
+                            } else if active_session
+                                .as_ref()
+                                .is_some_and(|session| session.running)
+                            {
+                                "Agent running..."
+                            } else {
+                                ""
+                            },
+                        ),
+                    )
+                    .child(
+                        div().relative().child(
+                            div()
+                                .px(px(6.0))
+                                .py(px(4.0))
+                                .border_1()
+                                .border_color(sidebar_border)
+                                .cursor_pointer()
+                                .text_size(px(10.0))
+                                .text_color(sidebar_text)
+                                .child(active_provider.as_label())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _, _, cx| {
+                                        view.agent_provider_dropdown_open =
+                                            !view.agent_provider_dropdown_open;
+                                        view.agent_model_dropdown_open = false;
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                ),
+                        ),
+                    )
+                    .child(
+                        div().relative().child(
+                            div()
+                                .px(px(6.0))
+                                .py(px(4.0))
+                                .border_1()
+                                .border_color(sidebar_border)
+                                .cursor_pointer()
+                                .text_size(px(10.0))
+                                .text_color(sidebar_text)
+                                .child(active_model.chars().take(16).collect::<String>())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _, _, cx| {
+                                        view.agent_model_dropdown_open =
+                                            !view.agent_model_dropdown_open;
+                                        view.agent_provider_dropdown_open = false;
+                                        if view.agent_model_dropdown_open {
+                                            view.refresh_agent_model_options(false, cx);
+                                        }
+                                        cx.stop_propagation();
+                                        cx.notify();
+                                    }),
+                                ),
+                        ),
+                    ),
+            )
+            .into_any_element();
+
+        let sidebar_controls =
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.0))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            div().text_size(px(11.0)).text_color(sidebar_text).child(
+                                active_session
+                                    .as_ref()
+                                    .map(|session| {
+                                        if session.running {
+                                            format!("Session: {} (running)", session.title)
+                                        } else {
+                                            format!("Session: {}", session.title)
+                                        }
+                                    })
+                                    .unwrap_or_else(|| "Session: none".to_string()),
+                            ),
+                        )
+                        .child(
+                            div()
+                                .px(px(8.0))
+                                .py(px(3.0))
+                                .border_1()
+                                .border_color(sidebar_border)
+                                .cursor_pointer()
+                                .text_size(px(10.0))
+                                .text_color(sidebar_title)
+                                .child("New")
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _, _, cx| {
+                                        view.create_agent_session(cx);
+                                        cx.stop_propagation();
+                                    }),
+                                ),
+                        ),
+                )
+                .child(div().flex().gap(px(6.0)).children(
+                    self.agent_sessions.sessions().iter().map(|session| {
+                        let session_id = session.id;
+                        let is_active = self
+                            .agent_sessions
+                            .active_session_id()
+                            .is_some_and(|active_id| active_id == session_id);
+                        let mut bg = sidebar_bg;
+                        bg.a = if is_active { 0.34 } else { 0.16 };
+                        div()
+                            .id(SharedString::from(format!(
+                                "agent-session-chip-{}",
+                                session_id
+                            )))
+                            .px(px(8.0))
+                            .py(px(4.0))
+                            .border_1()
+                            .border_color(sidebar_border)
+                            .bg(bg)
+                            .cursor_pointer()
+                            .text_size(px(10.0))
+                            .text_color(sidebar_text)
+                            .child(session.title.clone())
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |view, _, _, cx| {
+                                    view.select_agent_session(session_id, cx);
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .into_any_element()
+                    }),
+                ))
+                .when(self.agent_provider_dropdown_open, |s| {
+                    s.child(
+                        div()
+                            .w(px(120.0))
+                            .border_1()
+                            .border_color(sidebar_border)
+                            .bg(sidebar_bg)
+                            .child(
+                                div()
+                                    .px(px(8.0))
+                                    .py(px(6.0))
+                                    .cursor_pointer()
+                                    .text_size(px(10.0))
+                                    .text_color(sidebar_text)
+                                    .child("OpenAI")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _, _, cx| {
+                                            view.set_active_agent_provider(
+                                                config::AiProvider::OpenAi,
+                                                cx,
+                                            );
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .px(px(8.0))
+                                    .py(px(6.0))
+                                    .cursor_pointer()
+                                    .text_size(px(10.0))
+                                    .text_color(sidebar_text)
+                                    .child("Gemini")
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _, _, cx| {
+                                            view.set_active_agent_provider(
+                                                config::AiProvider::Gemini,
+                                                cx,
+                                            );
+                                            cx.stop_propagation();
+                                        }),
+                                    ),
+                            ),
+                    )
+                })
+                .when(self.agent_model_dropdown_open, |s| {
+                    let options = if self.agent_model_options.is_empty() {
+                        vec![active_model.clone()]
+                    } else {
+                        self.agent_model_options.clone()
+                    };
+                    s.child(
+                        div()
+                            .max_h(px(170.0))
+                            .border_1()
+                            .border_color(sidebar_border)
+                            .bg(sidebar_bg)
+                            .children(options.into_iter().map(|model| {
+                                let model_value = model.clone();
+                                div()
+                                    .id(SharedString::from(format!(
+                                        "agent-model-option-{}",
+                                        model_value
+                                    )))
+                                    .px(px(8.0))
+                                    .py(px(6.0))
+                                    .cursor_pointer()
+                                    .text_size(px(10.0))
+                                    .text_color(sidebar_text)
+                                    .child(model)
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(move |view, _, _, cx| {
+                                            view.set_active_agent_model(model_value.clone(), cx);
+                                            cx.stop_propagation();
+                                        }),
+                                    )
+                                    .into_any_element()
+                            })),
+                    )
+                });
+        let sidebar_messages = div()
+            .id("agent-messages-scroll")
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_y_scroll()
+            .track_scroll(&self.agent_messages_scroll_handle)
+            .child(
+                div().w_full().flex().flex_col().gap(px(8.0)).children(
+                    active_session
+                        .as_ref()
+                        .map(|session| {
+                            let mut items = session
+                                .messages
+                                .iter()
+                                .enumerate()
+                                .map(|(index, message)| {
+                                    let label = match message.role {
+                                        termy_agent_sidebar::AgentMessageRole::User => "You",
+                                        termy_agent_sidebar::AgentMessageRole::Assistant => "Agent",
+                                        termy_agent_sidebar::AgentMessageRole::Tool => "Tool",
+                                        termy_agent_sidebar::AgentMessageRole::Error => "Error",
+                                    };
+                                    let content = if message.streaming {
+                                        format!("{}▌", message.content)
+                                    } else {
+                                        message.content.clone()
+                                    };
+                                    div()
+                                        .id(SharedString::from(format!(
+                                            "agent-msg-{}-{}",
+                                            session.id, index
+                                        )))
+                                        .px(px(8.0))
+                                        .py(px(6.0))
+                                        .child(
+                                            div()
+                                                .text_size(px(10.0))
+                                                .text_color(sidebar_title)
+                                                .child(label),
+                                        )
+                                        .child(div().pt(px(3.0)).child(
+                                            termy_agent_sidebar::render_markdown_message(
+                                                &content,
+                                                sidebar_text,
+                                                sidebar_title,
+                                                sidebar_border,
+                                                sidebar_bg,
+                                            ),
+                                        ))
+                                        .into_any_element()
+                                })
+                                .collect::<Vec<_>>();
+                            if session.running {
+                                items.push(
+                                    div()
+                                        .id(SharedString::from(format!(
+                                            "agent-status-running-{}",
+                                            session.id
+                                        )))
+                                        .px(px(8.0))
+                                        .py(px(6.0))
+                                        .child(
+                                            div()
+                                                .text_size(px(10.0))
+                                                .text_color(sidebar_title)
+                                                .child("Agent"),
+                                        )
+                                        .child(
+                                            div()
+                                                .pt(px(3.0))
+                                                .text_size(px(11.0))
+                                                .text_color(sidebar_text)
+                                                .child("Thinking..."),
+                                        )
+                                        .into_any_element(),
+                                );
+                            }
+                            items
+                        })
+                        .unwrap_or_default(),
+                ),
+            )
+            .into_any_element();
+        let sidebar_content = div()
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(sidebar_controls)
+            .child(sidebar_messages)
+            .into_any_element();
+        let terminal_content_layer = div()
+            .id("terminal-content")
+            .size_full()
+            .flex()
+            .child(
+                div()
+                    .id("terminal-grid-container")
+                    .relative()
+                    .flex_1()
+                    .h_full()
+                    .child(terminal_grid_layer)
+                    .children(terminal_scrollbar_overlay),
+            )
+            .when(self.agent_sidebar.is_open(), |s| {
+                s.child(termy_agent_sidebar::render_sidebar(
+                    self.agent_sidebar.width(),
+                    sidebar_bg,
+                    sidebar_border,
+                    sidebar_title,
+                    sidebar_text,
+                    sidebar_content,
+                    sidebar_composer,
+                ))
+            });
         let command_palette_overlay = if self.is_command_palette_open() {
             Some(self.render_command_palette_modal(cx))
         } else {
@@ -1339,6 +1755,7 @@ impl Render for TerminalView {
                         s.on_action(cx.listener(Self::handle_install_cli_action))
                     })
                     .on_action(cx.listener(Self::handle_toggle_ai_input_action))
+                    .on_action(cx.listener(Self::handle_toggle_chat_sidebar_action))
                     .on_action(cx.listener(Self::handle_inline_backspace_action))
                     .on_action(cx.listener(Self::handle_inline_delete_action))
                     .on_action(cx.listener(Self::handle_inline_move_left_action))
@@ -1365,8 +1782,7 @@ impl Render for TerminalView {
                     .bg(terminal_surface_bg_hsla)
                     .font_family(font_family.clone())
                     .text_size(font_size)
-                    .child(terminal_grid_layer)
-                    .children(terminal_scrollbar_overlay)
+                    .child(terminal_content_layer)
                     .children(command_palette_overlay)
                     .children(search_overlay)
                     .children(ai_input_overlay),
@@ -1458,13 +1874,8 @@ mod tests {
             a: 1.0,
         };
 
-        let (next_fg, next_bg) = apply_cell_color_transform(
-            fg,
-            bg,
-            CellColorTransform::default(),
-            fg_target,
-            bg_target,
-        );
+        let (next_fg, next_bg) =
+            apply_cell_color_transform(fg, bg, CellColorTransform::default(), fg_target, bg_target);
 
         assert_eq!(next_fg, fg);
         assert_eq!(next_bg, bg);
@@ -1499,7 +1910,10 @@ mod tests {
         let base = tmux_test_pane("%1", 0, 0, 10, 6);
         let adjacent = tmux_test_pane("%2", 10, 2, 5, 2);
         let panes = vec![base, adjacent];
-        assert_eq!(TerminalView::pane_right_gap_cells(&panes[0], &panes), Some(0));
+        assert_eq!(
+            TerminalView::pane_right_gap_cells(&panes[0], &panes),
+            Some(0)
+        );
     }
 
     #[test]
@@ -1517,7 +1931,10 @@ mod tests {
         let near = tmux_test_pane("%3", 12, 1, 3, 2);
         let non_overlap = tmux_test_pane("%4", 11, 7, 3, 2);
         let panes = vec![base, far, near, non_overlap];
-        assert_eq!(TerminalView::pane_right_gap_cells(&panes[0], &panes), Some(2));
+        assert_eq!(
+            TerminalView::pane_right_gap_cells(&panes[0], &panes),
+            Some(2)
+        );
     }
 
     #[test]
@@ -1525,7 +1942,10 @@ mod tests {
         let base = tmux_test_pane("%1", 0, 0, 10, 6);
         let adjacent = tmux_test_pane("%2", 2, 6, 3, 3);
         let panes = vec![base, adjacent];
-        assert_eq!(TerminalView::pane_bottom_gap_cells(&panes[0], &panes), Some(0));
+        assert_eq!(
+            TerminalView::pane_bottom_gap_cells(&panes[0], &panes),
+            Some(0)
+        );
     }
 
     #[test]
@@ -1543,7 +1963,10 @@ mod tests {
         let near = tmux_test_pane("%3", 3, 8, 2, 2);
         let non_overlap = tmux_test_pane("%4", 11, 9, 2, 2);
         let panes = vec![base, far, near, non_overlap];
-        assert_eq!(TerminalView::pane_bottom_gap_cells(&panes[0], &panes), Some(2));
+        assert_eq!(
+            TerminalView::pane_bottom_gap_cells(&panes[0], &panes),
+            Some(2)
+        );
     }
 
     #[test]

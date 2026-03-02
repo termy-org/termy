@@ -1,0 +1,9 @@
+[package]
+name = "termy_agent_sidebar"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }
+termy_config_core = { path = "../config_core" }
+serde_json = "1.0"

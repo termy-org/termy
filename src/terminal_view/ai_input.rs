@@ -5,6 +5,7 @@ use super::inline_input::InlineInputAlignment;
 use super::*;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line};
+use std::path::Path;
 
 const AI_INPUT_WIDTH: f32 = 640.0;
 const AI_CONTEXT_LINES: i32 = 50;
@@ -20,6 +21,117 @@ impl TerminalView {
 
     pub(super) fn ai_input_mut(&mut self) -> &mut InlineInputState {
         &mut self.ai_input
+    }
+
+    fn current_agent_working_directory(&self) -> String {
+        Self::predicted_prompt_cwd(
+            self.configured_working_dir.as_deref(),
+            self.terminal_runtime.working_dir_fallback,
+        )
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|path| path.display().to_string())
+        })
+        .unwrap_or_else(|| ".".to_string())
+    }
+
+    fn ensure_active_agent_session(&mut self) -> u64 {
+        let cwd = self.current_agent_working_directory();
+        let configured_provider = config::load_runtime_config(
+            &mut self.last_config_error_message,
+            "agent session ensure config load",
+        )
+        .config
+        .ai_provider;
+        let provider = termy_agent_sidebar::AgentProvider::from(configured_provider);
+        let model = config::load_runtime_config(
+            &mut self.last_config_error_message,
+            "agent session model config load",
+        )
+        .config
+        .openai_model
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| match configured_provider {
+            config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
+            config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
+        });
+
+        self.agent_sessions.ensure_session(cwd, provider, model)
+    }
+
+    fn active_agent_session_provider(&self) -> config::AiProvider {
+        self.agent_sessions
+            .active_session()
+            .map(|session| match session.provider {
+                termy_agent_sidebar::AgentProvider::OpenAi => config::AiProvider::OpenAi,
+                termy_agent_sidebar::AgentProvider::Gemini => config::AiProvider::Gemini,
+            })
+            .unwrap_or(config::AiProvider::OpenAi)
+    }
+
+    fn active_agent_session_model(&self) -> String {
+        self.agent_sessions
+            .active_session()
+            .map(|session| session.model.clone())
+            .unwrap_or_else(|| termy_openai::DEFAULT_MODEL.to_string())
+    }
+
+    pub(super) fn ensure_agent_sidebar_ready(&mut self, cx: &mut Context<Self>) {
+        self.ensure_active_agent_session();
+        self.refresh_agent_model_options(false, cx);
+    }
+
+    pub(super) fn create_agent_session(&mut self, cx: &mut Context<Self>) {
+        let cwd = self.current_agent_working_directory();
+        let provider = self.active_agent_session_provider();
+        let model = self.active_agent_session_model();
+        self.agent_sessions.new_session(
+            cwd,
+            termy_agent_sidebar::AgentProvider::from(provider),
+            model,
+        );
+        self.agent_provider_dropdown_open = false;
+        self.agent_model_dropdown_open = false;
+        self.refresh_agent_model_options(false, cx);
+        cx.notify();
+    }
+
+    pub(super) fn select_agent_session(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self.agent_sessions.set_active_by_id(id) {
+            self.agent_provider_dropdown_open = false;
+            self.agent_model_dropdown_open = false;
+            self.refresh_agent_model_options(false, cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn set_active_agent_provider(
+        &mut self,
+        provider: config::AiProvider,
+        cx: &mut Context<Self>,
+    ) {
+        self.ensure_active_agent_session();
+        let model = match provider {
+            config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
+            config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
+        };
+        self.agent_sessions
+            .set_active_provider(termy_agent_sidebar::AgentProvider::from(provider));
+        self.agent_sessions.set_active_model(model);
+        self.agent_provider_dropdown_open = false;
+        self.agent_model_dropdown_open = false;
+        self.agent_model_options.clear();
+        self.agent_models_loaded_for_api_key = None;
+        self.refresh_agent_model_options(true, cx);
+        cx.notify();
+    }
+
+    pub(super) fn set_active_agent_model(&mut self, model: String, cx: &mut Context<Self>) {
+        self.ensure_active_agent_session();
+        self.agent_sessions.set_active_model(model);
+        self.agent_model_dropdown_open = false;
+        cx.notify();
     }
 
     pub(super) fn open_ai_input(&mut self, cx: &mut Context<Self>) {
@@ -54,6 +166,89 @@ impl TerminalView {
         cx.notify();
     }
 
+    pub(super) fn refresh_agent_model_options(&mut self, force: bool, cx: &mut Context<Self>) {
+        self.ensure_active_agent_session();
+        let provider = self.active_agent_session_provider();
+        let loaded = config::load_runtime_config(
+            &mut self.last_config_error_message,
+            "agent model options config load",
+        );
+        let api_key = match provider {
+            config::AiProvider::OpenAi => loaded.config.openai_api_key,
+            config::AiProvider::Gemini => loaded.config.gemini_api_key,
+        }
+        .filter(|value| !value.trim().is_empty());
+        let Some(api_key) = api_key else {
+            self.agent_model_options.clear();
+            self.agent_models_loaded_for_api_key = None;
+            self.agent_models_loading = false;
+            return;
+        };
+
+        if self.agent_models_loading {
+            return;
+        }
+
+        let already_loaded_for_key = self.agent_models_loaded_for_api_key.as_ref().is_some_and(
+            |(loaded_provider, loaded_key)| *loaded_provider == provider && loaded_key == &api_key,
+        );
+        if !force && already_loaded_for_key {
+            return;
+        }
+
+        self.agent_models_loading = true;
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let request_provider = provider;
+            let request_key = api_key.clone();
+            let result = smol::unblock(move || match provider {
+                config::AiProvider::OpenAi => termy_openai::OpenAiClient::new(api_key)
+                    .fetch_chat_models()
+                    .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
+                    .map_err(|error| error.to_string()),
+                config::AiProvider::Gemini => termy_gemini::GeminiClient::new(api_key)
+                    .fetch_chat_models()
+                    .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
+                    .map_err(|error| error.to_string()),
+            })
+            .await;
+
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    view.agent_models_loading = false;
+                    let active_provider = view.active_agent_session_provider();
+                    if active_provider != request_provider {
+                        return;
+                    }
+
+                    match result {
+                        Ok(mut models) => {
+                            models.sort_unstable();
+                            models.dedup();
+                            view.agent_model_options = models;
+                            view.agent_models_loaded_for_api_key =
+                                Some((request_provider, request_key));
+                        }
+                        Err(error) => {
+                            view.agent_model_options.clear();
+                            view.agent_models_loaded_for_api_key = None;
+                            termy_toast::error(format!(
+                                "Failed to fetch {} models: {}",
+                                match request_provider {
+                                    config::AiProvider::OpenAi => "OpenAI",
+                                    config::AiProvider::Gemini => "Gemini",
+                                },
+                                error
+                            ));
+                        }
+                    }
+
+                    cx.notify();
+                })
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn handle_ai_input_key_down(&mut self, key: &str, cx: &mut Context<Self>) {
         match key {
             "escape" => {
@@ -62,14 +257,174 @@ impl TerminalView {
             "enter" => {
                 let text = self.ai_input.text().trim().to_string();
                 if !text.is_empty() {
-                    self.submit_ai_input(text, cx);
+                    self.submit_ai_message(text, true, cx);
                 }
             }
             _ => {}
         }
     }
 
-    fn submit_ai_input(&mut self, user_message: String, cx: &mut Context<Self>) {
+    pub(super) fn submit_agent_sidebar_input(&mut self, cx: &mut Context<Self>) {
+        let text = self.agent_sidebar_input.text().trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+
+        let session_id = self.ensure_active_agent_session();
+        let Some(session) = self.agent_sessions.active_session() else {
+            termy_toast::error("No active agent session");
+            return;
+        };
+        let provider = session.provider;
+        let model = session.model.clone();
+        let cwd = session.cwd.clone();
+        self.agent_sessions
+            .push_active_message(termy_agent_sidebar::AgentMessageRole::User, text.clone());
+        self.agent_sessions.set_active_running(true);
+        self.agent_sidebar_input.clear();
+        cx.notify();
+
+        let loaded = config::load_runtime_config(
+            &mut self.last_config_error_message,
+            "agent sidebar submit config load",
+        );
+        let provider_config: config::AiProvider = provider.into();
+        let api_key = match provider_config {
+            config::AiProvider::OpenAi => loaded.config.openai_api_key,
+            config::AiProvider::Gemini => loaded.config.gemini_api_key,
+        }
+        .filter(|value| !value.trim().is_empty());
+        let Some(api_key) = api_key else {
+            self.agent_sessions.push_active_message(
+                termy_agent_sidebar::AgentMessageRole::Error,
+                format!(
+                    "{} API key not configured",
+                    match provider_config {
+                        config::AiProvider::OpenAi => "OpenAI",
+                        config::AiProvider::Gemini => "Gemini",
+                    }
+                ),
+            );
+            self.agent_sessions.set_active_running(false);
+            cx.notify();
+            return;
+        };
+
+        let terminal_context = self.get_terminal_context_for_ai();
+        let history = self.agent_sessions.active_history_for_model();
+        let (tx, rx) = flume::unbounded::<AgentEvent>();
+        let this_weak = cx.entity().downgrade();
+        cx.spawn(async move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            while let Ok(event) = rx.recv_async().await {
+                let _ = cx.update(|cx| {
+                    this_weak.update(cx, |view, cx| {
+                        if !view.agent_sessions.set_active_by_id(session_id) {
+                            return;
+                        }
+                        match event {
+                            AgentEvent::AssistantStart => {
+                                view.agent_sessions.start_active_assistant_stream();
+                            }
+                            AgentEvent::AssistantReplace(content) => {
+                                view.agent_sessions
+                                    .replace_active_assistant_stream_content(content);
+                            }
+                            AgentEvent::AssistantFinish => {
+                                view.agent_sessions.finish_active_assistant_stream();
+                            }
+                            AgentEvent::AssistantChunk(chunk) => {
+                                view.agent_sessions.push_active_assistant_chunk(&chunk);
+                            }
+                            AgentEvent::ToolOutput(output) => {
+                                view.agent_sessions.push_active_message(
+                                    termy_agent_sidebar::AgentMessageRole::Tool,
+                                    output,
+                                );
+                            }
+                            AgentEvent::Error(error) => {
+                                view.agent_sessions.push_active_message(
+                                    termy_agent_sidebar::AgentMessageRole::Error,
+                                    error,
+                                );
+                            }
+                            AgentEvent::Done => {
+                                view.agent_sessions.finish_active_assistant_stream();
+                                view.agent_sessions.set_active_running(false);
+                            }
+                        }
+                        cx.notify();
+                    })
+                });
+            }
+        })
+        .detach();
+
+        std::thread::spawn(move || {
+            let system_prompt = "You are an AI terminal agent. You can answer directly or request a tool call.\n\
+Use this JSON format for a tool call only when needed:\n\
+{\"tool\":\"run_shell\",\"command\":\"<shell command>\"}\n\
+Use only one command per tool call.\n\
+Current terminal context is provided in the latest user message.";
+
+            let mut openai_messages = vec![termy_openai::ChatMessage::system(system_prompt)];
+            let mut gemini_messages = vec![termy_gemini::ChatMessage::system(system_prompt)];
+            for (role, content) in history {
+                match role.as_str() {
+                    "assistant" => {
+                        openai_messages.push(termy_openai::ChatMessage::assistant(content.clone()));
+                        gemini_messages.push(termy_gemini::ChatMessage {
+                            role: "assistant".to_string(),
+                            content: termy_gemini::ChatContent::Text(content),
+                        });
+                    }
+                    _ => {
+                        openai_messages.push(termy_openai::ChatMessage::user(content.clone()));
+                        gemini_messages.push(termy_gemini::ChatMessage::user(content));
+                    }
+                }
+            }
+
+            if let Some(last) = openai_messages.last_mut()
+                && let termy_openai::ChatContent::Text(text) = &mut last.content
+            {
+                *text = format!(
+                    "{}\n\nTerminal context:\n```\n{}\n```",
+                    text, terminal_context
+                );
+            }
+            if let Some(last) = gemini_messages.last_mut()
+                && let termy_gemini::ChatContent::Text(text) = &mut last.content
+            {
+                *text = format!(
+                    "{}\n\nTerminal context:\n```\n{}\n```",
+                    text, terminal_context
+                );
+            }
+
+            let result = match provider_config {
+                config::AiProvider::OpenAi => {
+                    let client = termy_openai::OpenAiClient::new(api_key).with_model(model.clone());
+                    run_agent_turn_openai(&client, &cwd, openai_messages, &tx)
+                }
+                config::AiProvider::Gemini => {
+                    let client = termy_gemini::GeminiClient::new(api_key).with_model(model.clone());
+                    run_agent_turn_gemini(&client, &cwd, gemini_messages, &tx)
+                }
+            };
+
+            if let Err(error) = result {
+                let _ = tx.send(AgentEvent::Error(error));
+            }
+            let _ = tx.send(AgentEvent::Done);
+        });
+    }
+
+    fn submit_ai_message(
+        &mut self,
+        user_message: String,
+        close_ai_modal: bool,
+        cx: &mut Context<Self>,
+    ) {
         // Get the API key from config
         let loaded = config::load_runtime_config(
             &mut self.last_config_error_message,
@@ -105,8 +460,13 @@ impl TerminalView {
         // Get terminal context
         let terminal_context = self.get_terminal_context_for_ai();
 
-        // Close the input
-        self.close_ai_input(cx);
+        // Close or clear the input surface before sending
+        if close_ai_modal {
+            self.close_ai_input(cx);
+        } else {
+            self.agent_sidebar_input.clear();
+            cx.notify();
+        }
         let loading_toast_id = termy_toast::loading(format!("Sending to AI ({model})..."));
 
         // Spawn async task to call OpenAI (using smol::unblock for blocking HTTP client)
@@ -289,6 +649,104 @@ impl TerminalView {
             )
             .into_any()
     }
+}
+
+#[derive(Debug, Clone)]
+enum AgentEvent {
+    AssistantStart,
+    AssistantReplace(String),
+    AssistantFinish,
+    AssistantChunk(String),
+    ToolOutput(String),
+    Error(String),
+    Done,
+}
+
+fn run_agent_turn_openai(
+    client: &termy_openai::OpenAiClient,
+    cwd: &str,
+    messages: Vec<termy_openai::ChatMessage>,
+    tx: &flume::Sender<AgentEvent>,
+) -> Result<(), String> {
+    let _ = tx.send(AgentEvent::AssistantStart);
+    let first = client
+        .chat_stream(messages.clone(), |chunk| {
+            let _ = tx.send(AgentEvent::AssistantChunk(chunk.to_string()));
+        })
+        .map_err(|error| error.to_string())?;
+
+    if let Some(tool_call) = termy_agent_sidebar::parse_run_shell_tool_call(&first) {
+        let _ = tx.send(AgentEvent::AssistantReplace(format!(
+            "Using tool: {}",
+            tool_call.command
+        )));
+        let _ = tx.send(AgentEvent::AssistantFinish);
+        let tool_output =
+            termy_agent_sidebar::execute_run_shell_tool(Path::new(cwd), &tool_call.command)?;
+        let _ = tx.send(AgentEvent::ToolOutput(tool_output.clone()));
+
+        let mut followup = messages;
+        followup.push(termy_openai::ChatMessage::assistant(first));
+        followup.push(termy_openai::ChatMessage::user(format!(
+            "Tool output:\n{}\n\nRespond to the user with the result.",
+            tool_output
+        )));
+
+        let _ = tx.send(AgentEvent::AssistantStart);
+        client
+            .chat_stream(followup, |chunk| {
+                let _ = tx.send(AgentEvent::AssistantChunk(chunk.to_string()));
+            })
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+fn run_agent_turn_gemini(
+    client: &termy_gemini::GeminiClient,
+    cwd: &str,
+    messages: Vec<termy_gemini::ChatMessage>,
+    tx: &flume::Sender<AgentEvent>,
+) -> Result<(), String> {
+    let _ = tx.send(AgentEvent::AssistantStart);
+    let first = client
+        .chat_stream(messages.clone(), |chunk| {
+            let _ = tx.send(AgentEvent::AssistantChunk(chunk.to_string()));
+        })
+        .map_err(|error| error.to_string())?;
+
+    if let Some(tool_call) = termy_agent_sidebar::parse_run_shell_tool_call(&first) {
+        let _ = tx.send(AgentEvent::AssistantReplace(format!(
+            "Using tool: {}",
+            tool_call.command
+        )));
+        let _ = tx.send(AgentEvent::AssistantFinish);
+        let tool_output =
+            termy_agent_sidebar::execute_run_shell_tool(Path::new(cwd), &tool_call.command)?;
+        let _ = tx.send(AgentEvent::ToolOutput(tool_output.clone()));
+
+        let mut followup = messages;
+        followup.push(termy_gemini::ChatMessage {
+            role: "assistant".to_string(),
+            content: termy_gemini::ChatContent::Text(first),
+        });
+        followup.push(termy_gemini::ChatMessage::user(format!(
+            "Tool output:\n{}\n\nRespond to the user with the result.",
+            tool_output
+        )));
+
+        let _ = tx.send(AgentEvent::AssistantStart);
+        client
+            .chat_stream(followup, |chunk| {
+                let _ = tx.send(AgentEvent::AssistantChunk(chunk.to_string()));
+            })
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    Ok(())
 }
 
 fn extract_line_text_for_ai(

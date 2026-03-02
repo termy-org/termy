@@ -41,7 +41,8 @@ impl SettingsWindow {
             | EditableField::AiProvider
             | EditableField::OpenaiApiKey
             | EditableField::GeminiApiKey
-            | EditableField::OpenaiModel => self.apply_advanced_field(field, value),
+            | EditableField::OpenaiModel
+            | EditableField::ChatSidebarWidth => self.apply_advanced_field(field, value),
             EditableField::Color(id) => self.apply_color_field(id, value),
         }
     }
@@ -578,6 +579,19 @@ impl SettingsWindow {
                     self.config.openai_model = Some(value.to_string());
                     config::set_root_setting(termy_config_core::RootSettingId::OpenaiModel, value)
                 }
+            }
+            EditableField::ChatSidebarWidth => {
+                let parsed = value
+                    .parse::<f32>()
+                    .map_err(|_| "Chat sidebar width must be a number".to_string())?;
+                if !(220.0..=900.0).contains(&parsed) {
+                    return Err("Chat sidebar width must be between 220 and 900".to_string());
+                }
+                self.config.chat_sidebar_width = parsed;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::ChatSidebarWidth,
+                    &parsed.to_string(),
+                )
             }
             _ => unreachable!("invalid advanced field"),
         }

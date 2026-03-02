@@ -9,7 +9,10 @@ mod schema;
 mod types;
 
 pub use color_keys::{ColorEntryError, apply_color_entry, canonical_color_key};
-pub use constants::{SHELL_DECIDE_THEME_ID, VALID_ROOT_KEYS, VALID_SECTIONS};
+pub use constants::{
+    DEFAULT_CHAT_SIDEBAR_WIDTH, MAX_CHAT_SIDEBAR_WIDTH, MIN_CHAT_SIDEBAR_WIDTH,
+    SHELL_DECIDE_THEME_ID, VALID_ROOT_KEYS, VALID_SECTIONS,
+};
 pub use diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 pub use document::{
     ColorSettingUpdate, apply_color_updates, remove_root_setting, replace_keybind_lines,

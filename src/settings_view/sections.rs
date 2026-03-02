@@ -723,6 +723,7 @@ impl SettingsWindow {
         let openai_api_key_meta = Self::setting_metadata_or_fallback("openai_api_key");
         let gemini_api_key_meta = Self::setting_metadata_or_fallback("gemini_api_key");
         let openai_model_meta = Self::setting_metadata_or_fallback("openai_model");
+        let chat_sidebar_width_meta = Self::setting_metadata_or_fallback("chat_sidebar_width");
         let ai_provider = self.editable_field_value(EditableField::AiProvider);
         let (api_key_setting_key, api_key_field, api_key_title, api_key_description, api_key_value) =
             match self.config.ai_provider {
@@ -759,6 +760,7 @@ impl SettingsWindow {
                         termy_gemini::DEFAULT_MODEL.to_string()
                     }
                 });
+        let chat_sidebar_width = self.config.chat_sidebar_width;
         let ai_rows = vec![
             self.render_editable_row(
                 "ai_provider",
@@ -782,6 +784,14 @@ impl SettingsWindow {
                 openai_model_meta.title,
                 openai_model_meta.description,
                 openai_model,
+                cx,
+            ),
+            self.render_editable_row(
+                "chat_sidebar_width",
+                EditableField::ChatSidebarWidth,
+                chat_sidebar_width_meta.title,
+                chat_sidebar_width_meta.description,
+                format!("{}px", chat_sidebar_width as i32),
                 cx,
             ),
         ];

@@ -21,6 +21,7 @@ enum InlineInputTarget {
     RenameTab,
     Search,
     AiInput,
+    AgentSidebar,
 }
 
 #[derive(Clone, Debug)]
@@ -871,6 +872,8 @@ impl TerminalView {
             Some(InlineInputTarget::RenameTab)
         } else if self.ai_input_open {
             Some(InlineInputTarget::AiInput)
+        } else if self.agent_sidebar.is_open() && self.agent_sidebar_input_active {
+            Some(InlineInputTarget::AgentSidebar)
         } else {
             None
         }
@@ -927,6 +930,7 @@ impl TerminalView {
             InlineInputTarget::Search => Some(&self.search_input),
             InlineInputTarget::RenameTab => Some(&self.rename_input),
             InlineInputTarget::AiInput => Some(self.ai_input()),
+            InlineInputTarget::AgentSidebar => Some(&self.agent_sidebar_input),
         }
     }
 
@@ -936,6 +940,7 @@ impl TerminalView {
             InlineInputTarget::Search => Some(&mut self.search_input),
             InlineInputTarget::RenameTab => Some(&mut self.rename_input),
             InlineInputTarget::AiInput => Some(self.ai_input_mut()),
+            InlineInputTarget::AgentSidebar => Some(&mut self.agent_sidebar_input),
         }
     }
 
@@ -984,6 +989,10 @@ impl TerminalView {
                 mutate(self.ai_input_mut());
                 cx.notify();
             }
+            Some(InlineInputTarget::AgentSidebar) => {
+                mutate(&mut self.agent_sidebar_input);
+                cx.notify();
+            }
             None => {}
         }
     }
@@ -996,6 +1005,12 @@ impl TerminalView {
     ) {
         if event.button != MouseButton::Left {
             return;
+        }
+
+        // If the agent sidebar is open, activate its input before querying state.
+        // This ensures active_inline_input_state() returns the sidebar input.
+        if self.agent_sidebar.is_open() {
+            self.agent_sidebar_input_active = true;
         }
 
         self.focus_handle.focus(window, cx);

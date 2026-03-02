@@ -347,12 +347,7 @@ define_commands!(
             MenuActionRole::Normal
         ))
     ),
-    (
-        CloseTab,
-        TERMINAL_CONTEXT,
-        None,
-        None
-    ),
+    (CloseTab, TERMINAL_CONTEXT, None, None),
     (
         ClosePaneOrTab,
         TERMINAL_CONTEXT,
@@ -922,6 +917,16 @@ define_commands!(
         Some(palette(
             "AI Input",
             "ai assistant chat prompt",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
+        ToggleChatSidebar,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Toggle Chat Sidebar",
+            "chat sidebar ai agent mode panel toggle",
             CommandPaletteVisibility::Always
         )),
         None

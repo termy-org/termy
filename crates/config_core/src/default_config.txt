@@ -85,6 +85,8 @@ ai_provider = openai
 # gemini_api_key = none
 # Model used for AI input requests (provider-specific)
 # openai_model = gpt-5-mini
+# Width of the agent chat sidebar in pixels
+chat_sidebar_width = 360
 
 # Keybindings (repeatable)
 # tmux-only keybind actions require an active tmux session

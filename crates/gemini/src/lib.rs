@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::{BufRead, BufReader};
 use thiserror::Error;
 
 pub const DEFAULT_MODEL: &str = "gemini-2.5-flash";
@@ -80,11 +81,39 @@ struct ChatRequest {
     temperature: Option<f32>,
 }
 
+#[derive(Debug, Serialize)]
+struct StreamChatRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+}
+
 #[derive(Debug, Deserialize)]
 struct ChatResponse {
     choices: Option<Vec<Choice>>,
     #[serde(default)]
     error: Option<ApiErrorResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamChatResponse {
+    choices: Option<Vec<StreamChoice>>,
+    #[serde(default)]
+    error: Option<ApiErrorResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamChoice {
+    delta: StreamDelta,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamDelta {
+    content: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,24 +171,21 @@ impl GeminiClient {
         self.model.trim().to_string()
     }
 
-    pub fn message_with_terminal_context(
-        &self,
-        user_message: impl Into<String>,
-        terminal_content: impl Into<String>,
-    ) -> Result<String, GeminiError> {
-        let system = ChatMessage::system(
-            "You are a helpful terminal assistant. The user will provide terminal context \
-             (recent commands and output). Help them with their question. When suggesting \
-             commands, be concise and provide only the command they should run. \
-             If they ask for a command, respond with just the command, no explanation unless asked.",
-        );
-        let user = ChatMessage::user_with_file(user_message, terminal_content);
+    pub fn chat(&self, messages: Vec<ChatMessage>) -> Result<String, GeminiError> {
+        self.chat_with_options(messages, None, None)
+    }
 
+    pub fn chat_with_options(
+        &self,
+        messages: Vec<ChatMessage>,
+        max_tokens: Option<u32>,
+        temperature: Option<f32>,
+    ) -> Result<String, GeminiError> {
         let request = ChatRequest {
             model: self.normalized_model_id(),
-            messages: vec![system, user],
-            max_tokens: None,
-            temperature: None,
+            messages,
+            max_tokens,
+            temperature,
         };
 
         let agent = ureq::AgentBuilder::new()
@@ -184,6 +210,104 @@ impl GeminiClient {
             .and_then(|choices| choices.into_iter().next())
             .and_then(|choice| choice.message.content)
             .ok_or(GeminiError::NoContent)
+    }
+
+    pub fn message_with_terminal_context(
+        &self,
+        user_message: impl Into<String>,
+        terminal_content: impl Into<String>,
+    ) -> Result<String, GeminiError> {
+        let system = ChatMessage::system(
+            "You are a helpful terminal assistant. The user will provide terminal context \
+             (recent commands and output). Help them with their question. When suggesting \
+             commands, be concise and provide only the command they should run. \
+             If they ask for a command, respond with just the command, no explanation unless asked.",
+        );
+        let user = ChatMessage::user_with_file(user_message, terminal_content);
+
+        self.chat(vec![system, user])
+    }
+
+    pub fn chat_stream<F>(
+        &self,
+        messages: Vec<ChatMessage>,
+        on_chunk: F,
+    ) -> Result<String, GeminiError>
+    where
+        F: FnMut(&str),
+    {
+        self.chat_stream_with_options(messages, None, None, on_chunk)
+    }
+
+    pub fn chat_stream_with_options<F>(
+        &self,
+        messages: Vec<ChatMessage>,
+        max_tokens: Option<u32>,
+        temperature: Option<f32>,
+        mut on_chunk: F,
+    ) -> Result<String, GeminiError>
+    where
+        F: FnMut(&str),
+    {
+        let request = StreamChatRequest {
+            model: self.normalized_model_id(),
+            messages,
+            stream: true,
+            max_tokens,
+            temperature,
+        };
+
+        let agent = ureq::AgentBuilder::new()
+            .timeout_read(std::time::Duration::from_secs(10))
+            .timeout_write(std::time::Duration::from_secs(10))
+            .build();
+        let response = agent
+            .post("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+            .set("Authorization", &format!("Bearer {}", self.api_key))
+            .set("Content-Type", "application/json")
+            .send_json(&request)?;
+        let reader = response.into_reader();
+        let mut buffered = BufReader::new(reader);
+        let mut line = String::new();
+        let mut output = String::new();
+
+        loop {
+            line.clear();
+            if buffered.read_line(&mut line)? == 0 {
+                break;
+            }
+
+            let trimmed = line.trim();
+            if !trimmed.starts_with("data:") {
+                continue;
+            }
+
+            let payload = trimmed.trim_start_matches("data:").trim();
+            if payload.is_empty() {
+                continue;
+            }
+            if payload == "[DONE]" {
+                break;
+            }
+
+            let chunk: StreamChatResponse = serde_json::from_str(payload)?;
+            if let Some(error) = chunk.error {
+                return Err(GeminiError::ApiError {
+                    message: error.message,
+                });
+            }
+
+            if let Some(content) = chunk
+                .choices
+                .and_then(|choices| choices.into_iter().next())
+                .and_then(|choice| choice.delta.content)
+            {
+                on_chunk(&content);
+                output.push_str(&content);
+            }
+        }
+
+        Ok(output)
     }
 
     pub fn fetch_models(&self) -> Result<Vec<GeminiModel>, GeminiError> {

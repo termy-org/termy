@@ -164,6 +164,7 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.agent_sidebar_input_active = false;
         // Focus the terminal on click
         self.focus_handle.focus(window, cx);
         self.reset_cursor_blink_phase();

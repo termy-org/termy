@@ -78,15 +78,20 @@ impl TerminalView {
 
         // Send one framed payload so start/content/end ordering is atomic and
         // tmux can pick an efficient high-volume path for large pastes.
-        let mut framed =
-            Vec::with_capacity(BRACKETED_PASTE_START.len() + payload.len() + BRACKETED_PASTE_END.len());
+        let mut framed = Vec::with_capacity(
+            BRACKETED_PASTE_START.len() + payload.len() + BRACKETED_PASTE_END.len(),
+        );
         framed.extend_from_slice(BRACKETED_PASTE_START);
         framed.extend_from_slice(payload);
         framed.extend_from_slice(BRACKETED_PASTE_END);
         framed
     }
 
-    pub(in super::super) fn write_terminal_paste_input(&mut self, input: &[u8], cx: &mut Context<Self>) {
+    pub(in super::super) fn write_terminal_paste_input(
+        &mut self,
+        input: &[u8],
+        cx: &mut Context<Self>,
+    ) {
         if input.is_empty() {
             return;
         }
@@ -179,6 +184,11 @@ impl TerminalView {
             return;
         }
 
+        if self.agent_sidebar.is_open() && self.agent_sidebar_input_active {
+            self.handle_agent_sidebar_key_down(event, key, cx);
+            return;
+        }
+
         if self.renaming_tab.is_some() {
             match key {
                 "enter" => {
@@ -228,5 +238,37 @@ impl TerminalView {
 
         self.write_terminal_paste_input(text.as_bytes(), cx);
         cx.notify();
+    }
+
+    fn handle_agent_sidebar_key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        key: &str,
+        cx: &mut Context<Self>,
+    ) {
+        #[cfg(target_os = "macos")]
+        if key.eq_ignore_ascii_case("b")
+            && event.keystroke.modifiers.alt
+            && event.keystroke.modifiers.secondary()
+        {
+            self.agent_sidebar.toggle();
+            self.agent_sidebar_input_active = self.agent_sidebar.is_open();
+            self.agent_provider_dropdown_open = false;
+            self.agent_model_dropdown_open = false;
+            cx.notify();
+            return;
+        }
+
+        match key {
+            "escape" => {
+                self.agent_sidebar.set_open(false);
+                self.agent_sidebar_input_active = false;
+                cx.notify();
+            }
+            "enter" => {
+                self.submit_agent_sidebar_input(cx);
+            }
+            _ => {}
+        }
     }
 }

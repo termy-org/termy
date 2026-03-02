@@ -20,10 +20,16 @@ impl TerminalView {
         let y: f32 = position.y.into();
         // Mouse coordinates arrive in window space; subtract chrome so terminal hit-testing
         // stays aligned with rendered rows in both native and tmux runtimes.
-        (x, Self::window_y_to_terminal_content_y(y, self.chrome_height()))
+        (
+            x,
+            Self::window_y_to_terminal_content_y(y, self.chrome_height()),
+        )
     }
 
-    pub(in super::super) fn window_y_to_terminal_content_y(window_y: f32, chrome_height: f32) -> f32 {
+    pub(in super::super) fn window_y_to_terminal_content_y(
+        window_y: f32,
+        chrome_height: f32,
+    ) -> f32 {
         window_y - chrome_height
     }
 
@@ -65,7 +71,11 @@ impl TerminalView {
         cx.notify();
     }
 
-    pub(in super::super) fn calculate_cell_size(&mut self, window: &mut Window, _cx: &App) -> Size<Pixels> {
+    pub(in super::super) fn calculate_cell_size(
+        &mut self,
+        window: &mut Window,
+        _cx: &App,
+    ) -> Size<Pixels> {
         if let Some(cell_size) = self.cell_size {
             return cell_size;
         }
@@ -94,7 +104,11 @@ impl TerminalView {
         cell_size
     }
 
-    pub(in super::super) fn sync_terminal_size(&mut self, window: &Window, cell_size: Size<Pixels>) {
+    pub(in super::super) fn sync_terminal_size(
+        &mut self,
+        window: &Window,
+        cell_size: Size<Pixels>,
+    ) {
         let (padding_x, padding_y) = self.effective_terminal_padding();
         let viewport = window.viewport_size();
         let viewport_width: f32 = viewport.width.into();
@@ -106,7 +120,9 @@ impl TerminalView {
             return;
         }
 
-        let terminal_width = (viewport_width - (padding_x * 2.0)).max(cell_width * 2.0);
+        let sidebar_width = self.agent_sidebar.active_width();
+        let terminal_width =
+            (viewport_width - (padding_x * 2.0) - sidebar_width).max(cell_width * 2.0);
         let terminal_height =
             (viewport_height - self.chrome_height() - (padding_y * 2.0)).max(cell_height);
         let backend_mode = self.runtime_kind();
@@ -204,16 +220,25 @@ mod tests {
 
     #[test]
     fn window_y_to_terminal_content_y_subtracts_non_zero_chrome() {
-        assert_eq!(TerminalView::window_y_to_terminal_content_y(120.0, 34.0), 86.0);
+        assert_eq!(
+            TerminalView::window_y_to_terminal_content_y(120.0, 34.0),
+            86.0
+        );
     }
 
     #[test]
     fn window_y_to_terminal_content_y_is_identity_when_chrome_is_zero() {
-        assert_eq!(TerminalView::window_y_to_terminal_content_y(120.0, 0.0), 120.0);
+        assert_eq!(
+            TerminalView::window_y_to_terminal_content_y(120.0, 0.0),
+            120.0
+        );
     }
 
     #[test]
     fn window_y_to_terminal_content_y_can_be_negative_when_cursor_is_above_chrome() {
-        assert_eq!(TerminalView::window_y_to_terminal_content_y(20.0, 40.0), -20.0);
+        assert_eq!(
+            TerminalView::window_y_to_terminal_content_y(20.0, 40.0),
+            -20.0
+        );
     }
 }

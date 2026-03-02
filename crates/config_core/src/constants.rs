@@ -20,6 +20,9 @@ pub(crate) const MIN_MOUSE_SCROLL_MULTIPLIER: f32 = 0.1;
 pub(crate) const MAX_MOUSE_SCROLL_MULTIPLIER: f32 = 1_000.0;
 pub(crate) const DEFAULT_CURSOR_BLINK: bool = true;
 pub(crate) const DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS: bool = true;
+pub const DEFAULT_CHAT_SIDEBAR_WIDTH: f32 = 360.0;
+pub const MIN_CHAT_SIDEBAR_WIDTH: f32 = 220.0;
+pub const MAX_CHAT_SIDEBAR_WIDTH: f32 = 900.0;
 
 pub const VALID_ROOT_KEYS: &[&str] = ROOT_SETTING_ALL_KEYS;
 

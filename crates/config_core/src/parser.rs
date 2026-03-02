@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use crate::color_keys::{ColorEntryError, apply_color_entry};
 use crate::constants::{
-    MAX_MOUSE_SCROLL_MULTIPLIER, MAX_PANE_FOCUS_STRENGTH, MAX_SCROLLBACK_HISTORY,
-    MIN_MOUSE_SCROLL_MULTIPLIER, SHELL_DECIDE_THEME_ID, VALID_SECTIONS,
+    MAX_CHAT_SIDEBAR_WIDTH, MAX_MOUSE_SCROLL_MULTIPLIER, MAX_PANE_FOCUS_STRENGTH,
+    MAX_SCROLLBACK_HISTORY, MIN_CHAT_SIDEBAR_WIDTH, MIN_MOUSE_SCROLL_MULTIPLIER,
+    SHELL_DECIDE_THEME_ID, VALID_SECTIONS,
 };
 use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
@@ -534,6 +535,23 @@ impl AppConfig {
                 }
                 RootSettingId::OpenaiModel => {
                     config.openai_model = parse_optional_string_value(value);
+                }
+                RootSettingId::ChatSidebarWidth => {
+                    if let Some(parsed) =
+                        parse_positive_f32_field(&mut diagnostics, line_number, key, value)
+                    {
+                        if (MIN_CHAT_SIDEBAR_WIDTH..=MAX_CHAT_SIDEBAR_WIDTH).contains(&parsed) {
+                            config.chat_sidebar_width = parsed;
+                        } else {
+                            push_invalid_value(
+                                &mut diagnostics,
+                                line_number,
+                                key,
+                                value,
+                                "a number between 220 and 900",
+                            );
+                        }
+                    }
                 }
                 RootSettingId::Keybind => {
                     if let Some(parsed) = parse_string_field(
