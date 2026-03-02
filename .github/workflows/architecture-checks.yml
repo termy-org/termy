@@ -39,5 +39,32 @@ jobs:
       - name: Install tmux + just
         run: brew install tmux just
 
+      - name: Check tmux version
+        id: tmux-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tmux -V | awk '{print $2}')"
+          major="${version%%.*}"
+          minor_part="${version#*.}"
+          minor_digits="${minor_part%%[^0-9]*}"
+
+          if [[ -z "${minor_digits}" ]]; then
+            minor_digits=0
+          fi
+
+          if (( major > 3 )) || (( major == 3 && minor_digits >= 3 )); then
+            echo "supported=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "supported=false" >> "$GITHUB_OUTPUT"
+          echo "tmux ${version} is below required 3.3; skipping tmux integration tests."
+
       - name: Run tmux integration tests
+        if: steps.tmux-version.outputs.supported == 'true'
         run: just test-tmux-integration
+
+      - name: Skip tmux integration tests (tmux < 3.3)
+        if: steps.tmux-version.outputs.supported != 'true'
+        run: echo "tmux integration tests skipped because tmux is below 3.3."
