@@ -5,11 +5,12 @@ use alacritty_terminal::{
     term::{Config as TermConfig, Term, TermMode},
     vte::ansi,
 };
+use std::sync::Arc;
 
 use crate::runtime::TerminalSize;
 
 struct PaneTerminalInner {
-    term: Term<VoidListener>,
+    term: Arc<FairMutex<Term<VoidListener>>>,
     size: TerminalSize,
     scrollback_history: usize,
 }
@@ -21,11 +22,21 @@ pub struct PaneTerminal {
 }
 
 impl PaneTerminal {
+    fn normalized_size(size: TerminalSize) -> TerminalSize {
+        TerminalSize {
+            cols: size.cols.max(1),
+            rows: size.rows.max(1),
+            cell_width: size.cell_width,
+            cell_height: size.cell_height,
+        }
+    }
+
     pub fn new(size: TerminalSize, scrollback_history: usize) -> Self {
+        let size = Self::normalized_size(size);
         let mut config = TermConfig::default();
         config.scrolling_history = scrollback_history;
 
-        let term = Term::new(config, &size, VoidListener);
+        let term = Arc::new(FairMutex::new(Term::new(config, &size, VoidListener)));
         Self {
             inner: FairMutex::new(PaneTerminalInner {
                 term,
@@ -42,14 +53,22 @@ impl PaneTerminal {
         }
 
         let mut parser = self.parser.lock();
-        let mut inner = self.inner.lock();
-        parser.advance(&mut inner.term, bytes);
+        let term = {
+            let inner = self.inner.lock();
+            inner.term.clone()
+        };
+        let mut term = term.lock();
+        parser.advance(&mut *term, bytes);
     }
 
     pub fn resize(&self, new_size: TerminalSize) {
-        let mut inner = self.inner.lock();
-        inner.size = new_size;
-        inner.term.resize(new_size);
+        let new_size = Self::normalized_size(new_size);
+        let term = {
+            let mut inner = self.inner.lock();
+            inner.size = new_size;
+            inner.term.clone()
+        };
+        term.lock().resize(new_size);
     }
 
     pub fn size(&self) -> TerminalSize {
@@ -57,8 +76,14 @@ impl PaneTerminal {
     }
 
     pub fn with_term<R>(&self, f: impl FnOnce(&Term<VoidListener>) -> R) -> R {
-        let inner = self.inner.lock();
-        f(&inner.term)
+        let term = {
+            let inner = self.inner.lock();
+            inner.term.clone()
+        };
+        // Run callback outside the outer state lock so callbacks can safely call
+        // back into PaneTerminal APIs (for example size()) without lock inversion.
+        let term = term.lock();
+        f(&term)
     }
 
     pub fn scroll_display(&self, delta_lines: i32) -> bool {
@@ -66,54 +91,84 @@ impl PaneTerminal {
             return false;
         }
 
-        let mut inner = self.inner.lock();
-        let old_offset = inner.term.grid().display_offset();
-        inner.term.scroll_display(Scroll::Delta(delta_lines));
-        inner.term.grid().display_offset() != old_offset
+        let term = {
+            let inner = self.inner.lock();
+            inner.term.clone()
+        };
+        let mut term = term.lock();
+        let old_offset = term.grid().display_offset();
+        term.scroll_display(Scroll::Delta(delta_lines));
+        term.grid().display_offset() != old_offset
     }
 
     pub fn scroll_to_bottom(&self) -> bool {
-        let mut inner = self.inner.lock();
-        let old_offset = inner.term.grid().display_offset();
+        let term = {
+            let inner = self.inner.lock();
+            inner.term.clone()
+        };
+        let mut term = term.lock();
+        let old_offset = term.grid().display_offset();
         if old_offset == 0 {
             return false;
         }
-        inner.term.scroll_display(Scroll::Bottom);
+        term.scroll_display(Scroll::Bottom);
         true
     }
 
     pub fn scroll_state(&self) -> (usize, usize) {
-        let inner = self.inner.lock();
-        let grid = inner.term.grid();
+        let term = {
+            let inner = self.inner.lock();
+            inner.term.clone()
+        };
+        let term = term.lock();
+        let grid = term.grid();
         (grid.display_offset(), grid.history_size())
     }
 
     pub fn cursor_position(&self) -> (usize, usize) {
-        let inner = self.inner.lock();
-        let cursor = inner.term.grid().cursor.point;
+        let term = {
+            let inner = self.inner.lock();
+            inner.term.clone()
+        };
+        let term = term.lock();
+        let cursor = term.grid().cursor.point;
         let row = usize::try_from(cursor.line.0).unwrap_or(0);
         (cursor.column.0, row)
     }
 
     pub fn set_scrollback_history(&self, history_size: usize) {
+        let term = {
+            let inner = self.inner.lock();
+            if inner.scrollback_history == history_size {
+                return;
+            }
+            inner.term.clone()
+        };
+        let mut config = TermConfig::default();
+        config.scrolling_history = history_size;
+        term.lock().set_options(config);
+
         let mut inner = self.inner.lock();
         if inner.scrollback_history == history_size {
             return;
         }
-        let mut config = TermConfig::default();
-        config.scrolling_history = history_size;
-        inner.term.set_options(config);
         inner.scrollback_history = history_size;
     }
 
     pub fn bracketed_paste_mode(&self) -> bool {
-        let inner = self.inner.lock();
-        inner.term.mode().contains(TermMode::BRACKETED_PASTE)
+        let term = {
+            let inner = self.inner.lock();
+            inner.term.clone()
+        };
+        term.lock().mode().contains(TermMode::BRACKETED_PASTE)
     }
 
     pub fn alternate_screen_mode(&self) -> bool {
-        let inner = self.inner.lock();
-        inner.term.mode().contains(TermMode::ALT_SCREEN)
+        let term = {
+            let inner = self.inner.lock();
+            inner.term.clone()
+        };
+        term.lock().mode().contains(TermMode::ALT_SCREEN)
     }
 }
 
@@ -135,7 +190,7 @@ impl Dimensions for PaneTerminal {
     }
 
     fn bottommost_line(&self) -> alacritty_terminal::index::Line {
-        alacritty_terminal::index::Line((self.size().rows as i32) - 1)
+        alacritty_terminal::index::Line(i32::from(self.size().rows.saturating_sub(1)))
     }
 
     fn topmost_line(&self) -> alacritty_terminal::index::Line {
@@ -146,6 +201,7 @@ impl Dimensions for PaneTerminal {
 #[cfg(test)]
 mod tests {
     use super::PaneTerminal;
+    use alacritty_terminal::grid::Dimensions;
     use crate::runtime::TerminalSize;
 
     fn visible_viewport_text(terminal: &PaneTerminal) -> String {
@@ -206,5 +262,31 @@ mod tests {
         assert!(visible.contains("zsh: command not found: c"));
         assert!(!visible.contains("cdcd:"));
         assert!(!visible.contains("czsh:"));
+    }
+
+    #[test]
+    fn clamps_zero_size_on_new_and_resize() {
+        let terminal = PaneTerminal::new(
+            TerminalSize {
+                cols: 0,
+                rows: 0,
+                ..TerminalSize::default()
+            },
+            2000,
+        );
+        assert_eq!(terminal.size().cols, 1);
+        assert_eq!(terminal.size().rows, 1);
+        assert_eq!(terminal.last_column().0, 0);
+        assert_eq!(terminal.bottommost_line().0, 0);
+
+        terminal.resize(TerminalSize {
+            cols: 0,
+            rows: 0,
+            ..TerminalSize::default()
+        });
+        assert_eq!(terminal.size().cols, 1);
+        assert_eq!(terminal.size().rows, 1);
+        assert_eq!(terminal.last_column().0, 0);
+        assert_eq!(terminal.bottommost_line().0, 0);
     }
 }

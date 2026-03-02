@@ -531,7 +531,7 @@ impl Dimensions for TerminalSize {
     }
 
     fn bottommost_line(&self) -> alacritty_terminal::index::Line {
-        alacritty_terminal::index::Line((self.rows as i32) - 1)
+        alacritty_terminal::index::Line(i32::from(self.rows.saturating_sub(1)))
     }
 
     fn topmost_line(&self) -> alacritty_terminal::index::Line {
@@ -907,6 +907,7 @@ fn is_plain_control(modifiers: Modifiers) -> bool {
 mod tests {
     use alacritty_terminal::{
         event::VoidListener,
+        grid::Dimensions,
         term::{Config as TermConfig, Term},
         vte::ansi,
     };
@@ -938,6 +939,19 @@ mod tests {
             key: key.to_string(),
             key_char: None,
         }
+    }
+
+    #[test]
+    fn terminal_size_dimensions_saturate_bottommost_line_for_zero_rows() {
+        let size = TerminalSize {
+            cols: 0,
+            rows: 0,
+            cell_width: px(9.0),
+            cell_height: px(18.0),
+        };
+
+        assert_eq!(size.last_column().0, 0);
+        assert_eq!(size.bottommost_line().0, 0);
     }
 
     #[cfg(target_os = "macos")]

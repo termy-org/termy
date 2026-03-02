@@ -102,7 +102,9 @@ impl TerminalView {
             return;
         };
 
-        let terminal = self.active_terminal();
+        let Some(terminal) = self.active_terminal() else {
+            return;
+        };
         let size = terminal.size();
         let rows = size.rows as i32;
 
@@ -133,7 +135,7 @@ impl TerminalView {
         let delta = target_offset as i32 - display_offset as i32;
 
         if delta != 0 {
-            self.active_terminal().scroll_display(delta);
+            terminal.scroll_display(delta);
             self.mark_terminal_scrollbar_activity(cx);
         }
     }
@@ -148,7 +150,11 @@ impl TerminalView {
             return;
         }
 
-        let terminal = self.active_terminal();
+        let Some(terminal) = self.active_terminal() else {
+            self.search_state.clear_results_preserving_query();
+            self.clear_terminal_scrollbar_marker_cache();
+            return;
+        };
         let (_, history_size) = terminal.scroll_state();
         let rows = terminal.size().rows as i32;
         let start_line = -(history_size as i32);
@@ -158,7 +164,7 @@ impl TerminalView {
         let search_state = &mut self.search_state;
         search_state.search(start_line, end_line, |line_idx| {
             let offset = (line_idx - start_line) as usize;
-            line_texts.get(offset).cloned().flatten()
+            line_texts.get(offset).and_then(|line| line.as_deref())
         });
 
         // Start from the bottommost (newest) match, which is now index 0.
@@ -453,5 +459,13 @@ mod tests {
             .expect("native terminal should initialize for read adapter test");
         let native_lines = collect_search_line_texts(&native, 0, i32::from(size.rows) - 1);
         assert_eq!(native_lines.len(), usize::from(size.rows));
+        let native_has_non_empty_buffer = native_lines
+            .iter()
+            .filter_map(|line| line.as_deref())
+            .any(|line| !line.is_empty());
+        assert!(
+            native_has_non_empty_buffer,
+            "native terminal read adapter should expose at least one non-empty line buffer"
+        );
     }
 }

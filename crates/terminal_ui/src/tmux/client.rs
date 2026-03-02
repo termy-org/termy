@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, anyhow};
-use flume::{Receiver, Sender, bounded};
+use flume::{Receiver, RecvTimeoutError, Sender, bounded};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -486,12 +486,21 @@ impl TmuxClient {
             response_tx: Some(response_tx),
         })?;
 
-        let response = response_rx.recv_timeout(timeout).map_err(|_| {
-            anyhow!(TmuxControlError::channel(format!(
-                "timed out waiting for command completion: '{}'",
-                command
-            )))
-        })?;
+        let response = match response_rx.recv_timeout(timeout) {
+            Ok(response) => response,
+            Err(RecvTimeoutError::Timeout) => {
+                return Err(anyhow!(TmuxControlError::channel(format!(
+                    "timed out waiting for command completion after {:?}: '{}'",
+                    timeout, command
+                ))));
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(anyhow!(TmuxControlError::channel(format!(
+                    "tmux control worker channel disconnected before command completion: '{}'",
+                    command
+                ))));
+            }
+        };
         response.map_err(anyhow::Error::new)
     }
 
@@ -575,9 +584,13 @@ impl TmuxClient {
             self.show_active_pane_border,
         ) {
             self.run_control_status_args(&command).with_context(|| {
+                let option_key = command.get(4).copied().unwrap_or("<missing-option-key>");
+                let option_value = command.get(5).copied().unwrap_or("<missing-option-value>");
                 format!(
-                    "failed to apply tmux managed-session window option override '{}={}'",
-                    command[4], command[5]
+                    "failed to apply tmux managed-session window option override '{}={}' (command: {})",
+                    option_key,
+                    option_value,
+                    tmux_command_line(&command),
                 )
             })?;
         }

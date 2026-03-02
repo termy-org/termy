@@ -79,7 +79,12 @@ impl TerminalView {
             return false;
         }
 
-        let size = self.active_terminal().size();
+        // Runtime transitions can briefly observe an empty tab/pane set; fall back
+        // to the default grid size rather than panicking on a missing active pane.
+        let size = self
+            .active_terminal()
+            .map(|terminal| terminal.size())
+            .unwrap_or_else(TerminalSize::default);
         let tmux_client = match TmuxClient::new(
             runtime_config.clone(),
             size.cols.max(1),
@@ -190,7 +195,11 @@ impl TerminalView {
             return false;
         }
 
-        let size = self.active_terminal().size();
+        // Detach should remain recoverable even if tmux just invalidated panes.
+        let size = self
+            .active_terminal()
+            .map(|terminal| terminal.size())
+            .unwrap_or_else(TerminalSize::default);
         let native_tab = match self.create_native_runtime_tab_for_size(size) {
             Ok(tab) => tab,
             Err(error) => {
@@ -228,7 +237,11 @@ impl TerminalView {
             return false;
         }
 
-        let size = self.active_terminal().size();
+        // Exit recovery uses a deterministic fallback when no active pane remains.
+        let size = self
+            .active_terminal()
+            .map(|terminal| terminal.size())
+            .unwrap_or_else(TerminalSize::default);
         if let Some(reason) = reason {
             termy_toast::error(reason);
         }

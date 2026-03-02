@@ -5,7 +5,10 @@ impl TerminalView {
         match self.runtime_kind() {
             RuntimeKind::Tmux => self.tmux_send_input_to_active_pane(input),
             RuntimeKind::Native => {
-                self.active_terminal().write_input(input);
+                let Some(terminal) = self.active_terminal() else {
+                    return false;
+                };
+                terminal.write_input(input);
                 true
             }
         }
@@ -89,7 +92,10 @@ impl TerminalView {
         }
 
         self.prepare_terminal_input_write(cx);
-        let wrote_input = if self.active_terminal().bracketed_paste_mode() {
+        let bracketed_paste = self
+            .active_terminal()
+            .is_some_and(|terminal| terminal.bracketed_paste_mode());
+        let wrote_input = if bracketed_paste {
             let framed = Self::framed_bracketed_paste_input(input);
             self.send_input_to_active_pane(&framed)
         } else {
@@ -182,7 +188,9 @@ impl TerminalView {
             }
         }
 
-        let prompt_shortcuts_enabled = !self.active_terminal().alternate_screen_mode();
+        let prompt_shortcuts_enabled = !self
+            .active_terminal()
+            .is_some_and(|terminal| terminal.alternate_screen_mode());
         if let Some(input) = keystroke_to_input(&event.keystroke, prompt_shortcuts_enabled) {
             self.write_terminal_input(&input, cx);
             self.clear_selection();

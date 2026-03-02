@@ -101,6 +101,7 @@ const TERMINAL_SCROLLBAR_MUTED_THEME_BLEND: f32 = 0.38;
 const SEARCH_BAR_WIDTH: f32 = 320.0;
 const SEARCH_BAR_HEIGHT: f32 = 36.0;
 const SEARCH_DEBOUNCE_MS: u64 = 50;
+const TMUX_RESIZE_ERROR_TOAST_DEBOUNCE_MS: u64 = 2000;
 const INPUT_SCROLL_SUPPRESS_MS: u64 = 160;
 const TOAST_COPY_FEEDBACK_MS: u64 = 1200;
 const OVERLAY_PANEL_ALPHA_FLOOR_RATIO: f32 = 0.72;
@@ -810,6 +811,7 @@ pub struct TerminalView {
     inline_input_selecting: bool,
     terminal_scroll_accumulator_y: f32,
     input_scroll_suppress_until: Option<Instant>,
+    last_tmux_resize_error_at: Option<Instant>,
     terminal_scrollbar_visibility: TerminalScrollbarVisibility,
     terminal_scrollbar_style: TerminalScrollbarStyle,
     terminal_scrollbar_visibility_controller: ScrollbarVisibilityController,
@@ -1156,7 +1158,10 @@ impl TerminalView {
     }
 
     fn effective_terminal_padding(&self) -> (f32, f32) {
-        if self.active_terminal().alternate_screen_mode() {
+        if self
+            .active_terminal()
+            .is_some_and(|terminal| terminal.alternate_screen_mode())
+        {
             (0.0, 0.0)
         } else {
             (self.padding_x, self.padding_y)
@@ -1204,14 +1209,15 @@ impl TerminalView {
         &self,
         track_height: f32,
     ) -> Option<scrollbar::TerminalScrollbarLayout> {
-        let size = self.active_terminal().size();
+        let terminal = self.active_terminal()?;
+        let size = terminal.size();
         let viewport_rows = size.rows as usize;
         if viewport_rows == 0 {
             return None;
         }
 
         let line_height: f32 = size.cell_height.into();
-        let (display_offset, history_size) = self.active_terminal().scroll_state();
+        let (display_offset, history_size) = terminal.scroll_state();
         scrollbar::compute_layout(
             display_offset,
             history_size,
@@ -1548,6 +1554,7 @@ impl TerminalView {
             inline_input_selecting: false,
             terminal_scroll_accumulator_y: 0.0,
             input_scroll_suppress_until: None,
+            last_tmux_resize_error_at: None,
             terminal_scrollbar_visibility: config.terminal_scrollbar_visibility,
             terminal_scrollbar_style: config.terminal_scrollbar_style,
             terminal_scrollbar_visibility_controller: ScrollbarVisibilityController::default(),
@@ -1876,11 +1883,10 @@ impl TerminalView {
         }
     }
 
-    fn active_terminal(&self) -> &Terminal {
+    fn active_terminal(&self) -> Option<&Terminal> {
         self.tabs
             .get(self.active_tab)
             .and_then(TerminalTab::active_terminal)
-            .expect("active pane terminal missing")
     }
 }
 

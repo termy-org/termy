@@ -203,7 +203,11 @@ impl TerminalView {
         match self.runtime_kind() {
             RuntimeKind::Tmux => self.tmux_add_tab(cx),
             RuntimeKind::Native => {
-                let size = self.active_terminal().size();
+                // Tab creation should stay robust if active pane state is transiently missing.
+                let size = self
+                    .active_terminal()
+                    .map(|terminal| terminal.size())
+                    .unwrap_or_else(TerminalSize::default);
                 let terminal = match Terminal::new_native(
                     size,
                     self.configured_working_dir.as_deref(),

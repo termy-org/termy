@@ -114,9 +114,9 @@ impl SearchState {
         SearchMode::Literal
     }
 
-    pub fn search<F>(&mut self, start_line: i32, end_line: i32, line_provider: F)
+    pub fn search<'a, F>(&mut self, start_line: i32, end_line: i32, line_provider: F)
     where
-        F: Fn(i32) -> Option<String>,
+        F: Fn(i32) -> Option<&'a str>,
     {
         self.results = self.engine.search(start_line, end_line, line_provider);
         self.results_revision = self.results_revision.wrapping_add(1);
@@ -153,9 +153,9 @@ mod tests {
         let baseline = state.results_revision();
 
         state.search(0, 2, |line| match line {
-            0 => Some("alpha".to_string()),
-            1 => Some("beta".to_string()),
-            2 => Some("gamma".to_string()),
+            0 => Some("alpha"),
+            1 => Some("beta"),
+            2 => Some("gamma"),
             _ => None,
         });
         assert_eq!(state.results_revision(), baseline.wrapping_add(1));
@@ -168,10 +168,10 @@ mod tests {
     fn results_revision_does_not_change_for_selection_navigation() {
         let mut state = SearchState::new();
         state.search(0, 3, |line| match line {
-            0 => Some("match".to_string()),
-            1 => Some("x".to_string()),
-            2 => Some("match".to_string()),
-            3 => Some("y".to_string()),
+            0 => Some("match"),
+            1 => Some("x"),
+            2 => Some("match"),
+            3 => Some("y"),
             _ => None,
         });
 
@@ -197,8 +197,8 @@ mod tests {
         let mut state = SearchState::new();
         state.set_query("match");
         state.search(0, 1, |line| match line {
-            0 => Some("match".to_string()),
-            1 => Some("x".to_string()),
+            0 => Some("match"),
+            1 => Some("x"),
             _ => None,
         });
         assert!(!state.results().is_empty());

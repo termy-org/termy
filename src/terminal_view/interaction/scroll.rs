@@ -94,7 +94,10 @@ impl TerminalView {
             }
             TouchPhase::Ended => 0,
             TouchPhase::Moved => {
-                let size = self.active_terminal().size();
+                let Some(terminal) = self.active_terminal() else {
+                    return 0;
+                };
+                let size = terminal.size();
                 if size.rows == 0 {
                     return 0;
                 }
@@ -167,7 +170,8 @@ impl TerminalView {
         position: gpui::Point<Pixels>,
         window: &Window,
     ) -> Option<TerminalScrollbarHit> {
-        let (display_offset, _) = self.active_terminal().scroll_state();
+        let terminal = self.active_terminal()?;
+        let (display_offset, _) = terminal.scroll_state();
         let force_visible = display_offset > 0
             && self.terminal_scrollbar_mode() != ui_scrollbar::ScrollbarVisibilityMode::AlwaysOff;
         let alpha = self.terminal_scrollbar_alpha(Instant::now());
@@ -216,7 +220,10 @@ impl TerminalView {
         target_offset: f32,
         layout: terminal_scrollbar::TerminalScrollbarLayout,
     ) -> bool {
-        let (display_offset, _) = self.active_terminal().scroll_state();
+        let Some(terminal) = self.active_terminal() else {
+            return false;
+        };
+        let (display_offset, _) = terminal.scroll_state();
         let line_height = layout.range.viewport_extent / layout.viewport_rows as f32;
         if line_height <= f32::EPSILON {
             return false;
@@ -233,7 +240,7 @@ impl TerminalView {
             return false;
         }
 
-        self.active_terminal().scroll_display(delta)
+        terminal.scroll_display(delta)
     }
 
     pub(in super::super) fn handle_terminal_scrollbar_mouse_down(
@@ -301,7 +308,10 @@ impl TerminalView {
     }
 
     pub(in super::super) fn scroll_to_bottom(&mut self, cx: &mut Context<Self>) {
-        if self.active_terminal().scroll_to_bottom() {
+        if self
+            .active_terminal()
+            .is_some_and(|terminal| terminal.scroll_to_bottom())
+        {
             self.mark_terminal_scrollbar_activity(cx);
             cx.notify();
         }
@@ -339,7 +349,10 @@ impl TerminalView {
             return;
         }
 
-        if self.active_terminal().scroll_display(delta_lines) {
+        if self
+            .active_terminal()
+            .is_some_and(|terminal| terminal.scroll_display(delta_lines))
+        {
             cx.notify();
         } else {
             self.terminal_scroll_accumulator_y = 0.0;

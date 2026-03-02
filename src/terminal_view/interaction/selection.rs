@@ -73,15 +73,15 @@ impl TerminalView {
         let (x, y) = self.terminal_content_position(position);
         let active_pane_id = tab.active_pane_id();
 
-        for pane in &tab.panes {
+        let evaluate_pane = |pane: &TerminalPane, allow_clamp_outside: bool| -> Option<CellPos> {
             let size = pane.terminal.size();
             if size.cols == 0 || size.rows == 0 {
-                continue;
+                return None;
             }
             let cell_width: f32 = size.cell_width.into();
             let cell_height: f32 = size.cell_height.into();
             if cell_width <= f32::EPSILON || cell_height <= f32::EPSILON {
-                continue;
+                return None;
             }
 
             let origin_x = padding_x + (f32::from(pane.left) * cell_width);
@@ -89,7 +89,7 @@ impl TerminalView {
             let width = f32::from(size.cols) * cell_width;
             let height = f32::from(size.rows) * cell_height;
             if width <= f32::EPSILON || height <= f32::EPSILON {
-                continue;
+                return None;
             }
 
             let mut local_x = x - origin_x;
@@ -97,8 +97,8 @@ impl TerminalView {
             let is_inside =
                 local_x >= 0.0 && local_x < width && local_y >= 0.0 && local_y < height;
             if !is_inside {
-                if !clamp || active_pane_id != Some(pane.id.as_str()) {
-                    continue;
+                if !clamp || !allow_clamp_outside {
+                    return None;
                 }
                 local_x = local_x.clamp(0.0, width - f32::EPSILON);
                 local_y = local_y.clamp(0.0, height - f32::EPSILON);
@@ -107,7 +107,7 @@ impl TerminalView {
             let max_col = i32::from(size.cols) - 1;
             let max_row = i32::from(size.rows) - 1;
             if max_col < 0 || max_row < 0 {
-                continue;
+                return None;
             }
 
             let mut col = (local_x / cell_width).floor() as i32;
@@ -116,16 +116,36 @@ impl TerminalView {
                 col = col.clamp(0, max_col);
                 row = row.clamp(0, max_row);
             } else if col < 0 || col > max_col || row < 0 || row > max_row {
-                continue;
+                return None;
             }
 
-            return Some((
-                pane.id.clone(),
-                CellPos {
-                    col: col as usize,
-                    row: row as usize,
-                },
-            ));
+            Some(CellPos {
+                col: col as usize,
+                row: row as usize,
+            })
+        };
+
+        // When clamping out-of-bounds points, prefer the active pane first so
+        // we never return a clamped hit for an inactive pane before the active pane.
+        if clamp
+            && let Some(active_pane_id) = active_pane_id
+            && let Some(active_pane) = tab
+                .panes
+                .iter()
+                .find(|pane| pane.id.as_str() == active_pane_id)
+            && let Some(cell) = evaluate_pane(active_pane, true)
+        {
+            return Some((active_pane.id.clone(), cell));
+        }
+
+        for pane in &tab.panes {
+            if active_pane_id == Some(pane.id.as_str()) && clamp {
+                continue;
+            }
+            let allow_clamp_outside = clamp && active_pane_id == Some(pane.id.as_str());
+            if let Some(cell) = evaluate_pane(pane, allow_clamp_outside) {
+                return Some((pane.id.clone(), cell));
+            }
         }
 
         None
@@ -175,7 +195,8 @@ impl TerminalView {
 
     pub(in super::super) fn selected_text(&self) -> Option<String> {
         let (start, end) = self.selection_range()?;
-        let size = self.active_terminal().size();
+        let terminal = self.active_terminal()?;
+        let size = terminal.size();
         let cols = size.cols as usize;
         let rows = size.rows as usize;
         if cols == 0 || rows == 0 {
@@ -202,7 +223,7 @@ impl TerminalView {
         let max_row = selection_end.row;
         let grid_rows = max_row - min_row + 1;
         let mut grid = vec![vec![' '; cols]; grid_rows];
-        fill_grid_rows_for_selection(self.active_terminal(), min_row, max_row, cols, &mut grid);
+        fill_grid_rows_for_selection(terminal, min_row, max_row, cols, &mut grid);
 
         let mut lines = Vec::new();
         for row in min_row..=max_row {
@@ -236,14 +257,15 @@ impl TerminalView {
     }
 
     pub(in super::super) fn row_text(&self, row: usize) -> Option<Vec<char>> {
-        let size = self.active_terminal().size();
+        let terminal = self.active_terminal()?;
+        let size = terminal.size();
         let cols = size.cols as usize;
         let rows = size.rows as usize;
         if cols == 0 || row >= rows {
             return None;
         }
 
-        let line = row_text_from_terminal(self.active_terminal(), row, cols);
+        let line = row_text_from_terminal(terminal, row, cols);
 
         Some(line)
     }
@@ -302,7 +324,10 @@ impl TerminalView {
     }
 
     pub(in super::super) fn select_line_at_row(&mut self, row: usize) -> bool {
-        let size = self.active_terminal().size();
+        let Some(terminal) = self.active_terminal() else {
+            return false;
+        };
+        let size = terminal.size();
         let cols = size.cols as usize;
         let rows = size.rows as usize;
         if cols == 0 || row >= rows {

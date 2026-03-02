@@ -1,6 +1,17 @@
 use super::*;
 
 impl TerminalView {
+    fn should_emit_tmux_resize_error_toast(&mut self, now: Instant) -> bool {
+        let debounce_window = Duration::from_millis(TMUX_RESIZE_ERROR_TOAST_DEBOUNCE_MS);
+        match self.last_tmux_resize_error_at {
+            Some(previous) if now.saturating_duration_since(previous) < debounce_window => false,
+            _ => {
+                self.last_tmux_resize_error_at = Some(now);
+                true
+            }
+        }
+    }
+
     pub(in super::super) fn terminal_content_position(
         &self,
         position: gpui::Point<Pixels>,
@@ -99,8 +110,10 @@ impl TerminalView {
         let terminal_height =
             (viewport_height - self.chrome_height() - (padding_y * 2.0)).max(cell_height);
         let backend_mode = self.runtime_kind();
-        let edge_to_edge_grid =
-            !backend_mode.uses_tmux() && self.active_terminal().alternate_screen_mode();
+        let edge_to_edge_grid = !backend_mode.uses_tmux()
+            && self
+                .active_terminal()
+                .is_some_and(|terminal| terminal.alternate_screen_mode());
         let cols = if edge_to_edge_grid {
             (terminal_width / cell_width).ceil()
         } else {
@@ -118,7 +131,12 @@ impl TerminalView {
             RuntimeKind::Tmux => {
                 if self.tmux_client_cols() != cols || self.tmux_client_rows() != rows {
                     if let Err(error) = self.sync_tmux_client_size(cols, rows) {
-                        termy_toast::error(format!("tmux resize failed: {error}"));
+                        let now = Instant::now();
+                        if self.should_emit_tmux_resize_error_toast(now) {
+                            termy_toast::error(format!("tmux resize failed: {error}"));
+                        } else {
+                            log::debug!("tmux resize failed (toast debounced): {error}");
+                        }
                     }
                 }
             }

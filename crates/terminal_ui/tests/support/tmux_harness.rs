@@ -5,12 +5,14 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::{self, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use termy_terminal_ui::TmuxClient;
 
 const TEST_SOCKET_NAME: &str = "termy";
+static TMUX_TMPDIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn tmux_env_lock() -> &'static Mutex<()> {
     static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
@@ -105,8 +107,9 @@ impl IsolatedTmuxEnvGuard {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or(0);
-        let short_suffix = now_ns % 1_000_000;
-        let tmux_tmpdir = PathBuf::from("/tmp").join(format!("ttmx-{}-{short_suffix}", process::id()));
+        let sequence = TMUX_TMPDIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let unique_suffix = format!("{}-{now_ns}-{sequence}", process::id());
+        let tmux_tmpdir = PathBuf::from("/tmp").join(format!("ttmx-{unique_suffix}"));
         fs::create_dir_all(&tmux_tmpdir).expect("failed to create isolated TMUX_TMPDIR");
 
         // Keep integration tests isolated from user/session state that may also

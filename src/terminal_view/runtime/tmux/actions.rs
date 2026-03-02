@@ -181,6 +181,8 @@ impl TerminalView {
         let refreshed = self.refresh_tmux_snapshot();
         if refreshed {
             self.clear_selection();
+            self.reset_tab_rename_state();
+            self.reset_tab_drag_state();
             cx.notify();
         }
         refreshed
@@ -196,6 +198,8 @@ impl TerminalView {
         let refreshed = self.refresh_tmux_snapshot();
         if refreshed {
             self.clear_selection();
+            self.reset_tab_rename_state();
+            self.reset_tab_drag_state();
             cx.notify();
         }
         refreshed
@@ -286,19 +290,36 @@ impl TerminalView {
         )
     }
 
+    fn with_active_pane_action<F>(
+        &mut self,
+        error_prefix: &str,
+        refresh: TmuxPostActionRefresh,
+        clear_selection: bool,
+        cx: &mut Context<Self>,
+        action: F,
+    ) -> bool
+    where
+        F: FnOnce(&TmuxClient, &str) -> anyhow::Result<()>,
+    {
+        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
+            return false;
+        };
+
+        self.run_tmux_action_with_refresh(error_prefix, refresh, clear_selection, cx, |tmux_client| {
+            action(tmux_client, pane_id.as_str())
+        })
+    }
+
     pub(in crate::terminal_view) fn tmux_split_active_pane_vertical(
         &mut self,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to split pane",
             TmuxPostActionRefresh::ImmediateSnapshot,
             true,
             cx,
-            |tmux_client| tmux_client.split_vertical(pane_id.as_str()),
+            |tmux_client, pane_id| tmux_client.split_vertical(pane_id),
         )
     }
 
@@ -306,132 +327,102 @@ impl TerminalView {
         &mut self,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to split pane",
             TmuxPostActionRefresh::ImmediateSnapshot,
             true,
             cx,
-            |tmux_client| tmux_client.split_horizontal(pane_id.as_str()),
+            |tmux_client, pane_id| tmux_client.split_horizontal(pane_id),
         )
     }
 
     pub(in crate::terminal_view) fn tmux_close_active_pane(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to close pane",
             TmuxPostActionRefresh::ImmediateSnapshot,
             true,
             cx,
-            |tmux_client| tmux_client.close_pane(pane_id.as_str()),
+            |tmux_client, pane_id| tmux_client.close_pane(pane_id),
         )
     }
 
     pub(in crate::terminal_view) fn tmux_focus_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to focus pane",
             TmuxPostActionRefresh::EventDriven,
             true,
             cx,
-            |tmux_client| tmux_client.focus_pane_left(pane_id.as_str()),
+            |tmux_client, pane_id| tmux_client.focus_pane_left(pane_id),
         )
     }
 
     pub(in crate::terminal_view) fn tmux_focus_pane_right(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to focus pane",
             TmuxPostActionRefresh::EventDriven,
             true,
             cx,
-            |tmux_client| tmux_client.focus_pane_right(pane_id.as_str()),
+            |tmux_client, pane_id| tmux_client.focus_pane_right(pane_id),
         )
     }
 
     pub(in crate::terminal_view) fn tmux_focus_pane_up(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to focus pane",
             TmuxPostActionRefresh::EventDriven,
             true,
             cx,
-            |tmux_client| tmux_client.focus_pane_up(pane_id.as_str()),
+            |tmux_client, pane_id| tmux_client.focus_pane_up(pane_id),
         )
     }
 
     pub(in crate::terminal_view) fn tmux_focus_pane_down(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to focus pane",
             TmuxPostActionRefresh::EventDriven,
             true,
             cx,
-            |tmux_client| tmux_client.focus_pane_down(pane_id.as_str()),
+            |tmux_client, pane_id| tmux_client.focus_pane_down(pane_id),
         )
     }
 
     pub(in crate::terminal_view) fn tmux_resize_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to resize pane",
             TmuxPostActionRefresh::EventDriven,
             false,
             cx,
-            |tmux_client| tmux_client.resize_pane_left(pane_id.as_str(), 1),
+            |tmux_client, pane_id| tmux_client.resize_pane_left(pane_id, 1),
         )
     }
 
     pub(in crate::terminal_view) fn tmux_resize_pane_right(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to resize pane",
             TmuxPostActionRefresh::EventDriven,
             false,
             cx,
-            |tmux_client| tmux_client.resize_pane_right(pane_id.as_str(), 1),
+            |tmux_client, pane_id| tmux_client.resize_pane_right(pane_id, 1),
         )
     }
 
     pub(in crate::terminal_view) fn tmux_resize_pane_up(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to resize pane",
             TmuxPostActionRefresh::EventDriven,
             false,
             cx,
-            |tmux_client| tmux_client.resize_pane_up(pane_id.as_str(), 1),
+            |tmux_client, pane_id| tmux_client.resize_pane_up(pane_id, 1),
         )
     }
 
     pub(in crate::terminal_view) fn tmux_resize_pane_down(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to resize pane",
             TmuxPostActionRefresh::EventDriven,
             false,
             cx,
-            |tmux_client| tmux_client.resize_pane_down(pane_id.as_str(), 1),
+            |tmux_client, pane_id| tmux_client.resize_pane_down(pane_id, 1),
         )
     }
 
@@ -439,15 +430,12 @@ impl TerminalView {
         &mut self,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(pane_id) = self.active_pane_id().map(ToOwned::to_owned) else {
-            return false;
-        };
-        self.run_tmux_action_with_refresh(
+        self.with_active_pane_action(
             "Failed to toggle pane zoom",
             TmuxPostActionRefresh::ImmediateSnapshot,
             false,
             cx,
-            |tmux_client| tmux_client.toggle_pane_zoom(pane_id.as_str()),
+            |tmux_client, pane_id| tmux_client.toggle_pane_zoom(pane_id),
         )
     }
 }

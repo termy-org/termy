@@ -98,9 +98,9 @@ impl SearchEngine {
             .collect()
     }
 
-    pub fn search<F>(&self, start_line: i32, end_line: i32, line_provider: F) -> SearchResults
+    pub fn search<'a, F>(&self, start_line: i32, end_line: i32, line_provider: F) -> SearchResults
     where
-        F: Fn(i32) -> Option<String>,
+        F: Fn(i32) -> Option<&'a str>,
     {
         if !self.has_pattern() {
             return SearchResults::new();
@@ -221,7 +221,7 @@ mod tests {
             "line 3 testing",
         ];
 
-        let results = engine.search(0, 3, |idx| lines.get(idx as usize).map(|s| s.to_string()));
+        let results = engine.search(0, 3, |idx| lines.get(idx as usize).copied());
 
         assert_eq!(results.count(), 4);
     }
@@ -232,7 +232,7 @@ mod tests {
         engine.set_pattern("").unwrap();
 
         assert!(!engine.has_pattern());
-        let results = engine.search(0, 10, |_| Some("test".to_string()));
+        let results = engine.search(0, 10, |_| Some("test"));
         assert!(results.is_empty());
     }
 
