@@ -33,6 +33,59 @@ fn desaturate_rgb(color: gpui::Rgba, amount: f32) -> gpui::Rgba {
     }
 }
 
+const COMMAND_PALETTE_BACKDROP_STRENGTH: f32 = 1.0;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct CellColorTransform {
+    fg_blend: f32,
+    bg_blend: f32,
+    desaturate: f32,
+}
+
+impl CellColorTransform {
+    fn is_active(self) -> bool {
+        self.fg_blend > f32::EPSILON
+            || self.bg_blend > f32::EPSILON
+            || self.desaturate > f32::EPSILON
+    }
+}
+
+fn command_palette_backdrop_transform() -> CellColorTransform {
+    let preset = pane_focus_preset(PaneFocusEffect::SoftSpotlight)
+        .expect("soft spotlight pane focus preset must exist");
+    CellColorTransform {
+        fg_blend: preset.inactive_fg_blend * COMMAND_PALETTE_BACKDROP_STRENGTH,
+        bg_blend: preset.inactive_bg_blend * COMMAND_PALETTE_BACKDROP_STRENGTH,
+        desaturate: preset.inactive_desaturate * COMMAND_PALETTE_BACKDROP_STRENGTH,
+    }
+}
+
+fn apply_cell_color_transform(
+    fg: gpui::Rgba,
+    bg: gpui::Rgba,
+    transform: CellColorTransform,
+    fg_blend_target: gpui::Rgba,
+    bg_blend_target: gpui::Rgba,
+) -> (gpui::Rgba, gpui::Rgba) {
+    if !transform.is_active() {
+        return (fg, bg);
+    }
+
+    let mut next_fg = fg;
+    let mut next_bg = bg;
+    if transform.fg_blend > f32::EPSILON {
+        next_fg = blend_rgb_only(next_fg, fg_blend_target, transform.fg_blend);
+    }
+    if transform.bg_blend > f32::EPSILON {
+        next_bg = blend_rgb_only(next_bg, bg_blend_target, transform.bg_blend);
+    }
+    if transform.desaturate > f32::EPSILON {
+        next_fg = desaturate_rgb(next_fg, transform.desaturate);
+        next_bg = desaturate_rgb(next_bg, transform.desaturate);
+    }
+    (next_fg, next_bg)
+}
+
 fn effective_pane_focus_active_border_alpha(
     active_border_alpha: f32,
     runtime_uses_tmux: bool,
@@ -552,8 +605,11 @@ impl Render for TerminalView {
         let pane_focus_transition =
             self.pane_focus_transition_snapshot(active_tab_focus_snapshot.map(|(id, _)| id), now);
         let pane_focus_config = self.pane_focus_config();
+        let command_palette_open = self.is_command_palette_open();
+        let palette_backdrop_transform =
+            command_palette_open.then(command_palette_backdrop_transform);
         let terminal_cursor_active =
-            !self.is_command_palette_open() && self.renaming_tab.is_none() && !self.search_open;
+            !command_palette_open && self.renaming_tab.is_none() && !self.search_open;
         let cursor_visible = terminal_cursor_active
             && self.cursor_visible_for_focus(self.focus_handle.is_focused(window));
 
@@ -569,7 +625,8 @@ impl Render for TerminalView {
 
         if let Some(active_tab) = self.tabs.get(self.active_tab) {
             let multi_pane = active_tab.panes.len() > 1;
-            let pane_focus_enabled = multi_pane && pane_focus_config.is_some();
+            let pane_focus_enabled =
+                multi_pane && pane_focus_config.is_some() && !command_palette_open;
             pane_focus_needs_animation = pane_focus_enabled && pane_focus_transition.is_some();
             let max_right_cells = active_tab
                 .panes
@@ -617,23 +674,25 @@ impl Render for TerminalView {
                 } else {
                     (0.0, 0.0)
                 };
-                let (
-                    pane_inactive_fg_blend,
-                    pane_inactive_bg_blend,
-                    pane_inactive_desaturate,
-                    raw_pane_active_border_alpha,
-                ) = if let Some((preset, strength)) = pane_focus_config {
+                let (pane_focus_transform, raw_pane_active_border_alpha) =
+                    if let Some((preset, strength)) = pane_focus_config {
                     let inactive_scale = strength * pane_inactive_focus;
                     let active_scale = strength * pane_active_focus;
                     (
-                        preset.inactive_fg_blend * inactive_scale,
-                        preset.inactive_bg_blend * inactive_scale,
-                        preset.inactive_desaturate * inactive_scale,
+                        CellColorTransform {
+                            fg_blend: preset.inactive_fg_blend * inactive_scale,
+                            bg_blend: preset.inactive_bg_blend * inactive_scale,
+                            desaturate: preset.inactive_desaturate * inactive_scale,
+                        },
                         preset.active_border_alpha * active_scale,
                     )
                 } else {
-                    (0.0, 0.0, 0.0, 0.0)
+                    (CellColorTransform::default(), 0.0)
                 };
+                // Palette backdrop uses the same inactive-pane transform path to keep one
+                // consistent dimming model and avoid a separate full-screen color overlay.
+                let cell_color_transform =
+                    palette_backdrop_transform.unwrap_or(pane_focus_transform);
                 // tmux mode already has pane boundary affordances; layering Termy's active-pane
                 // outline on top creates a second full-frame box around the active pane.
                 let pane_active_border_alpha = effective_pane_focus_active_border_alpha(
@@ -672,16 +731,13 @@ impl Render for TerminalView {
                             fg.b *= DIM_TEXT_FACTOR;
                         }
                         bg.a *= effective_background_opacity;
-                        if pane_inactive_fg_blend > f32::EPSILON {
-                            fg = blend_rgb_only(fg, pane_focus_target_bg, pane_inactive_fg_blend);
-                        }
-                        if pane_inactive_bg_blend > f32::EPSILON {
-                            bg = blend_rgb_only(bg, terminal_surface_bg, pane_inactive_bg_blend);
-                        }
-                        if pane_inactive_desaturate > f32::EPSILON {
-                            fg = desaturate_rgb(fg, pane_inactive_desaturate);
-                            bg = desaturate_rgb(bg, pane_inactive_desaturate);
-                        }
+                        (fg, bg) = apply_cell_color_transform(
+                            fg,
+                            bg,
+                            cell_color_transform,
+                            pane_focus_target_bg,
+                            terminal_surface_bg,
+                        );
 
                         let c = cell_content.c;
                         let is_cursor = show_cursor && col == cursor_col && row == cursor_row;
@@ -1366,6 +1422,59 @@ mod tests {
         assert_eq!(frame.top, surface.origin_y);
         assert_eq!(frame.width, surface.width);
         assert_eq!(frame.height, surface.height);
+    }
+
+    #[test]
+    fn apply_cell_color_transform_is_noop_for_zero_factors() {
+        let fg = gpui::Rgba {
+            r: 0.72,
+            g: 0.64,
+            b: 0.35,
+            a: 0.91,
+        };
+        let bg = gpui::Rgba {
+            r: 0.12,
+            g: 0.17,
+            b: 0.26,
+            a: 0.66,
+        };
+        let fg_target = gpui::Rgba {
+            r: 0.01,
+            g: 0.02,
+            b: 0.03,
+            a: 1.0,
+        };
+        let bg_target = gpui::Rgba {
+            r: 0.98,
+            g: 0.97,
+            b: 0.96,
+            a: 1.0,
+        };
+
+        let (next_fg, next_bg) = apply_cell_color_transform(
+            fg,
+            bg,
+            CellColorTransform::default(),
+            fg_target,
+            bg_target,
+        );
+
+        assert_eq!(next_fg, fg);
+        assert_eq!(next_bg, bg);
+    }
+
+    #[test]
+    fn command_palette_backdrop_transform_uses_soft_spotlight_coefficients() {
+        let preset = pane_focus_preset(PaneFocusEffect::SoftSpotlight)
+            .expect("soft spotlight preset should exist");
+        let transform = command_palette_backdrop_transform();
+        let expected_fg = preset.inactive_fg_blend * COMMAND_PALETTE_BACKDROP_STRENGTH;
+        let expected_bg = preset.inactive_bg_blend * COMMAND_PALETTE_BACKDROP_STRENGTH;
+        let expected_desaturate = preset.inactive_desaturate * COMMAND_PALETTE_BACKDROP_STRENGTH;
+
+        assert!((transform.fg_blend - expected_fg).abs() <= f32::EPSILON);
+        assert!((transform.bg_blend - expected_bg).abs() <= f32::EPSILON);
+        assert!((transform.desaturate - expected_desaturate).abs() <= f32::EPSILON);
     }
 
     #[test]

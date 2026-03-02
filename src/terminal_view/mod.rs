@@ -105,7 +105,6 @@ const TMUX_RESIZE_ERROR_TOAST_DEBOUNCE_MS: u64 = 2000;
 const INPUT_SCROLL_SUPPRESS_MS: u64 = 160;
 const TOAST_COPY_FEEDBACK_MS: u64 = 1200;
 const OVERLAY_PANEL_ALPHA_FLOOR_RATIO: f32 = 0.72;
-const OVERLAY_DIM_MIN_SCALE: f32 = 0.25;
 const OVERLAY_PANEL_BORDER_ALPHA: f32 = 0.24;
 const OVERLAY_PRIMARY_TEXT_ALPHA: f32 = 0.95;
 const OVERLAY_MUTED_TEXT_ALPHA: f32 = 0.62;
@@ -114,7 +113,6 @@ const COMMAND_PALETTE_INPUT_SOLID_ALPHA: f32 = 0.76;
 const COMMAND_PALETTE_ROW_SELECTED_BG_ALPHA: f32 = 0.20;
 const COMMAND_PALETTE_SHORTCUT_BG_ALPHA: f32 = 0.10;
 const COMMAND_PALETTE_SHORTCUT_TEXT_ALPHA: f32 = 0.80;
-const COMMAND_PALETTE_DIM_ALPHA: f32 = 0.78;
 const COMMAND_PALETTE_PANEL_BG_ALPHA: f32 = 0.98;
 const COMMAND_PALETTE_INPUT_BG_ALPHA: f32 = 0.64;
 const COMMAND_PALETTE_INPUT_SELECTION_ALPHA: f32 = 0.28;
@@ -590,12 +588,6 @@ fn scaled_chrome_alpha_for_opacity(base_alpha: f32, background_opacity: f32) -> 
     scaled_background_alpha_for_opacity(base_alpha, background_opacity)
 }
 
-fn adaptive_overlay_dim_alpha_for_opacity(base_alpha: f32, background_opacity: f32) -> f32 {
-    let opacity = background_opacity_factor(background_opacity);
-    let scale = OVERLAY_DIM_MIN_SCALE + (1.0 - OVERLAY_DIM_MIN_SCALE) * opacity;
-    (base_alpha * scale).clamp(0.0, base_alpha)
-}
-
 fn adaptive_overlay_panel_alpha_for_opacity(base_alpha: f32, background_opacity: f32) -> f32 {
     let floor = base_alpha * OVERLAY_PANEL_ALPHA_FLOOR_RATIO;
     scaled_background_alpha_for_opacity(base_alpha, background_opacity)
@@ -693,11 +685,6 @@ impl<'a> OverlayStyleBuilder<'a> {
             colors,
             background_opacity,
         }
-    }
-
-    fn dim_background(self, base_alpha: f32) -> gpui::Rgba {
-        let alpha = adaptive_overlay_dim_alpha_for_opacity(base_alpha, self.background_opacity);
-        self.with_alpha(self.colors.background, alpha)
     }
 
     fn panel_background(self, base_alpha: f32) -> gpui::Rgba {
@@ -1969,14 +1956,6 @@ mod tests {
         let base = 0.92;
         let alpha = scaled_chrome_alpha_for_opacity(base, 0.1);
         assert_eq!(alpha, base * 0.1);
-    }
-
-    #[test]
-    fn overlay_dim_gets_stronger_as_opacity_decreases() {
-        let base = 0.78;
-        let high_opacity = adaptive_overlay_dim_alpha_for_opacity(base, 1.0);
-        let low_opacity = adaptive_overlay_dim_alpha_for_opacity(base, 0.2);
-        assert!(low_opacity < high_opacity);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use super::super::{
-    COMMAND_PALETTE_DIM_ALPHA, COMMAND_PALETTE_INPUT_BG_ALPHA, COMMAND_PALETTE_INPUT_SELECTION_ALPHA,
+    COMMAND_PALETTE_INPUT_BG_ALPHA, COMMAND_PALETTE_INPUT_SELECTION_ALPHA,
     COMMAND_PALETTE_INPUT_SOLID_ALPHA, COMMAND_PALETTE_PANEL_BG_ALPHA, COMMAND_PALETTE_PANEL_SOLID_ALPHA,
     COMMAND_PALETTE_ROW_SELECTED_BG_ALPHA, COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA,
     COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA, COMMAND_PALETTE_SHORTCUT_BG_ALPHA,
@@ -14,7 +14,6 @@ pub(super) const COMMAND_PALETTE_SHORTCUT_RADIUS: f32 = 0.0;
 
 #[derive(Clone, Copy)]
 pub(super) struct CommandPaletteStyle {
-    pub(super) overlay_bg: gpui::Rgba,
     pub(super) panel_bg: gpui::Rgba,
     pub(super) panel_border: gpui::Rgba,
     pub(super) primary_text: gpui::Rgba,
@@ -40,7 +39,6 @@ pub(super) fn command_palette_border_color(
 impl CommandPaletteStyle {
     pub(super) fn resolve(view: &TerminalView) -> Self {
         let overlay_style = view.overlay_style();
-        let overlay_bg = overlay_style.dim_background(COMMAND_PALETTE_DIM_ALPHA);
         let panel_bg = overlay_style.panel_background_with_floor(
             COMMAND_PALETTE_PANEL_BG_ALPHA,
             COMMAND_PALETTE_PANEL_SOLID_ALPHA,
@@ -64,7 +62,6 @@ impl CommandPaletteStyle {
         let scrollbar_thumb = view.scrollbar_color(overlay_style, COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA);
 
         Self {
-            overlay_bg,
             panel_bg,
             panel_border,
             primary_text,

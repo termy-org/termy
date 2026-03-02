@@ -276,10 +276,13 @@ impl TerminalView {
             .top_0()
             .left_0()
             .occlude()
-            .on_click(cx.listener(|this, _event, _window, cx| {
-                this.close_command_palette(cx);
-            }))
-            .child(div().size_full().bg(style.overlay_bg).absolute().top_0().left_0())
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _event, _window, cx| {
+                    this.close_command_palette(cx);
+                    cx.stop_propagation();
+                }),
+            )
             .child(
                 div()
                     .size_full()
@@ -300,9 +303,12 @@ impl TerminalView {
                             .bg(style.panel_bg)
                             .border_1()
                             .border_color(style.panel_border)
-                            .on_click(cx.listener(|_this, _event, _window, cx| {
-                                cx.stop_propagation();
-                            }))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|_this, _event, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
                             .child(
                                 div()
                                     .w_full()
