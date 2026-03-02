@@ -11,6 +11,8 @@ use gpui::{Keystroke, Modifiers, Pixels, px};
 #[cfg(unix)]
 use crate::locale::{Utf8LocaleOverridePlan, preferred_utf8_locale, utf8_locale_override_plan};
 #[cfg(not(target_os = "windows"))]
+use crate::path_env::normalized_path_env;
+#[cfg(not(target_os = "windows"))]
 use std::path::Path;
 use std::{
     collections::HashMap,
@@ -199,30 +201,8 @@ fn pty_env_overrides(
 
     #[cfg(not(target_os = "windows"))]
     {
-        let mut path_entries: Vec<PathBuf> = env::var_os("PATH")
-            .map(|paths| env::split_paths(&paths).collect())
-            .unwrap_or_default();
-
-        if path_entries.is_empty() {
-            for extra in ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] {
-                path_entries.push(PathBuf::from(extra));
-            }
-        }
-
-        for extra in [
-            "/opt/homebrew/bin",
-            "/opt/homebrew/sbin",
-            "/usr/local/bin",
-            "/usr/local/sbin",
-        ] {
-            let extra_path = PathBuf::from(extra);
-            if !path_entries.iter().any(|entry| entry == &extra_path) {
-                path_entries.push(extra_path);
-            }
-        }
-
-        if let Ok(path) = env::join_paths(path_entries.iter()) {
-            env_overrides.insert("PATH".to_string(), path.to_string_lossy().into_owned());
+        if let Some(path) = normalized_path_env(env::var_os("PATH").as_deref()) {
+            env_overrides.insert("PATH".to_string(), path);
         }
     }
 

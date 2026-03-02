@@ -2,11 +2,9 @@ use anyhow::{Context, Result, anyhow};
 #[cfg(unix)]
 use crate::locale::{Utf8LocaleOverridePlan, preferred_utf8_locale, utf8_locale_override_plan};
 #[cfg(unix)]
-use std::{
-    env,
-    ffi::OsStr,
-    path::PathBuf,
-};
+use crate::path_env::normalized_path_env;
+#[cfg(unix)]
+use std::env;
 use std::process::Command;
 
 use super::command::tmux_command_line;
@@ -14,16 +12,6 @@ use super::snapshot::{parse_session_summaries, session_snapshot_format};
 use super::types::{TmuxSessionSummary, TmuxSocketTarget};
 #[cfg(test)]
 use super::command::quote_tmux_arg;
-
-#[cfg(unix)]
-const DEFAULT_SYSTEM_PATH_ENTRIES: [&str; 4] = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
-#[cfg(unix)]
-const EXTRA_PATH_ENTRIES: [&str; 4] = [
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/usr/local/bin",
-    "/usr/local/sbin",
-];
 
 pub(crate) fn append_socket_args(command: &mut Command, socket_target: &TmuxSocketTarget) {
     if let Some(socket_name) = socket_target.socket_name() {
@@ -37,7 +25,7 @@ pub(crate) fn normalize_tmux_command_env(command: &mut Command) {
         // Finder/DMG launches on macOS use a minimal process environment.
         // Normalize PATH + locale for tmux subprocesses so startup behavior
         // matches terminal-launched runs.
-        if let Some(path) = normalized_tmux_path(env::var_os("PATH").as_deref()) {
+        if let Some(path) = normalized_path_env(env::var_os("PATH").as_deref()) {
             command.env("PATH", path);
         }
 
@@ -200,35 +188,13 @@ pub(crate) fn parse_version_prefix(version: &str) -> Option<(u8, u8)> {
     Some((major, minor))
 }
 
-#[cfg(unix)]
-fn normalized_tmux_path(path: Option<&OsStr>) -> Option<String> {
-    let mut path_entries: Vec<PathBuf> = path
-        .map(env::split_paths)
-        .map(|paths| paths.collect())
-        .unwrap_or_default();
-    path_entries.retain(|entry| !entry.as_os_str().is_empty());
-
-    if path_entries.is_empty() {
-        path_entries.extend(DEFAULT_SYSTEM_PATH_ENTRIES.into_iter().map(PathBuf::from));
-    }
-
-    for entry in EXTRA_PATH_ENTRIES {
-        let entry = PathBuf::from(entry);
-        if !path_entries.iter().any(|existing| existing == &entry) {
-            path_entries.push(entry);
-        }
-    }
-
-    env::join_paths(path_entries.iter())
-        .ok()
-        .map(|joined| joined.to_string_lossy().into_owned())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[cfg(unix)]
     use std::ffi::OsString;
+    #[cfg(unix)]
+    use std::path::PathBuf;
 
     #[test]
     fn rename_session_rejects_empty_session_names() {
@@ -312,7 +278,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn normalized_tmux_path_starts_from_default_system_path_when_missing() {
-        let path = normalized_tmux_path(None).expect("normalized path");
+        let path = normalized_path_env(None).expect("normalized path");
         let parsed = std::env::split_paths(&OsString::from(path)).collect::<Vec<_>>();
         assert!(parsed.contains(&PathBuf::from("/usr/bin")));
         assert!(parsed.contains(&PathBuf::from("/bin")));
@@ -328,7 +294,7 @@ mod tests {
     #[test]
     fn normalized_tmux_path_treats_empty_path_as_missing() {
         let raw = OsString::from("");
-        let path = normalized_tmux_path(Some(raw.as_os_str())).expect("normalized path");
+        let path = normalized_path_env(Some(raw.as_os_str())).expect("normalized path");
         let parsed = std::env::split_paths(&OsString::from(path)).collect::<Vec<_>>();
         assert!(parsed.contains(&PathBuf::from("/usr/bin")));
         assert!(parsed.contains(&PathBuf::from("/bin")));
@@ -340,7 +306,7 @@ mod tests {
     #[test]
     fn normalized_tmux_path_appends_missing_entries_without_duplication() {
         let raw = OsString::from("/opt/homebrew/bin:/usr/bin:/bin");
-        let path = normalized_tmux_path(Some(raw.as_os_str())).expect("normalized path");
+        let path = normalized_path_env(Some(raw.as_os_str())).expect("normalized path");
         let parsed = std::env::split_paths(&OsString::from(path)).collect::<Vec<_>>();
         let homebrew_bin = PathBuf::from("/opt/homebrew/bin");
         assert_eq!(parsed.iter().filter(|entry| **entry == homebrew_bin).count(), 1);
