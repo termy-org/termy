@@ -124,11 +124,15 @@ impl TerminalView {
             }
             RuntimeKind::Native => {
                 for tab in &mut self.tabs {
-                    if let Some(pane) = tab.panes.get_mut(0) {
+                    for pane in &mut tab.panes {
                         pane.left = 0;
                         pane.top = 0;
                         pane.width = cols.max(1);
                         pane.height = rows.max(1);
+                    }
+                    if !tab.panes.iter().any(|pane| pane.id == tab.active_pane_id)
+                        && let Some(pane) = tab.panes.first()
+                    {
                         tab.active_pane_id = pane.id.clone();
                     }
                 }
@@ -188,5 +192,10 @@ mod tests {
     #[test]
     fn window_y_to_terminal_content_y_is_identity_when_chrome_is_zero() {
         assert_eq!(TerminalView::window_y_to_terminal_content_y(120.0, 0.0), 120.0);
+    }
+
+    #[test]
+    fn window_y_to_terminal_content_y_can_be_negative_when_cursor_is_above_chrome() {
+        assert_eq!(TerminalView::window_y_to_terminal_content_y(20.0, 40.0), -20.0);
     }
 }

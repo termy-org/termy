@@ -66,7 +66,10 @@ impl TerminalView {
         let Some(active_pane_id) = self.active_pane_id() else {
             return false;
         };
-        match self.tmux_runtime().client.send_input(active_pane_id, input) {
+        let Some(tmux) = self.runtime.as_tmux() else {
+            return false;
+        };
+        match tmux.client.send_input(active_pane_id, input) {
             Ok(()) => true,
             Err(error) => {
                 termy_toast::error(format!("Input write failed: {error}"));
@@ -96,7 +99,15 @@ impl TerminalView {
     }
 
     pub(in crate::terminal_view) fn tmux_reorder_tab(&mut self, from: usize, to: usize) -> bool {
-        let moved_window_id = self.tabs[from].window_id.clone();
+        if from == to {
+            return false;
+        }
+        let Some(moved_window_id) = self.tabs.get(from).map(|tab| tab.window_id.clone()) else {
+            return false;
+        };
+        if self.tabs.get(to).is_none() {
+            return false;
+        }
         let previous_active_window_id = self
             .tabs
             .get(self.active_tab)
@@ -210,7 +221,9 @@ impl TerminalView {
     }
 
     pub(in crate::terminal_view) fn tmux_close_tab(&mut self, index: usize, cx: &mut Context<Self>) {
-        let window_id = self.tabs[index].window_id.clone();
+        let Some(window_id) = self.tabs.get(index).map(|tab| tab.window_id.clone()) else {
+            return;
+        };
         if !self.run_tmux_action("Failed to close tab", |tmux_client| {
             tmux_client.kill_window(window_id.as_str())
         }) {
@@ -225,7 +238,9 @@ impl TerminalView {
     }
 
     pub(in crate::terminal_view) fn tmux_switch_tab(&mut self, index: usize, cx: &mut Context<Self>) {
-        let window_id = self.tabs[index].window_id.clone();
+        let Some(window_id) = self.tabs.get(index).map(|tab| tab.window_id.clone()) else {
+            return;
+        };
         if !self.run_tmux_action("Failed to switch tab", |tmux_client| {
             tmux_client.select_window(window_id.as_str())
         }) {
@@ -247,7 +262,9 @@ impl TerminalView {
         }
 
         let renamed = Self::truncate_tab_title(trimmed);
-        let window_id = self.tabs[index].window_id.clone();
+        let Some(window_id) = self.tabs.get(index).map(|tab| tab.window_id.clone()) else {
+            return;
+        };
         if self.run_tmux_action("Failed to rename tab", |tmux_client| {
             tmux_client.rename_window(window_id.as_str(), renamed.as_str())
         }) {

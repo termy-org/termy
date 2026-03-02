@@ -10,7 +10,7 @@ impl TerminalView {
         let tab = self.tabs.get(self.active_tab)?;
         let (padding_x, padding_y) = self.effective_terminal_padding();
         let (x, y) = self.terminal_content_position(position);
-        let mut best: Option<(f32, PaneResizeAxis, String)> = None;
+        let mut best: Option<(f32, PaneResizeAxis, PaneResizeEdge, String)> = None;
 
         for pane in &tab.panes {
             let size = pane.terminal.size();
@@ -44,7 +44,12 @@ impl TerminalView {
 
             if near_left || near_right {
                 let distance = (x - if near_left { left } else { right }).abs();
-                let candidate = (distance, PaneResizeAxis::Horizontal, pane.id.clone());
+                let edge = if near_left {
+                    PaneResizeEdge::Left
+                } else {
+                    PaneResizeEdge::Right
+                };
+                let candidate = (distance, PaneResizeAxis::Horizontal, edge, pane.id.clone());
                 if best
                     .as_ref()
                     .map(|current| candidate.0 < current.0)
@@ -55,7 +60,12 @@ impl TerminalView {
             }
             if near_top || near_bottom {
                 let distance = (y - if near_top { top } else { bottom }).abs();
-                let candidate = (distance, PaneResizeAxis::Vertical, pane.id.clone());
+                let edge = if near_top {
+                    PaneResizeEdge::Top
+                } else {
+                    PaneResizeEdge::Bottom
+                };
+                let candidate = (distance, PaneResizeAxis::Vertical, edge, pane.id.clone());
                 if best
                     .as_ref()
                     .map(|current| candidate.0 < current.0)
@@ -66,9 +76,10 @@ impl TerminalView {
             }
         }
 
-        best.map(|(_, axis, pane_id)| PaneResizeDragState {
+        best.map(|(_, axis, edge, pane_id)| PaneResizeDragState {
             pane_id,
             axis,
+            edge,
             start_x: x,
             start_y: y,
             applied_steps: 0,
@@ -84,6 +95,7 @@ impl TerminalView {
         };
         let pane_id = drag_state.pane_id.clone();
         let axis = drag_state.axis;
+        let edge = drag_state.edge;
         let start_x = drag_state.start_x;
         let start_y = drag_state.start_y;
         let already_applied_steps = drag_state.applied_steps;
@@ -106,20 +118,25 @@ impl TerminalView {
             return false;
         }
 
-        let x: f32 = position.x.into();
-        let y: f32 = position.y.into();
+        let (current_x, current_y) = self.terminal_content_position(position);
         let delta_pixels = match axis {
-            PaneResizeAxis::Horizontal => x - start_x,
-            PaneResizeAxis::Vertical => y - start_y,
+            PaneResizeAxis::Horizontal => current_x - start_x,
+            PaneResizeAxis::Vertical => current_y - start_y,
         };
         let desired_steps = (delta_pixels / axis_cell_pixels).trunc() as i32;
         let step_delta = desired_steps - already_applied_steps;
         if step_delta == 0 {
             return false;
         }
+        // Left/top drags invert the tmux resize direction relative to cursor delta,
+        // because dragging toward the pane interior shrinks that edge.
+        let positive_direction = match edge {
+            PaneResizeEdge::Left | PaneResizeEdge::Top => step_delta.is_negative(),
+            PaneResizeEdge::Right | PaneResizeEdge::Bottom => step_delta.is_positive(),
+        };
         let mut completed_steps = 0i32;
         for _ in 0..step_delta.unsigned_abs() {
-            if self.tmux_resize_pane_step(pane_id.as_str(), axis, step_delta.is_positive()) {
+            if self.tmux_resize_pane_step(pane_id.as_str(), axis, positive_direction) {
                 completed_steps += 1;
             } else {
                 break;

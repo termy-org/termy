@@ -516,10 +516,6 @@ impl TmuxClient {
             .map(|_| ())
     }
 
-    fn run_control_status_args_via_control(&self, args: &[&str]) -> Result<()> {
-        self.run_control_status_args(args)
-    }
-
     fn run_tmux_command(&self, args: &[&str]) -> Result<std::process::Output> {
         run_tmux_command_with_socket(self.tmux_binary.as_str(), &self.socket_target, args)
             .with_context(|| {
@@ -535,7 +531,7 @@ impl TmuxClient {
         let session = self.session_name.as_str();
         let all_windows_target = format!("{session}:*");
 
-        self.run_control_status_args_via_control(&[
+        self.run_control_status_args(&[
             "set-environment",
             "-t",
             session,
@@ -543,7 +539,7 @@ impl TmuxClient {
             "0",
         ])
         .context("failed to disable termy shell integration env in tmux session")?;
-        self.run_control_status_args_via_control(&[
+        self.run_control_status_args(&[
             "set-environment",
             "-u",
             "-t",
@@ -551,7 +547,7 @@ impl TmuxClient {
             "TERMY_TAB_TITLE_PREFIX",
         ])
         .context("failed to clear termy shell title prefix env in tmux session")?;
-        self.run_control_status_args_via_control(&[
+        self.run_control_status_args(&[
             "set-environment",
             "-t",
             session,
@@ -560,12 +556,12 @@ impl TmuxClient {
         ])
         .context("failed to disable zsh prompt eol mark env in tmux session")?;
 
-        self.run_control_status_args_via_control(&["set-option", "-q", "-t", session, "status", "off"])
+        self.run_control_status_args(&["set-option", "-q", "-t", session, "status", "off"])
             .context("failed to disable tmux status line for managed session")?;
         // Managed persistence must survive detach->reattach even when the user's tmux
         // config enables `destroy-unattached`, which would otherwise tear down the
         // session as soon as Termy's control client detaches.
-        self.run_control_status_args_via_control(&[
+        self.run_control_status_args(&[
             "set-option",
             "-q",
             "-t",
@@ -578,14 +574,14 @@ impl TmuxClient {
             all_windows_target.as_str(),
             self.show_active_pane_border,
         ) {
-            self.run_control_status_args_via_control(&command).with_context(|| {
+            self.run_control_status_args(&command).with_context(|| {
                 format!(
                     "failed to apply tmux managed-session window option override '{}={}'",
                     command[4], command[5]
                 )
             })?;
         }
-        self.run_control_status_args_via_control(&["refresh-client"])
+        self.run_control_status_args(&["refresh-client"])
             .context("failed to refresh tmux client after managed-session ui configuration")?;
 
         Ok(())

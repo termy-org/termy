@@ -2,6 +2,7 @@ use super::*;
 
 const MAX_THEME_SUGGESTIONS: usize = 16;
 const MAX_FONT_SUGGESTIONS: usize = 200;
+const PANE_FOCUS_MAX: f32 = 2.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum EditableField {
@@ -447,7 +448,7 @@ impl SettingsWindow {
                 NumericStepSpec {
                     delta: 0.05,
                     min: 0.0,
-                    max: 2.0,
+                    max: PANE_FOCUS_MAX,
                 },
             ),
             _ => unreachable!("invalid terminal field"),
@@ -801,9 +802,10 @@ impl SettingsWindow {
     }
 
     pub(super) fn pane_focus_strength_display_percent(&self) -> i32 {
-        // Normalize internal 0.0..=2.0 strength to a cleaner 0..=100 UI scale
+        // Normalize internal 0.0..=PANE_FOCUS_MAX strength to a cleaner 0..=100 UI scale
         // without changing the stored value range or step behavior.
-        ((self.config.pane_focus_strength.clamp(0.0, 2.0) / 2.0) * 100.0).round() as i32
+        ((self.config.pane_focus_strength.clamp(0.0, PANE_FOCUS_MAX) / PANE_FOCUS_MAX) * 100.0)
+            .round() as i32
     }
 
 

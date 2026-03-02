@@ -149,11 +149,11 @@ impl TerminalView {
         }
 
         let terminal = self.active_terminal();
-        let (display_offset, history_size) = terminal.scroll_state();
+        let (_, history_size) = terminal.scroll_state();
         let rows = terminal.size().rows as i32;
         let start_line = -(history_size as i32);
         let end_line = rows - 1;
-        let line_texts = collect_search_line_texts(terminal, start_line, end_line, display_offset);
+        let line_texts = collect_search_line_texts(terminal, start_line, end_line);
 
         let search_state = &mut self.search_state;
         search_state.search(start_line, end_line, |line_idx| {
@@ -375,12 +375,11 @@ fn collect_search_line_texts(
     terminal: &Terminal,
     start_line: i32,
     end_line: i32,
-    display_offset: usize,
 ) -> Vec<Option<String>> {
     let mut line_texts = Vec::with_capacity((end_line - start_line + 1).max(0) as usize);
     let _ = terminal.with_grid(|grid| {
         for line_idx in start_line..=end_line {
-            line_texts.push(extract_line_text(grid, line_idx, display_offset));
+            line_texts.push(extract_line_text(grid, line_idx));
         }
     });
     line_texts
@@ -390,7 +389,6 @@ fn collect_search_line_texts(
 fn extract_line_text(
     grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
     line_idx: i32,
-    _display_offset: usize,
 ) -> Option<String> {
     use alacritty_terminal::index::{Column, Line};
 
@@ -444,8 +442,7 @@ mod tests {
 
         let tmux = Terminal::new_tmux(size, 256);
         tmux.feed_output(b"tmux-line\r\n");
-        let (tmux_display_offset, _) = tmux.scroll_state();
-        let tmux_lines = collect_search_line_texts(&tmux, 0, i32::from(size.rows) - 1, tmux_display_offset);
+        let tmux_lines = collect_search_line_texts(&tmux, 0, i32::from(size.rows) - 1);
         assert_eq!(tmux_lines.len(), usize::from(size.rows));
         assert!(
             filled_line_count(&tmux_lines) >= 1,
@@ -454,13 +451,7 @@ mod tests {
 
         let native = Terminal::new_native(size, None, None, None, None)
             .expect("native terminal should initialize for read adapter test");
-        let (native_display_offset, _) = native.scroll_state();
-        let native_lines = collect_search_line_texts(
-            &native,
-            0,
-            i32::from(size.rows) - 1,
-            native_display_offset,
-        );
+        let native_lines = collect_search_line_texts(&native, 0, i32::from(size.rows) - 1);
         assert_eq!(native_lines.len(), usize::from(size.rows));
     }
 }

@@ -95,6 +95,8 @@ impl TerminalPane {
 impl TerminalTab {
     fn from_tmux_window(id: TabId, window: &TmuxWindowState, panes: Vec<TerminalPane>) -> Self {
         let title = DEFAULT_TAB_TITLE.to_string();
+        // Width starts as lazy/unknown and is measured when tab-strip layout runs.
+        // Initializing to zero keeps creation deterministic before first paint.
         let title_text_width = 0.0;
         let sticky_title_width = TerminalView::tab_display_width_for_text_px_without_close_with_max(
             title_text_width,

@@ -272,10 +272,6 @@ impl SettingsWindow {
                 }
                 let normalized = if has_percent_suffix {
                     parsed / 100.0
-                } else if parsed > 2.0 {
-                    // Values beyond the configured max are interpreted as percent shorthand,
-                    // so `150` still maps to `1.5` while explicit values like `1.5` stay exact.
-                    parsed / 100.0
                 } else {
                     parsed
                 }

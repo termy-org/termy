@@ -91,7 +91,8 @@ impl PaneTerminal {
     pub fn cursor_position(&self) -> (usize, usize) {
         let inner = self.inner.lock();
         let cursor = inner.term.grid().cursor.point;
-        (cursor.column.0, cursor.line.0 as usize)
+        let row = usize::try_from(cursor.line.0).unwrap_or(0);
+        (cursor.column.0, row)
     }
 
     pub fn set_scrollback_history(&self, history_size: usize) {

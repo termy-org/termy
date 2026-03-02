@@ -179,8 +179,12 @@ impl TerminalView {
         }
 
         let surface = self.terminal_surface_geometry(window)?;
-        let scrollbar_left = surface.origin_x + surface.width - TERMINAL_SCROLLBAR_GUTTER_WIDTH;
-        let scrollbar_right = surface.origin_x + surface.width;
+        let gutter_width = TERMINAL_SCROLLBAR_GUTTER_WIDTH.min(surface.width.max(0.0));
+        if gutter_width <= f32::EPSILON {
+            return None;
+        }
+        let scrollbar_left = (surface.origin_x + surface.width.max(0.0) - gutter_width).max(surface.origin_x);
+        let scrollbar_right = scrollbar_left + gutter_width;
 
         let x: f32 = position.x.into();
         if x < scrollbar_left || x > scrollbar_right {

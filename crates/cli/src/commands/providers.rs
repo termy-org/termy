@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use termy_command_core::{
-    CommandCapabilities, CommandId, KeybindLineRef, default_resolved_keybinds,
+    CommandCapabilities, CommandId, CommandUnavailableReason, KeybindLineRef, default_resolved_keybinds,
     parse_keybind_directives_from_iter, resolve_keybinds,
 };
 use termy_config_core::{AppConfig, config_path};
@@ -184,7 +184,8 @@ fn command_metadata_for_id(
 ) -> (bool, bool, bool) {
     let availability = id.availability(capabilities);
     let tmux_required = id.is_tmux_only();
-    (availability.enabled, tmux_required, tmux_required)
+    let restart_required = availability.reason == Some(CommandUnavailableReason::RequiresTmuxRuntime);
+    (availability.enabled, tmux_required, restart_required)
 }
 
 #[cfg(target_os = "macos")]
@@ -328,6 +329,18 @@ mod tests {
     }
 
     #[test]
+    fn list_actions_reports_restart_not_required_when_tmux_runtime_is_active() {
+        let actions = action_lines_for_capabilities(true, true);
+        let split_pane_line = actions
+            .iter()
+            .find(|line| line.starts_with(CommandId::SplitPaneVertical.config_name()))
+            .expect("missing split_pane_vertical action metadata");
+        assert!(split_pane_line.contains("available=true"));
+        assert!(split_pane_line.contains("tmux_required=true"));
+        assert!(split_pane_line.contains("restart_required=false"));
+    }
+
+    #[test]
     fn keybinds_include_secondary_comma_mapping() {
         let keybinds = resolve_keybinds_for_lines(&[]);
         assert!(
@@ -383,6 +396,25 @@ mod tests {
         assert!(install_cli_line.contains("available=false"));
         assert!(install_cli_line.contains("tmux_required=false"));
         assert!(install_cli_line.contains("restart_required=false"));
+    }
+
+    #[test]
+    fn list_keybinds_reports_restart_not_required_when_tmux_runtime_is_active() {
+        let keybind_lines = keybind_lines_for_capabilities(
+            &[KeybindConfigLine {
+                line_number: 1,
+                value: "Secondary-D=split_pane_vertical".to_string(),
+            }],
+            true,
+            true,
+        );
+        let split_pane_line = keybind_lines
+            .iter()
+            .find(|line| line.starts_with("secondary-d = split_pane_vertical"))
+            .expect("missing split_pane_vertical keybind metadata");
+        assert!(split_pane_line.contains("available=true"));
+        assert!(split_pane_line.contains("tmux_required=true"));
+        assert!(split_pane_line.contains("restart_required=false"));
     }
 
     #[test]

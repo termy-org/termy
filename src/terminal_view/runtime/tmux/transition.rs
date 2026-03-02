@@ -8,7 +8,10 @@ impl TerminalView {
             "Failed to reload config after tmux runtime transition",
         );
         let keybind_config = if loaded.loaded_from_disk {
-            loaded.config
+            let config = loaded.config;
+            let binary = config.tmux_binary.trim().to_string();
+            self.cached_tmux_binary = (!binary.is_empty()).then_some(binary);
+            config
         } else {
             AppConfig::default()
         };
@@ -59,8 +62,10 @@ impl TerminalView {
                 &mut self.last_config_error_message,
                 "Failed to read config for tmux attach",
             );
+            let loaded_binary = loaded.config.tmux_binary.trim().to_string();
+            self.cached_tmux_binary = (!loaded_binary.is_empty()).then_some(loaded_binary.clone());
             (
-                loaded.config.tmux_binary.trim().to_string(),
+                loaded_binary,
                 loaded.config.tmux_show_active_pane_border,
             )
         };
@@ -243,6 +248,8 @@ impl TerminalView {
         cols: u16,
         rows: u16,
     ) -> anyhow::Result<()> {
+        let cols = cols.max(1);
+        let rows = rows.max(1);
         {
             let runtime = self.tmux_runtime_mut();
             runtime.client.set_client_size(cols, rows)?;

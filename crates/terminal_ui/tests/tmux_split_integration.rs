@@ -10,7 +10,7 @@ use std::thread;
 use std::time::Duration;
 
 use support::tmux_harness::{
-    ensure_isolated_tmux_tmpdir, tmux_preflight, tmux_test_binary, tmux_test_guard,
+    tmux_preflight, tmux_test_binary, tmux_test_guard,
 };
 
 use termy_terminal_ui::{
@@ -99,7 +99,15 @@ fn tmux_has_session(binary: &str, session_name: &str) -> bool {
 }
 
 fn wait_for_tmux_settle() {
-    thread::sleep(Duration::from_millis(180));
+    const DEFAULT_TMUX_SETTLE_MS: u64 = 750;
+    let settle_ms = match env::var("TMUX_SETTLE_MS") {
+        Ok(value) => value.parse::<u64>().unwrap_or_else(|_| {
+            panic!("TMUX_SETTLE_MS must be an integer millisecond value, got '{value}'")
+        }),
+        Err(env::VarError::NotPresent) => DEFAULT_TMUX_SETTLE_MS,
+        Err(env::VarError::NotUnicode(_)) => panic!("TMUX_SETTLE_MS must be valid UTF-8"),
+    };
+    thread::sleep(Duration::from_millis(settle_ms));
 }
 
 fn new_tmux_client_with_persistence_clean(binary: &str, persistence: bool) -> TmuxClient {
@@ -188,9 +196,8 @@ fn assert_window_geometry_within_bounds(window: &TmuxWindowState, cols: u16, row
 #[test]
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn tmux_split_vertical_then_horizontal_refresh_snapshot_parses_nested_layout() {
-    let _guard = tmux_test_guard();
     let binary = tmux_test_binary();
-    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    let _guard = tmux_test_guard(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let client = new_tmux_client(binary.as_str());
@@ -244,9 +251,8 @@ fn tmux_split_vertical_then_horizontal_refresh_snapshot_parses_nested_layout() {
 #[test]
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn tmux_repeated_split_refresh_cycles_remain_parseable() {
-    let _guard = tmux_test_guard();
     let binary = tmux_test_binary();
-    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    let _guard = tmux_test_guard(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let client = new_tmux_client(binary.as_str());
@@ -296,9 +302,8 @@ fn tmux_repeated_split_refresh_cycles_remain_parseable() {
 #[test]
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn tmux_new_window_after_inserts_immediately_after_target_window() {
-    let _guard = tmux_test_guard();
     let binary = tmux_test_binary();
-    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    let _guard = tmux_test_guard(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let client = new_tmux_client(binary.as_str());
@@ -389,9 +394,8 @@ fn tmux_new_window_after_inserts_immediately_after_target_window() {
 #[test]
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn tmux_capture_full_rejoins_wrapped_input_rows() {
-    let _guard = tmux_test_guard();
     let binary = tmux_test_binary();
-    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    let _guard = tmux_test_guard(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let client = new_tmux_client(binary.as_str());
@@ -441,9 +445,8 @@ fn tmux_capture_full_rejoins_wrapped_input_rows() {
 #[test]
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn managed_nonpersistent_drop_kills_session() {
-    let _guard = tmux_test_guard();
     let binary = tmux_test_binary();
-    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    let _guard = tmux_test_guard(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let client = new_tmux_client_with_persistence_clean(binary.as_str(), false);
@@ -469,9 +472,8 @@ fn managed_nonpersistent_drop_kills_session() {
 #[test]
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn managed_persistent_drop_keeps_session_but_removes_client() {
-    let _guard = tmux_test_guard();
     let binary = tmux_test_binary();
-    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    let _guard = tmux_test_guard(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let client = new_tmux_client_with_persistence_clean(binary.as_str(), true);
@@ -497,9 +499,8 @@ fn managed_persistent_drop_keeps_session_but_removes_client() {
 #[test]
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn repeated_reconnect_does_not_increase_client_count() {
-    let _guard = tmux_test_guard();
     let binary = tmux_test_binary();
-    let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
+    let _guard = tmux_test_guard(binary.as_str());
     tmux_preflight(binary.as_str());
 
     let mut client = new_tmux_client_with_persistence_clean(binary.as_str(), true);

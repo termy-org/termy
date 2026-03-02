@@ -12,12 +12,13 @@ use termy_terminal_ui::TmuxClient;
 
 const TEST_SOCKET_NAME: &str = "termy";
 
-pub(crate) fn tmux_test_guard() -> std::sync::MutexGuard<'static, ()> {
+fn tmux_env_lock() -> &'static Mutex<()> {
     static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
-    GUARD
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    GUARD.get_or_init(|| Mutex::new(()))
+}
+
+pub(crate) fn tmux_test_guard(binary: &str) -> IsolatedTmuxEnvGuard {
+    IsolatedTmuxEnvGuard::new(binary)
 }
 
 pub(crate) fn tmux_test_binary() -> String {
@@ -83,6 +84,9 @@ fn kill_test_server(binary: &str, tmux_tmpdir: &Path) {
 }
 
 pub(crate) struct IsolatedTmuxEnvGuard {
+    // Hold the process-wide environment lock for the entire lifetime of this guard,
+    // so every unsafe set_var/remove_var call is serialized and restored atomically.
+    _env_lock: std::sync::MutexGuard<'static, ()>,
     previous_tmux: Option<OsString>,
     previous_tmux_tmpdir: Option<OsString>,
     tmux_tmpdir: PathBuf,
@@ -91,6 +95,9 @@ pub(crate) struct IsolatedTmuxEnvGuard {
 
 impl IsolatedTmuxEnvGuard {
     fn new(binary: &str) -> Self {
+        let env_lock = tmux_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
         let previous_tmux = env::var_os("TMUX");
         let previous_tmux_tmpdir = env::var_os("TMUX_TMPDIR");
 
@@ -108,6 +115,7 @@ impl IsolatedTmuxEnvGuard {
         unsafe { env::set_var("TMUX_TMPDIR", &tmux_tmpdir) };
 
         Self {
+            _env_lock: env_lock,
             previous_tmux,
             previous_tmux_tmpdir,
             tmux_tmpdir,
@@ -133,8 +141,4 @@ impl Drop for IsolatedTmuxEnvGuard {
             unsafe { env::remove_var("TMUX_TMPDIR") };
         }
     }
-}
-
-pub(crate) fn ensure_isolated_tmux_tmpdir(binary: &str) -> IsolatedTmuxEnvGuard {
-    IsolatedTmuxEnvGuard::new(binary)
 }

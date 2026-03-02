@@ -1,4 +1,5 @@
 use super::super::*;
+use std::path::Path;
 use termy_terminal_ui::TmuxPaneState;
 
 impl TerminalView {
@@ -51,9 +52,24 @@ impl TerminalView {
         if command.is_empty() {
             return false;
         }
+        let Some(first_token) = command.split_whitespace().next() else {
+            return false;
+        };
+        let token = Path::new(first_token)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(first_token)
+            .trim_start_matches('-');
+        if token.is_empty() {
+            return false;
+        }
+        let mut normalized = token.to_ascii_lowercase();
+        if let Some(stem) = normalized.strip_suffix(".exe") {
+            normalized = stem.to_string();
+        }
 
         matches!(
-            command.to_ascii_lowercase().as_str(),
+            normalized.as_str(),
             "bash"
                 | "zsh"
                 | "fish"
@@ -336,6 +352,10 @@ mod tests {
     fn is_shell_command_matches_fixed_shell_set_case_insensitively() {
         assert!(TerminalView::is_shell_command("zsh"));
         assert!(TerminalView::is_shell_command("PwSh"));
+        assert!(TerminalView::is_shell_command("/bin/bash"));
+        assert!(TerminalView::is_shell_command("-zsh"));
+        assert!(TerminalView::is_shell_command("pwsh.exe"));
+        assert!(TerminalView::is_shell_command("bash -l"));
         assert!(TerminalView::is_shell_command("cmd"));
         assert!(!TerminalView::is_shell_command("sleep"));
         assert!(!TerminalView::is_shell_command(""));

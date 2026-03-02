@@ -54,10 +54,13 @@ struct TerminalScrollbarOverlayFrame {
 }
 
 fn terminal_scrollbar_overlay_frame(surface: TerminalViewportGeometry) -> TerminalScrollbarOverlayFrame {
+    let surface_width = surface.width.max(0.0);
+    let effective_gutter = TERMINAL_SCROLLBAR_GUTTER_WIDTH.min(surface_width);
+    let left = (surface.origin_x + surface_width - effective_gutter).max(surface.origin_x);
     TerminalScrollbarOverlayFrame {
-        left: surface.origin_x + surface.width - TERMINAL_SCROLLBAR_GUTTER_WIDTH,
+        left,
         top: surface.origin_y,
-        width: TERMINAL_SCROLLBAR_GUTTER_WIDTH,
+        width: effective_gutter,
         height: surface.height,
     }
 }
@@ -70,9 +73,10 @@ impl Focusable for TerminalView {
 
 impl TerminalView {
     fn pane_right_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> u32 {
-        let pane_right = u32::from(pane.left) + u32::from(pane.width);
+        let pane_size = pane.terminal.size();
+        let pane_right = u32::from(pane.left) + u32::from(pane_size.cols);
         let pane_top = u32::from(pane.top);
-        let pane_bottom = pane_top + u32::from(pane.height);
+        let pane_bottom = pane_top + u32::from(pane_size.rows);
 
         panes
             .iter()
@@ -86,8 +90,9 @@ impl TerminalView {
                     return None;
                 }
 
+                let candidate_size = candidate.terminal.size();
                 let candidate_top = u32::from(candidate.top);
-                let candidate_bottom = candidate_top + u32::from(candidate.height);
+                let candidate_bottom = candidate_top + u32::from(candidate_size.rows);
                 if !cell_ranges_overlap(pane_top, pane_bottom, candidate_top, candidate_bottom) {
                     return None;
                 }
@@ -100,8 +105,9 @@ impl TerminalView {
 
     fn pane_bottom_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> u32 {
         let pane_left = u32::from(pane.left);
-        let pane_right = pane_left + u32::from(pane.width);
-        let pane_bottom = u32::from(pane.top) + u32::from(pane.height);
+        let pane_size = pane.terminal.size();
+        let pane_right = pane_left + u32::from(pane_size.cols);
+        let pane_bottom = u32::from(pane.top) + u32::from(pane_size.rows);
 
         panes
             .iter()
@@ -115,8 +121,9 @@ impl TerminalView {
                     return None;
                 }
 
+                let candidate_size = candidate.terminal.size();
                 let candidate_left = u32::from(candidate.left);
-                let candidate_right = candidate_left + u32::from(candidate.width);
+                let candidate_right = candidate_left + u32::from(candidate_size.cols);
                 if !cell_ranges_overlap(pane_left, pane_right, candidate_left, candidate_right) {
                     return None;
                 }
@@ -564,13 +571,19 @@ impl Render for TerminalView {
             let max_right_cells = active_tab
                 .panes
                 .iter()
-                .map(|pane| u32::from(pane.left).saturating_add(u32::from(pane.width)))
+                .map(|pane| {
+                    let pane_size = pane.terminal.size();
+                    u32::from(pane.left).saturating_add(u32::from(pane_size.cols))
+                })
                 .max()
                 .unwrap_or(0);
             let max_bottom_cells = active_tab
                 .panes
                 .iter()
-                .map(|pane| u32::from(pane.top).saturating_add(u32::from(pane.height)))
+                .map(|pane| {
+                    let pane_size = pane.terminal.size();
+                    u32::from(pane.top).saturating_add(u32::from(pane_size.rows))
+                })
                 .max()
                 .unwrap_or(0);
 
@@ -760,8 +773,13 @@ impl Render for TerminalView {
                     continue;
                 }
 
-                let pane_right_cells = u32::from(pane.left) + u32::from(pane.width);
-                let pane_bottom_cells = u32::from(pane.top) + u32::from(pane.height);
+                // Keep divider-boundary comparisons in the same geometry space as the
+                // pane pixels computed above to avoid drift from mixed sources.
+                let pane_right_cells =
+                    ((pane_left + pane_width - effective_padding_x) / cell_width).round().max(0.0) as u32;
+                let pane_bottom_cells =
+                    ((pane_top + pane_height - effective_padding_y) / cell_height).round().max(0.0)
+                        as u32;
 
                 if multi_pane && pane_right_cells < max_right_cells {
                     let gap_cells = Self::pane_right_gap_cells(pane, &active_tab.panes);
@@ -1309,6 +1327,22 @@ mod tests {
         );
         assert_eq!(frame.top, surface.origin_y);
         assert_eq!(frame.width, TERMINAL_SCROLLBAR_GUTTER_WIDTH);
+        assert_eq!(frame.height, surface.height);
+    }
+
+    #[test]
+    fn terminal_scrollbar_overlay_frame_clamps_when_surface_is_narrower_than_gutter() {
+        let surface = TerminalViewportGeometry {
+            origin_x: 10.0,
+            origin_y: 20.0,
+            width: 6.0,
+            height: 100.0,
+        };
+
+        let frame = terminal_scrollbar_overlay_frame(surface);
+        assert_eq!(frame.left, surface.origin_x);
+        assert_eq!(frame.top, surface.origin_y);
+        assert_eq!(frame.width, surface.width);
         assert_eq!(frame.height, surface.height);
     }
 

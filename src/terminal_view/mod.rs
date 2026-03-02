@@ -157,10 +157,19 @@ enum PaneResizeAxis {
     Vertical,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PaneResizeEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
 #[derive(Clone, Debug)]
 struct PaneResizeDragState {
     pane_id: String,
     axis: PaneResizeAxis,
+    edge: PaneResizeEdge,
     start_x: f32,
     start_y: f32,
     applied_steps: i32,
@@ -765,6 +774,7 @@ pub struct TerminalView {
     config_path: Option<PathBuf>,
     config_fingerprint: Option<u64>,
     last_config_error_message: Option<String>,
+    cached_tmux_binary: Option<String>,
     font_family: SharedString,
     base_font_size: f32,
     font_size: Pixels,
@@ -1499,6 +1509,10 @@ impl TerminalView {
             config_path,
             config_fingerprint,
             last_config_error_message,
+            cached_tmux_binary: {
+                let binary = config.tmux_binary.trim().to_string();
+                (!binary.is_empty()).then_some(binary)
+            },
             font_family: config.font_family.into(),
             base_font_size,
             font_size: px(base_font_size),
@@ -1595,6 +1609,10 @@ impl TerminalView {
 
     fn apply_runtime_config(&mut self, config: AppConfig, cx: &mut Context<Self>) -> bool {
         keybindings::install_keybindings(cx, &config, self.runtime_uses_tmux());
+        self.cached_tmux_binary = {
+            let binary = config.tmux_binary.trim().to_string();
+            (!binary.is_empty()).then_some(binary)
+        };
         let previous_font_family = self.font_family.clone();
         let previous_font_size = self.font_size;
         self.theme_id = config.theme.clone();

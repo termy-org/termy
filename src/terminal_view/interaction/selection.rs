@@ -21,6 +21,12 @@ fn fill_grid_rows_for_selection(
         if row < min_row || row > max_row || col >= cols {
             return;
         }
+        if cell
+            .flags
+            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN)
+        {
+            return;
+        }
 
         let c = cell.c;
         if c != '\0' {

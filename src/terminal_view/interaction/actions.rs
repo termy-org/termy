@@ -39,7 +39,16 @@ impl TerminalView {
                     cx.notify();
                     return;
                 }
-                None => unreachable!("disabled command must include an unavailable reason"),
+                _ => {
+                    log::warn!(
+                        "command reported unavailable without a known reason: action={:?} reason={:?}",
+                        action,
+                        availability.reason
+                    );
+                    termy_toast::info("Command unavailable");
+                    cx.notify();
+                    return;
+                }
             }
         }
 

@@ -82,12 +82,21 @@ impl TerminalView {
     fn tmux_binary_for_session_palette(&mut self) -> Result<String, String> {
         let binary = if self.runtime_uses_tmux() {
             self.tmux_runtime().config.binary.trim().to_string()
+        } else if let Some(cached) = self
+            .cached_tmux_binary
+            .as_deref()
+            .map(str::trim)
+            .filter(|cached| !cached.is_empty())
+        {
+            cached.to_string()
         } else {
             let loaded = config::load_runtime_config(
                 &mut self.last_config_error_message,
                 "Failed to read config for tmux session listing",
             );
-            loaded.config.tmux_binary.trim().to_string()
+            let loaded_binary = loaded.config.tmux_binary.trim().to_string();
+            self.cached_tmux_binary = (!loaded_binary.is_empty()).then_some(loaded_binary.clone());
+            loaded_binary
         };
         if binary.is_empty() {
             return Err("tmux_binary must not be empty".to_string());
