@@ -4,6 +4,7 @@ macro_rules! termy_command_catalog {
         $visitor! {
             (NewTab, "new_tab"),
             (CloseTab, "close_tab"),
+            (ClosePaneOrTab, "close_pane_or_tab"),
             (MoveTabLeft, "move_tab_left"),
             (MoveTabRight, "move_tab_right"),
             (SwitchTabLeft, "switch_tab_left"),

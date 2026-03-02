@@ -159,7 +159,7 @@ mod tests {
     fn prettify_orders_root_keybind_and_colors() {
         let input = "\
 # comment\n\
-keybind = cmd-w=close_tab\n\
+keybind = cmd-w=close_pane_or_tab\n\
 font_size = 16\n\
 theme = nord\n\
 [colors]\n\
@@ -169,7 +169,7 @@ foreground = #ffffff\n\
 
         let output = prettify_config_contents(input);
 
-        assert!(output.starts_with("theme = nord\nfont_size = 16\n\nkeybind = cmd-w=close_tab\n\n[colors]\nforeground = #ffffff\ngreen = #00ff00\n"));
+        assert!(output.starts_with("theme = nord\nfont_size = 16\n\nkeybind = cmd-w=close_pane_or_tab\n\n[colors]\nforeground = #ffffff\ngreen = #00ff00\n"));
     }
 
     #[test]

@@ -350,15 +350,21 @@ define_commands!(
     (
         CloseTab,
         TERMINAL_CONTEXT,
+        None,
+        None
+    ),
+    (
+        ClosePaneOrTab,
+        TERMINAL_CONTEXT,
         Some(palette(
-            "Close Tab",
-            "remove tab",
+            "Close Pane or Tab",
+            "close pane tab remove",
             CommandPaletteVisibility::Always
         )),
         Some(menu(
             MenuRoot::File,
             0,
-            "Close Tab",
+            "Close Pane or Tab",
             MenuVisibility::Always,
             MenuActionRole::Normal
         ))
@@ -1008,7 +1014,7 @@ mod tests {
         assert!(
             entries
                 .iter()
-                .any(|entry| entry.action == CommandAction::CloseTab)
+                .any(|entry| entry.action == CommandAction::ClosePaneOrTab)
         );
         assert!(
             entries
@@ -1035,6 +1041,11 @@ mod tests {
                 .iter()
                 .any(|entry| entry.action == CommandAction::RenameTab)
         );
+        assert!(
+            !entries
+                .iter()
+                .any(|entry| entry.action == CommandAction::CloseTab)
+        );
     }
 
     #[test]
@@ -1042,6 +1053,7 @@ mod tests {
         let file_entries = CommandAction::menu_entries_for_root(MenuRoot::File);
 
         for action in [
+            CommandAction::ClosePaneOrTab,
             CommandAction::SplitPaneVertical,
             CommandAction::SplitPaneHorizontal,
             CommandAction::ClosePane,
@@ -1058,6 +1070,7 @@ mod tests {
     fn window_menu_excludes_file_menu_pane_actions() {
         let window_entries = CommandAction::menu_entries_for_root(MenuRoot::Window);
         for action in [
+            CommandAction::ClosePaneOrTab,
             CommandAction::SplitPaneVertical,
             CommandAction::SplitPaneHorizontal,
             CommandAction::ClosePane,

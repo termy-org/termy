@@ -271,7 +271,7 @@ mod tests {
             labels,
             vec![
                 "New Tab",
-                "Close Tab",
+                "Close Pane or Tab",
                 "Rename Tab",
                 "<separator>",
                 "Manage tmux Sessions…",

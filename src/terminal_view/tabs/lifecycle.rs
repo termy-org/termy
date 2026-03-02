@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ClosePaneOrTabTarget {
+    ClosePane,
+    CloseTab,
+}
+
 impl TerminalView {
     pub(in super::super) fn execute_tab_command_action(
         &mut self,
@@ -21,6 +27,7 @@ impl TerminalView {
                 self.request_active_tab_close(window, cx);
                 true
             }
+            CommandAction::ClosePaneOrTab => self.close_active_pane_or_tab(window, cx),
             CommandAction::MoveTabLeft => {
                 self.move_active_tab_left(cx);
                 true
@@ -52,6 +59,14 @@ impl TerminalView {
             CommandAction::ResizePaneDown => self.resize_pane_down(cx),
             CommandAction::TogglePaneZoom => self.toggle_pane_zoom(cx),
             _ => false,
+        }
+    }
+
+    fn close_pane_or_tab_target(runtime_kind: RuntimeKind, pane_count: usize) -> ClosePaneOrTabTarget {
+        if runtime_kind.uses_tmux() && pane_count > 1 {
+            ClosePaneOrTabTarget::ClosePane
+        } else {
+            ClosePaneOrTabTarget::CloseTab
         }
     }
 
@@ -387,6 +402,23 @@ impl TerminalView {
         self.tmux_close_active_pane(cx)
     }
 
+    pub(crate) fn close_active_pane_or_tab(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let pane_count = self.tabs.get(self.active_tab).map_or(0, |tab| tab.panes.len());
+        match Self::close_pane_or_tab_target(self.runtime_kind(), pane_count) {
+            ClosePaneOrTabTarget::ClosePane => self.close_active_pane(cx),
+            ClosePaneOrTabTarget::CloseTab => {
+                // tmux rejects killing the last pane in a window, so we intentionally
+                // promote that case to the existing tab-close flow.
+                self.request_active_tab_close(window, cx);
+                true
+            }
+        }
+    }
+
     pub(crate) fn focus_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
         self.tmux_focus_pane_left(cx)
     }
@@ -512,5 +544,29 @@ mod tests {
     fn remap_index_after_move_keeps_moved_tab_active() {
         assert_eq!(TerminalView::remap_index_after_move(2, 2, 1), 1);
         assert_eq!(TerminalView::remap_index_after_move(2, 2, 3), 3);
+    }
+
+    #[test]
+    fn close_pane_or_tab_target_prefers_pane_for_tmux_multi_pane_tabs() {
+        assert_eq!(
+            TerminalView::close_pane_or_tab_target(RuntimeKind::Tmux, 2),
+            ClosePaneOrTabTarget::ClosePane
+        );
+    }
+
+    #[test]
+    fn close_pane_or_tab_target_falls_back_to_tab_when_last_or_non_tmux() {
+        assert_eq!(
+            TerminalView::close_pane_or_tab_target(RuntimeKind::Tmux, 1),
+            ClosePaneOrTabTarget::CloseTab
+        );
+        assert_eq!(
+            TerminalView::close_pane_or_tab_target(RuntimeKind::Tmux, 0),
+            ClosePaneOrTabTarget::CloseTab
+        );
+        assert_eq!(
+            TerminalView::close_pane_or_tab_target(RuntimeKind::Native, 3),
+            ClosePaneOrTabTarget::CloseTab
+        );
     }
 }

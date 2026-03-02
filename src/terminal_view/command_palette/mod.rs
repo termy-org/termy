@@ -604,6 +604,7 @@ impl TerminalView {
             }
             CommandAction::NewTab => termy_toast::success("Opened new tab"),
             CommandAction::CloseTab => termy_toast::info("Closed active tab"),
+            CommandAction::ClosePaneOrTab => termy_toast::info("Closed active pane or tab"),
             CommandAction::ZoomIn => termy_toast::info("Zoomed in"),
             CommandAction::ZoomOut => termy_toast::info("Zoomed out"),
             CommandAction::ZoomReset => termy_toast::info("Zoom reset"),

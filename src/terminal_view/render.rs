@@ -1214,6 +1214,7 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_check_for_updates_action))
                     .on_action(cx.listener(Self::handle_new_tab_action))
                     .on_action(cx.listener(Self::handle_close_tab_action))
+                    .on_action(cx.listener(Self::handle_close_pane_or_tab_action))
                     .on_action(cx.listener(Self::handle_move_tab_left_action))
                     .on_action(cx.listener(Self::handle_move_tab_right_action))
                     .on_action(cx.listener(Self::handle_switch_tab_left_action))

@@ -156,7 +156,7 @@ fn render_keybindings_doc() -> String {
     output.push_str("### 2) Remove one default\n\n");
     output.push_str("```txt\nkeybind = cmd-w=unbind\n```\n\n");
     output.push_str("### 3) Start from scratch\n\n");
-    output.push_str("```txt\nkeybind = clear\nkeybind = cmd-p=toggle_command_palette\nkeybind = cmd-t=new_tab\nkeybind = cmd-w=close_tab\nkeybind = cmd-c=copy\nkeybind = cmd-v=paste\n```\n\n");
+    output.push_str("```txt\nkeybind = clear\nkeybind = cmd-p=toggle_command_palette\nkeybind = cmd-t=new_tab\nkeybind = cmd-w=close_pane_or_tab\nkeybind = cmd-c=copy\nkeybind = cmd-v=paste\n```\n\n");
     output.push_str("### 4) Use `secondary` for cross-platform configs\n\n");
     output.push_str("```txt\nkeybind = secondary-p=toggle_command_palette\nkeybind = secondary-t=new_tab\n```\n");
 

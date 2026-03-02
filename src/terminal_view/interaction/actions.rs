@@ -78,6 +78,7 @@ impl TerminalView {
             CommandAction::RenameTab
             | CommandAction::NewTab
             | CommandAction::CloseTab
+            | CommandAction::ClosePaneOrTab
             | CommandAction::MoveTabLeft
             | CommandAction::MoveTabRight
             | CommandAction::SwitchTabLeft
@@ -209,6 +210,15 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::CloseTab, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_close_pane_or_tab_action(
+        &mut self,
+        _: &commands::ClosePaneOrTab,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ClosePaneOrTab, true, window, cx);
     }
 
     pub(in super::super) fn handle_move_tab_left_action(

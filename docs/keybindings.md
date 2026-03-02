@@ -12,7 +12,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-,` -> `open_settings`
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
-- `secondary-w` -> `close_tab`
+- `secondary-w` -> `close_pane_or_tab`
 - `secondary-d` -> `split_pane_vertical` (tmux required)
 - `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
 - `secondary-shift-w` -> `close_pane` (tmux required)
@@ -42,7 +42,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-,` -> `open_settings`
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
-- `secondary-w` -> `close_tab`
+- `secondary-w` -> `close_pane_or_tab`
 - `secondary-d` -> `split_pane_vertical` (tmux required)
 - `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
 - `secondary-shift-w` -> `close_pane` (tmux required)
@@ -71,7 +71,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-,` -> `open_settings`
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
-- `secondary-w` -> `close_tab`
+- `secondary-w` -> `close_pane_or_tab`
 - `secondary-d` -> `split_pane_vertical` (tmux required)
 - `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
 - `secondary-shift-w` -> `close_pane` (tmux required)
@@ -100,7 +100,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-,` -> `open_settings`
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
-- `secondary-w` -> `close_tab`
+- `secondary-w` -> `close_pane_or_tab`
 - `secondary-d` -> `split_pane_vertical` (tmux required)
 - `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
 - `secondary-shift-w` -> `close_pane` (tmux required)
@@ -149,6 +149,7 @@ Related UI option:
 
 - `new_tab`
 - `close_tab`
+- `close_pane_or_tab`
 - `move_tab_left`
 - `move_tab_right`
 - `switch_tab_left`
@@ -213,7 +214,7 @@ keybind = cmd-w=unbind
 keybind = clear
 keybind = cmd-p=toggle_command_palette
 keybind = cmd-t=new_tab
-keybind = cmd-w=close_tab
+keybind = cmd-w=close_pane_or_tab
 keybind = cmd-c=copy
 keybind = cmd-v=paste
 ```
