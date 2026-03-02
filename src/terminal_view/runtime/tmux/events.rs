@@ -35,10 +35,19 @@ impl TerminalView {
                     smol::Timer::after(delay).await;
                     let _ = cx.update(|cx| {
                         this.update(cx, |view, _cx| {
-                            view.tmux_runtime_mut().resize_wakeup_scheduled = false;
-                            if view.runtime_uses_tmux() && view.tmux_runtime().resize_scheduler.has_work() {
-                                let _ = wakeup_tx.try_send(());
+                            // The delayed callback can outlive tmux runtime; guard before any
+                            // tmux_runtime_mut() access to avoid panicking after detach/exit.
+                            if !view.runtime_uses_tmux() {
+                                return;
                             }
+                            let has_work = {
+                                let runtime = view.tmux_runtime_mut();
+                                runtime.resize_wakeup_scheduled = false;
+                                runtime.resize_scheduler.has_work()
+                            };
+                            if has_work {
+                                let _ = wakeup_tx.try_send(());
+                            };
                         })
                     });
                 })
@@ -94,10 +103,19 @@ impl TerminalView {
             smol::Timer::after(Duration::from_millis(TMUX_TITLE_REFRESH_DEBOUNCE_MS)).await;
             let _ = cx.update(|cx| {
                 this.update(cx, |view, _cx| {
-                    view.tmux_runtime_mut().title_refresh_wakeup_scheduled = false;
-                    if view.runtime_uses_tmux() && view.tmux_runtime().title_refresh_deadline.is_some() {
-                        let _ = wakeup_tx.try_send(());
+                    // Same safety rule as resize wakeups: this task can fire after runtime
+                    // transitions back to native mode.
+                    if !view.runtime_uses_tmux() {
+                        return;
                     }
+                    let has_deadline = {
+                        let runtime = view.tmux_runtime_mut();
+                        runtime.title_refresh_wakeup_scheduled = false;
+                        runtime.title_refresh_deadline.is_some()
+                    };
+                    if has_deadline {
+                        let _ = wakeup_tx.try_send(());
+                    };
                 })
             });
         })

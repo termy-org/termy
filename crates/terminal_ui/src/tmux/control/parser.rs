@@ -33,7 +33,7 @@ impl ControlStateMachine {
         line: &[u8],
     ) -> std::result::Result<ControlStateEvent, TmuxControlError> {
         let line = strip_control_line_wrappers(line);
-        if line.is_empty() {
+        if line.is_empty() && self.current_block.is_none() {
             return Ok(ControlStateEvent::None);
         }
 
@@ -86,6 +86,8 @@ impl ControlStateMachine {
         }
 
         if let Some(block) = self.current_block.as_mut() {
+            // Preserve empty lines inside command output blocks so pane captures
+            // round-trip faithfully through control-mode framing.
             let line_text = std::str::from_utf8(line)
                 .map_err(|_| TmuxControlError::parse("received non-utf8 bytes in control command output"))?;
             if !block.output.is_empty() {
@@ -317,6 +319,21 @@ mod tests {
         let (is_error, output) = expect_command_complete(sm.on_line(b"%end 10 3 0").expect("end"));
         assert!(!is_error);
         assert_eq!(output.trim(), "ok");
+    }
+
+    #[test]
+    fn control_state_machine_preserves_blank_lines_inside_command_output() {
+        let mut sm = ControlStateMachine::default();
+        assert_eq!(
+            sm.on_line(b"%begin 13 1 0").expect("begin"),
+            ControlStateEvent::CommandBegin
+        );
+        assert_eq!(sm.on_line(b"row-1").expect("row 1"), ControlStateEvent::None);
+        assert_eq!(sm.on_line(b"").expect("blank row"), ControlStateEvent::None);
+        assert_eq!(sm.on_line(b"row-3").expect("row 3"), ControlStateEvent::None);
+        let (is_error, output) = expect_command_complete(sm.on_line(b"%end 13 1 0").expect("end"));
+        assert!(!is_error);
+        assert_eq!(output, "row-1\n\nrow-3");
     }
 
     #[test]

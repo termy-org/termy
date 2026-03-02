@@ -96,6 +96,9 @@ pub(crate) fn spawn_tmux_control_mode(
         // direct shell OSC integration hooks to avoid prompt-width drift artifacts.
         .env("TERMY_SHELL_INTEGRATION", "0")
         .env_remove("TERMY_TAB_TITLE_PREFIX")
+        // Avoid inheriting an outer tmux client context; nested `TMUX` can
+        // redirect control-mode startup away from the requested session/socket.
+        .env_remove("TMUX")
         // zsh can emit inverse PROMPT_EOL_MARK (%) when line-state and repaint diverge.
         // Disable it for tmux-managed shells to avoid persistent visual artifacts.
         .env("PROMPT_EOL_MARK", "")

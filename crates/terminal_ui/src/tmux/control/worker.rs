@@ -186,9 +186,6 @@ pub(crate) fn spawn_control_threads(
             while matches!(line.last(), Some(b'\n' | b'\r')) {
                 line.pop();
             }
-            if line.is_empty() {
-                continue;
-            }
 
             let event = match control_state.on_line(&line) {
                 Ok(event) => event,

@@ -1,6 +1,10 @@
 use super::*;
 use termy_terminal_ui::{TmuxClient, TmuxPaneState, TmuxSnapshot};
 
+fn window_order_index(window_order: &[&str], target_window_id: Option<&str>) -> Option<usize> {
+    target_window_id.and_then(|target| window_order.iter().position(|window_id| *window_id == target))
+}
+
 impl TerminalView {
     fn hydration_capture_scrollback_history(
         active_scrollback_history: usize,
@@ -75,6 +79,9 @@ impl TerminalView {
 
     fn apply_tmux_snapshot_inner(&mut self, snapshot: TmuxSnapshot, reuse_existing_terminals: bool) {
         let previous_active_window_id = self.tabs.get(self.active_tab).map(|tab| tab.window_id.clone());
+        let previous_renaming_window_id = self
+            .renaming_tab
+            .and_then(|index| self.tabs.get(index).map(|tab| tab.window_id.clone()));
         let previous_ids = self
             .tabs
             .iter()
@@ -155,6 +162,11 @@ impl TerminalView {
 
         new_tabs.sort_by_key(|tab| tab.window_index);
         self.tabs = new_tabs;
+        let tab_window_order = self
+            .tabs
+            .iter()
+            .map(|tab| tab.window_id.as_str())
+            .collect::<Vec<_>>();
 
         let mut next_id = 1;
         for tab in &self.tabs {
@@ -166,10 +178,9 @@ impl TerminalView {
             .windows
             .iter()
             .find(|window| window.is_active)
-            .and_then(|window| self.tabs.iter().position(|tab| tab.window_id == window.id));
-        let previous_index = previous_active_window_id
-            .as_deref()
-            .and_then(|window_id| self.tabs.iter().position(|tab| tab.window_id == window_id));
+            .map(|window| window.id.as_str())
+            .and_then(|window_id| window_order_index(&tab_window_order, Some(window_id)));
+        let previous_index = window_order_index(&tab_window_order, previous_active_window_id.as_deref());
         self.active_tab = active_index_by_window
             .or(previous_index)
             .unwrap_or(0)
@@ -178,9 +189,10 @@ impl TerminalView {
         if self.tabs.is_empty() {
             self.active_tab = 0;
         }
-        if self.renaming_tab.is_some_and(|index| index >= self.tabs.len()) {
-            self.renaming_tab = None;
-        }
+        // Rename state tracks the original window identity, not stale index
+        // positions that can drift when tmux reorders/closes windows.
+        self.renaming_tab =
+            window_order_index(&tab_window_order, previous_renaming_window_id.as_deref());
         for index in 0..self.tabs.len() {
             self.refresh_tab_title(index);
         }
@@ -327,5 +339,13 @@ mod tests {
             TerminalView::hydration_capture_scrollback_history(2_000, Some(1_000)),
             2_000
         );
+    }
+
+    #[test]
+    fn window_order_index_maps_stable_window_identity_after_reorder() {
+        let order = vec!["@2", "@1", "@3"];
+        assert_eq!(window_order_index(&order, Some("@1")), Some(1));
+        assert_eq!(window_order_index(&order, Some("@2")), Some(0));
+        assert_eq!(window_order_index(&order, Some("@missing")), None);
     }
 }

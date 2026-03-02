@@ -1,12 +1,10 @@
 use super::super::types::TmuxControlError;
 #[cfg(test)]
 use super::super::types::TmuxControlErrorKind;
-use flume::{Receiver, RecvTimeoutError, Sender, TrySendError};
-use std::time::Duration;
+use flume::{Receiver, Sender, TryRecvError, TrySendError};
 
 pub(crate) const REQUEST_QUEUE_BOUND: usize = 1024;
 pub(crate) const PENDING_QUEUE_BOUND: usize = 1;
-pub(crate) const PENDING_MATCH_TIMEOUT_MS: u64 = 80;
 pub(crate) const NOTIFICATION_QUEUE_BOUND: usize = 2048;
 pub(crate) const FATAL_EXIT_QUEUE_BOUND: usize = 1;
 
@@ -61,14 +59,12 @@ pub(crate) fn try_enqueue_control_request(
 pub(crate) fn claim_pending_for_command_begin(
     pending_rx: &Receiver<PendingCommand>,
 ) -> std::result::Result<Option<PendingCommand>, TmuxControlError> {
-    if let Ok(pending) = pending_rx.try_recv() {
-        return Ok(Some(pending));
-    }
-
-    match pending_rx.recv_timeout(Duration::from_millis(PENDING_MATCH_TIMEOUT_MS)) {
+    // Hard cutover: `%begin` must bind only to a request that is already pending.
+    // Waiting here can mis-associate unsolicited tmux blocks with unrelated requests.
+    match pending_rx.try_recv() {
         Ok(pending) => Ok(Some(pending)),
-        Err(RecvTimeoutError::Timeout) => Ok(None),
-        Err(RecvTimeoutError::Disconnected) => Err(TmuxControlError::channel(
+        Err(TryRecvError::Empty) => Ok(None),
+        Err(TryRecvError::Disconnected) => Err(TmuxControlError::channel(
             "tmux control pending-command channel closed",
         )),
     }
@@ -102,9 +98,6 @@ pub(crate) fn map_command_completion_response(
 }
 
 pub(crate) fn append_command_output_chunk(accumulator: &mut String, chunk: &str) {
-    if chunk.is_empty() {
-        return;
-    }
     if !accumulator.is_empty() {
         accumulator.push('\n');
     }
@@ -137,6 +130,27 @@ mod tests {
         .expect_err("full queue should fail");
         assert_eq!(err.kind, TmuxControlErrorKind::Channel);
         assert!(err.message.contains("request queue is full"));
+    }
+
+    #[test]
+    fn claim_pending_for_command_begin_is_non_blocking() {
+        let (pending_tx, pending_rx) = flume::bounded::<PendingCommand>(1);
+        let (response_tx, _response_rx) = flume::bounded(1);
+        let (completion_tx, _completion_rx) = flume::bounded(1);
+
+        let claimed = claim_pending_for_command_begin(&pending_rx).expect("claim should succeed");
+        assert!(claimed.is_none(), "empty queue must stay untracked");
+
+        pending_tx
+            .send(PendingCommand {
+                command: "list-windows".to_string(),
+                completion_token: "__done".to_string(),
+                response_tx: Some(response_tx),
+                completion_tx,
+            })
+            .expect("queue pending request");
+        let claimed = claim_pending_for_command_begin(&pending_rx).expect("claim should succeed");
+        assert!(claimed.is_some(), "queued request must be claimable immediately");
     }
 
     #[test]

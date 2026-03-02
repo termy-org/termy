@@ -427,8 +427,9 @@ impl TmuxClient {
         let start_row = format!("-{}", max_rows.max(1));
         let args = capture_full_pane_args(pane_id, start_row.as_str());
         let out = self.run_control_capture_args(&args)?;
+        let payload = trim_trailing_line_terminators(out.as_bytes());
         Ok(sanitize_tmux_payload(unescape_tmux_payload(
-            out.trim_end().as_bytes(),
+            payload,
         )))
     }
 
@@ -589,6 +590,13 @@ impl TmuxClient {
 
         Ok(())
     }
+}
+
+fn trim_trailing_line_terminators(mut bytes: &[u8]) -> &[u8] {
+    while matches!(bytes.last(), Some(b'\n' | b'\r')) {
+        bytes = &bytes[..bytes.len() - 1];
+    }
+    bytes
 }
 
 impl Drop for TmuxClient {
@@ -765,5 +773,17 @@ mod tests {
         assert!(drained.iter().any(|n| matches!(n, TmuxNotification::NeedsRefresh)));
         assert!(drained.iter().any(|n| matches!(n, TmuxNotification::Warning(_))));
         assert!(!drained.iter().any(|n| matches!(n, TmuxNotification::Exit(_))));
+    }
+
+    #[test]
+    fn trim_trailing_line_terminators_preserves_trailing_spaces_and_tabs() {
+        assert_eq!(
+            trim_trailing_line_terminators(b"abc \t\r\n"),
+            b"abc \t".as_slice()
+        );
+        assert_eq!(
+            trim_trailing_line_terminators(b"abc \t"),
+            b"abc \t".as_slice()
+        );
     }
 }

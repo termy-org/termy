@@ -1,6 +1,13 @@
 use super::*;
 use termy_terminal_ui::TmuxClient;
 
+fn reorder_active_window_id<'a>(
+    previous_active_window_id: Option<&'a str>,
+    moved_window_id: &'a str,
+) -> &'a str {
+    previous_active_window_id.unwrap_or(moved_window_id)
+}
+
 impl TerminalView {
     pub(in crate::terminal_view) fn run_tmux_action<F>(&self, error_prefix: &str, action: F) -> bool
     where
@@ -90,11 +97,16 @@ impl TerminalView {
 
     pub(in crate::terminal_view) fn tmux_reorder_tab(&mut self, from: usize, to: usize) -> bool {
         let moved_window_id = self.tabs[from].window_id.clone();
+        let previous_active_window_id = self
+            .tabs
+            .get(self.active_tab)
+            .map(|tab| tab.window_id.clone());
         let mut window_order = self
             .tabs
             .iter()
             .map(|tab| tab.window_id.clone())
             .collect::<Vec<_>>();
+        let mut swapped_any = false;
 
         if from < to {
             for index in from..to {
@@ -103,9 +115,15 @@ impl TerminalView {
                 if !self.run_tmux_action("Failed to reorder tabs", |tmux_client| {
                     tmux_client.swap_windows(source.as_str(), target.as_str())
                 }) {
+                    // Swap-window is incremental. If any earlier step succeeded, force
+                    // a snapshot refresh so local tab order cannot drift from tmux.
+                    if swapped_any {
+                        let _ = self.refresh_tmux_snapshot();
+                    }
                     return false;
                 }
                 window_order.swap(index, index + 1);
+                swapped_any = true;
             }
         } else {
             for index in (to + 1..=from).rev() {
@@ -114,9 +132,13 @@ impl TerminalView {
                 if !self.run_tmux_action("Failed to reorder tabs", |tmux_client| {
                     tmux_client.swap_windows(source.as_str(), target.as_str())
                 }) {
+                    if swapped_any {
+                        let _ = self.refresh_tmux_snapshot();
+                    }
                     return false;
                 }
                 window_order.swap(index, index - 1);
+                swapped_any = true;
             }
         }
 
@@ -124,10 +146,11 @@ impl TerminalView {
             return false;
         }
 
-        if let Some(index) = self
-            .tabs
-            .iter()
-            .position(|tab| tab.window_id == moved_window_id)
+        // Preserve previously active tab identity when reordering an inactive tab.
+        // Native runtime already behaves this way via index remapping.
+        let active_target_window_id =
+            reorder_active_window_id(previous_active_window_id.as_deref(), moved_window_id.as_str());
+        if let Some(index) = self.tabs.iter().position(|tab| tab.window_id == active_target_window_id)
         {
             self.active_tab = index;
         }
@@ -409,5 +432,16 @@ impl TerminalView {
             cx,
             |tmux_client| tmux_client.toggle_pane_zoom(pane_id.as_str()),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reorder_active_window_id;
+
+    #[test]
+    fn reorder_active_window_id_preserves_previously_active_window() {
+        assert_eq!(reorder_active_window_id(Some("@2"), "@3"), "@2");
+        assert_eq!(reorder_active_window_id(None, "@3"), "@3");
     }
 }
