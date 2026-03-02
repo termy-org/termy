@@ -66,6 +66,7 @@ pub struct AgentSession {
     pub model: String,
     pub title: String,
     pub running: bool,
+    pub running_since: Option<std::time::Instant>,
     pub messages: Vec<AgentMessage>,
 }
 
@@ -91,6 +92,7 @@ impl AgentSession {
             model: model.into(),
             title,
             running: false,
+            running_since: None,
             messages: Vec::new(),
         }
     }
@@ -174,6 +176,11 @@ impl AgentSessionStore {
     pub fn set_active_running(&mut self, running: bool) {
         if let Some(session) = self.active_session_mut() {
             session.running = running;
+            session.running_since = if running {
+                Some(std::time::Instant::now())
+            } else {
+                None
+            };
         }
     }
 

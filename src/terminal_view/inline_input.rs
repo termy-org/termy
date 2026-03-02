@@ -1,8 +1,8 @@
 use super::*;
 use gpui::{
-    Bounds, ElementInputHandler, Entity, EntityInputHandler, Font, Hsla, IntoElement, PaintQuad,
-    Pixels, ShapedLine, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas, fill,
-    point, px, size,
+    canvas, fill, point, px, size, Bounds, ElementInputHandler, Entity, EntityInputHandler, Font,
+    Hsla, IntoElement, PaintQuad, Pixels, ShapedLine, TextAlign, TextRun, UTF16Selection,
+    UnderlineStyle, Window,
 };
 use std::ops::Range;
 
@@ -402,13 +402,21 @@ impl InlineInputState {
     fn range_from_utf16_for_text(text: &str, range_utf16: &Range<usize>) -> Range<usize> {
         let start = Self::utf16_to_utf8_in_text(text, range_utf16.start);
         let end = Self::utf16_to_utf8_in_text(text, range_utf16.end);
-        if end < start { end..start } else { start..end }
+        if end < start {
+            end..start
+        } else {
+            start..end
+        }
     }
 
     fn range_to_utf16_for_text(text: &str, range_utf8: &Range<usize>) -> Range<usize> {
         let start = Self::utf8_to_utf16_in_text(text, range_utf8.start);
         let end = Self::utf8_to_utf16_in_text(text, range_utf8.end);
-        if end < start { end..start } else { start..end }
+        if end < start {
+            end..start
+        } else {
+            start..end
+        }
     }
 
     fn range_from_utf16(&self, range_utf16: &Range<usize>) -> Range<usize> {
@@ -1010,7 +1018,15 @@ impl TerminalView {
         // If the agent sidebar is open, activate its input before querying state.
         // This ensures active_inline_input_state() returns the sidebar input.
         if self.agent_sidebar.is_open() {
+            // Close other inputs first so agent sidebar takes priority
+            if self.is_command_palette_open() {
+                self.close_command_palette(cx);
+            }
+            self.search_open = false;
+            self.ai_input_open = false;
+            self.renaming_tab = None;
             self.agent_sidebar_input_active = true;
+            self.reset_cursor_blink_phase();
         }
 
         self.focus_handle.focus(window, cx);

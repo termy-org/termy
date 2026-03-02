@@ -35,6 +35,7 @@ icon = ["assets/termy.icns"]
 
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }
+gpui-component = "0.5.1"
 
 # Terminal emulation
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty", rev = "4225cea231432fb23442b1da2463b4ec9dfd726c" }

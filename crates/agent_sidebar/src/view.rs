@@ -1,11 +1,10 @@
-use gpui::{AnyElement, Element, FontWeight, InteractiveElement, ParentElement, Styled, div, px};
+use gpui::*;
 
 pub fn render_sidebar(
     width: f32,
+    header: AnyElement,
     sidebar_bg: gpui::Rgba,
     sidebar_border: gpui::Rgba,
-    sidebar_title: gpui::Rgba,
-    sidebar_text: gpui::Rgba,
     content: AnyElement,
     composer: AnyElement,
 ) -> AnyElement {
@@ -16,34 +15,37 @@ pub fn render_sidebar(
         .bg(sidebar_bg)
         .border_l_1()
         .border_color(sidebar_border)
-        .px(px(12.0))
-        .py(px(12.0))
         .flex()
         .flex_col()
-        .gap(px(8.0))
+        // Stop mouse events from propagating to the terminal view
+        .on_mouse_down(MouseButton::Left, |_, _, cx| {
+            cx.stop_propagation();
+        })
         .child(
-            div()
-                .text_size(px(12.0))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(sidebar_title)
-                .child("Agent Chat"),
-        )
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(sidebar_text)
-                .child("Session-aware AI agent with tool execution."),
-        )
-        .child(content)
-        .child(
+            // Header
             div()
                 .w_full()
-                .h(px(136.0))
-                .px(px(8.0))
-                .py(px(6.0))
-                .relative()
-                .bg(sidebar_bg)
-                .border_1()
+                .px(px(12.0))
+                .py(px(10.0))
+                .border_b_1()
+                .border_color(sidebar_border)
+                .child(header),
+        )
+        .child(
+            // Content (messages) - flex_1 + min_h(0) allows this to shrink and let child scroll
+            div()
+                .id("sidebar-content-wrapper")
+                .flex_1()
+                .min_h(px(0.0))
+                .overflow_y_scroll()
+                .child(content),
+        )
+        .child(
+            // Composer
+            div()
+                .w_full()
+                .p(px(12.0))
+                .border_t_1()
                 .border_color(sidebar_border)
                 .child(composer),
         )

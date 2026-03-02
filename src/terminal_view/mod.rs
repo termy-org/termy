@@ -10,7 +10,7 @@ use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMod
 use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
 use gpui::{
-    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, ExternalPaths, FocusHandle,
+    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths, FocusHandle,
     Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, ScrollHandle,
     ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase,
@@ -33,7 +33,7 @@ use termy_terminal_ui::{
 use termy_toast::ToastManager;
 
 #[cfg(target_os = "macos")]
-use gpui::{AppContext, Entity};
+use gpui::AppContext;
 #[cfg(target_os = "macos")]
 use termy_auto_update::{AutoUpdater, UpdateState};
 
@@ -826,6 +826,7 @@ pub struct TerminalView {
     agent_model_options: Vec<String>,
     agent_models_loading: bool,
     agent_models_loaded_for_api_key: Option<(config::AiProvider, String)>,
+    agent_spinner_animation_scheduled: bool,
     agent_messages_scroll_handle: ScrollHandle,
     // Pending clipboard write from OSC 52
     pending_clipboard: Option<String>,
@@ -1157,6 +1158,35 @@ impl TerminalView {
                 this.update(cx, |view, cx| {
                     view.pane_focus_animation_scheduled = false;
                     cx.notify();
+                })
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn schedule_agent_spinner_animation(&mut self, cx: &mut Context<Self>) {
+        if self.agent_spinner_animation_scheduled {
+            return;
+        }
+
+        // Only animate if there's an active running session
+        let is_running = self
+            .agent_sessions
+            .active_session()
+            .is_some_and(|s| s.running);
+        if !is_running {
+            return;
+        }
+
+        self.agent_spinner_animation_scheduled = true;
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            smol::Timer::after(Duration::from_millis(80)).await;
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    view.agent_spinner_animation_scheduled = false;
+                    cx.notify();
+                    // Continue animation if still running
+                    view.schedule_agent_spinner_animation(cx);
                 })
             });
         })
@@ -1587,6 +1617,7 @@ impl TerminalView {
             agent_model_dropdown_open: false,
             agent_model_options: Vec::new(),
             agent_models_loading: false,
+            agent_spinner_animation_scheduled: false,
             agent_models_loaded_for_api_key: None,
             agent_messages_scroll_handle: ScrollHandle::new(),
             pending_clipboard: None,

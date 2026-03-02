@@ -26,9 +26,9 @@ pub fn render_markdown_message(
             match block {
                 MarkdownBlock::Heading { level, text } => {
                     let size = match level {
-                        1 => 13.0,
-                        2 => 12.5,
-                        _ => 12.0,
+                        1 => 13.5,
+                        2 => 13.0,
+                        _ => 12.5,
                     };
                     div()
                         .w_full()
@@ -40,7 +40,7 @@ pub fn render_markdown_message(
                 }
                 MarkdownBlock::Paragraph(text) => div()
                     .w_full()
-                    .text_size(px(11.0))
+                    .text_size(px(12.0))
                     .text_color(text_color)
                     .child(text)
                     .into_any_element(),
@@ -52,14 +52,14 @@ pub fn render_markdown_message(
                     .child(
                         div()
                             .pt(px(1.0))
-                            .text_size(px(11.0))
+                            .text_size(px(12.0))
                             .text_color(heading_color)
                             .child("•"),
                     )
                     .child(
                         div()
                             .flex_1()
-                            .text_size(px(11.0))
+                            .text_size(px(12.0))
                             .text_color(text_color)
                             .child(text),
                     )
@@ -69,7 +69,7 @@ pub fn render_markdown_message(
                     .pl(px(8.0))
                     .border_l_1()
                     .border_color(border_color)
-                    .text_size(px(11.0))
+                    .text_size(px(12.0))
                     .text_color(text_color)
                     .child(text)
                     .into_any_element(),
@@ -80,7 +80,7 @@ pub fn render_markdown_message(
                     .border_1()
                     .border_color(border_color)
                     .bg(code_bg)
-                    .text_size(px(10.5))
+                    .text_size(px(11.5))
                     .text_color(text_color)
                     .child(text)
                     .into_any_element(),

@@ -999,22 +999,31 @@ impl Render for TerminalView {
             ..Font::default()
         };
         let sidebar_composer = div()
-            .size_full()
+            .w_full()
             .flex()
             .flex_col()
-            .gap(px(8.0))
+            .gap(px(10.0))
             .child(
                 div()
                     .relative()
                     .w_full()
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .px(px(8.0))
-                    .py(px(6.0))
+                    .min_h(px(32.0))
+                    .px(px(10.0))
+                    .py(px(8.0))
                     .on_mouse_down(
                         MouseButton::Left,
-                        cx.listener(|view, _, _, cx| {
+                        cx.listener(|view, _, window, cx| {
+                            // Close other inputs first
+                            if view.is_command_palette_open() {
+                                view.close_command_palette(cx);
+                            }
+                            view.search_open = false;
+                            view.ai_input_open = false;
+                            view.renaming_tab = None;
+                            // Activate agent sidebar input
                             view.agent_sidebar_input_active = true;
+                            view.reset_cursor_blink_phase();
+                            view.focus_handle.focus(window, cx);
                             cx.stop_propagation();
                             cx.notify();
                         }),
@@ -1031,10 +1040,11 @@ impl Render for TerminalView {
                         s.child(
                             div()
                                 .absolute()
-                                .left(px(8.0))
-                                .top(px(6.0))
-                                .text_size(px(11.0))
+                                .left(px(10.0))
+                                .top(px(8.0))
+                                .text_size(px(12.0))
                                 .text_color(sidebar_text)
+                                .whitespace_nowrap()
                                 .child("Message agent..."),
                         )
                     }),
@@ -1045,232 +1055,278 @@ impl Render for TerminalView {
                     .flex()
                     .items_center()
                     .justify_end()
-                    .gap(px(6.0))
                     .child(
-                        div().text_size(px(10.0)).text_color(sidebar_text).child(
-                            if self.agent_models_loading {
-                                "Loading models..."
-                            } else if active_session
-                                .as_ref()
-                                .is_some_and(|session| session.running)
-                            {
-                                "Agent running..."
-                            } else {
-                                ""
-                            },
-                        ),
-                    )
-                    .child(
-                        div().relative().child(
-                            div()
-                                .px(px(6.0))
-                                .py(px(4.0))
-                                .border_1()
-                                .border_color(sidebar_border)
-                                .cursor_pointer()
-                                .text_size(px(10.0))
-                                .text_color(sidebar_text)
-                                .child(active_provider.as_label())
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(|view, _, _, cx| {
-                                        view.agent_provider_dropdown_open =
-                                            !view.agent_provider_dropdown_open;
-                                        view.agent_model_dropdown_open = false;
-                                        cx.stop_propagation();
-                                        cx.notify();
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            // Provider dropdown
+                            .child(
+                                div()
+                                    .relative()
+                                    .child(
+                                        div()
+                                            .id("provider-dropdown-trigger")
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(4.0))
+                                            .px(px(10.0))
+                                            .py(px(5.0))
+                                            .rounded(px(6.0))
+                                            .border_1()
+                                            .border_color(sidebar_border)
+                                            .cursor_pointer()
+                                            .text_size(px(11.0))
+                                            .text_color(sidebar_text)
+                                            .hover(|s| s.bg(gpui::rgba(0xffffff08)))
+                                            .child(active_provider.as_label())
+                                            .child(
+                                                div()
+                                                    .text_size(px(8.0))
+                                                    .text_color(sidebar_text)
+                                                    .child("▼"),
+                                            )
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(|view, _, _, cx| {
+                                                    view.agent_provider_dropdown_open =
+                                                        !view.agent_provider_dropdown_open;
+                                                    view.agent_model_dropdown_open = false;
+                                                    cx.stop_propagation();
+                                                    cx.notify();
+                                                }),
+                                            ),
+                                    )
+                                    .when(self.agent_provider_dropdown_open, |s| {
+                                        s.child(
+                                            div()
+                                                .absolute()
+                                                .bottom(px(32.0))
+                                                .right(px(0.0))
+                                                .min_w(px(120.0))
+                                                .py(px(4.0))
+                                                .rounded(px(8.0))
+                                                .border_1()
+                                                .border_color(sidebar_border)
+                                                .bg(sidebar_bg)
+                                                .shadow_lg()
+                                                .child(
+                                                    div()
+                                                        .id("provider-option-openai")
+                                                        .px(px(12.0))
+                                                        .py(px(8.0))
+                                                        .cursor_pointer()
+                                                        .text_size(px(11.0))
+                                                        .text_color(sidebar_text)
+                                                        .rounded(px(4.0))
+                                                        .hover(|s| s.bg(gpui::rgba(0xffffff10)))
+                                                        .child("OpenAI")
+                                                        .on_mouse_down(
+                                                            MouseButton::Left,
+                                                            cx.listener(|view, _, _, cx| {
+                                                                view.set_active_agent_provider(
+                                                                    config::AiProvider::OpenAi,
+                                                                    cx,
+                                                                );
+                                                                cx.stop_propagation();
+                                                            }),
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .id("provider-option-gemini")
+                                                        .px(px(12.0))
+                                                        .py(px(8.0))
+                                                        .cursor_pointer()
+                                                        .text_size(px(11.0))
+                                                        .text_color(sidebar_text)
+                                                        .rounded(px(4.0))
+                                                        .hover(|s| s.bg(gpui::rgba(0xffffff10)))
+                                                        .child("Gemini")
+                                                        .on_mouse_down(
+                                                            MouseButton::Left,
+                                                            cx.listener(|view, _, _, cx| {
+                                                                view.set_active_agent_provider(
+                                                                    config::AiProvider::Gemini,
+                                                                    cx,
+                                                                );
+                                                                cx.stop_propagation();
+                                                            }),
+                                                        ),
+                                                ),
+                                        )
                                     }),
-                                ),
-                        ),
-                    )
-                    .child(
-                        div().relative().child(
-                            div()
-                                .px(px(6.0))
-                                .py(px(4.0))
-                                .border_1()
-                                .border_color(sidebar_border)
-                                .cursor_pointer()
-                                .text_size(px(10.0))
-                                .text_color(sidebar_text)
-                                .child(active_model.chars().take(16).collect::<String>())
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(|view, _, _, cx| {
-                                        view.agent_model_dropdown_open =
-                                            !view.agent_model_dropdown_open;
-                                        view.agent_provider_dropdown_open = false;
-                                        if view.agent_model_dropdown_open {
-                                            view.refresh_agent_model_options(false, cx);
-                                        }
-                                        cx.stop_propagation();
-                                        cx.notify();
+                            )
+                            // Model dropdown
+                            .child(
+                                div()
+                                    .relative()
+                                    .child(
+                                        div()
+                                            .id("model-dropdown-trigger")
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(4.0))
+                                            .px(px(10.0))
+                                            .py(px(5.0))
+                                            .rounded(px(6.0))
+                                            .border_1()
+                                            .border_color(sidebar_border)
+                                            .cursor_pointer()
+                                            .text_size(px(11.0))
+                                            .text_color(sidebar_text)
+                                            .hover(|s| s.bg(gpui::rgba(0xffffff08)))
+                                            .child(
+                                                active_model.chars().take(18).collect::<String>(),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(8.0))
+                                                    .text_color(sidebar_text)
+                                                    .child("▼"),
+                                            )
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(|view, _, _, cx| {
+                                                    view.agent_model_dropdown_open =
+                                                        !view.agent_model_dropdown_open;
+                                                    view.agent_provider_dropdown_open = false;
+                                                    if view.agent_model_dropdown_open {
+                                                        view.refresh_agent_model_options(false, cx);
+                                                    }
+                                                    cx.stop_propagation();
+                                                    cx.notify();
+                                                }),
+                                            ),
+                                    )
+                                    .when(self.agent_model_dropdown_open, |s| {
+                                        let options = if self.agent_model_options.is_empty() {
+                                            vec![active_model.clone()]
+                                        } else {
+                                            self.agent_model_options.clone()
+                                        };
+                                        s.child(
+                                            div()
+                                                .id("model-dropdown-menu")
+                                                .absolute()
+                                                .bottom(px(32.0))
+                                                .right(px(0.0))
+                                                .min_w(px(160.0))
+                                                .max_h(px(200.0))
+                                                .py(px(4.0))
+                                                .rounded(px(8.0))
+                                                .border_1()
+                                                .border_color(sidebar_border)
+                                                .bg(sidebar_bg)
+                                                .shadow_lg()
+                                                .overflow_y_scroll()
+                                                .children(options.into_iter().map(|model| {
+                                                    let model_value = model.clone();
+                                                    div()
+                                                        .id(SharedString::from(format!(
+                                                            "model-option-{}",
+                                                            model_value
+                                                        )))
+                                                        .px(px(12.0))
+                                                        .py(px(8.0))
+                                                        .cursor_pointer()
+                                                        .text_size(px(11.0))
+                                                        .text_color(sidebar_text)
+                                                        .rounded(px(4.0))
+                                                        .hover(|s| s.bg(gpui::rgba(0xffffff10)))
+                                                        .child(model)
+                                                        .on_mouse_down(
+                                                            MouseButton::Left,
+                                                            cx.listener(move |view, _, _, cx| {
+                                                                view.set_active_agent_model(
+                                                                    model_value.clone(),
+                                                                    cx,
+                                                                );
+                                                                cx.stop_propagation();
+                                                            }),
+                                                        )
+                                                        .into_any_element()
+                                                })),
+                                        )
                                     }),
-                                ),
-                        ),
+                            ),
                     ),
             )
             .into_any_element();
 
-        let sidebar_controls =
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(6.0))
-                .child(
+        // Header with title and new button
+        let sidebar_header = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(sidebar_title)
+                    .child("Agent"),
+            )
+            .child(
+                div()
+                    .id("new-session-btn")
+                    .px(px(8.0))
+                    .py(px(3.0))
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .text_size(px(11.0))
+                    .text_color(sidebar_text)
+                    .hover(|s| s.bg(gpui::rgba(0xffffff10)))
+                    .child("+")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.create_agent_session(cx);
+                            cx.stop_propagation();
+                        }),
+                    ),
+            )
+            .into_any_element();
+
+        // Session tabs
+        let sidebar_sessions = div()
+            .px(px(12.0))
+            .pt(px(8.0))
+            .flex()
+            .gap(px(6.0))
+            .children(
+                self.agent_sessions.sessions().iter().map(|session| {
+                    let session_id = session.id;
+                    let is_active = self
+                        .agent_sessions
+                        .active_session_id()
+                        .is_some_and(|active_id| active_id == session_id);
+                    let mut bg = sidebar_bg;
+                    bg.a = if is_active { 0.34 } else { 0.16 };
                     div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            div().text_size(px(11.0)).text_color(sidebar_text).child(
-                                active_session
-                                    .as_ref()
-                                    .map(|session| {
-                                        if session.running {
-                                            format!("Session: {} (running)", session.title)
-                                        } else {
-                                            format!("Session: {}", session.title)
-                                        }
-                                    })
-                                    .unwrap_or_else(|| "Session: none".to_string()),
-                            ),
+                        .id(SharedString::from(format!(
+                            "agent-session-chip-{}",
+                            session_id
+                        )))
+                        .px(px(8.0))
+                        .py(px(4.0))
+                        .rounded(px(4.0))
+                        .border_1()
+                        .border_color(sidebar_border)
+                        .bg(bg)
+                        .cursor_pointer()
+                        .text_size(px(10.0))
+                        .text_color(sidebar_text)
+                        .child(session.title.clone())
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |view, _, _, cx| {
+                                view.select_agent_session(session_id, cx);
+                                cx.stop_propagation();
+                            }),
                         )
-                        .child(
-                            div()
-                                .px(px(8.0))
-                                .py(px(3.0))
-                                .border_1()
-                                .border_color(sidebar_border)
-                                .cursor_pointer()
-                                .text_size(px(10.0))
-                                .text_color(sidebar_title)
-                                .child("New")
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(|view, _, _, cx| {
-                                        view.create_agent_session(cx);
-                                        cx.stop_propagation();
-                                    }),
-                                ),
-                        ),
-                )
-                .child(div().flex().gap(px(6.0)).children(
-                    self.agent_sessions.sessions().iter().map(|session| {
-                        let session_id = session.id;
-                        let is_active = self
-                            .agent_sessions
-                            .active_session_id()
-                            .is_some_and(|active_id| active_id == session_id);
-                        let mut bg = sidebar_bg;
-                        bg.a = if is_active { 0.34 } else { 0.16 };
-                        div()
-                            .id(SharedString::from(format!(
-                                "agent-session-chip-{}",
-                                session_id
-                            )))
-                            .px(px(8.0))
-                            .py(px(4.0))
-                            .border_1()
-                            .border_color(sidebar_border)
-                            .bg(bg)
-                            .cursor_pointer()
-                            .text_size(px(10.0))
-                            .text_color(sidebar_text)
-                            .child(session.title.clone())
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |view, _, _, cx| {
-                                    view.select_agent_session(session_id, cx);
-                                    cx.stop_propagation();
-                                }),
-                            )
-                            .into_any_element()
-                    }),
-                ))
-                .when(self.agent_provider_dropdown_open, |s| {
-                    s.child(
-                        div()
-                            .w(px(120.0))
-                            .border_1()
-                            .border_color(sidebar_border)
-                            .bg(sidebar_bg)
-                            .child(
-                                div()
-                                    .px(px(8.0))
-                                    .py(px(6.0))
-                                    .cursor_pointer()
-                                    .text_size(px(10.0))
-                                    .text_color(sidebar_text)
-                                    .child("OpenAI")
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            view.set_active_agent_provider(
-                                                config::AiProvider::OpenAi,
-                                                cx,
-                                            );
-                                            cx.stop_propagation();
-                                        }),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .px(px(8.0))
-                                    .py(px(6.0))
-                                    .cursor_pointer()
-                                    .text_size(px(10.0))
-                                    .text_color(sidebar_text)
-                                    .child("Gemini")
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            view.set_active_agent_provider(
-                                                config::AiProvider::Gemini,
-                                                cx,
-                                            );
-                                            cx.stop_propagation();
-                                        }),
-                                    ),
-                            ),
-                    )
-                })
-                .when(self.agent_model_dropdown_open, |s| {
-                    let options = if self.agent_model_options.is_empty() {
-                        vec![active_model.clone()]
-                    } else {
-                        self.agent_model_options.clone()
-                    };
-                    s.child(
-                        div()
-                            .max_h(px(170.0))
-                            .border_1()
-                            .border_color(sidebar_border)
-                            .bg(sidebar_bg)
-                            .children(options.into_iter().map(|model| {
-                                let model_value = model.clone();
-                                div()
-                                    .id(SharedString::from(format!(
-                                        "agent-model-option-{}",
-                                        model_value
-                                    )))
-                                    .px(px(8.0))
-                                    .py(px(6.0))
-                                    .cursor_pointer()
-                                    .text_size(px(10.0))
-                                    .text_color(sidebar_text)
-                                    .child(model)
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _, _, cx| {
-                                            view.set_active_agent_model(model_value.clone(), cx);
-                                            cx.stop_propagation();
-                                        }),
-                                    )
-                                    .into_any_element()
-                            })),
-                    )
-                });
+                        .into_any_element()
+                }),
+            );
         let sidebar_messages = div()
             .id("agent-messages-scroll")
             .flex_1()
@@ -1324,6 +1380,16 @@ impl Render for TerminalView {
                                 })
                                 .collect::<Vec<_>>();
                             if session.running {
+                                // Animated spinner using braille characters
+                                const SPINNER_FRAMES: &[&str] =
+                                    &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                                let elapsed_ms = session
+                                    .running_since
+                                    .map(|t| t.elapsed().as_millis() as usize)
+                                    .unwrap_or(0);
+                                let frame_index = (elapsed_ms / 80) % SPINNER_FRAMES.len();
+                                let spinner = SPINNER_FRAMES[frame_index];
+
                                 items.push(
                                     div()
                                         .id(SharedString::from(format!(
@@ -1332,15 +1398,17 @@ impl Render for TerminalView {
                                         )))
                                         .px(px(8.0))
                                         .py(px(6.0))
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(6.0))
                                         .child(
                                             div()
-                                                .text_size(px(10.0))
+                                                .text_size(px(12.0))
                                                 .text_color(sidebar_title)
-                                                .child("Agent"),
+                                                .child(spinner),
                                         )
                                         .child(
                                             div()
-                                                .pt(px(3.0))
                                                 .text_size(px(11.0))
                                                 .text_color(sidebar_text)
                                                 .child("Thinking..."),
@@ -1359,8 +1427,7 @@ impl Render for TerminalView {
             .min_h(px(0.0))
             .flex()
             .flex_col()
-            .gap(px(8.0))
-            .child(sidebar_controls)
+            .child(sidebar_sessions)
             .child(sidebar_messages)
             .into_any_element();
         let terminal_content_layer = div()
@@ -1379,10 +1446,9 @@ impl Render for TerminalView {
             .when(self.agent_sidebar.is_open(), |s| {
                 s.child(termy_agent_sidebar::render_sidebar(
                     self.agent_sidebar.width(),
+                    sidebar_header,
                     sidebar_bg,
                     sidebar_border,
-                    sidebar_title,
-                    sidebar_text,
                     sidebar_content,
                     sidebar_composer,
                 ))

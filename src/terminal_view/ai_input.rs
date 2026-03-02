@@ -36,6 +36,36 @@ impl TerminalView {
         .unwrap_or_else(|| ".".to_string())
     }
 
+    pub(super) fn create_agent_session(&mut self, cx: &mut Context<Self>) {
+        let cwd = self.current_agent_working_directory();
+        let configured_provider = config::load_runtime_config(
+            &mut self.last_config_error_message,
+            "agent session create config load",
+        )
+        .config
+        .ai_provider;
+        let provider = termy_agent_sidebar::AgentProvider::from(configured_provider);
+        let model = config::load_runtime_config(
+            &mut self.last_config_error_message,
+            "agent session model config load",
+        )
+        .config
+        .openai_model
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| match configured_provider {
+            config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
+            config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
+        });
+
+        self.agent_sessions.new_session(cwd, provider, model);
+        cx.notify();
+    }
+
+    pub(super) fn select_agent_session(&mut self, session_id: u64, cx: &mut Context<Self>) {
+        self.agent_sessions.set_active_by_id(session_id);
+        cx.notify();
+    }
+
     fn ensure_active_agent_session(&mut self) -> u64 {
         let cwd = self.current_agent_working_directory();
         let configured_provider = config::load_runtime_config(
@@ -70,40 +100,9 @@ impl TerminalView {
             .unwrap_or(config::AiProvider::OpenAi)
     }
 
-    fn active_agent_session_model(&self) -> String {
-        self.agent_sessions
-            .active_session()
-            .map(|session| session.model.clone())
-            .unwrap_or_else(|| termy_openai::DEFAULT_MODEL.to_string())
-    }
-
     pub(super) fn ensure_agent_sidebar_ready(&mut self, cx: &mut Context<Self>) {
         self.ensure_active_agent_session();
         self.refresh_agent_model_options(false, cx);
-    }
-
-    pub(super) fn create_agent_session(&mut self, cx: &mut Context<Self>) {
-        let cwd = self.current_agent_working_directory();
-        let provider = self.active_agent_session_provider();
-        let model = self.active_agent_session_model();
-        self.agent_sessions.new_session(
-            cwd,
-            termy_agent_sidebar::AgentProvider::from(provider),
-            model,
-        );
-        self.agent_provider_dropdown_open = false;
-        self.agent_model_dropdown_open = false;
-        self.refresh_agent_model_options(false, cx);
-        cx.notify();
-    }
-
-    pub(super) fn select_agent_session(&mut self, id: u64, cx: &mut Context<Self>) {
-        if self.agent_sessions.set_active_by_id(id) {
-            self.agent_provider_dropdown_open = false;
-            self.agent_model_dropdown_open = false;
-            self.refresh_agent_model_options(false, cx);
-            cx.notify();
-        }
     }
 
     pub(super) fn set_active_agent_provider(
@@ -283,6 +282,7 @@ impl TerminalView {
         self.agent_sessions.set_active_running(true);
         self.agent_sidebar_input.clear();
         cx.notify();
+        self.schedule_agent_spinner_animation(cx);
 
         let loaded = config::load_runtime_config(
             &mut self.last_config_error_message,
