@@ -9,6 +9,12 @@ fn reorder_active_window_id<'a>(
 }
 
 impl TerminalView {
+    fn warn_stale_tmux_tab_index(action: &str, index: usize, tab_count: usize) {
+        log::warn!(
+            "Ignoring tmux {action} tab request for stale index {index}; current tab count is {tab_count}"
+        );
+    }
+
     pub(in crate::terminal_view) fn run_tmux_action<F>(&self, error_prefix: &str, action: F) -> bool
     where
         F: FnOnce(&TmuxClient) -> anyhow::Result<()>,
@@ -226,6 +232,7 @@ impl TerminalView {
 
     pub(in crate::terminal_view) fn tmux_close_tab(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(window_id) = self.tabs.get(index).map(|tab| tab.window_id.clone()) else {
+            Self::warn_stale_tmux_tab_index("close", index, self.tabs.len());
             return;
         };
         if !self.run_tmux_action("Failed to close tab", |tmux_client| {
@@ -243,6 +250,7 @@ impl TerminalView {
 
     pub(in crate::terminal_view) fn tmux_switch_tab(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some(window_id) = self.tabs.get(index).map(|tab| tab.window_id.clone()) else {
+            Self::warn_stale_tmux_tab_index("switch", index, self.tabs.len());
             return;
         };
         if !self.run_tmux_action("Failed to switch tab", |tmux_client| {
@@ -267,6 +275,7 @@ impl TerminalView {
 
         let renamed = Self::truncate_tab_title(trimmed);
         let Some(window_id) = self.tabs.get(index).map(|tab| tab.window_id.clone()) else {
+            Self::warn_stale_tmux_tab_index("rename", index, self.tabs.len());
             return;
         };
         if self.run_tmux_action("Failed to rename tab", |tmux_client| {

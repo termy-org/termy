@@ -65,6 +65,10 @@ fn terminal_scrollbar_overlay_frame(surface: TerminalViewportGeometry) -> Termin
     }
 }
 
+fn terminal_scrollbar_track_width(frame_width: f32) -> f32 {
+    TERMINAL_SCROLLBAR_TRACK_WIDTH.min(frame_width.max(0.0))
+}
+
 impl Focusable for TerminalView {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -216,8 +220,10 @@ impl TerminalView {
         }
         let overlay_style = self.overlay_style();
         let gutter_bg = overlay_style.panel_background(TERMINAL_SCROLLBAR_GUTTER_ALPHA);
+        let frame = terminal_scrollbar_overlay_frame(surface);
+        let track_width = terminal_scrollbar_track_width(frame.width);
         let style = ScrollbarPaintStyle {
-            width: TERMINAL_SCROLLBAR_TRACK_WIDTH,
+            width: track_width,
             track_radius: TERMINAL_SCROLLBAR_TRACK_RADIUS,
             thumb_radius: TERMINAL_SCROLLBAR_THUMB_RADIUS,
             thumb_inset: TERMINAL_SCROLLBAR_THUMB_INSET,
@@ -239,7 +245,6 @@ impl TerminalView {
         let current_marker_top =
             self.refresh_terminal_scrollbar_marker_cache(layout, TERMINAL_SCROLLBAR_MARKER_HEIGHT);
         let marker_tops = &self.terminal_scrollbar_marker_cache.marker_tops;
-        let frame = terminal_scrollbar_overlay_frame(surface);
 
         Some(
             div()
@@ -256,7 +261,7 @@ impl TerminalView {
                         .top_0()
                         .bottom_0()
                         .right_0()
-                        .w(px(TERMINAL_SCROLLBAR_TRACK_WIDTH))
+                        .w(px(track_width))
                         .child(ui_scrollbar::render_vertical(
                             "terminal-scrollbar",
                             layout.metrics,
@@ -1344,6 +1349,16 @@ mod tests {
         assert_eq!(frame.top, surface.origin_y);
         assert_eq!(frame.width, surface.width);
         assert_eq!(frame.height, surface.height);
+    }
+
+    #[test]
+    fn terminal_scrollbar_track_width_clamps_to_overlay_frame() {
+        assert_eq!(
+            terminal_scrollbar_track_width(TERMINAL_SCROLLBAR_TRACK_WIDTH + 2.0),
+            TERMINAL_SCROLLBAR_TRACK_WIDTH
+        );
+        assert_eq!(terminal_scrollbar_track_width(6.0), 6.0);
+        assert_eq!(terminal_scrollbar_track_width(-2.0), 0.0);
     }
 
     #[test]

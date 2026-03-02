@@ -7,6 +7,10 @@ enum TerminalSelectionCharClass {
     Other,
 }
 
+fn is_hidden_or_spacer(flags: Flags) -> bool {
+    flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN)
+}
+
 fn fill_grid_rows_for_selection(
     terminal: &Terminal,
     min_row: usize,
@@ -21,10 +25,7 @@ fn fill_grid_rows_for_selection(
         if row < min_row || row > max_row || col >= cols {
             return;
         }
-        if cell
-            .flags
-            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN)
-        {
+        if is_hidden_or_spacer(cell.flags) {
             return;
         }
 
@@ -47,10 +48,7 @@ fn row_text_from_terminal(terminal: &Terminal, row: usize, cols: usize) -> Vec<c
             return;
         }
 
-        if cell
-            .flags
-            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN)
-        {
+        if is_hidden_or_spacer(cell.flags) {
             return;
         }
 

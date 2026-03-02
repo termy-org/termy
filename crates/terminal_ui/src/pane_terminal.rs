@@ -47,27 +47,29 @@ impl PaneTerminal {
         }
     }
 
+    fn cloned_term_arc(&self) -> Arc<FairMutex<Term<VoidListener>>> {
+        let inner = self.inner.lock();
+        inner.term.clone()
+    }
+
     pub fn feed_output(&self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }
 
         let mut parser = self.parser.lock();
-        let term = {
-            let inner = self.inner.lock();
-            inner.term.clone()
-        };
+        let term = self.cloned_term_arc();
         let mut term = term.lock();
         parser.advance(&mut *term, bytes);
     }
 
     pub fn resize(&self, new_size: TerminalSize) {
         let new_size = Self::normalized_size(new_size);
-        let term = {
+        {
             let mut inner = self.inner.lock();
             inner.size = new_size;
-            inner.term.clone()
-        };
+        }
+        let term = self.cloned_term_arc();
         term.lock().resize(new_size);
     }
 
@@ -76,10 +78,7 @@ impl PaneTerminal {
     }
 
     pub fn with_term<R>(&self, f: impl FnOnce(&Term<VoidListener>) -> R) -> R {
-        let term = {
-            let inner = self.inner.lock();
-            inner.term.clone()
-        };
+        let term = self.cloned_term_arc();
         // Run callback outside the outer state lock so callbacks can safely call
         // back into PaneTerminal APIs (for example size()) without lock inversion.
         let term = term.lock();
@@ -91,10 +90,7 @@ impl PaneTerminal {
             return false;
         }
 
-        let term = {
-            let inner = self.inner.lock();
-            inner.term.clone()
-        };
+        let term = self.cloned_term_arc();
         let mut term = term.lock();
         let old_offset = term.grid().display_offset();
         term.scroll_display(Scroll::Delta(delta_lines));
@@ -102,10 +98,7 @@ impl PaneTerminal {
     }
 
     pub fn scroll_to_bottom(&self) -> bool {
-        let term = {
-            let inner = self.inner.lock();
-            inner.term.clone()
-        };
+        let term = self.cloned_term_arc();
         let mut term = term.lock();
         let old_offset = term.grid().display_offset();
         if old_offset == 0 {
@@ -116,20 +109,14 @@ impl PaneTerminal {
     }
 
     pub fn scroll_state(&self) -> (usize, usize) {
-        let term = {
-            let inner = self.inner.lock();
-            inner.term.clone()
-        };
+        let term = self.cloned_term_arc();
         let term = term.lock();
         let grid = term.grid();
         (grid.display_offset(), grid.history_size())
     }
 
     pub fn cursor_position(&self) -> (usize, usize) {
-        let term = {
-            let inner = self.inner.lock();
-            inner.term.clone()
-        };
+        let term = self.cloned_term_arc();
         let term = term.lock();
         let cursor = term.grid().cursor.point;
         let row = usize::try_from(cursor.line.0).unwrap_or(0);
@@ -137,13 +124,10 @@ impl PaneTerminal {
     }
 
     pub fn set_scrollback_history(&self, history_size: usize) {
-        let term = {
-            let inner = self.inner.lock();
-            if inner.scrollback_history == history_size {
-                return;
-            }
-            inner.term.clone()
-        };
+        if self.inner.lock().scrollback_history == history_size {
+            return;
+        }
+        let term = self.cloned_term_arc();
         let mut config = TermConfig::default();
         config.scrolling_history = history_size;
         term.lock().set_options(config);
@@ -156,18 +140,12 @@ impl PaneTerminal {
     }
 
     pub fn bracketed_paste_mode(&self) -> bool {
-        let term = {
-            let inner = self.inner.lock();
-            inner.term.clone()
-        };
+        let term = self.cloned_term_arc();
         term.lock().mode().contains(TermMode::BRACKETED_PASTE)
     }
 
     pub fn alternate_screen_mode(&self) -> bool {
-        let term = {
-            let inner = self.inner.lock();
-            inner.term.clone()
-        };
+        let term = self.cloned_term_arc();
         term.lock().mode().contains(TermMode::ALT_SCREEN)
     }
 }

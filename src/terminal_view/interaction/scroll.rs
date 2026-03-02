@@ -13,6 +13,7 @@ enum WheelScrollRetargetResult {
     Unchanged,
     Switched,
     Abort,
+    Ended,
 }
 
 fn terminal_scrollbar_local_y_from_window_y(
@@ -30,6 +31,47 @@ fn terminal_scrollbar_local_y_from_window_y(
 }
 
 impl TerminalView {
+    fn should_attempt_wheel_scroll_retarget(touch_phase: TouchPhase, delta_lines: i32) -> bool {
+        matches!(touch_phase, TouchPhase::Moved) && delta_lines != 0
+    }
+
+    fn wheel_scroll_retarget_result(
+        touch_phase: TouchPhase,
+        delta_lines: i32,
+        attempted_result: WheelScrollRetargetResult,
+    ) -> WheelScrollRetargetResult {
+        if Self::should_attempt_wheel_scroll_retarget(touch_phase, delta_lines) {
+            attempted_result
+        } else {
+            WheelScrollRetargetResult::Ended
+        }
+    }
+
+    fn wheel_scroll_retarget_result_for_decision(
+        decision: WheelScrollPaneDecision,
+        hovered_pane_id: Option<&str>,
+        focus_succeeded: bool,
+        active_pane_id: Option<&str>,
+    ) -> WheelScrollRetargetResult {
+        match decision {
+            WheelScrollPaneDecision::UseActivePane => WheelScrollRetargetResult::Unchanged,
+            WheelScrollPaneDecision::FocusHoveredPane => {
+                let Some(pane_id) = hovered_pane_id else {
+                    return WheelScrollRetargetResult::Unchanged;
+                };
+
+                if !focus_succeeded {
+                    return WheelScrollRetargetResult::Abort;
+                }
+                if active_pane_id == Some(pane_id) {
+                    WheelScrollRetargetResult::Switched
+                } else {
+                    WheelScrollRetargetResult::Abort
+                }
+            }
+        }
+    }
+
     fn consume_suppressed_scroll_event(
         &mut self,
         touch_phase: TouchPhase,
@@ -146,23 +188,17 @@ impl TerminalView {
             self.active_pane_id(),
         );
 
-        match decision {
-            WheelScrollPaneDecision::UseActivePane => WheelScrollRetargetResult::Unchanged,
-            WheelScrollPaneDecision::FocusHoveredPane => {
-                let Some(pane_id) = hovered_pane_id.as_deref() else {
-                    return WheelScrollRetargetResult::Unchanged;
-                };
+        let focus_succeeded = matches!(decision, WheelScrollPaneDecision::FocusHoveredPane)
+            && hovered_pane_id
+                .as_deref()
+                .is_some_and(|pane_id| self.focus_pane_target(pane_id, cx));
 
-                if !self.focus_pane_target(pane_id, cx) {
-                    return WheelScrollRetargetResult::Abort;
-                }
-                if self.active_pane_id() == Some(pane_id) {
-                    WheelScrollRetargetResult::Switched
-                } else {
-                    WheelScrollRetargetResult::Abort
-                }
-            }
-        }
+        Self::wheel_scroll_retarget_result_for_decision(
+            decision,
+            hovered_pane_id.as_deref(),
+            focus_succeeded,
+            self.active_pane_id(),
+        )
     }
 
     pub(in super::super) fn terminal_scrollbar_hit_test(
@@ -328,7 +364,18 @@ impl TerminalView {
         }
 
         cx.stop_propagation();
-        match self.retarget_scroll_wheel_pane(event.position, cx) {
+        let delta_lines = self.terminal_scroll_delta_to_lines(event);
+        let attempted_retarget = if Self::should_attempt_wheel_scroll_retarget(
+            event.touch_phase,
+            delta_lines,
+        ) {
+            self.retarget_scroll_wheel_pane(event.position, cx)
+        } else {
+            WheelScrollRetargetResult::Unchanged
+        };
+        let retarget_result =
+            Self::wheel_scroll_retarget_result(event.touch_phase, delta_lines, attempted_retarget);
+        match retarget_result {
             WheelScrollRetargetResult::Unchanged => {}
             WheelScrollRetargetResult::Switched => {
                 // Avoid carrying fractional wheel residue across pane boundaries.
@@ -338,13 +385,13 @@ impl TerminalView {
                 self.terminal_scroll_accumulator_y = 0.0;
                 return;
             }
+            WheelScrollRetargetResult::Ended => {}
         }
 
         if matches!(event.touch_phase, TouchPhase::Moved) {
             self.mark_terminal_scrollbar_activity(cx);
         }
 
-        let delta_lines = self.terminal_scroll_delta_to_lines(event);
         if delta_lines == 0 {
             return;
         }
@@ -441,6 +488,48 @@ mod tests {
             TerminalView::wheel_scroll_pane_decision(true, Some("%8"), Some("%3")),
             WheelScrollPaneDecision::FocusHoveredPane
         );
+    }
+
+    #[test]
+    fn wheel_scroll_retargets_to_switched() {
+        let decision = TerminalView::wheel_scroll_pane_decision(true, Some("%8"), Some("%3"));
+        let attempted = TerminalView::wheel_scroll_retarget_result_for_decision(
+            decision,
+            Some("%8"),
+            true,
+            Some("%8"),
+        );
+        let retarget =
+            TerminalView::wheel_scroll_retarget_result(TouchPhase::Moved, 1, attempted);
+        assert_eq!(retarget, WheelScrollRetargetResult::Switched);
+    }
+
+    #[test]
+    fn wheel_scroll_retargets_to_abort() {
+        let decision = TerminalView::wheel_scroll_pane_decision(true, Some("%8"), Some("%3"));
+        let attempted = TerminalView::wheel_scroll_retarget_result_for_decision(
+            decision,
+            Some("%8"),
+            false,
+            Some("%3"),
+        );
+        let retarget =
+            TerminalView::wheel_scroll_retarget_result(TouchPhase::Moved, 1, attempted);
+        assert_eq!(retarget, WheelScrollRetargetResult::Abort);
+    }
+
+    #[test]
+    fn wheel_scroll_retargets_to_ended() {
+        let decision = TerminalView::wheel_scroll_pane_decision(true, Some("%8"), Some("%3"));
+        let attempted = TerminalView::wheel_scroll_retarget_result_for_decision(
+            decision,
+            Some("%8"),
+            true,
+            Some("%8"),
+        );
+        let retarget =
+            TerminalView::wheel_scroll_retarget_result(TouchPhase::Ended, 0, attempted);
+        assert_eq!(retarget, WheelScrollRetargetResult::Ended);
     }
 
     #[test]
