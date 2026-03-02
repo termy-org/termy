@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::schema::{
-    ColorSettingId, RootSettingId, color_setting_from_key, color_setting_spec, root_setting_from_key,
-    root_setting_spec,
+    ColorSettingId, RootSettingId, color_setting_from_key, color_setting_spec,
+    root_setting_from_key, root_setting_spec,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,9 +168,9 @@ pub fn apply_color_updates(contents: &str, updates: &[ColorSettingUpdate]) -> St
             if let Some((raw_key, raw_value)) = line.split_once('=')
                 && let Some(id) = color_setting_from_key(raw_key.trim())
             {
-                    if let Some(value) = updates_by_id.get(&id) {
-                        if inserted_ids.contains(&id) {
-                            continue;
+                if let Some(value) = updates_by_id.get(&id) {
+                    if inserted_ids.contains(&id) {
+                        continue;
                     }
                     if let Some(value) = value {
                         out.push(format!("{} = {}", color_setting_spec(id).key, value.trim()));
@@ -216,7 +216,11 @@ fn append_missing_color_updates(
             continue;
         }
         if let Some(value) = value {
-            out.push(format!("{} = {}", color_setting_spec(*id).key, value.trim()));
+            out.push(format!(
+                "{} = {}",
+                color_setting_spec(*id).key,
+                value.trim()
+            ));
             inserted_ids.insert(*id);
         }
     }
@@ -259,7 +263,8 @@ mod tests {
 
     #[test]
     fn remove_root_setting_removes_all_matching_root_entries() {
-        let input = "theme = termy\nshell = /bin/zsh\nshell = /bin/bash\n[colors]\nforeground = #fff\n";
+        let input =
+            "theme = termy\nshell = /bin/zsh\nshell = /bin/bash\n[colors]\nforeground = #fff\n";
         let output = remove_root_setting(input, RootSettingId::Shell);
         assert_eq!(output, "theme = termy\n[colors]\nforeground = #fff\n");
     }

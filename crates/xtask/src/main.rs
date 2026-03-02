@@ -32,7 +32,12 @@ fn run() -> Result<()> {
     match command.as_str() {
         "generate-keybindings-doc" => {
             let contents = render_keybindings_doc();
-            write_or_check(&docs_keybindings_path()?, &contents, check_only, "keybindings docs")
+            write_or_check(
+                &docs_keybindings_path()?,
+                &contents,
+                check_only,
+                "keybindings docs",
+            )
         }
         "generate-config-doc" => {
             let config_doc = render_configuration_doc();
@@ -76,7 +81,8 @@ fn write_or_check(path: &Path, contents: &str, check_only: bool, label: &str) ->
         );
     }
 
-    std::fs::write(path, contents).with_context(|| format!("failed to write {}", path.display()))?;
+    std::fs::write(path, contents)
+        .with_context(|| format!("failed to write {}", path.display()))?;
     println!("updated {}", path.display());
     Ok(())
 }
@@ -90,7 +96,9 @@ fn docs_configuration_path() -> Result<PathBuf> {
 }
 
 fn default_config_template_path() -> Result<PathBuf> {
-    Ok(workspace_root().with_context(|| "workspace root")?.join("crates/config_core/src/default_config.txt"))
+    Ok(workspace_root()
+        .with_context(|| "workspace root")?
+        .join("crates/config_core/src/default_config.txt"))
 }
 
 fn workspace_root() -> Result<PathBuf> {
@@ -180,7 +188,10 @@ fn render_configuration_doc() -> String {
         SettingsSection::Keybindings,
     ] {
         output.push_str(&format!("## {}\n\n", section.label()));
-        for spec in root_setting_specs().iter().filter(|spec| spec.section == section) {
+        for spec in root_setting_specs()
+            .iter()
+            .filter(|spec| spec.section == section)
+        {
             output.push_str(&format!("`{}`\n", spec.key));
             output.push_str(&format!(
                 "- Default: {}\n",
@@ -239,7 +250,9 @@ fn render_default_config_template() -> String {
 
         let value = match spec.id {
             RootSettingId::WorkingDirFallback => "home".to_string(),
-            _ => root_setting_default_value(&defaults, spec.id).unwrap_or_else(|| "none".to_string()),
+            _ => {
+                root_setting_default_value(&defaults, spec.id).unwrap_or_else(|| "none".to_string())
+            }
         };
 
         if should_comment {

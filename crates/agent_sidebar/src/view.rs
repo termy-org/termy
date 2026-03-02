@@ -35,19 +35,14 @@ pub fn render_sidebar(
             // Content (messages) - flex_1 + min_h(0) allows this to shrink and let child scroll
             div()
                 .id("sidebar-content-wrapper")
+                .h_full()
                 .flex_1()
                 .min_h(px(0.0))
-                .overflow_y_scroll()
                 .child(content),
         )
         .child(
             // Composer
-            div()
-                .w_full()
-                .p(px(12.0))
-                .border_t_1()
-                .border_color(sidebar_border)
-                .child(composer),
+            div().w_full().p(px(12.0)).child(composer),
         )
         .into_any()
 }

@@ -84,7 +84,11 @@ impl TerminalView {
                     .h(px(COMMAND_PALETTE_ROW_HEIGHT))
                     .px(px(10.0))
                     .rounded(px(COMMAND_PALETTE_ROW_RADIUS))
-                    .bg(if is_selected { style.selected_bg } else { transparent })
+                    .bg(if is_selected {
+                        style.selected_bg
+                    } else {
+                        transparent
+                    })
                     .border_1()
                     .border_color(if is_selected {
                         style.selected_border

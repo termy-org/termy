@@ -32,7 +32,10 @@ pub(crate) fn command_with_completion_token(command: &str, completion_token: &st
     )
 }
 
-pub(crate) fn split_control_completion_token(output: &str, completion_token: &str) -> Option<String> {
+pub(crate) fn split_control_completion_token(
+    output: &str,
+    completion_token: &str,
+) -> Option<String> {
     if output == completion_token {
         return Some(String::new());
     }

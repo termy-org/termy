@@ -20,7 +20,10 @@ impl TerminalView {
         self.refresh_command_palette_items_for_current_mode(cx);
     }
 
-    fn create_native_runtime_tab_for_size(&self, size: TerminalSize) -> anyhow::Result<TerminalTab> {
+    fn create_native_runtime_tab_for_size(
+        &self,
+        size: TerminalSize,
+    ) -> anyhow::Result<TerminalTab> {
         let terminal = Terminal::new_native(
             size,
             self.configured_working_dir.as_deref(),
@@ -64,10 +67,7 @@ impl TerminalView {
                 if !loaded_binary.is_empty() {
                     self.cached_tmux_binary = Some(loaded_binary.clone());
                 }
-                (
-                    loaded_binary,
-                    loaded.config.tmux_show_active_pane_border,
-                )
+                (loaded_binary, loaded.config.tmux_show_active_pane_border)
             } else {
                 (
                     self.cached_tmux_binary.clone().unwrap_or_default(),
@@ -118,10 +118,7 @@ impl TerminalView {
         };
 
         if self.runtime_uses_tmux()
-            && let Err(error) = self
-                .tmux_runtime()
-                .client
-                .shutdown_default()
+            && let Err(error) = self.tmux_runtime().client.shutdown_default()
         {
             // Switching sessions must be a hard cutover. If the previous client
             // cannot be detached, abort and explicitly cleanup the freshly spawned
@@ -129,8 +126,9 @@ impl TerminalView {
             let new_cleanup_result = tmux_client.shutdown_default();
             match tmux_cutover_cleanup_decision(false, new_cleanup_result.is_ok()) {
                 TmuxCutoverCleanupDecision::AbortOldAndNewCleanupFailure => {
-                    let cleanup_error = new_cleanup_result
-                        .expect_err("new cleanup error must be present when decision is combined failure");
+                    let cleanup_error = new_cleanup_result.expect_err(
+                        "new cleanup error must be present when decision is combined failure",
+                    );
                     termy_toast::error(format!(
                         "failed to cleanup previous tmux client before attach: {error}; \
                          failed to cleanup new tmux client: {cleanup_error}"
@@ -161,11 +159,7 @@ impl TerminalView {
         true
     }
 
-    fn commit_tmux_runtime_to_native(
-        &mut self,
-        native_tab: TerminalTab,
-        cx: &mut Context<Self>,
-    ) {
+    fn commit_tmux_runtime_to_native(&mut self, native_tab: TerminalTab, cx: &mut Context<Self>) {
         self.runtime = RuntimeState::Native;
         self.tabs = vec![native_tab];
         self.active_tab = 0;
@@ -196,7 +190,10 @@ impl TerminalView {
         true
     }
 
-    pub(in crate::terminal_view) fn detach_tmux_runtime_to_native(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(in crate::terminal_view) fn detach_tmux_runtime_to_native(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if !self.runtime_uses_tmux() {
             return false;
         }
@@ -280,7 +277,10 @@ impl TerminalView {
         Ok(())
     }
 
-    pub(in crate::terminal_view) fn reconnect_tmux_runtime(&mut self, next_config: TmuxRuntimeConfig) {
+    pub(in crate::terminal_view) fn reconnect_tmux_runtime(
+        &mut self,
+        next_config: TmuxRuntimeConfig,
+    ) {
         if !self.runtime_uses_tmux() {
             return;
         }
@@ -302,11 +302,7 @@ impl TerminalView {
             Some(self.event_wakeup_tx.clone()),
         ) {
             Ok(next_client) => {
-                if let Err(error) = self
-                    .tmux_runtime()
-                    .client
-                    .shutdown_default()
-                {
+                if let Err(error) = self.tmux_runtime().client.shutdown_default() {
                     let new_cleanup_result = next_client.shutdown_default();
                     match tmux_cutover_cleanup_decision(false, new_cleanup_result.is_ok()) {
                         TmuxCutoverCleanupDecision::AbortOldAndNewCleanupFailure => {

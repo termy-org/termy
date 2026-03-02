@@ -4,9 +4,7 @@ use std::io::{BufRead, BufReader, Write};
 
 use flume::{Receiver, Sender, TrySendError};
 
-use super::super::command::{
-    command_with_completion_token, split_control_completion_token,
-};
+use super::super::command::{command_with_completion_token, split_control_completion_token};
 use super::super::types::{TmuxControlError, TmuxNotification};
 
 use super::{
@@ -15,9 +13,7 @@ use super::{
         append_command_output_chunk, claim_pending_for_command_begin, complete_pending_command,
         map_command_completion_response,
     },
-    coalescer::{
-        NotificationCoalescer, flush_notification_coalescer, signal_fatal_exit,
-    },
+    coalescer::{NotificationCoalescer, flush_notification_coalescer, signal_fatal_exit},
     parser::{ControlStateEvent, ControlStateMachine},
 };
 
@@ -59,14 +55,18 @@ pub(crate) fn spawn_control_threads(
                 Err(TrySendError::Full(pending)) => {
                     complete_pending_command(
                         pending,
-                        Err(TmuxControlError::channel("tmux control pending queue is full")),
+                        Err(TmuxControlError::channel(
+                            "tmux control pending queue is full",
+                        )),
                     );
                     break;
                 }
                 Err(TrySendError::Disconnected(pending)) => {
                     complete_pending_command(
                         pending,
-                        Err(TmuxControlError::channel("tmux control reader is unavailable")),
+                        Err(TmuxControlError::channel(
+                            "tmux control reader is unavailable",
+                        )),
                     );
                     break;
                 }
@@ -115,37 +115,31 @@ pub(crate) fn spawn_control_threads(
         let fail_pending = |pending: PendingCommand, error: TmuxControlError| {
             complete_pending_command(pending, Err(error));
         };
-        let fail_all_pending =
-            |current_command: &mut Option<ActiveControlCommand>,
-             pending_rx: &Receiver<PendingCommand>,
-             error: TmuxControlError| {
-                if let Some(active_command) = current_command.take()
-                    && let ActiveControlCommand::Tracked(tracked) = active_command
-                {
-                    fail_pending(tracked.pending, error.clone());
-                }
-                while let Ok(pending) = pending_rx.try_recv() {
-                    fail_pending(pending, error.clone());
-                }
-            };
-        let fail_with_exit =
-            |current_command: &mut Option<ActiveControlCommand>,
-             pending_rx: &Receiver<PendingCommand>,
-             notifications_tx: &Sender<TmuxNotification>,
-             fatal_exit_tx: &Sender<Option<String>>,
-             notifications: &mut NotificationCoalescer,
-             event_wakeup_tx: Option<&Sender<()>>,
-             error: TmuxControlError| {
-                let exit_reason = Some(error.message.clone());
-                fail_all_pending(current_command, pending_rx, error);
-                signal_fatal_exit(fatal_exit_tx, exit_reason.clone());
-                let _ = notifications.push(TmuxNotification::Exit(exit_reason));
-                let _ = flush_notification_coalescer(
-                    notifications,
-                    notifications_tx,
-                    event_wakeup_tx,
-                );
-            };
+        let fail_all_pending = |current_command: &mut Option<ActiveControlCommand>,
+                                pending_rx: &Receiver<PendingCommand>,
+                                error: TmuxControlError| {
+            if let Some(active_command) = current_command.take()
+                && let ActiveControlCommand::Tracked(tracked) = active_command
+            {
+                fail_pending(tracked.pending, error.clone());
+            }
+            while let Ok(pending) = pending_rx.try_recv() {
+                fail_pending(pending, error.clone());
+            }
+        };
+        let fail_with_exit = |current_command: &mut Option<ActiveControlCommand>,
+                              pending_rx: &Receiver<PendingCommand>,
+                              notifications_tx: &Sender<TmuxNotification>,
+                              fatal_exit_tx: &Sender<Option<String>>,
+                              notifications: &mut NotificationCoalescer,
+                              event_wakeup_tx: Option<&Sender<()>>,
+                              error: TmuxControlError| {
+            let exit_reason = Some(error.message.clone());
+            fail_all_pending(current_command, pending_rx, error);
+            signal_fatal_exit(fatal_exit_tx, exit_reason.clone());
+            let _ = notifications.push(TmuxNotification::Exit(exit_reason));
+            let _ = flush_notification_coalescer(notifications, notifications_tx, event_wakeup_tx);
+        };
 
         loop {
             line.clear();
@@ -229,13 +223,12 @@ pub(crate) fn spawn_control_threads(
 
                     match claim_pending_for_command_begin(&pending_rx) {
                         Ok(Some(pending)) => {
-                            current_command = Some(ActiveControlCommand::Tracked(
-                                TrackedPendingCommand {
+                            current_command =
+                                Some(ActiveControlCommand::Tracked(TrackedPendingCommand {
                                     pending,
                                     output: String::new(),
                                     is_error: false,
-                                },
-                            ));
+                                }));
                         }
                         Ok(None) => {
                             // tmux may emit unsolicited startup/control blocks before the

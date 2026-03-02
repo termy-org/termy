@@ -85,18 +85,20 @@ impl NotificationCoalescer {
                     return Ok(());
                 }
 
-                let mut queued_output_bytes = match self.queued_output_bytes.checked_add(bytes.len()) {
-                    Some(value) => value,
-                    None => {
-                        // The pending byte count overflowed arithmetic bounds. Drop the
-                        // newest burst, request a refresh, and keep the runtime alive.
-                        self.handle_output_backpressure(bytes.len());
-                        return Ok(());
-                    }
-                };
+                let mut queued_output_bytes =
+                    match self.queued_output_bytes.checked_add(bytes.len()) {
+                        Some(value) => value,
+                        None => {
+                            // The pending byte count overflowed arithmetic bounds. Drop the
+                            // newest burst, request a refresh, and keep the runtime alive.
+                            self.handle_output_backpressure(bytes.len());
+                            return Ok(());
+                        }
+                    };
 
                 if queued_output_bytes > self.max_output_bytes {
-                    let mut bytes_to_free = queued_output_bytes.saturating_sub(self.max_output_bytes);
+                    let mut bytes_to_free =
+                        queued_output_bytes.saturating_sub(self.max_output_bytes);
                     while bytes_to_free > 0 {
                         let Some(dropped) = self.drop_oldest_output_chunk() else {
                             break;
@@ -133,7 +135,8 @@ impl NotificationCoalescer {
                     }
                 }
 
-                self.queued.push_back(TmuxNotification::Output { pane_id, bytes });
+                self.queued
+                    .push_back(TmuxNotification::Output { pane_id, bytes });
                 self.queued_output_bytes = queued_output_bytes;
             }
             TmuxNotification::Warning(message) => {
@@ -191,9 +194,9 @@ pub(crate) fn try_send_notification(
         Err(TrySendError::Full(_)) => Err(TmuxControlError::channel(format!(
             "tmux notification queue is full (capacity {NOTIFICATION_QUEUE_BOUND})"
         ))),
-        Err(TrySendError::Disconnected(_)) => {
-            Err(TmuxControlError::channel("tmux notification channel is closed"))
-        }
+        Err(TrySendError::Disconnected(_)) => Err(TmuxControlError::channel(
+            "tmux notification channel is closed",
+        )),
     }
 }
 
@@ -311,13 +314,11 @@ mod tests {
             "backpressure should emit an explicit warning"
         );
         assert!(
-            drained
-                .iter()
-                .any(|notification| matches!(
-                    notification,
-                    TmuxNotification::Output { pane_id, bytes }
-                    if pane_id == "%2" && bytes == b"efgh"
-                )),
+            drained.iter().any(|notification| matches!(
+                notification,
+                TmuxNotification::Output { pane_id, bytes }
+                if pane_id == "%2" && bytes == b"efgh"
+            )),
             "newest output burst should survive after stale-drop cutover"
         );
     }

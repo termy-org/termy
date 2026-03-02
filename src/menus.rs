@@ -1,7 +1,7 @@
 use crate::commands::{CommandAction, CommandMenuEntry, MenuRoot};
-use gpui::{Menu, MenuItem};
 #[cfg(target_os = "macos")]
 use gpui::SystemMenuType;
+use gpui::{Menu, MenuItem};
 use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavailableReason};
 
 const INSTALL_CLI_TITLE: &str = "Install CLI";
@@ -81,7 +81,9 @@ fn menu_item_title(
     match availability.reason {
         // Keep only the requested pane actions visible in native mode and label
         // them explicitly so users understand why those rows are unavailable.
-        Some(CommandUnavailableReason::RequiresTmuxRuntime) => tmux_required_menu_title(entry.action),
+        Some(CommandUnavailableReason::RequiresTmuxRuntime) => {
+            tmux_required_menu_title(entry.action)
+        }
         Some(CommandUnavailableReason::InstallCliAlreadyInstalled) => {
             Some(INSTALL_CLI_INSTALLED_TITLE)
         }
@@ -215,7 +217,10 @@ mod tests {
                 .collect::<Vec<_>>()
         };
 
-        assert_eq!(install_cli_titles(&help_menu_available), [INSTALL_CLI_TITLE]);
+        assert_eq!(
+            install_cli_titles(&help_menu_available),
+            [INSTALL_CLI_TITLE]
+        );
         assert_eq!(
             install_cli_titles(&help_menu_installed),
             [INSTALL_CLI_INSTALLED_TITLE]
@@ -298,16 +303,14 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert!(
-            !all_menu_titles.iter().any(|title| matches!(
-                title.as_str(),
-                "Split Pane Vertical"
-                    | "Split Pane Horizontal"
-                    | "Close Pane"
-                    | "Focus Next Pane"
-                    | "Focus Previous Pane"
-                    | "Toggle Pane Zoom"
-            ))
-        );
+        assert!(!all_menu_titles.iter().any(|title| matches!(
+            title.as_str(),
+            "Split Pane Vertical"
+                | "Split Pane Horizontal"
+                | "Close Pane"
+                | "Focus Next Pane"
+                | "Focus Previous Pane"
+                | "Toggle Pane Zoom"
+        )));
     }
 }

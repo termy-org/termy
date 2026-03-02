@@ -180,8 +180,8 @@ impl Dimensions for PaneTerminal {
 #[cfg(test)]
 mod tests {
     use super::PaneTerminal;
-    use alacritty_terminal::grid::Dimensions;
     use crate::runtime::TerminalSize;
+    use alacritty_terminal::grid::Dimensions;
 
     fn visible_viewport_text(terminal: &PaneTerminal) -> String {
         let size = terminal.size();

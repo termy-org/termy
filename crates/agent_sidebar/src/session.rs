@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub enum AgentProvider {
     OpenAi,
     Gemini,
+    Codex,
 }
 
 impl AgentProvider {
@@ -11,6 +12,7 @@ impl AgentProvider {
         match self {
             Self::OpenAi => "OpenAI",
             Self::Gemini => "Gemini",
+            Self::Codex => "Codex",
         }
     }
 }
@@ -20,6 +22,7 @@ impl From<termy_config_core::AiProvider> for AgentProvider {
         match value {
             termy_config_core::AiProvider::OpenAi => Self::OpenAi,
             termy_config_core::AiProvider::Gemini => Self::Gemini,
+            termy_config_core::AiProvider::Codex => Self::Codex,
         }
     }
 }
@@ -29,6 +32,7 @@ impl From<AgentProvider> for termy_config_core::AiProvider {
         match value {
             AgentProvider::OpenAi => Self::OpenAi,
             AgentProvider::Gemini => Self::Gemini,
+            AgentProvider::Codex => Self::Codex,
         }
     }
 }
@@ -46,6 +50,7 @@ pub struct AgentMessage {
     pub role: AgentMessageRole,
     pub content: String,
     pub streaming: bool,
+    pub created_at: std::time::Instant,
 }
 
 impl AgentMessage {
@@ -54,6 +59,7 @@ impl AgentMessage {
             role,
             content: content.into(),
             streaming: false,
+            created_at: std::time::Instant::now(),
         }
     }
 }
@@ -196,6 +202,7 @@ impl AgentSessionStore {
                 role: AgentMessageRole::Assistant,
                 content: String::new(),
                 streaming: true,
+                created_at: std::time::Instant::now(),
             });
         }
     }

@@ -65,9 +65,8 @@ impl SettingsWindow {
             .iter()
             .map(|(action, trigger)| (action.config_name(), trigger.clone()))
             .collect::<Vec<_>>();
-        entries.sort_unstable_by(|left, right| {
-            left.0.cmp(right.0).then_with(|| left.1.cmp(&right.1))
-        });
+        entries
+            .sort_unstable_by(|left, right| left.0.cmp(right.0).then_with(|| left.1.cmp(&right.1)));
 
         let mut lines = Vec::with_capacity(entries.len() + 1);
         lines.push("clear".to_string());
@@ -77,7 +76,10 @@ impl SettingsWindow {
         lines
     }
 
-    fn persist_action_bindings(&mut self, bindings: &HashMap<CommandId, String>) -> Result<(), String> {
+    fn persist_action_bindings(
+        &mut self,
+        bindings: &HashMap<CommandId, String>,
+    ) -> Result<(), String> {
         let lines = Self::serialize_structured_keybind_lines(bindings);
         config::set_keybind_lines(&lines)?;
         self.config.keybind_lines = lines
@@ -115,12 +117,7 @@ impl SettingsWindow {
         cx.notify();
     }
 
-    fn assign_action_binding(
-        &mut self,
-        action: CommandId,
-        trigger: &str,
-        cx: &mut Context<Self>,
-    ) {
+    fn assign_action_binding(&mut self, action: CommandId, trigger: &str, cx: &mut Context<Self>) {
         let mut bindings = self.effective_action_bindings();
         Self::apply_assignment_with_conflict_resolution(&mut bindings, action, trigger);
 
@@ -354,7 +351,11 @@ impl SettingsWindow {
         let text_muted = self.text_muted();
         let text_secondary = self.text_secondary();
         let binding_hover_bg = if is_capturing { accent_hover } else { hover_bg };
-        let binding_text_color = if is_capturing { text_primary } else { text_secondary };
+        let binding_text_color = if is_capturing {
+            text_primary
+        } else {
+            text_secondary
+        };
 
         div()
             .id(SharedString::from(format!("keybind-row-{}", config_name)))
@@ -368,7 +369,12 @@ impl SettingsWindow {
             .bg(bg_card)
             .border_1()
             .border_color(if is_capturing { accent } else { border_color })
-            .child(self.render_keybinding_row_labels(action_title, config_name, text_primary, text_muted))
+            .child(self.render_keybinding_row_labels(
+                action_title,
+                config_name,
+                text_primary,
+                text_muted,
+            ))
             .child(self.render_keybinding_row_actions(
                 action,
                 binding_display,
@@ -430,7 +436,10 @@ impl SettingsWindow {
             .gap_2()
             .child(
                 div()
-                    .id(SharedString::from(format!("keybind-bind-{}", action.config_name())))
+                    .id(SharedString::from(format!(
+                        "keybind-bind-{}",
+                        action.config_name()
+                    )))
                     .w(px(SETTINGS_CONTROL_WIDTH))
                     .px_3()
                     .py_1()
@@ -454,7 +463,10 @@ impl SettingsWindow {
             )
             .child(
                 div()
-                    .id(SharedString::from(format!("keybind-clear-{}", action.config_name())))
+                    .id(SharedString::from(format!(
+                        "keybind-clear-{}",
+                        action.config_name()
+                    )))
                     .px_3()
                     .py_1()
                     .rounded(px(0.0))
@@ -472,7 +484,10 @@ impl SettingsWindow {
             .into_any_element()
     }
 
-    pub(super) fn render_keybindings_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_keybindings_section(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let keybind_meta = Self::setting_metadata("keybind").expect("missing metadata for keybind");
         let action_bindings = self.effective_action_bindings();
         let rows = Self::bindable_actions()
@@ -502,30 +517,29 @@ impl SettingsWindow {
                         .child("SHORTCUTS"),
                 ),
             )
-            .child(self.wrap_setting_with_scroll_anchor(
-                keybind_meta.key,
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .py_4()
-                            .px_4()
-                            .rounded(px(0.0))
-                            .bg(bg_card)
-                            .border_1()
-                            .border_color(border_color)
-                            .child(div().flex().flex_col().gap_2().children(rows)),
-                    )
-                    .into_any_element(),
-            ))
             .child(
-                div()
-                    .text_xs()
-                    .text_color(text_muted)
-                    .child("Recording writes a structured keybind snapshot (clear + explicit bindings)."),
+                self.wrap_setting_with_scroll_anchor(
+                    keybind_meta.key,
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .py_4()
+                                .px_4()
+                                .rounded(px(0.0))
+                                .bg(bg_card)
+                                .border_1()
+                                .border_color(border_color)
+                                .child(div().flex().flex_col().gap_2().children(rows)),
+                        )
+                        .into_any_element(),
+                ),
             )
+            .child(div().text_xs().text_color(text_muted).child(
+                "Recording writes a structured keybind snapshot (clear + explicit bindings).",
+            ))
     }
 }
 
@@ -538,7 +552,10 @@ mod tests {
     #[test]
     fn bindable_actions_match_command_catalog() {
         let actions = SettingsWindow::bindable_actions();
-        let expected = command_specs().iter().map(|spec| spec.id).collect::<Vec<_>>();
+        let expected = command_specs()
+            .iter()
+            .map(|spec| spec.id)
+            .collect::<Vec<_>>();
         assert_eq!(actions, expected);
     }
 
@@ -560,8 +577,14 @@ mod tests {
         ];
 
         let collapsed = SettingsWindow::collapse_resolved_keybinds_to_single_binding(&resolved);
-        assert_eq!(collapsed.get(&CommandId::Copy), Some(&"ctrl-shift-c".to_string()));
-        assert_eq!(collapsed.get(&CommandId::Paste), Some(&"secondary-v".to_string()));
+        assert_eq!(
+            collapsed.get(&CommandId::Copy),
+            Some(&"ctrl-shift-c".to_string())
+        );
+        assert_eq!(
+            collapsed.get(&CommandId::Paste),
+            Some(&"secondary-v".to_string())
+        );
         assert_eq!(collapsed.len(), 2);
     }
 
@@ -590,7 +613,10 @@ mod tests {
             "secondary-c",
         );
 
-        assert_eq!(bindings.get(&CommandId::Paste), Some(&"secondary-c".to_string()));
+        assert_eq!(
+            bindings.get(&CommandId::Paste),
+            Some(&"secondary-c".to_string())
+        );
         assert!(!bindings.contains_key(&CommandId::Copy));
     }
 

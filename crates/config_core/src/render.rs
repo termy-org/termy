@@ -1,9 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::color_keys::canonical_color_key;
-use crate::schema::{
-    COLOR_SETTING_KEYS, RootSettingId, canonical_root_key, root_setting_specs,
-};
+use crate::schema::{COLOR_SETTING_KEYS, RootSettingId, canonical_root_key, root_setting_specs};
 
 pub const DEFAULT_CONFIG_TEMPLATE: &str = include_str!("default_config.txt");
 

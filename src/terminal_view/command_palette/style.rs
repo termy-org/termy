@@ -1,10 +1,11 @@
 use super::super::{
     COMMAND_PALETTE_INPUT_BG_ALPHA, COMMAND_PALETTE_INPUT_SELECTION_ALPHA,
-    COMMAND_PALETTE_INPUT_SOLID_ALPHA, COMMAND_PALETTE_PANEL_BG_ALPHA, COMMAND_PALETTE_PANEL_SOLID_ALPHA,
-    COMMAND_PALETTE_ROW_SELECTED_BG_ALPHA, COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA,
-    COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA, COMMAND_PALETTE_SHORTCUT_BG_ALPHA,
-    COMMAND_PALETTE_SHORTCUT_TEXT_ALPHA, OVERLAY_MUTED_TEXT_ALPHA, OVERLAY_PRIMARY_TEXT_ALPHA,
-    TAB_STROKE_FOREGROUND_MIX, TerminalView, resolve_chrome_stroke_color,
+    COMMAND_PALETTE_INPUT_SOLID_ALPHA, COMMAND_PALETTE_PANEL_BG_ALPHA,
+    COMMAND_PALETTE_PANEL_SOLID_ALPHA, COMMAND_PALETTE_ROW_SELECTED_BG_ALPHA,
+    COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA, COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA,
+    COMMAND_PALETTE_SHORTCUT_BG_ALPHA, COMMAND_PALETTE_SHORTCUT_TEXT_ALPHA,
+    OVERLAY_MUTED_TEXT_ALPHA, OVERLAY_PRIMARY_TEXT_ALPHA, TAB_STROKE_FOREGROUND_MIX, TerminalView,
+    resolve_chrome_stroke_color,
 };
 
 pub(in super::super) const COMMAND_PALETTE_PANEL_RADIUS: f32 = 0.0;
@@ -58,8 +59,10 @@ impl CommandPaletteStyle {
         let input_selection = overlay_style.panel_cursor(COMMAND_PALETTE_INPUT_SELECTION_ALPHA);
         let shortcut_bg = overlay_style.panel_cursor(COMMAND_PALETTE_SHORTCUT_BG_ALPHA);
         let shortcut_text = overlay_style.panel_foreground(COMMAND_PALETTE_SHORTCUT_TEXT_ALPHA);
-        let scrollbar_track = view.scrollbar_color(overlay_style, COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA);
-        let scrollbar_thumb = view.scrollbar_color(overlay_style, COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA);
+        let scrollbar_track =
+            view.scrollbar_color(overlay_style, COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA);
+        let scrollbar_thumb =
+            view.scrollbar_color(overlay_style, COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA);
 
         Self {
             panel_bg,
@@ -107,11 +110,8 @@ mod tests {
         };
 
         let border = command_palette_border_color(chrome_surface_bg, foreground);
-        let tab_stroke = resolve_chrome_stroke_color(
-            chrome_surface_bg,
-            foreground,
-            TAB_STROKE_FOREGROUND_MIX,
-        );
+        let tab_stroke =
+            resolve_chrome_stroke_color(chrome_surface_bg, foreground, TAB_STROKE_FOREGROUND_MIX);
 
         assert_eq!(border, tab_stroke);
     }

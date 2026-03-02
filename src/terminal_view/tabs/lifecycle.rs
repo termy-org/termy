@@ -62,7 +62,10 @@ impl TerminalView {
         }
     }
 
-    fn close_pane_or_tab_target(runtime_kind: RuntimeKind, pane_count: usize) -> ClosePaneOrTabTarget {
+    fn close_pane_or_tab_target(
+        runtime_kind: RuntimeKind,
+        pane_count: usize,
+    ) -> ClosePaneOrTabTarget {
         if runtime_kind.uses_tmux() && pane_count > 1 {
             ClosePaneOrTabTarget::ClosePane
         } else {
@@ -70,11 +73,7 @@ impl TerminalView {
         }
     }
 
-    fn adjacent_tab_index(
-        active_tab: usize,
-        tab_count: usize,
-        to_right: bool,
-    ) -> Option<usize> {
+    fn adjacent_tab_index(active_tab: usize, tab_count: usize, to_right: bool) -> Option<usize> {
         if tab_count <= 1 || active_tab >= tab_count {
             return None;
         }
@@ -226,8 +225,10 @@ impl TerminalView {
                     self.configured_working_dir.as_deref(),
                     self.terminal_runtime.working_dir_fallback,
                 );
-                let predicted_title =
-                    Self::predicted_prompt_seed_title(&self.tab_title, predicted_prompt_cwd.as_deref());
+                let predicted_title = Self::predicted_prompt_seed_title(
+                    &self.tab_title,
+                    predicted_prompt_cwd.as_deref(),
+                );
 
                 let tab_id = self.allocate_tab_id();
                 self.tabs.push(Self::create_native_tab(
@@ -411,7 +412,10 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let pane_count = self.tabs.get(self.active_tab).map_or(0, |tab| tab.panes.len());
+        let pane_count = self
+            .tabs
+            .get(self.active_tab)
+            .map_or(0, |tab| tab.panes.len());
         match Self::close_pane_or_tab_target(self.runtime_kind(), pane_count) {
             ClosePaneOrTabTarget::ClosePane => self.close_active_pane(cx),
             ClosePaneOrTabTarget::CloseTab => {

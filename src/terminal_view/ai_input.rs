@@ -11,6 +11,13 @@ const AI_INPUT_WIDTH: f32 = 640.0;
 const AI_CONTEXT_LINES: i32 = 50;
 
 impl TerminalView {
+    fn scroll_agent_messages_to_bottom(&mut self) {
+        let max_y: f32 = self.agent_messages_scroll_handle.max_offset().height.into();
+        let offset = self.agent_messages_scroll_handle.offset();
+        self.agent_messages_scroll_handle
+            .set_offset(point(offset.x, px(-max_y.max(0.0))));
+    }
+
     pub(super) fn is_ai_input_open(&self) -> bool {
         self.ai_input_open
     }
@@ -55,14 +62,17 @@ impl TerminalView {
         .unwrap_or_else(|| match configured_provider {
             config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
             config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
+            config::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
         });
 
         self.agent_sessions.new_session(cwd, provider, model);
+        self.scroll_agent_messages_to_bottom();
         cx.notify();
     }
 
     pub(super) fn select_agent_session(&mut self, session_id: u64, cx: &mut Context<Self>) {
         self.agent_sessions.set_active_by_id(session_id);
+        self.scroll_agent_messages_to_bottom();
         cx.notify();
     }
 
@@ -85,6 +95,7 @@ impl TerminalView {
         .unwrap_or_else(|| match configured_provider {
             config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
             config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
+            config::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
         });
 
         self.agent_sessions.ensure_session(cwd, provider, model)
@@ -96,6 +107,7 @@ impl TerminalView {
             .map(|session| match session.provider {
                 termy_agent_sidebar::AgentProvider::OpenAi => config::AiProvider::OpenAi,
                 termy_agent_sidebar::AgentProvider::Gemini => config::AiProvider::Gemini,
+                termy_agent_sidebar::AgentProvider::Codex => config::AiProvider::Codex,
             })
             .unwrap_or(config::AiProvider::OpenAi)
     }
@@ -114,12 +126,14 @@ impl TerminalView {
         let model = match provider {
             config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
             config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
+            config::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
         };
         self.agent_sessions
             .set_active_provider(termy_agent_sidebar::AgentProvider::from(provider));
         self.agent_sessions.set_active_model(model);
         self.agent_provider_dropdown_open = false;
         self.agent_model_dropdown_open = false;
+        self.agent_reasoning_effort_dropdown_open = false;
         self.agent_model_options.clear();
         self.agent_models_loaded_for_api_key = None;
         self.refresh_agent_model_options(true, cx);
@@ -130,6 +144,30 @@ impl TerminalView {
         self.ensure_active_agent_session();
         self.agent_sessions.set_active_model(model);
         self.agent_model_dropdown_open = false;
+        self.agent_reasoning_effort_dropdown_open = false;
+        cx.notify();
+    }
+
+    pub(super) fn set_active_agent_reasoning_effort(
+        &mut self,
+        effort: config::AiReasoningEffort,
+        cx: &mut Context<Self>,
+    ) {
+        self.agent_reasoning_effort = effort;
+        self.agent_reasoning_effort_dropdown_open = false;
+        let value = match effort {
+            config::AiReasoningEffort::None => "none",
+            config::AiReasoningEffort::Minimal => "minimal",
+            config::AiReasoningEffort::Low => "low",
+            config::AiReasoningEffort::Medium => "medium",
+            config::AiReasoningEffort::High => "high",
+            config::AiReasoningEffort::XHigh => "xhigh",
+        };
+        if let Err(error) =
+            config::set_root_setting(termy_config_core::RootSettingId::AiReasoningEffort, value)
+        {
+            termy_toast::error(format!("Failed to save AI reasoning effort: {error}"));
+        }
         cx.notify();
     }
 
@@ -175,8 +213,15 @@ impl TerminalView {
         let api_key = match provider {
             config::AiProvider::OpenAi => loaded.config.openai_api_key,
             config::AiProvider::Gemini => loaded.config.gemini_api_key,
+            config::AiProvider::Codex => Some(loaded.config.codex_api_key.unwrap_or_default()),
         }
-        .filter(|value| !value.trim().is_empty());
+        .filter(|value| {
+            if provider == config::AiProvider::Codex {
+                true
+            } else {
+                !value.trim().is_empty()
+            }
+        });
         let Some(api_key) = api_key else {
             self.agent_model_options.clear();
             self.agent_models_loaded_for_api_key = None;
@@ -208,6 +253,10 @@ impl TerminalView {
                     .fetch_chat_models()
                     .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
                     .map_err(|error| error.to_string()),
+                config::AiProvider::Codex => termy_codex::CodexClient::new(api_key)
+                    .fetch_chat_models()
+                    .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
+                    .map_err(|error| error.to_string()),
             })
             .await;
 
@@ -235,6 +284,7 @@ impl TerminalView {
                                 match request_provider {
                                     config::AiProvider::OpenAi => "OpenAI",
                                     config::AiProvider::Gemini => "Gemini",
+                                    config::AiProvider::Codex => "Codex",
                                 },
                                 error
                             ));
@@ -280,6 +330,7 @@ impl TerminalView {
         self.agent_sessions
             .push_active_message(termy_agent_sidebar::AgentMessageRole::User, text.clone());
         self.agent_sessions.set_active_running(true);
+        self.scroll_agent_messages_to_bottom();
         self.agent_sidebar_input.clear();
         cx.notify();
         self.schedule_agent_spinner_animation(cx);
@@ -292,8 +343,15 @@ impl TerminalView {
         let api_key = match provider_config {
             config::AiProvider::OpenAi => loaded.config.openai_api_key,
             config::AiProvider::Gemini => loaded.config.gemini_api_key,
+            config::AiProvider::Codex => Some(loaded.config.codex_api_key.unwrap_or_default()),
         }
-        .filter(|value| !value.trim().is_empty());
+        .filter(|value| {
+            if provider_config == config::AiProvider::Codex {
+                true
+            } else {
+                !value.trim().is_empty()
+            }
+        });
         let Some(api_key) = api_key else {
             self.agent_sessions.push_active_message(
                 termy_agent_sidebar::AgentMessageRole::Error,
@@ -302,16 +360,27 @@ impl TerminalView {
                     match provider_config {
                         config::AiProvider::OpenAi => "OpenAI",
                         config::AiProvider::Gemini => "Gemini",
+                        config::AiProvider::Codex => "Codex",
                     }
                 ),
             );
             self.agent_sessions.set_active_running(false);
+            self.scroll_agent_messages_to_bottom();
             cx.notify();
             return;
         };
 
         let terminal_context = self.get_terminal_context_for_ai();
         let history = self.agent_sessions.active_history_for_model();
+        let reasoning_effort = match loaded.config.ai_reasoning_effort {
+            config::AiReasoningEffort::None => "none",
+            config::AiReasoningEffort::Minimal => "minimal",
+            config::AiReasoningEffort::Low => "low",
+            config::AiReasoningEffort::Medium => "medium",
+            config::AiReasoningEffort::High => "high",
+            config::AiReasoningEffort::XHigh => "xhigh",
+        }
+        .to_string();
         let (tx, rx) = flume::unbounded::<AgentEvent>();
         let this_weak = cx.entity().downgrade();
         cx.spawn(async move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
@@ -324,32 +393,51 @@ impl TerminalView {
                         match event {
                             AgentEvent::AssistantStart => {
                                 view.agent_sessions.start_active_assistant_stream();
+                                view.scroll_agent_messages_to_bottom();
                             }
                             AgentEvent::AssistantReplace(content) => {
                                 view.agent_sessions
                                     .replace_active_assistant_stream_content(content);
+                                view.scroll_agent_messages_to_bottom();
                             }
                             AgentEvent::AssistantFinish => {
                                 view.agent_sessions.finish_active_assistant_stream();
+                                view.scroll_agent_messages_to_bottom();
                             }
                             AgentEvent::AssistantChunk(chunk) => {
                                 view.agent_sessions.push_active_assistant_chunk(&chunk);
+                                view.scroll_agent_messages_to_bottom();
                             }
                             AgentEvent::ToolOutput(output) => {
-                                view.agent_sessions.push_active_message(
-                                    termy_agent_sidebar::AgentMessageRole::Tool,
-                                    output,
-                                );
+                                let is_codex =
+                                    view.agent_sessions.active_session().is_some_and(|session| {
+                                        session.provider
+                                            == termy_agent_sidebar::AgentProvider::Codex
+                                    });
+                                if is_codex {
+                                    view.agent_sessions.push_active_assistant_chunk(&format!(
+                                        "\n\n[Tool] {}",
+                                        output
+                                    ));
+                                } else {
+                                    view.agent_sessions.push_active_message(
+                                        termy_agent_sidebar::AgentMessageRole::Tool,
+                                        output,
+                                    );
+                                }
+                                view.scroll_agent_messages_to_bottom();
                             }
                             AgentEvent::Error(error) => {
                                 view.agent_sessions.push_active_message(
                                     termy_agent_sidebar::AgentMessageRole::Error,
                                     error,
                                 );
+                                view.scroll_agent_messages_to_bottom();
                             }
                             AgentEvent::Done => {
                                 view.agent_sessions.finish_active_assistant_stream();
                                 view.agent_sessions.set_active_running(false);
+                                view.scroll_agent_messages_to_bottom();
                             }
                         }
                         cx.notify();
@@ -368,18 +456,21 @@ Current terminal context is provided in the latest user message.";
 
             let mut openai_messages = vec![termy_openai::ChatMessage::system(system_prompt)];
             let mut gemini_messages = vec![termy_gemini::ChatMessage::system(system_prompt)];
+            let mut codex_messages = vec![termy_codex::ChatMessage::system(system_prompt)];
             for (role, content) in history {
                 match role.as_str() {
                     "assistant" => {
                         openai_messages.push(termy_openai::ChatMessage::assistant(content.clone()));
                         gemini_messages.push(termy_gemini::ChatMessage {
                             role: "assistant".to_string(),
-                            content: termy_gemini::ChatContent::Text(content),
+                            content: termy_gemini::ChatContent::Text(content.clone()),
                         });
+                        codex_messages.push(termy_codex::ChatMessage::assistant(content));
                     }
                     _ => {
                         openai_messages.push(termy_openai::ChatMessage::user(content.clone()));
-                        gemini_messages.push(termy_gemini::ChatMessage::user(content));
+                        gemini_messages.push(termy_gemini::ChatMessage::user(content.clone()));
+                        codex_messages.push(termy_codex::ChatMessage::user(content));
                     }
                 }
             }
@@ -400,6 +491,14 @@ Current terminal context is provided in the latest user message.";
                     text, terminal_context
                 );
             }
+            if let Some(last) = codex_messages.last_mut()
+                && let termy_codex::ChatContent::Text(text) = &mut last.content
+            {
+                *text = format!(
+                    "{}\n\nTerminal context:\n```\n{}\n```",
+                    text, terminal_context
+                );
+            }
 
             let result = match provider_config {
                 config::AiProvider::OpenAi => {
@@ -409,6 +508,12 @@ Current terminal context is provided in the latest user message.";
                 config::AiProvider::Gemini => {
                     let client = termy_gemini::GeminiClient::new(api_key).with_model(model.clone());
                     run_agent_turn_gemini(&client, &cwd, gemini_messages, &tx)
+                }
+                config::AiProvider::Codex => {
+                    let client = termy_codex::CodexClient::new(api_key)
+                        .with_model(model.clone())
+                        .with_reasoning_effort(Some(reasoning_effort));
+                    run_agent_turn_codex(&client, &cwd, codex_messages, &tx)
                 }
             };
 
@@ -434,13 +539,15 @@ Current terminal context is provided in the latest user message.";
         let api_key = match loaded.config.ai_provider {
             config::AiProvider::OpenAi => loaded.config.openai_api_key,
             config::AiProvider::Gemini => loaded.config.gemini_api_key,
+            config::AiProvider::Codex => Some(loaded.config.codex_api_key.unwrap_or_default()),
         };
         let api_key = match api_key {
-            Some(key) if !key.is_empty() => key,
+            Some(key) if provider == config::AiProvider::Codex || !key.is_empty() => key,
             _ => {
                 let provider_name = match provider {
                     config::AiProvider::OpenAi => "OpenAI",
                     config::AiProvider::Gemini => "Gemini",
+                    config::AiProvider::Codex => "Codex",
                 };
                 termy_toast::error(format!(
                     "{provider_name} API key not configured. Set it in Settings > Advanced > AI."
@@ -455,7 +562,17 @@ Current terminal context is provided in the latest user message.";
             .unwrap_or_else(|| match provider {
                 config::AiProvider::OpenAi => termy_openai::DEFAULT_MODEL.to_string(),
                 config::AiProvider::Gemini => termy_gemini::DEFAULT_MODEL.to_string(),
+                config::AiProvider::Codex => termy_codex::DEFAULT_MODEL.to_string(),
             });
+        let reasoning_effort = match loaded.config.ai_reasoning_effort {
+            config::AiReasoningEffort::None => "none",
+            config::AiReasoningEffort::Minimal => "minimal",
+            config::AiReasoningEffort::Low => "low",
+            config::AiReasoningEffort::Medium => "medium",
+            config::AiReasoningEffort::High => "high",
+            config::AiReasoningEffort::XHigh => "xhigh",
+        }
+        .to_string();
 
         // Get terminal context
         let terminal_context = self.get_terminal_context_for_ai();
@@ -480,6 +597,14 @@ Current terminal context is provided in the latest user message.";
                 }
                 config::AiProvider::Gemini => {
                     let client = termy_gemini::GeminiClient::new(api_key).with_model(model);
+                    client
+                        .message_with_terminal_context(&user_message, &terminal_context)
+                        .map_err(|error| error.to_string())
+                }
+                config::AiProvider::Codex => {
+                    let client = termy_codex::CodexClient::new(api_key)
+                        .with_model(model)
+                        .with_reasoning_effort(Some(reasoning_effort));
                     client
                         .message_with_terminal_context(&user_message, &terminal_context)
                         .map_err(|error| error.to_string())
@@ -746,6 +871,30 @@ fn run_agent_turn_gemini(
         return Ok(());
     }
 
+    Ok(())
+}
+
+fn run_agent_turn_codex(
+    client: &termy_codex::CodexClient,
+    _cwd: &str,
+    messages: Vec<termy_codex::ChatMessage>,
+    tx: &flume::Sender<AgentEvent>,
+) -> Result<(), String> {
+    let _ = tx.send(AgentEvent::AssistantStart);
+    client
+        .chat_stream_with_tool_updates(
+            messages,
+            |chunk| {
+                let _ = tx.send(AgentEvent::AssistantChunk(chunk.to_string()));
+            },
+            |tool_update| {
+                let trimmed = tool_update.trim();
+                if !trimmed.is_empty() {
+                    let _ = tx.send(AgentEvent::ToolOutput(trimmed.to_string()));
+                }
+            },
+        )
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 

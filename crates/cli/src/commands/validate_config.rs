@@ -173,7 +173,11 @@ mod tests {
              keybind = secondary-c=copy\n",
         );
 
-        assert!(report.errors.is_empty(), "unexpected errors: {:?}", report.errors);
+        assert!(
+            report.errors.is_empty(),
+            "unexpected errors: {:?}",
+            report.errors
+        );
         assert!(
             report.warnings.iter().any(|warning| {
                 warning.contains("Line 2:")
@@ -184,7 +188,10 @@ mod tests {
             report.warnings
         );
         assert!(
-            !report.warnings.iter().any(|warning| warning.contains("copy")),
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("copy")),
             "non-tmux keybind should not warn: {:?}",
             report.warnings
         );
@@ -197,7 +204,15 @@ mod tests {
              keybind = secondary-d=split_pane_vertical\n",
         );
 
-        assert!(report.errors.is_empty(), "unexpected errors: {:?}", report.errors);
-        assert!(report.warnings.is_empty(), "unexpected warnings: {:?}", report.warnings);
+        assert!(
+            report.errors.is_empty(),
+            "unexpected errors: {:?}",
+            report.errors
+        );
+        assert!(
+            report.warnings.is_empty(),
+            "unexpected warnings: {:?}",
+            report.warnings
+        );
     }
 }

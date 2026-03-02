@@ -37,8 +37,10 @@ pub(super) enum EditableField {
     WindowWidth,
     WindowHeight,
     AiProvider,
+    AiReasoningEffort,
     OpenaiApiKey,
     GeminiApiKey,
+    CodexApiKey,
     OpenaiModel,
     ChatSidebarWidth,
     Color(termy_config_core::ColorSettingId),
@@ -126,7 +128,7 @@ impl SettingsWindow {
     pub(super) fn is_secret_field(field: EditableField) -> bool {
         matches!(
             field,
-            EditableField::OpenaiApiKey | EditableField::GeminiApiKey
+            EditableField::OpenaiApiKey | EditableField::GeminiApiKey | EditableField::CodexApiKey
         )
     }
 
@@ -252,8 +254,10 @@ impl SettingsWindow {
             RootSettingId::WindowWidth,
             RootSettingId::WindowHeight,
             RootSettingId::AiProvider,
+            RootSettingId::AiReasoningEffort,
             RootSettingId::OpenaiApiKey,
             RootSettingId::GeminiApiKey,
+            RootSettingId::CodexApiKey,
             RootSettingId::OpenaiModel,
             RootSettingId::ChatSidebarWidth,
         ];
@@ -399,8 +403,10 @@ impl SettingsWindow {
             | EditableField::WindowWidth
             | EditableField::WindowHeight
             | EditableField::AiProvider
+            | EditableField::AiReasoningEffort
             | EditableField::OpenaiApiKey
             | EditableField::GeminiApiKey
+            | EditableField::CodexApiKey
             | EditableField::OpenaiModel
             | EditableField::ChatSidebarWidth => Self::advanced_field_spec(field),
             EditableField::Color(_) => FieldSpec {
@@ -569,8 +575,12 @@ impl SettingsWindow {
                 },
             ),
             EditableField::AiProvider => Self::enum_field_spec(RootSettingId::AiProvider),
+            EditableField::AiReasoningEffort => {
+                Self::enum_field_spec(RootSettingId::AiReasoningEffort)
+            }
             EditableField::OpenaiApiKey => Self::text_field_spec(Some(RootSettingId::OpenaiApiKey)),
             EditableField::GeminiApiKey => Self::text_field_spec(Some(RootSettingId::GeminiApiKey)),
+            EditableField::CodexApiKey => Self::text_field_spec(Some(RootSettingId::CodexApiKey)),
             EditableField::OpenaiModel => FieldSpec {
                 root_setting: Some(RootSettingId::OpenaiModel),
                 codec: FieldCodec::OpenAiModel,
@@ -945,9 +955,19 @@ impl SettingsWindow {
             EditableField::AiProvider => match self.config.ai_provider {
                 termy_config_core::AiProvider::OpenAi => "openai".to_string(),
                 termy_config_core::AiProvider::Gemini => "gemini".to_string(),
+                termy_config_core::AiProvider::Codex => "codex".to_string(),
+            },
+            EditableField::AiReasoningEffort => match self.config.ai_reasoning_effort {
+                termy_config_core::AiReasoningEffort::None => "none".to_string(),
+                termy_config_core::AiReasoningEffort::Minimal => "minimal".to_string(),
+                termy_config_core::AiReasoningEffort::Low => "low".to_string(),
+                termy_config_core::AiReasoningEffort::Medium => "medium".to_string(),
+                termy_config_core::AiReasoningEffort::High => "high".to_string(),
+                termy_config_core::AiReasoningEffort::XHigh => "xhigh".to_string(),
             },
             EditableField::OpenaiApiKey => self.config.openai_api_key.clone().unwrap_or_default(),
             EditableField::GeminiApiKey => self.config.gemini_api_key.clone().unwrap_or_default(),
+            EditableField::CodexApiKey => self.config.codex_api_key.clone().unwrap_or_default(),
             EditableField::OpenaiModel => {
                 self.config
                     .openai_model
@@ -958,6 +978,9 @@ impl SettingsWindow {
                         }
                         termy_config_core::AiProvider::Gemini => {
                             termy_gemini::DEFAULT_MODEL.to_string()
+                        }
+                        termy_config_core::AiProvider::Codex => {
+                            termy_codex::DEFAULT_MODEL.to_string()
                         }
                     })
             }
@@ -1257,8 +1280,10 @@ mod tests {
             EditableField::WindowWidth,
             EditableField::WindowHeight,
             EditableField::AiProvider,
+            EditableField::AiReasoningEffort,
             EditableField::OpenaiApiKey,
             EditableField::GeminiApiKey,
+            EditableField::CodexApiKey,
             EditableField::OpenaiModel,
             EditableField::ChatSidebarWidth,
             EditableField::Color(termy_config_core::ColorSettingId::Foreground),
@@ -1287,6 +1312,7 @@ mod tests {
             EditableField::TabWidthMode,
             EditableField::WorkingDirFallback,
             EditableField::AiProvider,
+            EditableField::AiReasoningEffort,
         ];
 
         for field in enum_fields {

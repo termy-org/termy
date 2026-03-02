@@ -33,7 +33,8 @@ mod tests {
     fn searchable(metadata: &'static SettingMetadata) -> SearchableSetting {
         let title_lower = metadata.title.to_ascii_lowercase();
         let description_lower = metadata.description.to_ascii_lowercase();
-        let section_lower = SettingsWindow::settings_section_label(metadata.section).to_ascii_lowercase();
+        let section_lower =
+            SettingsWindow::settings_section_label(metadata.section).to_ascii_lowercase();
         let keywords_lower = metadata.keywords.join(" ").to_ascii_lowercase();
         let haystack_lower = format!(
             "{} {} {} {}",
@@ -181,7 +182,8 @@ impl SettingsWindow {
         self.capturing_action = None;
         self.blur_sidebar_search();
         self.scroll_animation_token = self.scroll_animation_token.wrapping_add(1);
-        self.content_scroll_handle.set_offset(point(px(0.0), px(0.0)));
+        self.content_scroll_handle
+            .set_offset(point(px(0.0), px(0.0)));
         self.request_scrollbar_refresh_frames(3, window, cx);
     }
 
@@ -258,7 +260,10 @@ impl SettingsWindow {
             .collect()
     }
 
-    pub(super) fn searchable_setting_by_key(&self, key: &'static str) -> Option<&SearchableSetting> {
+    pub(super) fn searchable_setting_by_key(
+        &self,
+        key: &'static str,
+    ) -> Option<&SearchableSetting> {
         let index = self.searchable_setting_indices.get(key).copied()?;
         self.searchable_settings.get(index)
     }
@@ -450,7 +455,11 @@ impl SettingsWindow {
         cx.notify();
     }
 
-    pub(super) fn jump_to_first_search_result(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn jump_to_first_search_result(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(first_key) = self
             .sidebar_search_results(1)
             .into_iter()
@@ -475,7 +484,11 @@ impl SettingsWindow {
         })
     }
 
-    pub(super) fn refresh_search_navigation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn refresh_search_navigation(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.sidebar_search_active
             && self.active_input.is_none()
             && !self.sidebar_search_state.text().trim().is_empty()
@@ -611,7 +624,11 @@ impl SettingsWindow {
             .rounded(px(0.0))
             .bg(bg_input)
             .border_1()
-            .border_color(if is_active { accent.into() } else { border_color })
+            .border_color(if is_active {
+                accent.into()
+            } else {
+                border_color
+            })
             .overflow_hidden()
             .cursor_text()
             .flex()
@@ -691,13 +708,8 @@ impl SettingsWindow {
             format!("{total_results} matches")
         };
 
-        let mut container = div().child(
-            div()
-                .px_1()
-                .text_xs()
-                .text_color(text_muted)
-                .child(summary),
-        );
+        let mut container =
+            div().child(div().px_1().text_xs().text_color(text_muted).child(summary));
         if total_results == 0 {
             return container.into_any_element();
         }
@@ -723,12 +735,7 @@ impl SettingsWindow {
                             .text_color(text_secondary)
                             .child(setting.metadata.title),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(text_muted)
-                            .child(section_label),
-                    )
+                    .child(div().text_xs().text_color(text_muted).child(section_label))
                     .on_click(cx.listener(move |view, _, window, cx| {
                         view.jump_to_setting(key, window, cx);
                     })),
@@ -840,5 +847,4 @@ impl SettingsWindow {
                 }),
             )
     }
-
 }

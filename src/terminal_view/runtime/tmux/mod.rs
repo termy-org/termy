@@ -180,6 +180,9 @@ mod tests {
         ];
         let message = tmux_hydration_warning_message(&failures).expect("warning expected");
         assert!(message.contains("4 pane(s)"));
-        assert!(message.contains("%1 (capture timeout), %2 (capture timeout), %3 (capture timeout), ..."));
+        assert!(
+            message
+                .contains("%1 (capture timeout), %2 (capture timeout), %3 (capture timeout), ...")
+        );
     }
 }

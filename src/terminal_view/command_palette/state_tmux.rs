@@ -46,14 +46,16 @@ impl CommandPaletteItem {
             "{}  ({} window{}, {} attached)  [{socket_label}]",
             row.summary.name,
             row.summary.window_count,
-            if row.summary.window_count == 1 { "" } else { "s" },
+            if row.summary.window_count == 1 {
+                ""
+            } else {
+                "s"
+            },
             row.summary.attached_clients
         )
     }
 
-    pub(super) fn tmux_session_attach_or_switch(
-        row: &TmuxSessionRow,
-    ) -> Self {
+    pub(super) fn tmux_session_attach_or_switch(row: &TmuxSessionRow) -> Self {
         let title = Self::tmux_session_title(row);
         let socket_label = Self::tmux_socket_label(&row.socket_target);
         let keywords = format!(
@@ -270,13 +272,10 @@ impl CommandPaletteState {
         create_socket_target: TmuxSocketTarget,
     ) {
         rows.sort_unstable_by(|left, right| {
-            left.summary
-                .name
-                .cmp(&right.summary.name)
-                .then_with(|| {
-                    CommandPaletteItem::tmux_socket_label(&left.socket_target)
-                        .cmp(&CommandPaletteItem::tmux_socket_label(&right.socket_target))
-                })
+            left.summary.name.cmp(&right.summary.name).then_with(|| {
+                CommandPaletteItem::tmux_socket_label(&left.socket_target)
+                    .cmp(&CommandPaletteItem::tmux_socket_label(&right.socket_target))
+            })
         });
         rows.dedup_by(|left, right| {
             left.summary.name == right.summary.name && left.socket_target == right.socket_target
@@ -312,13 +311,10 @@ impl CommandPaletteState {
                     return utility_items;
                 }
 
-                let exact_match = self
-                    .tmux_session_rows
-                    .iter()
-                    .any(|row| {
-                        row.summary.name.eq_ignore_ascii_case(query)
-                            && row.socket_target == self.tmux_create_socket_target
-                    });
+                let exact_match = self.tmux_session_rows.iter().any(|row| {
+                    row.summary.name.eq_ignore_ascii_case(query)
+                        && row.socket_target == self.tmux_create_socket_target
+                });
                 if !exact_match {
                     items.push(CommandPaletteItem::tmux_session_create_and_attach(
                         query,
@@ -543,7 +539,12 @@ mod tests {
         let items = state.tmux_session_items_for_query("", None);
         let attach_rows = items
             .iter()
-            .filter(|item| matches!(item.kind, CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }))
+            .filter(|item| {
+                matches!(
+                    item.kind,
+                    CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }
+                )
+            })
             .count();
         assert_eq!(attach_rows, 2);
     }
@@ -563,7 +564,12 @@ mod tests {
         let items = state.tmux_session_items_for_query("", None);
         let attach_rows = items
             .iter()
-            .filter(|item| matches!(item.kind, CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }))
+            .filter(|item| {
+                matches!(
+                    item.kind,
+                    CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }
+                )
+            })
             .count();
         assert_eq!(attach_rows, 2);
     }
@@ -628,18 +634,21 @@ mod tests {
         );
 
         let items = state.tmux_session_items_for_query("", None);
-        assert!(!items.iter().any(|item| matches!(
-            item.kind,
-            CommandPaletteItemKind::TmuxSessionDetachCurrent
-        )));
-        assert!(items.iter().any(|item| matches!(
-            item.kind,
-            CommandPaletteItemKind::TmuxSessionOpenRenameMode
-        )));
-        assert!(items.iter().any(|item| matches!(
-            item.kind,
-            CommandPaletteItemKind::TmuxSessionOpenKillMode
-        )));
+        assert!(
+            !items
+                .iter()
+                .any(|item| matches!(item.kind, CommandPaletteItemKind::TmuxSessionDetachCurrent))
+        );
+        assert!(
+            items
+                .iter()
+                .any(|item| matches!(item.kind, CommandPaletteItemKind::TmuxSessionOpenRenameMode))
+        );
+        assert!(
+            items
+                .iter()
+                .any(|item| matches!(item.kind, CommandPaletteItemKind::TmuxSessionOpenKillMode))
+        );
     }
 
     #[test]

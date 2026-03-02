@@ -173,9 +173,14 @@ impl TerminalView {
 
         // Preserve previously active tab identity when reordering an inactive tab.
         // Native runtime already behaves this way via index remapping.
-        let active_target_window_id =
-            reorder_active_window_id(previous_active_window_id.as_deref(), moved_window_id.as_str());
-        if let Some(index) = self.tabs.iter().position(|tab| tab.window_id == active_target_window_id)
+        let active_target_window_id = reorder_active_window_id(
+            previous_active_window_id.as_deref(),
+            moved_window_id.as_str(),
+        );
+        if let Some(index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.window_id == active_target_window_id)
         {
             self.active_tab = index;
         }
@@ -206,7 +211,9 @@ impl TerminalView {
         &mut self,
         cx: &mut Context<Self>,
     ) -> bool {
-        if !self.run_tmux_action("Failed to switch tab", |tmux_client| tmux_client.next_window()) {
+        if !self.run_tmux_action("Failed to switch tab", |tmux_client| {
+            tmux_client.next_window()
+        }) {
             return false;
         }
         let refreshed = self.refresh_tmux_snapshot();
@@ -220,7 +227,10 @@ impl TerminalView {
     }
 
     pub(in crate::terminal_view) fn tmux_add_tab(&mut self, cx: &mut Context<Self>) {
-        let Some(active_window_id) = self.tabs.get(self.active_tab).map(|tab| tab.window_id.clone())
+        let Some(active_window_id) = self
+            .tabs
+            .get(self.active_tab)
+            .map(|tab| tab.window_id.clone())
         else {
             termy_toast::error("Failed to create tab: active tmux window is unavailable");
             return;
@@ -238,7 +248,11 @@ impl TerminalView {
         }
     }
 
-    pub(in crate::terminal_view) fn tmux_close_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+    pub(in crate::terminal_view) fn tmux_close_tab(
+        &mut self,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) {
         let Some(window_id) = self.tabs.get(index).map(|tab| tab.window_id.clone()) else {
             Self::warn_stale_tmux_tab_index("close", index, self.tabs.len());
             return;
@@ -257,7 +271,11 @@ impl TerminalView {
         }
     }
 
-    pub(in crate::terminal_view) fn tmux_switch_tab(&mut self, index: usize, cx: &mut Context<Self>) {
+    pub(in crate::terminal_view) fn tmux_switch_tab(
+        &mut self,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) {
         let Some(window_id) = self.tabs.get(index).map(|tab| tab.window_id.clone()) else {
             Self::warn_stale_tmux_tab_index("switch", index, self.tabs.len());
             return;
@@ -323,9 +341,13 @@ impl TerminalView {
             return false;
         };
 
-        self.run_tmux_action_with_refresh(error_prefix, refresh, clear_selection, cx, |tmux_client| {
-            action(tmux_client, pane_id.as_str())
-        })
+        self.run_tmux_action_with_refresh(
+            error_prefix,
+            refresh,
+            clear_selection,
+            cx,
+            |tmux_client| action(tmux_client, pane_id.as_str()),
+        )
     }
 
     pub(in crate::terminal_view) fn tmux_split_active_pane_vertical(
@@ -354,7 +376,10 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal_view) fn tmux_close_active_pane(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(in crate::terminal_view) fn tmux_close_active_pane(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.with_active_pane_action(
             "Failed to close pane",
             TmuxPostActionRefresh::ImmediateSnapshot,
@@ -364,7 +389,10 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal_view) fn tmux_focus_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(in crate::terminal_view) fn tmux_focus_pane_left(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.with_active_pane_action(
             "Failed to focus pane",
             TmuxPostActionRefresh::EventDriven,
@@ -374,7 +402,10 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal_view) fn tmux_focus_pane_right(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(in crate::terminal_view) fn tmux_focus_pane_right(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.with_active_pane_action(
             "Failed to focus pane",
             TmuxPostActionRefresh::EventDriven,
@@ -394,7 +425,10 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal_view) fn tmux_focus_pane_down(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(in crate::terminal_view) fn tmux_focus_pane_down(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.with_active_pane_action(
             "Failed to focus pane",
             TmuxPostActionRefresh::EventDriven,
@@ -404,7 +438,10 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal_view) fn tmux_resize_pane_left(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(in crate::terminal_view) fn tmux_resize_pane_left(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.with_active_pane_action(
             "Failed to resize pane",
             TmuxPostActionRefresh::EventDriven,
@@ -414,7 +451,10 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal_view) fn tmux_resize_pane_right(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(in crate::terminal_view) fn tmux_resize_pane_right(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.with_active_pane_action(
             "Failed to resize pane",
             TmuxPostActionRefresh::EventDriven,
@@ -434,7 +474,10 @@ impl TerminalView {
         )
     }
 
-    pub(in crate::terminal_view) fn tmux_resize_pane_down(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(in crate::terminal_view) fn tmux_resize_pane_down(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.with_active_pane_action(
             "Failed to resize pane",
             TmuxPostActionRefresh::EventDriven,

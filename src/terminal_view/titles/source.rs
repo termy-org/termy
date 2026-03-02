@@ -212,8 +212,7 @@ impl TerminalView {
     pub(crate) fn resolved_tab_title(&self, index: usize) -> String {
         let tab = &self.tabs[index];
         let fallback_title = self.fallback_title();
-        let smart_mode_shell_fallback =
-            Self::smart_mode_shell_fallback_enabled(&self.tab_title);
+        let smart_mode_shell_fallback = Self::smart_mode_shell_fallback_enabled(&self.tab_title);
 
         for source in &self.tab_title.priority {
             let candidate = Self::title_source_candidate(

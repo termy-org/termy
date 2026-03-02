@@ -304,7 +304,8 @@ fn utf8_locale_from_candidate(locale: &str) -> Option<String> {
         return None;
     }
 
-    let mut utf8_locale = String::with_capacity(base.len() + ".UTF-8".len() + modifier.map_or(0, |m| m.len() + 1));
+    let mut utf8_locale =
+        String::with_capacity(base.len() + ".UTF-8".len() + modifier.map_or(0, |m| m.len() + 1));
     utf8_locale.push_str(base);
     utf8_locale.push_str(".UTF-8");
     if let Some(modifier) = modifier {
@@ -315,7 +316,11 @@ fn utf8_locale_from_candidate(locale: &str) -> Option<String> {
 }
 
 #[cfg(unix)]
-fn preferred_utf8_locale(lc_all: Option<&str>, lc_ctype: Option<&str>, lang: Option<&str>) -> String {
+fn preferred_utf8_locale(
+    lc_all: Option<&str>,
+    lc_ctype: Option<&str>,
+    lang: Option<&str>,
+) -> String {
     [lc_all, lc_ctype, lang]
         .into_iter()
         .flatten()
@@ -340,8 +345,8 @@ fn utf8_locale_override_plan(
     // Follow POSIX locale precedence for classification decisions:
     // LC_ALL overrides LC_CTYPE and LANG; LC_CTYPE overrides LANG.
     // We therefore evaluate UTF-8 status from only the single effective locale.
-    let has_utf8_locale = effective_locale_for_decision(lc_all, lc_ctype, lang)
-        .is_some_and(locale_has_utf8_tag);
+    let has_utf8_locale =
+        effective_locale_for_decision(lc_all, lc_ctype, lang).is_some_and(locale_has_utf8_tag);
     if has_utf8_locale {
         return Utf8LocaleOverridePlan::None;
     }
@@ -371,7 +376,8 @@ fn apply_utf8_locale_overrides(env_overrides: &mut HashMap<String, String>) {
     let lc_all = env::var("LC_ALL").ok();
     let lc_ctype = env::var("LC_CTYPE").ok();
     let lang = env::var("LANG").ok();
-    let target_utf8_locale = preferred_utf8_locale(lc_all.as_deref(), lc_ctype.as_deref(), lang.as_deref());
+    let target_utf8_locale =
+        preferred_utf8_locale(lc_all.as_deref(), lc_ctype.as_deref(), lang.as_deref());
 
     // zsh prompt width calculations rely on libc wcwidth + locale. If the shell
     // starts in C/POSIX/non-UTF-8 locale, multibyte prompt glyphs (e.g. U+276F)
@@ -756,7 +762,10 @@ impl Drop for Terminal {
 ///
 /// `prompt_shortcuts_enabled` should be false for alternate-screen TUIs to avoid
 /// remapping non-macOS Ctrl+special keys to readline-style prompt editing bytes.
-pub fn keystroke_to_input(keystroke: &Keystroke, prompt_shortcuts_enabled: bool) -> Option<Vec<u8>> {
+pub fn keystroke_to_input(
+    keystroke: &Keystroke,
+    prompt_shortcuts_enabled: bool,
+) -> Option<Vec<u8>> {
     if let Some(modified_input) =
         modified_special_keystroke_input(keystroke, prompt_shortcuts_enabled)
     {
@@ -905,6 +914,12 @@ fn is_plain_control(modifiers: Modifiers) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    use super::quote_shell_program_if_needed;
+    use super::{
+        DEFAULT_TERM, TerminalRuntimeConfig, TerminalSize, keystroke_to_input, pty_env_overrides,
+        resolve_shell_path,
+    };
     use alacritty_terminal::{
         event::VoidListener,
         grid::Dimensions,
@@ -912,12 +927,6 @@ mod tests {
         vte::ansi,
     };
     use gpui::{Keystroke, Modifiers, px};
-    #[cfg(target_os = "windows")]
-    use super::quote_shell_program_if_needed;
-    use super::{
-        DEFAULT_TERM, TerminalRuntimeConfig, TerminalSize, keystroke_to_input, pty_env_overrides,
-        resolve_shell_path,
-    };
 
     fn cursor_after_bytes(input: &[u8]) -> (usize, i32) {
         let size = TerminalSize {
@@ -1103,9 +1112,18 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(keystroke_to_input(&keystroke("a", control), true), Some(vec![0x01]));
-        assert_eq!(keystroke_to_input(&keystroke("c", control), true), Some(vec![0x03]));
-        assert_eq!(keystroke_to_input(&keystroke("z", control), true), Some(vec![0x1a]));
+        assert_eq!(
+            keystroke_to_input(&keystroke("a", control), true),
+            Some(vec![0x01])
+        );
+        assert_eq!(
+            keystroke_to_input(&keystroke("c", control), true),
+            Some(vec![0x03])
+        );
+        assert_eq!(
+            keystroke_to_input(&keystroke("z", control), true),
+            Some(vec![0x1a])
+        );
     }
 
     #[test]
@@ -1251,7 +1269,11 @@ mod tests {
     #[test]
     fn preferred_utf8_locale_preserves_lang_region_from_lc_all() {
         assert_eq!(
-            super::preferred_utf8_locale(Some("fr_FR.ISO8859-1"), Some("C"), Some("en_US.ISO8859-1")),
+            super::preferred_utf8_locale(
+                Some("fr_FR.ISO8859-1"),
+                Some("C"),
+                Some("en_US.ISO8859-1")
+            ),
             "fr_FR.UTF-8"
         );
     }

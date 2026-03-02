@@ -108,7 +108,10 @@ fn decode_snapshot_field(value: &str) -> Result<String> {
                     .get(index..index + 3)
                     .ok_or_else(|| anyhow!("invalid octal escape in snapshot field '{}'", value))?;
                 if !octal.iter().all(|digit| (b'0'..=b'7').contains(digit)) {
-                    return Err(anyhow!("invalid octal escape in snapshot field '{}'", value));
+                    return Err(anyhow!(
+                        "invalid octal escape in snapshot field '{}'",
+                        value
+                    ));
                 }
                 let decoded =
                     ((octal[0] - b'0') << 6) | ((octal[1] - b'0') << 3) | (octal[2] - b'0');
@@ -172,12 +175,8 @@ pub(crate) fn parse_session_summaries(output: &str) -> Result<Vec<TmuxSessionSum
         let [name, id, window_count, attached_clients] =
             parse_snapshot_fields::<4>(line, "session")?;
         let window_count = parse_snapshot_u16(&window_count, "session_windows", "session", line)?;
-        let attached_clients = parse_snapshot_u16(
-            &attached_clients,
-            "session_attached",
-            "session",
-            line,
-        )?;
+        let attached_clients =
+            parse_snapshot_u16(&attached_clients, "session_attached", "session", line)?;
         sessions.push(TmuxSessionSummary {
             name,
             id,
@@ -189,7 +188,11 @@ pub(crate) fn parse_session_summaries(output: &str) -> Result<Vec<TmuxSessionSum
     Ok(sessions)
 }
 
-pub(crate) fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> Result<TmuxSnapshot> {
+pub(crate) fn parse_snapshot(
+    session_name: &str,
+    windows: &str,
+    panes: &str,
+) -> Result<TmuxSnapshot> {
     let mut panes_by_window: HashMap<String, Vec<TmuxPaneState>> = HashMap::new();
     let mut session_id = None::<String>;
 
@@ -241,8 +244,14 @@ pub(crate) fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> 
 
     let mut parsed_windows = Vec::new();
     for line in windows.lines().filter(|line| !line.trim().is_empty()) {
-        let [window_id, window_index, name, layout, window_active, automatic_rename] =
-            parse_snapshot_fields::<6>(line, "window")?;
+        let [
+            window_id,
+            window_index,
+            name,
+            layout,
+            window_active,
+            automatic_rename,
+        ] = parse_snapshot_fields::<6>(line, "window")?;
         let index = parse_snapshot_i32(&window_index, "window_index", "window", line)?;
         let is_active = parse_snapshot_bool(&window_active, "window_active", "window", line)?;
         let automatic_rename =
@@ -278,10 +287,7 @@ pub(crate) fn parse_snapshot(session_name: &str, windows: &str, panes: &str) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        parse_session_summaries, parse_snapshot,
-        SNAPSHOT_FIELD_SEP,
-    };
+    use super::{SNAPSHOT_FIELD_SEP, parse_session_summaries, parse_snapshot};
 
     #[test]
     fn parse_snapshot_builds_windows_and_panes() {
@@ -318,7 +324,10 @@ mod tests {
         let snapshot = parse_snapshot("termy", windows.as_str(), panes.as_str()).expect("snapshot");
         assert_eq!(snapshot.windows[0].name, "name\twith-tab\x1fwindow");
         assert_eq!(snapshot.windows[0].layout, "layout\x1fgrid");
-        assert_eq!(snapshot.windows[0].panes[0].current_path, "/tmp\x1fdir\ttab");
+        assert_eq!(
+            snapshot.windows[0].panes[0].current_path,
+            "/tmp\x1fdir\ttab"
+        );
         assert_eq!(
             snapshot.windows[0].panes[0].current_command,
             "cmd\nwith-nl\x1fpart"
@@ -328,16 +337,18 @@ mod tests {
     #[test]
     fn parse_snapshot_accepts_tmux_q_octal_escapes_for_tabs_newlines_and_delimiters() {
         let sep = SNAPSHOT_FIELD_SEP;
-        let windows = format!(
-            "@1{sep}0{sep}name\\011with-tab\\037window{sep}layout\\037grid{sep}1{sep}1\n"
-        );
+        let windows =
+            format!("@1{sep}0{sep}name\\011with-tab\\037window{sep}layout\\037grid{sep}1{sep}1\n");
         let panes = format!(
             "%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp\\011dir\\037tab{sep}cmd\\012with-nl\\037part\n",
         );
         let snapshot = parse_snapshot("termy", windows.as_str(), panes.as_str()).expect("snapshot");
         assert_eq!(snapshot.windows[0].name, "name\twith-tab\x1fwindow");
         assert_eq!(snapshot.windows[0].layout, "layout\x1fgrid");
-        assert_eq!(snapshot.windows[0].panes[0].current_path, "/tmp\tdir\x1ftab");
+        assert_eq!(
+            snapshot.windows[0].panes[0].current_path,
+            "/tmp\tdir\x1ftab"
+        );
         assert_eq!(
             snapshot.windows[0].panes[0].current_command,
             "cmd\nwith-nl\x1fpart"
@@ -350,8 +361,9 @@ mod tests {
         let windows = format!(
             "@1{sep}0{sep}one{sep}aeea,149x39,0,0{{74x39,0,0\\[74x19,0,0,0,74x19,0,20,2],74x39,75,0,1}}{sep}1{sep}1\n",
         );
-        let panes =
-            format!("%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}149{sep}39{sep}0{sep}0{sep}/tmp{sep}zsh\n");
+        let panes = format!(
+            "%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}149{sep}39{sep}0{sep}0{sep}/tmp{sep}zsh\n"
+        );
         let snapshot = parse_snapshot("termy", windows.as_str(), panes.as_str()).expect("snapshot");
         assert_eq!(
             snapshot.windows[0].layout,
@@ -362,9 +374,8 @@ mod tests {
     #[test]
     fn parse_snapshot_accepts_tmux_q_shell_escaped_punctuation() {
         let sep = SNAPSHOT_FIELD_SEP;
-        let windows = format!(
-            "@1{sep}0{sep}name\\[a\\]\\(b\\)\\ c\\*d\\?e{sep}layout-a{sep}1{sep}1\n",
-        );
+        let windows =
+            format!("@1{sep}0{sep}name\\[a\\]\\(b\\)\\ c\\*d\\?e{sep}layout-a{sep}1{sep}1\n",);
         let panes = format!(
             "%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp\\ path\\[x\\]\\(y\\){sep}cmd\\ \\\"quoted\\\"\\ and\\ symbols\\*\\?\n",
         );
@@ -381,8 +392,9 @@ mod tests {
     fn parse_snapshot_rejects_unescaped_field_separator_in_window_record() {
         let sep = SNAPSHOT_FIELD_SEP;
         let windows = format!("@1{sep}0{sep}broken{sep}name{sep}layout{sep}1{sep}1\n");
-        let panes =
-            format!("%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp{sep}zsh\n");
+        let panes = format!(
+            "%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp{sep}zsh\n"
+        );
         let error = parse_snapshot("termy", windows.as_str(), panes.as_str()).unwrap_err();
         assert!(error.to_string().contains("expected 6 fields, got 7"));
     }
@@ -391,8 +403,9 @@ mod tests {
     fn parse_snapshot_rejects_invalid_hex_escape_in_fields() {
         let sep = SNAPSHOT_FIELD_SEP;
         let windows = format!("@1{sep}0{sep}name\\x0g{sep}layout{sep}1{sep}1\n");
-        let panes =
-            format!("%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp{sep}zsh\n");
+        let panes = format!(
+            "%1{sep}@1{sep}$1{sep}1{sep}0{sep}0{sep}80{sep}24{sep}0{sep}0{sep}/tmp{sep}zsh\n"
+        );
         let error = parse_snapshot("termy", windows.as_str(), panes.as_str()).unwrap_err();
         assert!(error.to_string().contains("invalid hex escape"));
     }
@@ -400,9 +413,7 @@ mod tests {
     #[test]
     fn parse_session_summaries_builds_session_rows() {
         let sep = SNAPSHOT_FIELD_SEP;
-        let output = format!(
-            "work{sep}$1{sep}3{sep}1\nsandbox{sep}$2{sep}1{sep}0\n",
-        );
+        let output = format!("work{sep}$1{sep}3{sep}1\nsandbox{sep}$2{sep}1{sep}0\n",);
         let sessions = parse_session_summaries(output.as_str()).expect("sessions");
         assert_eq!(sessions.len(), 2);
         assert_eq!(sessions[0].name, "work");

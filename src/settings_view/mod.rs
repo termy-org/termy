@@ -189,13 +189,13 @@ impl SettingsWindow {
         let previous_api_key = match previous_provider {
             ConfigAiProvider::OpenAi => self.config.openai_api_key.clone(),
             ConfigAiProvider::Gemini => self.config.gemini_api_key.clone(),
-        }
-        .filter(|value| !value.trim().is_empty());
+            ConfigAiProvider::Codex => Some(self.config.codex_api_key.clone().unwrap_or_default()),
+        };
         let next_api_key = match next_provider {
             ConfigAiProvider::OpenAi => config.openai_api_key.clone(),
             ConfigAiProvider::Gemini => config.gemini_api_key.clone(),
-        }
-        .filter(|value| !value.trim().is_empty());
+            ConfigAiProvider::Codex => Some(config.codex_api_key.clone().unwrap_or_default()),
+        };
         if previous_provider != next_provider || previous_api_key != next_api_key {
             self.openai_model_options.clear();
             self.openai_models_loaded_for_api_key = None;
@@ -212,10 +212,18 @@ impl SettingsWindow {
 
     fn current_ai_api_key(&self) -> Option<String> {
         match self.config.ai_provider {
-            ConfigAiProvider::OpenAi => self.config.openai_api_key.clone(),
-            ConfigAiProvider::Gemini => self.config.gemini_api_key.clone(),
+            ConfigAiProvider::OpenAi => self
+                .config
+                .openai_api_key
+                .clone()
+                .filter(|value| !value.trim().is_empty()),
+            ConfigAiProvider::Gemini => self
+                .config
+                .gemini_api_key
+                .clone()
+                .filter(|value| !value.trim().is_empty()),
+            ConfigAiProvider::Codex => Some(self.config.codex_api_key.clone().unwrap_or_default()),
         }
-        .filter(|value| !value.trim().is_empty())
     }
 
     fn refresh_openai_model_options(&mut self, force: bool, cx: &mut Context<Self>) {
@@ -242,6 +250,7 @@ impl SettingsWindow {
         let provider_name = match provider {
             ConfigAiProvider::OpenAi => "OpenAI",
             ConfigAiProvider::Gemini => "Gemini",
+            ConfigAiProvider::Codex => "Codex",
         };
         let loading_toast_id = termy_toast::loading(format!("Fetching {provider_name} models..."));
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
@@ -257,6 +266,13 @@ impl SettingsWindow {
                 }
                 ConfigAiProvider::Gemini => {
                     let client = termy_gemini::GeminiClient::new(api_key);
+                    client
+                        .fetch_chat_models()
+                        .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
+                        .map_err(|error| error.to_string())
+                }
+                ConfigAiProvider::Codex => {
+                    let client = termy_codex::CodexClient::new(api_key);
                     client
                         .fetch_chat_models()
                         .map(|models| models.into_iter().map(|model| model.id).collect::<Vec<_>>())
@@ -293,6 +309,7 @@ impl SettingsWindow {
                             let provider_name = match request_provider {
                                 ConfigAiProvider::OpenAi => "OpenAI",
                                 ConfigAiProvider::Gemini => "Gemini",
+                                ConfigAiProvider::Codex => "Codex",
                             };
                             termy_toast::error(format!(
                                 "Failed to fetch {provider_name} models: {error}"

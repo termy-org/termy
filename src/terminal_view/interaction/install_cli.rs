@@ -28,7 +28,10 @@ impl TerminalView {
                 let path_str = install_path.display().to_string();
 
                 if let Some(shell_setup) = result.shell_setup {
-                    self.write_terminal_input(format!("{}\n", shell_setup.session_command).as_bytes(), cx);
+                    self.write_terminal_input(
+                        format!("{}\n", shell_setup.session_command).as_bytes(),
+                        cx,
+                    );
                     if shell_setup.profile_updated {
                         termy_toast::success(format!(
                             "CLI installed to {}. Updated {} and activated PATH in this shell.",

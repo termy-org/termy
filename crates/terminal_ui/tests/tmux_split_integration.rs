@@ -9,9 +9,7 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
-use support::tmux_harness::{
-    tmux_preflight, tmux_test_binary, tmux_test_guard,
-};
+use support::tmux_harness::{tmux_preflight, tmux_test_binary, tmux_test_guard};
 
 use termy_terminal_ui::{
     TmuxClient, TmuxLaunchTarget, TmuxRuntimeConfig, TmuxSnapshot, TmuxWindowState,
@@ -32,7 +30,6 @@ fn kill_test_server(binary: &str, tmux_tmpdir: &Path) {
         .stderr(Stdio::null())
         .status();
 }
-
 
 fn isolated_tmux_tmpdir_from_env() -> PathBuf {
     PathBuf::from(
@@ -67,10 +64,16 @@ fn assert_tmux_test_socket_command_succeeds(binary: &str, args: &[&str], context
 }
 
 fn tmux_client_count(binary: &str) -> usize {
-    let output = run_tmux_test_socket_output(binary, &["list-clients", "-F", "#{client_pid}\t#{client_name}"]);
+    let output = run_tmux_test_socket_output(
+        binary,
+        &["list-clients", "-F", "#{client_pid}\t#{client_name}"],
+    );
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
-        return stdout.lines().filter(|line| !line.trim().is_empty()).count();
+        return stdout
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .count();
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr);

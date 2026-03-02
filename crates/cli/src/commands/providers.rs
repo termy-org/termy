@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use termy_command_core::{
-    CommandCapabilities, CommandId, CommandUnavailableReason, KeybindLineRef, default_resolved_keybinds,
-    parse_keybind_directives_from_iter, resolve_keybinds,
+    CommandCapabilities, CommandId, CommandUnavailableReason, KeybindLineRef,
+    default_resolved_keybinds, parse_keybind_directives_from_iter, resolve_keybinds,
 };
 use termy_config_core::{AppConfig, config_path};
 use termy_theme_core::{ANSI_COLOR_NAMES, format_hex};
@@ -178,13 +178,11 @@ fn command_capabilities(tmux_enabled: bool, install_cli_available: bool) -> Comm
     }
 }
 
-fn command_metadata_for_id(
-    id: CommandId,
-    capabilities: CommandCapabilities,
-) -> (bool, bool, bool) {
+fn command_metadata_for_id(id: CommandId, capabilities: CommandCapabilities) -> (bool, bool, bool) {
     let availability = id.availability(capabilities);
     let tmux_required = id.is_tmux_only();
-    let restart_required = availability.reason == Some(CommandUnavailableReason::RequiresTmuxRuntime);
+    let restart_required =
+        availability.reason == Some(CommandUnavailableReason::RequiresTmuxRuntime);
     (availability.enabled, tmux_required, restart_required)
 }
 
@@ -274,8 +272,9 @@ fn list_fonts_impl() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        action_lines_for_capabilities, action_lines_for_tmux_enabled, keybind_lines_for_capabilities,
-        keybind_lines_for_tmux_enabled, list_theme_lines, resolve_keybinds_for_lines,
+        action_lines_for_capabilities, action_lines_for_tmux_enabled,
+        keybind_lines_for_capabilities, keybind_lines_for_tmux_enabled, list_theme_lines,
+        resolve_keybinds_for_lines,
     };
     use termy_command_core::{
         CommandId, KeybindLineRef, default_resolved_keybinds, parse_keybind_directives_from_iter,

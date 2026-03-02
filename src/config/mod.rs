@@ -16,9 +16,10 @@ pub use mutate::{
     set_root_setting, set_theme_in_config,
 };
 pub use termy_config_core::{
-    AiProvider, AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors,
-    PaneFocusEffect, SHELL_DECIDE_THEME_ID, TabCloseVisibility, TabTitleConfig, TabTitleSource,
-    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
+    AiProvider, AiReasoningEffort, AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle,
+    CustomColors, PaneFocusEffect, SHELL_DECIDE_THEME_ID, TabCloseVisibility, TabTitleConfig,
+    TabTitleSource, TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility,
+    WorkingDirFallback,
 };
 
 pub struct LoadedConfig {

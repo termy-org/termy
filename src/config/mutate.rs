@@ -8,10 +8,9 @@ use std::{
 
 use fs4::fs_std::FileExt;
 use termy_config_core::{
-    ColorSettingId, ColorSettingUpdate, RootSettingId, Rgb8, apply_color_updates,
+    ColorSettingId, ColorSettingUpdate, Rgb8, RootSettingId, apply_color_updates,
     color_setting_from_key, color_setting_spec, parse_theme_id,
-    remove_root_setting as remove_root_setting_entry, replace_keybind_lines,
-    upsert_root_setting,
+    remove_root_setting as remove_root_setting_entry, replace_keybind_lines, upsert_root_setting,
 };
 
 use super::ConfigIoError;

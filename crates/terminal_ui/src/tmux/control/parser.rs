@@ -9,10 +9,7 @@ pub(crate) enum ControlStateEvent {
     None,
     Notification(TmuxNotification),
     CommandBegin,
-    CommandComplete {
-        is_error: bool,
-        output: String,
-    },
+    CommandComplete { is_error: bool, output: String },
     Exit(Option<String>),
 }
 
@@ -53,7 +50,8 @@ impl ControlStateMachine {
 
         if line.starts_with(b"%end") || line.starts_with(b"%error") {
             let is_error = line.starts_with(b"%error");
-            let command_tag = parse_control_block_tag(line, if is_error { b"%error" } else { b"%end" })?;
+            let command_tag =
+                parse_control_block_tag(line, if is_error { b"%error" } else { b"%end" })?;
             let block = self.current_block.take().ok_or_else(|| {
                 TmuxControlError::protocol("received command terminator without open %begin block")
             })?;
@@ -79,7 +77,9 @@ impl ControlStateMachine {
             }));
         }
         if is_refresh_notification(line) {
-            return Ok(ControlStateEvent::Notification(TmuxNotification::NeedsRefresh));
+            return Ok(ControlStateEvent::Notification(
+                TmuxNotification::NeedsRefresh,
+            ));
         }
         if line.starts_with(b"%exit") {
             return Ok(ControlStateEvent::Exit(parse_exit_reason(line)));
@@ -88,8 +88,9 @@ impl ControlStateMachine {
         if let Some(block) = self.current_block.as_mut() {
             // Preserve empty lines inside command output blocks so pane captures
             // round-trip faithfully through control-mode framing.
-            let line_text = std::str::from_utf8(line)
-                .map_err(|_| TmuxControlError::parse("received non-utf8 bytes in control command output"))?;
+            let line_text = std::str::from_utf8(line).map_err(|_| {
+                TmuxControlError::parse("received non-utf8 bytes in control command output")
+            })?;
             if !block.output.is_empty() {
                 block.output.push('\n');
             }
@@ -124,13 +125,13 @@ fn parse_control_block_tag(
 
 #[cfg(test)]
 mod tests {
-    use super::{ControlStateEvent, ControlStateMachine};
     use super::super::super::command::split_control_completion_token;
     use super::super::super::types::{TmuxControlErrorKind, TmuxNotification};
     use super::super::channel::{
         ActiveControlCommand, PendingCommand, TrackedPendingCommand, append_command_output_chunk,
         claim_pending_for_command_begin, complete_pending_command, map_command_completion_response,
     };
+    use super::{ControlStateEvent, ControlStateMachine};
     use std::time::Duration;
 
     fn expect_command_complete(event: ControlStateEvent) -> (bool, String) {
@@ -149,7 +150,8 @@ mod tests {
             sm.on_line(b"%begin 1 1 0").expect("startup begin"),
             ControlStateEvent::CommandBegin
         );
-        let mut active_command = match claim_pending_for_command_begin(&pending_rx).expect("claim") {
+        let mut active_command = match claim_pending_for_command_begin(&pending_rx).expect("claim")
+        {
             Some(pending) => Some(ActiveControlCommand::Tracked(TrackedPendingCommand {
                 pending,
                 output: String::new(),
@@ -157,13 +159,19 @@ mod tests {
             })),
             None => Some(ActiveControlCommand::Untracked),
         };
-        assert!(matches!(active_command, Some(ActiveControlCommand::Untracked)));
+        assert!(matches!(
+            active_command,
+            Some(ActiveControlCommand::Untracked)
+        ));
         assert_eq!(
             sm.on_line(b"startup noise").expect("startup payload"),
             ControlStateEvent::None
         );
         expect_command_complete(sm.on_line(b"%end 1 1 0").expect("startup end"));
-        match active_command.take().expect("startup block should be active") {
+        match active_command
+            .take()
+            .expect("startup block should be active")
+        {
             ActiveControlCommand::Tracked(_) => {
                 panic!("unsolicited block must stay untracked")
             }
@@ -197,17 +205,25 @@ mod tests {
             active_command,
             Some(ActiveControlCommand::Tracked(_))
         ));
-        assert_eq!(sm.on_line(b"ok").expect("command output"), ControlStateEvent::None);
+        assert_eq!(
+            sm.on_line(b"ok").expect("command output"),
+            ControlStateEvent::None
+        );
         let (is_error, output) = expect_command_complete(sm.on_line(b"%end 2 2 0").expect("end"));
         let mut tracked = match active_command.take().expect("tracked command") {
             ActiveControlCommand::Tracked(tracked) => tracked,
             ActiveControlCommand::Untracked => panic!("tracked request became untracked"),
         };
         append_command_output_chunk(&mut tracked.output, output.as_str());
-        let response = map_command_completion_response(&tracked.pending.command, is_error, tracked.output);
+        let response =
+            map_command_completion_response(&tracked.pending.command, is_error, tracked.output);
         complete_pending_command(tracked.pending, response);
 
-        assert!(completion_rx.recv_timeout(Duration::from_millis(50)).is_ok());
+        assert!(
+            completion_rx
+                .recv_timeout(Duration::from_millis(50))
+                .is_ok()
+        );
         let result = response_rx
             .recv_timeout(Duration::from_millis(50))
             .expect("response sent");
@@ -236,7 +252,8 @@ mod tests {
             sm.on_line(b"%begin 20 1 0").expect("begin 1"),
             ControlStateEvent::CommandBegin
         );
-        let mut active_command = match claim_pending_for_command_begin(&pending_rx).expect("claim") {
+        let mut active_command = match claim_pending_for_command_begin(&pending_rx).expect("claim")
+        {
             Some(pending) => Some(ActiveControlCommand::Tracked(TrackedPendingCommand {
                 pending,
                 output: String::new(),
@@ -253,9 +270,13 @@ mod tests {
             sm.on_line(b"first block payload").expect("payload 1"),
             ControlStateEvent::None
         );
-        let (is_error_1, output_1) = expect_command_complete(sm.on_line(b"%end 20 1 0").expect("end 1"));
+        let (is_error_1, output_1) =
+            expect_command_complete(sm.on_line(b"%end 20 1 0").expect("end 1"));
         assert!(!is_error_1);
-        let tracked = match active_command.as_mut().expect("tracked command should remain active") {
+        let tracked = match active_command
+            .as_mut()
+            .expect("tracked command should remain active")
+        {
             ActiveControlCommand::Tracked(tracked) => tracked,
             ActiveControlCommand::Untracked => panic!("tracked request became untracked"),
         };
@@ -264,7 +285,11 @@ mod tests {
             "command should stay active until completion token is observed",
         );
         append_command_output_chunk(&mut tracked.output, output_1.as_str());
-        assert!(completion_rx.recv_timeout(Duration::from_millis(50)).is_err());
+        assert!(
+            completion_rx
+                .recv_timeout(Duration::from_millis(50))
+                .is_err()
+        );
 
         assert_eq!(
             sm.on_line(b"%begin 20 2 0").expect("begin 2"),
@@ -275,10 +300,12 @@ mod tests {
             ControlStateEvent::None
         );
         assert_eq!(
-            sm.on_line(completion_token.as_bytes()).expect("token payload"),
+            sm.on_line(completion_token.as_bytes())
+                .expect("token payload"),
             ControlStateEvent::None
         );
-        let (is_error_2, output_2) = expect_command_complete(sm.on_line(b"%end 20 2 0").expect("end 2"));
+        let (is_error_2, output_2) =
+            expect_command_complete(sm.on_line(b"%end 20 2 0").expect("end 2"));
         assert!(!is_error_2);
 
         let mut tracked = match active_command.take().expect("active command") {
@@ -288,15 +315,23 @@ mod tests {
         let output_chunk = split_control_completion_token(&output_2, completion_token.as_str())
             .expect("token should be present in final block output");
         append_command_output_chunk(&mut tracked.output, output_chunk.as_str());
-        let response = map_command_completion_response(&tracked.pending.command, false, tracked.output);
+        let response =
+            map_command_completion_response(&tracked.pending.command, false, tracked.output);
         complete_pending_command(tracked.pending, response);
 
-        assert!(completion_rx.recv_timeout(Duration::from_millis(50)).is_ok());
+        assert!(
+            completion_rx
+                .recv_timeout(Duration::from_millis(50))
+                .is_ok()
+        );
         let result = response_rx
             .recv_timeout(Duration::from_millis(50))
             .expect("response sent");
         let completion = result.expect("tracked command should succeed");
-        assert_eq!(completion.output, "first block payload\nsecond block payload");
+        assert_eq!(
+            completion.output,
+            "first block payload\nsecond block payload"
+        );
     }
 
     #[test]
@@ -315,7 +350,10 @@ mod tests {
             })
         );
 
-        assert_eq!(sm.on_line(b"ok").expect("output line"), ControlStateEvent::None);
+        assert_eq!(
+            sm.on_line(b"ok").expect("output line"),
+            ControlStateEvent::None
+        );
         let (is_error, output) = expect_command_complete(sm.on_line(b"%end 10 3 0").expect("end"));
         assert!(!is_error);
         assert_eq!(output.trim(), "ok");
@@ -328,9 +366,15 @@ mod tests {
             sm.on_line(b"%begin 13 1 0").expect("begin"),
             ControlStateEvent::CommandBegin
         );
-        assert_eq!(sm.on_line(b"row-1").expect("row 1"), ControlStateEvent::None);
+        assert_eq!(
+            sm.on_line(b"row-1").expect("row 1"),
+            ControlStateEvent::None
+        );
         assert_eq!(sm.on_line(b"").expect("blank row"), ControlStateEvent::None);
-        assert_eq!(sm.on_line(b"row-3").expect("row 3"), ControlStateEvent::None);
+        assert_eq!(
+            sm.on_line(b"row-3").expect("row 3"),
+            ControlStateEvent::None
+        );
         let (is_error, output) = expect_command_complete(sm.on_line(b"%end 13 1 0").expect("end"));
         assert!(!is_error);
         assert_eq!(output, "row-1\n\nrow-3");
@@ -361,7 +405,9 @@ mod tests {
             sm.on_line(b"%begin 44 9 0").expect("begin"),
             ControlStateEvent::CommandBegin
         );
-        let err = sm.on_line(b"%end 45 9 0").expect_err("mismatch should fail");
+        let err = sm
+            .on_line(b"%end 45 9 0")
+            .expect_err("mismatch should fail");
         assert_eq!(err.kind, TmuxControlErrorKind::Protocol);
         assert!(err.message.contains("mismatched command terminator"));
     }
@@ -382,8 +428,7 @@ mod tests {
             ControlStateEvent::None
         );
 
-        let (is_error, output) =
-            expect_command_complete(sm.on_line(b"%end 72 1 0").expect("end"));
+        let (is_error, output) = expect_command_complete(sm.on_line(b"%end 72 1 0").expect("end"));
         assert!(!is_error);
         assert_eq!(output, "captured");
     }
@@ -414,10 +459,14 @@ mod tests {
     fn control_state_machine_accepts_dcs_wrapped_control_markers() {
         let mut sm = ControlStateMachine::default();
         assert_eq!(
-            sm.on_line(b"\x1bP1000p%begin 9 4 0").expect("wrapped begin"),
+            sm.on_line(b"\x1bP1000p%begin 9 4 0")
+                .expect("wrapped begin"),
             ControlStateEvent::CommandBegin
         );
-        assert_eq!(sm.on_line(b"ok").expect("output line"), ControlStateEvent::None);
+        assert_eq!(
+            sm.on_line(b"ok").expect("output line"),
+            ControlStateEvent::None
+        );
         let (is_error, output) =
             expect_command_complete(sm.on_line(b"%end 9 4 0\x1b\\").expect("wrapped end"));
         assert!(!is_error);
@@ -427,6 +476,9 @@ mod tests {
     #[test]
     fn control_state_machine_ignores_standalone_dcs_terminator_line() {
         let mut sm = ControlStateMachine::default();
-        assert_eq!(sm.on_line(b"\x1b\\").expect("dcs terminator"), ControlStateEvent::None);
+        assert_eq!(
+            sm.on_line(b"\x1b\\").expect("dcs terminator"),
+            ControlStateEvent::None
+        );
     }
 }

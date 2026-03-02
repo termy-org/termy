@@ -15,8 +15,8 @@ mod ui;
 use commands::{OpenConfig, OpenSettings};
 use gpui::{App, Application, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
 use startup::StartupBlocker;
-use termy_terminal_ui::TmuxClient;
 use terminal_view::{TerminalView, initial_window_background_appearance};
+use termy_terminal_ui::TmuxClient;
 
 pub(crate) const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 

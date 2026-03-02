@@ -16,10 +16,7 @@ pub(crate) fn strip_control_line_wrappers(mut line: &[u8]) -> &[u8] {
     line
 }
 
-pub(crate) fn capture_full_pane_args<'a>(
-    pane_id: &'a str,
-    start_row: &'a str,
-) -> [&'a str; 11] {
+pub(crate) fn capture_full_pane_args<'a>(pane_id: &'a str, start_row: &'a str) -> [&'a str; 11] {
     // Full-history hydration does not rely on tmux viewport cursor coordinates.
     // Use `-J` here so soft-wrapped rows are rejoined and do not become hard
     // line breaks after restart when pane width differs at attach time.
@@ -52,7 +49,10 @@ pub(crate) fn parse_output_notification(line: &[u8]) -> Option<(String, Vec<u8>)
         let split = rest.iter().position(|byte| *byte == b' ')?;
         let pane_id = String::from_utf8(rest[..split].to_vec()).ok()?;
         let payload = &rest[split + 1..];
-        return Some((pane_id, sanitize_tmux_payload(unescape_tmux_payload(payload))));
+        return Some((
+            pane_id,
+            sanitize_tmux_payload(unescape_tmux_payload(payload)),
+        ));
     }
 
     if let Some(rest) = line.strip_prefix(b"%extended-output ") {
@@ -64,7 +64,10 @@ pub(crate) fn parse_output_notification(line: &[u8]) -> Option<(String, Vec<u8>)
         if let Some(b' ') = payload.first() {
             payload = &payload[1..];
         }
-        return Some((pane_id, sanitize_tmux_payload(unescape_tmux_payload(payload))));
+        return Some((
+            pane_id,
+            sanitize_tmux_payload(unescape_tmux_payload(payload)),
+        ));
     }
 
     None
@@ -165,7 +168,9 @@ mod tests {
     };
 
     fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
-        haystack.windows(needle.len()).any(|window| window == needle)
+        haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
     }
 
     #[test]
@@ -249,15 +254,14 @@ mod tests {
 
     #[test]
     fn parse_output_strips_legacy_title_sequence() {
-        let (_, bytes) = parse_output_notification(b"%output %9 \\033kcd\\033\\134")
-            .expect("output");
+        let (_, bytes) =
+            parse_output_notification(b"%output %9 \\033kcd\\033\\134").expect("output");
         assert!(bytes.is_empty());
     }
 
     #[test]
     fn strip_legacy_title_sequence_preserves_surrounding_text() {
-        let sanitized =
-            strip_legacy_title_sequences(b"left\x1bkmy-title\x1b\\right".to_vec());
+        let sanitized = strip_legacy_title_sequences(b"left\x1bkmy-title\x1b\\right".to_vec());
         assert_eq!(sanitized, b"leftright");
     }
 }

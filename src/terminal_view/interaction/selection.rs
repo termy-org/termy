@@ -137,9 +137,7 @@ fn resolve_pane_cell_for_position(
     if clamp
         && !pointer_inside_any_pane
         && let Some(active_pane_id) = active_pane_id
-        && let Some(active_pane) = panes
-            .iter()
-            .find(|pane| pane.id.as_str() == active_pane_id)
+        && let Some(active_pane) = panes.iter().find(|pane| pane.id.as_str() == active_pane_id)
         && let Some(cell) =
             pane_cell_for_position(active_pane, x, y, padding_x, padding_y, true, true)
     {
@@ -147,8 +145,7 @@ fn resolve_pane_cell_for_position(
     }
 
     for pane in panes {
-        if let Some(cell) = pane_cell_for_position(pane, x, y, padding_x, padding_y, clamp, false)
-        {
+        if let Some(cell) = pane_cell_for_position(pane, x, y, padding_x, padding_y, clamp, false) {
             return Some((pane.id.clone(), cell));
         }
     }
@@ -236,13 +233,12 @@ impl TerminalView {
             col: end.col.min(cols.saturating_sub(1)),
             row: end.row.min(rows.saturating_sub(1)),
         };
-        let (selection_start, selection_end) = if (clamped_end.row, clamped_end.col)
-            < (clamped_start.row, clamped_start.col)
-        {
-            (clamped_end, clamped_start)
-        } else {
-            (clamped_start, clamped_end)
-        };
+        let (selection_start, selection_end) =
+            if (clamped_end.row, clamped_end.col) < (clamped_start.row, clamped_start.col) {
+                (clamped_end, clamped_start)
+            } else {
+                (clamped_start, clamped_end)
+            };
 
         let min_row = selection_start.row;
         let max_row = selection_end.row;
@@ -416,7 +412,6 @@ impl TerminalView {
                 .unwrap_or(false);
         }
     }
-
 
     pub(in super::super) fn is_link_modifier(modifiers: gpui::Modifiers) -> bool {
         modifiers.secondary() && !modifiers.alt && !modifiers.function
@@ -613,8 +608,8 @@ mod tests {
         let clamped_y = (pointer_y - active_origin_y).clamp(0.0, active_height - f32::EPSILON);
         let expected_col =
             ((clamped_x / cell_width).floor() as i32).clamp(0, i32::from(size.cols) - 1) as usize;
-        let expected_row = ((clamped_y / cell_height).floor() as i32)
-            .clamp(0, i32::from(size.rows) - 1) as usize;
+        let expected_row =
+            ((clamped_y / cell_height).floor() as i32).clamp(0, i32::from(size.rows) - 1) as usize;
 
         let resolved = resolve_pane_cell_for_position(
             &panes,

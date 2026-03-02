@@ -17,14 +17,16 @@ pub(crate) struct ControlCommandResult {
 pub(crate) struct ControlRequest {
     pub(crate) command: String,
     pub(crate) completion_token: String,
-    pub(crate) response_tx: Option<Sender<std::result::Result<ControlCommandResult, TmuxControlError>>>,
+    pub(crate) response_tx:
+        Option<Sender<std::result::Result<ControlCommandResult, TmuxControlError>>>,
 }
 
 #[derive(Debug)]
 pub(crate) struct PendingCommand {
     pub(crate) command: String,
     pub(crate) completion_token: String,
-    pub(crate) response_tx: Option<Sender<std::result::Result<ControlCommandResult, TmuxControlError>>>,
+    pub(crate) response_tx:
+        Option<Sender<std::result::Result<ControlCommandResult, TmuxControlError>>>,
     pub(crate) completion_tx: Sender<()>,
 }
 
@@ -150,7 +152,10 @@ mod tests {
             })
             .expect("queue pending request");
         let claimed = claim_pending_for_command_begin(&pending_rx).expect("claim should succeed");
-        assert!(claimed.is_some(), "queued request must be claimable immediately");
+        assert!(
+            claimed.is_some(),
+            "queued request must be claimable immediately"
+        );
     }
 
     #[test]
@@ -159,8 +164,9 @@ mod tests {
             .expect("successful completion should preserve output");
         assert_eq!(success.output, "row");
 
-        let error = map_command_completion_response("kill-pane", true, "pane not found\n".to_string())
-            .expect_err("error completion should fail");
+        let error =
+            map_command_completion_response("kill-pane", true, "pane not found\n".to_string())
+                .expect_err("error completion should fail");
         assert_eq!(error.kind, TmuxControlErrorKind::Runtime);
         assert_eq!(error.message, "pane not found");
 

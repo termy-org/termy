@@ -117,7 +117,10 @@ impl SettingsWindow {
         }
     }
 
-    pub(super) fn settings_scrollbar_metrics(&self, window: &Window) -> Option<ui_scrollbar::ScrollbarMetrics> {
+    pub(super) fn settings_scrollbar_metrics(
+        &self,
+        window: &Window,
+    ) -> Option<ui_scrollbar::ScrollbarMetrics> {
         let viewport_height: f32 = window.viewport_size().height.into();
         let max_offset: f32 = self.content_scroll_handle.max_offset().height.into();
         let offset_y: f32 = self.content_scroll_handle.offset().y.into();
@@ -201,5 +204,4 @@ impl SettingsWindow {
             dark
         }
     }
-
 }

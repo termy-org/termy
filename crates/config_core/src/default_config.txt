@@ -79,10 +79,14 @@ pane_focus_strength = 0.6
 command_palette_show_keybinds = true
 # Provider used for AI input and model listing
 ai_provider = openai
+# Reasoning effort used for AI requests
+ai_reasoning_effort = medium
 # API key for OpenAI integration
 # openai_api_key = none
 # API key for Google Gemini integration
 # gemini_api_key = none
+# Optional API key for Codex app-server integration
+# codex_api_key = none
 # Model used for AI input requests (provider-specific)
 # openai_model = gpt-5-mini
 # Width of the agent chat sidebar in pixels

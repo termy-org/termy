@@ -165,6 +165,12 @@ enum PaneResizeEdge {
     Bottom,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AgentSidebarDensity {
+    Compact,
+    Comfortable,
+}
+
 #[derive(Clone, Debug)]
 struct PaneResizeDragState {
     pane_id: String,
@@ -823,6 +829,9 @@ pub struct TerminalView {
     agent_sidebar_input_active: bool,
     agent_provider_dropdown_open: bool,
     agent_model_dropdown_open: bool,
+    agent_reasoning_effort_dropdown_open: bool,
+    agent_reasoning_effort: config::AiReasoningEffort,
+    agent_sidebar_density: AgentSidebarDensity,
     agent_model_options: Vec<String>,
     agent_models_loading: bool,
     agent_models_loaded_for_api_key: Option<(config::AiProvider, String)>,
@@ -1615,6 +1624,9 @@ impl TerminalView {
             agent_sidebar_input_active: false,
             agent_provider_dropdown_open: false,
             agent_model_dropdown_open: false,
+            agent_reasoning_effort_dropdown_open: false,
+            agent_reasoning_effort: config.ai_reasoning_effort,
+            agent_sidebar_density: AgentSidebarDensity::Comfortable,
             agent_model_options: Vec::new(),
             agent_models_loading: false,
             agent_spinner_animation_scheduled: false,
@@ -1730,6 +1742,7 @@ impl TerminalView {
         self.padding_x = config.padding_x.max(0.0);
         self.padding_y = config.padding_y.max(0.0);
         self.agent_sidebar.set_width(config.chat_sidebar_width);
+        self.agent_reasoning_effort = config.ai_reasoning_effort;
         self.mouse_scroll_multiplier = config.mouse_scroll_multiplier;
         if self.pane_focus_effect != config.pane_focus_effect
             || (self.pane_focus_strength - config.pane_focus_strength).abs() > f32::EPSILON

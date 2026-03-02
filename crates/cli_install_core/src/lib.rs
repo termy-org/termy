@@ -404,8 +404,13 @@ fn install_cli_binary() -> Result<PathBuf, String> {
         })?;
     }
 
-    symlink(&cli_source, &target)
-        .map_err(|error| format!("Failed to create symlink at {}: {}", target.display(), error))?;
+    symlink(&cli_source, &target).map_err(|error| {
+        format!(
+            "Failed to create symlink at {}: {}",
+            target.display(),
+            error
+        )
+    })?;
 
     Ok(target)
 }
@@ -499,7 +504,10 @@ mod tests {
     #[test]
     fn install_cli_parse_shell_detects_supported_shells() {
         assert_eq!(parse_install_cli_shell("/bin/zsh"), Some(InstallShell::Zsh));
-        assert_eq!(parse_install_cli_shell("\"/bin/bash\""), Some(InstallShell::Bash));
+        assert_eq!(
+            parse_install_cli_shell("\"/bin/bash\""),
+            Some(InstallShell::Bash)
+        );
         assert_eq!(
             parse_install_cli_shell("/opt/homebrew/bin/fish"),
             Some(InstallShell::Fish)
@@ -543,7 +551,10 @@ mod tests {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[test]
     fn install_cli_profile_relative_paths_match_shell() {
-        assert_eq!(install_cli_profile_relative_path(InstallShell::Zsh), ".zshrc");
+        assert_eq!(
+            install_cli_profile_relative_path(InstallShell::Zsh),
+            ".zshrc"
+        );
         assert_eq!(
             install_cli_profile_relative_path(InstallShell::Fish),
             ".config/fish/config.fish"
@@ -554,7 +565,10 @@ mod tests {
             ".bash_profile"
         );
         #[cfg(target_os = "linux")]
-        assert_eq!(install_cli_profile_relative_path(InstallShell::Bash), ".bashrc");
+        assert_eq!(
+            install_cli_profile_relative_path(InstallShell::Bash),
+            ".bashrc"
+        );
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -688,7 +702,10 @@ mod tests {
 
         let target = bin_dir.join(format!("termy{}", std::env::consts::EXE_SUFFIX));
         let path_env = std::env::join_paths([bin_dir.as_path()]).unwrap();
-        assert!(managed_target_dir_in_path(&target, Some(path_env.as_os_str())));
+        assert!(managed_target_dir_in_path(
+            &target,
+            Some(path_env.as_os_str())
+        ));
 
         let other_path_env = std::env::join_paths([other_dir.as_path()]).unwrap();
         assert!(!managed_target_dir_in_path(
@@ -708,7 +725,10 @@ mod tests {
         let normalized_via_parent = bin_dir.join("..").join("bin");
         let path_env = std::env::join_paths([normalized_via_parent]).unwrap();
 
-        assert!(managed_target_dir_in_path(&target, Some(path_env.as_os_str())));
+        assert!(managed_target_dir_in_path(
+            &target,
+            Some(path_env.as_os_str())
+        ));
     }
 
     #[test]

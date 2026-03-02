@@ -2,7 +2,11 @@ use super::*;
 use termy_terminal_ui::{TmuxClient, TmuxPaneState, TmuxSnapshot};
 
 fn window_order_index(window_order: &[&str], target_window_id: Option<&str>) -> Option<usize> {
-    target_window_id.and_then(|target| window_order.iter().position(|window_id| *window_id == target))
+    target_window_id.and_then(|target| {
+        window_order
+            .iter()
+            .position(|window_id| *window_id == target)
+    })
 }
 
 impl TerminalView {
@@ -77,8 +81,15 @@ impl TerminalView {
         self.apply_tmux_snapshot_inner(snapshot, false);
     }
 
-    fn apply_tmux_snapshot_inner(&mut self, snapshot: TmuxSnapshot, reuse_existing_terminals: bool) {
-        let previous_active_window_id = self.tabs.get(self.active_tab).map(|tab| tab.window_id.clone());
+    fn apply_tmux_snapshot_inner(
+        &mut self,
+        snapshot: TmuxSnapshot,
+        reuse_existing_terminals: bool,
+    ) {
+        let previous_active_window_id = self
+            .tabs
+            .get(self.active_tab)
+            .map(|tab| tab.window_id.clone());
         let previous_renaming_window_id = self
             .renaming_tab
             .and_then(|index| self.tabs.get(index).map(|tab| tab.window_id.clone()));
@@ -110,7 +121,7 @@ impl TerminalView {
                 let (terminal, degraded, hydration_error) =
                     if let Some(existing) = existing_terminals.remove(&pane_state.id) {
                         (existing, false, None)
-                } else {
+                    } else {
                         let (terminal, hydration_error) = Self::hydrate_pane_terminal(
                             &self.tmux_runtime().client,
                             pane_state,
@@ -133,7 +144,9 @@ impl TerminalView {
                 {
                     terminal.resize(next_size);
                 }
-                panes.push(TerminalPane::from_tmux_state(pane_state, terminal, degraded));
+                panes.push(TerminalPane::from_tmux_state(
+                    pane_state, terminal, degraded,
+                ));
             }
 
             let tab_id = previous_ids
@@ -148,10 +161,10 @@ impl TerminalView {
             let manual_title = (!window.automatic_rename)
                 .then_some(window.name.trim())
                 .and_then(|name| (!name.is_empty()).then(|| Self::truncate_tab_title(name)));
-            let shell_title =
-                active_pane_state.and_then(|pane| Self::derive_tmux_shell_title(&self.tab_title, pane));
-            let running_process =
-                active_pane_state.is_some_and(|pane| !Self::is_shell_command(pane.current_command.as_str()));
+            let shell_title = active_pane_state
+                .and_then(|pane| Self::derive_tmux_shell_title(&self.tab_title, pane));
+            let running_process = active_pane_state
+                .is_some_and(|pane| !Self::is_shell_command(pane.current_command.as_str()));
 
             let mut tab = TerminalTab::from_tmux_window(tab_id, window, panes);
             tab.manual_title = manual_title;
@@ -180,7 +193,8 @@ impl TerminalView {
             .find(|window| window.is_active)
             .map(|window| window.id.as_str())
             .and_then(|window_id| window_order_index(&tab_window_order, Some(window_id)));
-        let previous_index = window_order_index(&tab_window_order, previous_active_window_id.as_deref());
+        let previous_index =
+            window_order_index(&tab_window_order, previous_active_window_id.as_deref());
         self.active_tab = active_index_by_window
             .or(previous_index)
             .unwrap_or(0)
@@ -234,7 +248,11 @@ impl TerminalView {
         }
     }
 
-    pub(super) fn snapshot_matches_client_size(snapshot: &TmuxSnapshot, cols: u16, rows: u16) -> bool {
+    pub(super) fn snapshot_matches_client_size(
+        snapshot: &TmuxSnapshot,
+        cols: u16,
+        rows: u16,
+    ) -> bool {
         let expected_cols = u32::from(cols.max(1));
         let expected_rows = u32::from(rows.max(1));
         snapshot

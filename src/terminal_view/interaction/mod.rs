@@ -1,7 +1,7 @@
 use super::*;
 
-mod app;
 mod actions;
+mod app;
 mod input;
 mod install_cli;
 mod layout;

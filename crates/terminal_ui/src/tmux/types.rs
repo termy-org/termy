@@ -26,7 +26,9 @@ impl TmuxSocketTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TmuxLaunchTarget {
-    Managed { persistence: bool },
+    Managed {
+        persistence: bool,
+    },
     Session {
         name: String,
         socket: TmuxSocketTarget,

@@ -69,10 +69,7 @@ impl TmuxResizeScheduler {
 
     pub(crate) fn request_resize(&mut self, cols: u16, rows: u16) {
         let request = Self::normalize_resize_request(cols, rows);
-        if self
-            .active
-            .is_some_and(|active| active.request == request)
-        {
+        if self.active.is_some_and(|active| active.request == request) {
             self.pending = None;
             return;
         }
@@ -99,11 +96,7 @@ impl TmuxResizeScheduler {
         })
     }
 
-    pub(crate) fn complete_attempt(
-        &mut self,
-        now: Instant,
-        converged: bool,
-    ) -> TmuxResizeWakeup {
+    pub(crate) fn complete_attempt(&mut self, now: Instant, converged: bool) -> TmuxResizeWakeup {
         let Some(mut active) = self.active.take() else {
             return self.next_wakeup(now);
         };
@@ -150,7 +143,9 @@ impl TmuxResizeScheduler {
 
     #[cfg(test)]
     pub(crate) fn take_pending(&mut self) -> Option<(u16, u16)> {
-        self.pending.take().map(|pending| (pending.cols, pending.rows))
+        self.pending
+            .take()
+            .map(|pending| (pending.cols, pending.rows))
     }
 }
 
@@ -173,13 +168,19 @@ mod tests {
         scheduler.request_resize(120, 40);
         assert_eq!(
             scheduler.claim_attempt(now),
-            Some(TmuxResizeAttempt { cols: 120, rows: 40 })
+            Some(TmuxResizeAttempt {
+                cols: 120,
+                rows: 40
+            })
         );
 
         scheduler.request_resize(130, 50);
         assert_eq!(
             scheduler.claim_attempt(now),
-            Some(TmuxResizeAttempt { cols: 130, rows: 50 })
+            Some(TmuxResizeAttempt {
+                cols: 130,
+                rows: 50
+            })
         );
     }
 

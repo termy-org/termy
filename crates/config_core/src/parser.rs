@@ -523,7 +523,20 @@ impl AppConfig {
                             line_number,
                             key,
                             value,
-                            "one of: openai, gemini",
+                            "one of: openai, gemini, codex",
+                        );
+                    }
+                }
+                RootSettingId::AiReasoningEffort => {
+                    if let Some(parsed) = crate::types::AiReasoningEffort::from_str(value) {
+                        config.ai_reasoning_effort = parsed;
+                    } else {
+                        push_invalid_value(
+                            &mut diagnostics,
+                            line_number,
+                            key,
+                            value,
+                            "one of: none, minimal, low, medium, high, xhigh",
                         );
                     }
                 }
@@ -532,6 +545,9 @@ impl AppConfig {
                 }
                 RootSettingId::GeminiApiKey => {
                     config.gemini_api_key = parse_optional_string_value(value);
+                }
+                RootSettingId::CodexApiKey => {
+                    config.codex_api_key = parse_optional_string_value(value);
                 }
                 RootSettingId::OpenaiModel => {
                     config.openai_model = parse_optional_string_value(value);

@@ -6,6 +6,7 @@ enum MarkdownBlock {
     Paragraph(String),
     Bullet(String),
     Quote(String),
+    ToolEvent(String),
     Code(String),
 }
 
@@ -59,6 +60,7 @@ pub fn render_markdown_message(
                     .child(
                         div()
                             .flex_1()
+                            .min_w(px(0.0))
                             .text_size(px(12.0))
                             .text_color(text_color)
                             .child(text),
@@ -73,17 +75,56 @@ pub fn render_markdown_message(
                     .text_color(text_color)
                     .child(text)
                     .into_any_element(),
-                MarkdownBlock::Code(text) => div()
-                    .w_full()
-                    .px(px(8.0))
-                    .py(px(6.0))
-                    .border_1()
-                    .border_color(border_color)
-                    .bg(code_bg)
-                    .text_size(px(11.5))
-                    .text_color(text_color)
-                    .child(text)
-                    .into_any_element(),
+                MarkdownBlock::ToolEvent(text) => {
+                    let mut event_bg = code_bg;
+                    event_bg.a = 0.32;
+                    div()
+                        .w_full()
+                        .px(px(8.0))
+                        .py(px(6.0))
+                        .rounded(px(6.0))
+                        .border_1()
+                        .border_color(border_color)
+                        .bg(event_bg)
+                        .child(
+                            div()
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.0))
+                                .child(
+                                    div()
+                                        .text_size(px(11.0))
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(heading_color)
+                                        .child("⚙"),
+                                )
+                                .child(
+                                    div().text_size(px(11.5)).text_color(text_color).child(text),
+                                ),
+                        )
+                        .into_any_element()
+                }
+                MarkdownBlock::Code(text) => {
+                    div()
+                        .w_full()
+                        .px(px(8.0))
+                        .py(px(6.0))
+                        .border_1()
+                        .border_color(border_color)
+                        .bg(code_bg)
+                        .child(div().w_full().flex().flex_col().children(text.lines().map(
+                            |line| {
+                                div()
+                                    .w_full()
+                                    .text_size(px(11.5))
+                                    .text_color(text_color)
+                                    .child(line.to_string())
+                                    .into_any_element()
+                            },
+                        )))
+                        .into_any_element()
+                }
             }
         }))
         .into_any_element()
@@ -152,6 +193,12 @@ fn parse_markdown_blocks(content: &str) -> Vec<MarkdownBlock> {
         if let Some(text) = trimmed.strip_prefix("> ") {
             flush_paragraph(&mut blocks, &mut paragraph_lines);
             blocks.push(MarkdownBlock::Quote(text.to_string()));
+            continue;
+        }
+
+        if let Some(text) = trimmed.strip_prefix("[Tool] ") {
+            flush_paragraph(&mut blocks, &mut paragraph_lines);
+            blocks.push(MarkdownBlock::ToolEvent(text.to_string()));
             continue;
         }
 

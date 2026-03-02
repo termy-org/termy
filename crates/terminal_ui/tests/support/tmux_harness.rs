@@ -98,8 +98,8 @@ pub(crate) struct IsolatedTmuxEnvGuard {
 impl IsolatedTmuxEnvGuard {
     fn new(binary: &str) -> Self {
         let env_lock = tmux_env_lock()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let previous_tmux = env::var_os("TMUX");
         let previous_tmux_tmpdir = env::var_os("TMUX_TMPDIR");
 

@@ -1,25 +1,21 @@
 use anyhow::{Context, Result, anyhow};
 #[cfg(unix)]
 use std::fs::File;
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use std::{
     os::fd::{FromRawFd, IntoRawFd},
     process::Stdio,
 };
-use std::process::Command;
 
 use super::session::append_socket_args;
-use super::types::{
-    TmuxLaunchTarget, TmuxRuntimeConfig, TmuxShutdownMode, TmuxSocketTarget,
-};
+use super::types::{TmuxLaunchTarget, TmuxRuntimeConfig, TmuxShutdownMode, TmuxSocketTarget};
 
 pub(crate) const PERSISTENT_SESSION_NAME: &str = "termy";
 
-const MANAGED_SESSION_WINDOW_OPTION_BASE_OVERRIDES: [(&str, &str); 2] = [
-    ("pane-border-status", "off"),
-    ("pane-border-format", ""),
-];
+const MANAGED_SESSION_WINDOW_OPTION_BASE_OVERRIDES: [(&str, &str); 2] =
+    [("pane-border-status", "off"), ("pane-border-format", "")];
 const MANAGED_SESSION_WINDOW_OPTION_ACTIVE_BORDER_OFF_OVERRIDES: [(&str, &str); 3] = [
     ("pane-border-indicators", "off"),
     ("pane-border-style", "fg=default,bg=default"),
@@ -136,7 +132,16 @@ pub(crate) fn managed_session_window_option_override_commands<'a>(
 ) -> impl Iterator<Item = [&'a str; 6]> + 'a {
     managed_session_window_option_overrides(show_active_pane_border)
         .into_iter()
-        .map(move |(option, value)| ["set-window-option", "-q", "-t", all_windows_target, option, value])
+        .map(move |(option, value)| {
+            [
+                "set-window-option",
+                "-q",
+                "-t",
+                all_windows_target,
+                option,
+                value,
+            ]
+        })
 }
 
 pub(crate) fn managed_session_name() -> String {
@@ -191,7 +196,10 @@ mod tests {
             show_active_pane_border: false,
         });
         assert_eq!(plan.session_name, "work");
-        assert_eq!(plan.socket_target, TmuxSocketTarget::Named("work".to_string()));
+        assert_eq!(
+            plan.socket_target,
+            TmuxSocketTarget::Named("work".to_string())
+        );
         assert!(plan.attach_existing);
         assert_eq!(plan.shutdown_mode_on_drop, TmuxShutdownMode::DetachOnly);
     }
@@ -270,7 +278,8 @@ mod tests {
     }
 
     #[test]
-    fn managed_session_window_option_override_commands_skip_active_border_neutralization_when_enabled() {
+    fn managed_session_window_option_override_commands_skip_active_border_neutralization_when_enabled()
+     {
         let target = "termy:*";
         let commands = managed_session_window_option_override_commands(target, true)
             .collect::<Vec<[&str; 6]>>();

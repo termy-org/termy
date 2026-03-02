@@ -17,13 +17,14 @@ members = [
   "crates/cli",
   "crates/openai",
   "crates/gemini",
+  "crates/codex",
   "crates/agent_sidebar",
 ]
 resolver = "2"
 
 [package]
 name = "termy"
-version = "0.1.33"
+version = "0.1.37"
 edition = "2024"
 
 [package.metadata.bundle]
@@ -35,8 +36,6 @@ icon = ["assets/termy.icns"]
 
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }
-gpui-component = "0.5.1"
-
 # Terminal emulation
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty", rev = "4225cea231432fb23442b1da2463b4ec9dfd726c" }
 
@@ -75,6 +74,7 @@ termy_command_core = { path = "crates/command_core" }
 termy_cli_install_core = { path = "crates/cli_install_core" }
 termy_openai = { path = "crates/openai" }
 termy_gemini = { path = "crates/gemini" }
+termy_codex = { path = "crates/codex" }
 termy_agent_sidebar = { path = "crates/agent_sidebar" }
 
 [target.'cfg(target_os = "macos")'.dependencies]

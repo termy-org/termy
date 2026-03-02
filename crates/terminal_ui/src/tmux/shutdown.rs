@@ -14,12 +14,13 @@ pub(crate) fn is_tmux_no_server_error(error: &anyhow::Error) -> bool {
     error.to_string().contains("no server running on")
 }
 
-pub(crate) fn normalize_shutdown_teardown_result(session_name: &str, result: Result<()>) -> Result<()> {
+pub(crate) fn normalize_shutdown_teardown_result(
+    session_name: &str,
+    result: Result<()>,
+) -> Result<()> {
     match result {
         Ok(()) => Ok(()),
-        Err(error)
-            if is_tmux_missing_session_error(&error) || is_tmux_no_server_error(&error) =>
-        {
+        Err(error) if is_tmux_missing_session_error(&error) || is_tmux_no_server_error(&error) => {
             // Teardown mode is idempotent. If session/server is already gone,
             // cleanup is complete and should not block hard cutovers.
             Ok(())
@@ -65,8 +66,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_shutdown_teardown_result, run_shutdown_actions};
     use super::TmuxShutdownMode;
+    use super::{normalize_shutdown_teardown_result, run_shutdown_actions};
     use anyhow::anyhow;
     use std::cell::Cell;
 
@@ -90,7 +91,9 @@ mod tests {
     fn teardown_result_is_idempotent_when_session_is_already_missing() {
         let result = normalize_shutdown_teardown_result(
             "test-session",
-            Err(anyhow!("tmux session kill failed: can't find session: test-session")),
+            Err(anyhow!(
+                "tmux session kill failed: can't find session: test-session"
+            )),
         );
         assert!(result.is_ok());
     }
