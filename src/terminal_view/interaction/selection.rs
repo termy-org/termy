@@ -140,8 +140,7 @@ impl TerminalView {
             if active_pane_id == Some(pane.id.as_str()) && clamp {
                 continue;
             }
-            let allow_clamp_outside = clamp && active_pane_id == Some(pane.id.as_str());
-            if let Some(cell) = evaluate_pane(pane, allow_clamp_outside) {
+            if let Some(cell) = evaluate_pane(pane, false) {
                 return Some((pane.id.clone(), cell));
             }
         }
@@ -399,6 +398,7 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{thread, time::Duration};
     use termy_terminal_ui::TerminalSize;
 
     #[test]
@@ -423,8 +423,18 @@ mod tests {
 
         let native = Terminal::new_native(size, None, None, None, None)
             .expect("native terminal should initialize for row adapter test");
-        let native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
+        native.write_input(b"printf native-row-adapter\r");
+        let mut native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
+        for _ in 0..40 {
+            if native_row.iter().any(|c| !c.is_whitespace()) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(25));
+            let _ = native.process_events();
+            native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
+        }
         assert_eq!(native_row.len(), usize::from(size.cols));
+        assert!(native_row.iter().any(|c| !c.is_whitespace()));
     }
 
     #[test]

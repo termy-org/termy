@@ -124,18 +124,17 @@ impl PaneTerminal {
     }
 
     pub fn set_scrollback_history(&self, history_size: usize) {
-        if self.inner.lock().scrollback_history == history_size {
-            return;
-        }
         let term = self.cloned_term_arc();
-        let mut config = TermConfig::default();
-        config.scrolling_history = history_size;
-        term.lock().set_options(config);
-
+        let mut term = term.lock();
         let mut inner = self.inner.lock();
         if inner.scrollback_history == history_size {
             return;
         }
+        // Keep term options and cached metadata synchronized while both locks
+        // are held so concurrent updates cannot leave them divergent.
+        let mut config = TermConfig::default();
+        config.scrolling_history = history_size;
+        term.set_options(config);
         inner.scrollback_history = history_size;
     }
 

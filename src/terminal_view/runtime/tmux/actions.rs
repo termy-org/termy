@@ -109,9 +109,17 @@ impl TerminalView {
             return false;
         }
         let Some(moved_window_id) = self.tabs.get(from).map(|tab| tab.window_id.clone()) else {
+            log::warn!(
+                "Ignoring tmux reorder tab request for stale source index {from} -> {to}; current tab count is {}",
+                self.tabs.len()
+            );
             return false;
         };
         if self.tabs.get(to).is_none() {
+            log::warn!(
+                "Ignoring tmux reorder tab request for stale destination index {from} -> {to} (window_id={moved_window_id}); current tab count is {}",
+                self.tabs.len()
+            );
             return false;
         }
         let previous_active_window_id = self

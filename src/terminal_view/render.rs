@@ -76,7 +76,7 @@ impl Focusable for TerminalView {
 }
 
 impl TerminalView {
-    fn pane_right_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> u32 {
+    fn pane_right_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> Option<u32> {
         let pane_size = pane.terminal.size();
         let pane_right = u32::from(pane.left) + u32::from(pane_size.cols);
         let pane_top = u32::from(pane.top);
@@ -104,10 +104,9 @@ impl TerminalView {
                 Some(candidate_left.saturating_sub(pane_right))
             })
             .min()
-            .unwrap_or(0)
     }
 
-    fn pane_bottom_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> u32 {
+    fn pane_bottom_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> Option<u32> {
         let pane_left = u32::from(pane.left);
         let pane_size = pane.terminal.size();
         let pane_right = pane_left + u32::from(pane_size.cols);
@@ -135,7 +134,6 @@ impl TerminalView {
                 Some(candidate_top.saturating_sub(pane_bottom))
             })
             .min()
-            .unwrap_or(0)
     }
 
     fn refresh_terminal_scrollbar_marker_cache(
@@ -787,34 +785,36 @@ impl Render for TerminalView {
                         as u32;
 
                 if multi_pane && pane_right_cells < max_right_cells {
-                    let gap_cells = Self::pane_right_gap_cells(pane, &active_tab.panes);
-                    let gap_px = (gap_cells as f32) * cell_width;
-                    let divider_left = pane_left + pane_width + (gap_px * 0.5) - 0.5;
-                    pane_dividers.push(
-                        div()
-                            .absolute()
-                            .left(px(divider_left))
-                            .top(px(pane_top))
-                            .w(px(1.0))
-                            .h(px(pane_height))
-                            .bg(divider_color)
-                            .into_any_element(),
-                    );
+                    if let Some(gap_cells) = Self::pane_right_gap_cells(pane, &active_tab.panes) {
+                        let gap_px = (gap_cells as f32) * cell_width;
+                        let divider_left = pane_left + pane_width + (gap_px * 0.5) - 0.5;
+                        pane_dividers.push(
+                            div()
+                                .absolute()
+                                .left(px(divider_left))
+                                .top(px(pane_top))
+                                .w(px(1.0))
+                                .h(px(pane_height))
+                                .bg(divider_color)
+                                .into_any_element(),
+                        );
+                    }
                 }
                 if multi_pane && pane_bottom_cells < max_bottom_cells {
-                    let gap_cells = Self::pane_bottom_gap_cells(pane, &active_tab.panes);
-                    let gap_px = (gap_cells as f32) * cell_height;
-                    let divider_top = pane_top + pane_height + (gap_px * 0.5) - 0.5;
-                    pane_dividers.push(
-                        div()
-                            .absolute()
-                            .left(px(pane_left))
-                            .top(px(divider_top))
-                            .w(px(pane_width))
-                            .h(px(1.0))
-                            .bg(divider_color)
-                            .into_any_element(),
-                    );
+                    if let Some(gap_cells) = Self::pane_bottom_gap_cells(pane, &active_tab.panes) {
+                        let gap_px = (gap_cells as f32) * cell_height;
+                        let divider_top = pane_top + pane_height + (gap_px * 0.5) - 0.5;
+                        pane_dividers.push(
+                            div()
+                                .absolute()
+                                .left(px(pane_left))
+                                .top(px(divider_top))
+                                .w(px(pane_width))
+                                .h(px(1.0))
+                                .bg(divider_color)
+                                .into_any_element(),
+                        );
+                    }
                 }
 
                 pane_layers.push(
@@ -1316,6 +1316,23 @@ impl Render for TerminalView {
 mod tests {
     use super::*;
 
+    fn tmux_test_pane(id: &str, left: u16, top: u16, cols: u16, rows: u16) -> TerminalPane {
+        let size = TerminalSize {
+            cols,
+            rows,
+            ..TerminalSize::default()
+        };
+        TerminalPane {
+            id: id.to_string(),
+            left,
+            top,
+            width: cols,
+            height: rows,
+            degraded: false,
+            terminal: Terminal::new_tmux(size, 128),
+        }
+    }
+
     #[test]
     fn terminal_scrollbar_overlay_frame_anchors_to_active_pane_geometry() {
         let surface = TerminalViewportGeometry {
@@ -1359,6 +1376,58 @@ mod tests {
         );
         assert_eq!(terminal_scrollbar_track_width(6.0), 6.0);
         assert_eq!(terminal_scrollbar_track_width(-2.0), 0.0);
+    }
+
+    #[test]
+    fn pane_right_gap_cells_returns_zero_for_adjacent_overlapping_pane() {
+        let base = tmux_test_pane("%1", 0, 0, 10, 6);
+        let adjacent = tmux_test_pane("%2", 10, 2, 5, 2);
+        let panes = vec![base, adjacent];
+        assert_eq!(TerminalView::pane_right_gap_cells(&panes[0], &panes), Some(0));
+    }
+
+    #[test]
+    fn pane_right_gap_cells_returns_none_without_vertical_overlap() {
+        let base = tmux_test_pane("%1", 0, 0, 10, 6);
+        let separated = tmux_test_pane("%2", 10, 6, 5, 3);
+        let panes = vec![base, separated];
+        assert_eq!(TerminalView::pane_right_gap_cells(&panes[0], &panes), None);
+    }
+
+    #[test]
+    fn pane_right_gap_cells_prefers_smallest_matching_candidate_gap() {
+        let base = tmux_test_pane("%1", 0, 0, 10, 6);
+        let far = tmux_test_pane("%2", 15, 0, 3, 6);
+        let near = tmux_test_pane("%3", 12, 1, 3, 2);
+        let non_overlap = tmux_test_pane("%4", 11, 7, 3, 2);
+        let panes = vec![base, far, near, non_overlap];
+        assert_eq!(TerminalView::pane_right_gap_cells(&panes[0], &panes), Some(2));
+    }
+
+    #[test]
+    fn pane_bottom_gap_cells_returns_zero_for_adjacent_overlapping_pane() {
+        let base = tmux_test_pane("%1", 0, 0, 10, 6);
+        let adjacent = tmux_test_pane("%2", 2, 6, 3, 3);
+        let panes = vec![base, adjacent];
+        assert_eq!(TerminalView::pane_bottom_gap_cells(&panes[0], &panes), Some(0));
+    }
+
+    #[test]
+    fn pane_bottom_gap_cells_returns_none_without_horizontal_overlap() {
+        let base = tmux_test_pane("%1", 0, 0, 10, 6);
+        let separated = tmux_test_pane("%2", 10, 6, 4, 3);
+        let panes = vec![base, separated];
+        assert_eq!(TerminalView::pane_bottom_gap_cells(&panes[0], &panes), None);
+    }
+
+    #[test]
+    fn pane_bottom_gap_cells_prefers_smallest_matching_candidate_gap() {
+        let base = tmux_test_pane("%1", 0, 0, 10, 6);
+        let far = tmux_test_pane("%2", 0, 10, 10, 2);
+        let near = tmux_test_pane("%3", 3, 8, 2, 2);
+        let non_overlap = tmux_test_pane("%4", 11, 9, 2, 2);
+        let panes = vec![base, far, near, non_overlap];
+        assert_eq!(TerminalView::pane_bottom_gap_cells(&panes[0], &panes), Some(2));
     }
 
     #[test]

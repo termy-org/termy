@@ -13,7 +13,7 @@ enum WheelScrollRetargetResult {
     Unchanged,
     Switched,
     Abort,
-    Ended,
+    NotRetargeted,
 }
 
 fn terminal_scrollbar_local_y_from_window_y(
@@ -43,7 +43,7 @@ impl TerminalView {
         if Self::should_attempt_wheel_scroll_retarget(touch_phase, delta_lines) {
             attempted_result
         } else {
-            WheelScrollRetargetResult::Ended
+            WheelScrollRetargetResult::NotRetargeted
         }
     }
 
@@ -385,7 +385,7 @@ impl TerminalView {
                 self.terminal_scroll_accumulator_y = 0.0;
                 return;
             }
-            WheelScrollRetargetResult::Ended => {}
+            WheelScrollRetargetResult::NotRetargeted => {}
         }
 
         if matches!(event.touch_phase, TouchPhase::Moved) {
@@ -519,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn wheel_scroll_retargets_to_ended() {
+    fn wheel_scroll_retargets_to_not_retargeted() {
         let decision = TerminalView::wheel_scroll_pane_decision(true, Some("%8"), Some("%3"));
         let attempted = TerminalView::wheel_scroll_retarget_result_for_decision(
             decision,
@@ -529,7 +529,7 @@ mod tests {
         );
         let retarget =
             TerminalView::wheel_scroll_retarget_result(TouchPhase::Ended, 0, attempted);
-        assert_eq!(retarget, WheelScrollRetargetResult::Ended);
+        assert_eq!(retarget, WheelScrollRetargetResult::NotRetargeted);
     }
 
     #[test]

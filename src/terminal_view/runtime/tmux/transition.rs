@@ -60,7 +60,9 @@ impl TerminalView {
                 "Failed to read config for tmux attach",
             );
             let loaded_binary = loaded.config.tmux_binary.trim().to_string();
-            self.cached_tmux_binary = (!loaded_binary.is_empty()).then_some(loaded_binary.clone());
+            if loaded.loaded_from_disk {
+                self.cached_tmux_binary = (!loaded_binary.is_empty()).then_some(loaded_binary.clone());
+            }
             (
                 loaded_binary,
                 loaded.config.tmux_show_active_pane_border,
@@ -282,6 +284,10 @@ impl TerminalView {
 
         let cols = self.tmux_runtime().client_cols.max(1);
         let rows = self.tmux_runtime().client_rows.max(1);
+        if let Err(error) = TmuxClient::verify_tmux_version(next_config.binary.as_str(), 3, 3) {
+            termy_toast::error(format!("tmux preflight failed: {error}"));
+            return;
+        }
         match TmuxClient::new(
             next_config.clone(),
             cols,
