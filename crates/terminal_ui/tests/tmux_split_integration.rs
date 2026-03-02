@@ -286,7 +286,7 @@ fn tmux_repeated_split_refresh_cycles_remain_parseable() {
 
 #[test]
 #[ignore = "requires local tmux 3.3+; run explicitly"]
-fn tmux_capture_viewport_preserves_wrapped_input_rows() {
+fn tmux_capture_full_rejoins_wrapped_input_rows() {
     let _guard = tmux_test_guard();
     let binary = tmux_test_binary();
     let _env_guard = ensure_isolated_tmux_tmpdir(binary.as_str());
@@ -320,8 +320,8 @@ fn tmux_capture_viewport_preserves_wrapped_input_rows() {
         .expect("send-input should succeed");
 
     let capture = client
-        .capture_pane_viewport(pane_id.as_str())
-        .expect("capture-pane viewport should succeed");
+        .capture_pane(pane_id.as_str())
+        .expect("capture-pane full history should succeed");
     let capture_text = String::from_utf8_lossy(&capture);
 
     assert!(
@@ -330,8 +330,8 @@ fn tmux_capture_viewport_preserves_wrapped_input_rows() {
         capture_text
     );
     assert!(
-        !capture_text.contains(wrapped_input),
-        "capture unexpectedly joined wrapped rows; expected raw viewport wrapping: '{}'",
+        capture_text.contains(wrapped_input),
+        "capture should rejoin wrapped rows in full-history mode: '{}'",
         capture_text
     );
 }

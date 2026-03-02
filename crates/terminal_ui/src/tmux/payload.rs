@@ -35,24 +35,6 @@ pub(crate) fn capture_full_pane_args<'a>(pane_id: &'a str) -> [&'a str; 11] {
     ]
 }
 
-pub(crate) fn capture_viewport_pane_args<'a>(pane_id: &'a str) -> [&'a str; 10] {
-    // Start at viewport row 0 for hydration (`-S 0`) so reconstructed rows match
-    // tmux cursor coordinates; negative starts include history rows and cause
-    // cursor placement to drift into stale lines after attach/switch.
-    [
-        "capture-pane",
-        "-p",
-        "-e",
-        "-C",
-        "-S",
-        "0",
-        "-E",
-        "-",
-        "-t",
-        pane_id,
-    ]
-}
-
 pub(crate) fn parse_exit_reason(line: &[u8]) -> Option<String> {
     std::str::from_utf8(line)
         .ok()
@@ -175,8 +157,8 @@ pub(crate) fn strip_legacy_title_sequences(input: Vec<u8>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::{
-        capture_full_pane_args, capture_viewport_pane_args, parse_output_notification,
-        strip_legacy_title_sequences, unescape_tmux_payload,
+        capture_full_pane_args, parse_output_notification, strip_legacy_title_sequences,
+        unescape_tmux_payload,
     };
 
     fn bytes_contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -200,26 +182,6 @@ mod tests {
                 "-",
                 "-t",
                 "%1",
-            ]
-        );
-    }
-
-    #[test]
-    fn capture_viewport_pane_args_match_expected_shape_without_joined_wraps() {
-        let args = capture_viewport_pane_args("%2");
-        assert_eq!(
-            args,
-            [
-                "capture-pane",
-                "-p",
-                "-e",
-                "-C",
-                "-S",
-                "0",
-                "-E",
-                "-",
-                "-t",
-                "%2",
             ]
         );
     }

@@ -16,7 +16,7 @@ use super::launch::{
     SessionLaunchPlan, managed_session_window_option_override_commands, spawn_tmux_control_mode,
 };
 use super::payload::{
-    capture_full_pane_args, capture_viewport_pane_args, sanitize_tmux_payload, unescape_tmux_payload,
+    capture_full_pane_args, sanitize_tmux_payload, unescape_tmux_payload,
 };
 use super::session::{self, run_tmux_command_with_socket};
 use super::shutdown::{
@@ -425,14 +425,6 @@ impl TmuxClient {
 
     pub fn capture_pane(&self, pane_id: &str) -> Result<Vec<u8>> {
         let args = capture_full_pane_args(pane_id);
-        let out = self.run_control_capture_args(&args)?;
-        Ok(sanitize_tmux_payload(unescape_tmux_payload(
-            out.trim_end().as_bytes(),
-        )))
-    }
-
-    pub fn capture_pane_viewport(&self, pane_id: &str) -> Result<Vec<u8>> {
-        let args = capture_viewport_pane_args(pane_id);
         let out = self.run_control_capture_args(&args)?;
         Ok(sanitize_tmux_payload(unescape_tmux_payload(
             out.trim_end().as_bytes(),

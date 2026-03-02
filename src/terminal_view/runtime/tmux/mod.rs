@@ -15,12 +15,6 @@ enum TmuxSnapshotRefreshMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TmuxPaneHydrationMode {
-    ViewportOnly,
-    FullHistory,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TmuxCutoverCleanupDecision {
     Proceed,
     AbortOldCleanupFailure,

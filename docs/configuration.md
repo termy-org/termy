@@ -55,11 +55,6 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - Reuse tmux tabs and panes across app restarts
 - Group: `TMUX`
 
-`tmux_persist_scrollback`
-- Default: `true`
-- When tmux persistence is enabled, restore tmux pane scrollback on restart
-- Group: `TMUX`
-
 `tmux_binary`
 - Default: `tmux`
 - tmux executable path or binary name

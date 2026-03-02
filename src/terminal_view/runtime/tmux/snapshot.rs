@@ -1,5 +1,5 @@
 use super::*;
-use termy_terminal_ui::{TmuxClient, TmuxLaunchTarget, TmuxPaneState, TmuxSnapshot};
+use termy_terminal_ui::{TmuxClient, TmuxPaneState, TmuxSnapshot};
 
 impl TerminalView {
     fn terminal_size_for_pane_state(
@@ -26,29 +26,21 @@ impl TerminalView {
         pane: &TmuxPaneState,
         scrollback_history: usize,
         cell_size: Option<Size<Pixels>>,
-        hydration_mode: TmuxPaneHydrationMode,
     ) -> (Terminal, Option<String>) {
         let terminal = Terminal::new_tmux(
             Self::terminal_size_for_pane_state(pane, cell_size),
             scrollback_history,
         );
 
-        // Managed persistent sessions can restore tmux history; all other modes
-        // keep viewport-only hydration to avoid unexpected startup cost changes.
-        let capture = match hydration_mode {
-            TmuxPaneHydrationMode::ViewportOnly => tmux_client.capture_pane_viewport(&pane.id),
-            TmuxPaneHydrationMode::FullHistory => tmux_client.capture_pane(&pane.id),
-        };
+        // Always rebuild panes from full tmux history and let terminal content
+        // define cursor state. Snapshot cursor coordinates can drift relative to
+        // captured rows across attach/switch timing, so we do not inject cursor
+        // position escapes during hydration.
+        let capture = tmux_client.capture_pane(&pane.id);
 
         match capture {
             Ok(capture) => {
                 terminal.feed_output(&capture);
-                if matches!(hydration_mode, TmuxPaneHydrationMode::ViewportOnly) {
-                    let cursor_row = pane.cursor_y.min(pane.height.saturating_sub(1)).saturating_add(1);
-                    let cursor_col = pane.cursor_x.min(pane.width.saturating_sub(1)).saturating_add(1);
-                    let cursor_escape = format!("\u{1b}[{};{}H", cursor_row, cursor_col);
-                    terminal.feed_output(cursor_escape.as_bytes());
-                }
                 (terminal, None)
             }
             Err(error) => {
@@ -57,26 +49,6 @@ impl TerminalView {
                 (terminal, Some(error.to_string()))
             }
         }
-    }
-
-    fn tmux_pane_hydration_mode_for_launch(
-        tmux_persist_scrollback: bool,
-        launch: &TmuxLaunchTarget,
-    ) -> TmuxPaneHydrationMode {
-        if tmux_persist_scrollback
-            && matches!(launch, TmuxLaunchTarget::Managed { persistence: true })
-        {
-            return TmuxPaneHydrationMode::FullHistory;
-        }
-
-        TmuxPaneHydrationMode::ViewportOnly
-    }
-
-    fn tmux_pane_hydration_mode(&self) -> TmuxPaneHydrationMode {
-        Self::tmux_pane_hydration_mode_for_launch(
-            self.tmux_persist_scrollback,
-            &self.tmux_runtime().config.launch,
-        )
     }
 
     pub(super) fn apply_tmux_snapshot_rehydrate(&mut self, snapshot: TmuxSnapshot) {
@@ -90,7 +62,6 @@ impl TerminalView {
             .iter()
             .map(|tab| (tab.window_id.clone(), tab.id))
             .collect::<std::collections::HashMap<_, _>>();
-        let hydration_mode = self.tmux_pane_hydration_mode();
 
         let mut existing_terminals = std::collections::HashMap::<String, Terminal>::new();
         let old_tabs = std::mem::take(&mut self.tabs);
@@ -116,7 +87,6 @@ impl TerminalView {
                             pane_state,
                             self.terminal_runtime.scrollback_history,
                             self.cell_size,
-                            hydration_mode,
                         );
                         (terminal, hydration_error.is_some(), hydration_error)
                     };
@@ -274,42 +244,28 @@ impl TerminalView {
 mod tests {
     use super::*;
 
-    #[test]
-    fn tmux_pane_hydration_mode_uses_full_history_for_persistent_managed_runtime_with_flag() {
-        let mode = TerminalView::tmux_pane_hydration_mode_for_launch(
-            true,
-            &TmuxLaunchTarget::Managed { persistence: true },
-        );
-        assert_eq!(mode, TmuxPaneHydrationMode::FullHistory);
+    fn pane_state(width: u16, height: u16) -> TmuxPaneState {
+        TmuxPaneState {
+            id: "%1".to_string(),
+            window_id: "@1".to_string(),
+            session_id: "$1".to_string(),
+            is_active: true,
+            left: 0,
+            top: 0,
+            width,
+            height,
+            cursor_x: 0,
+            cursor_y: 0,
+            current_path: String::new(),
+            current_command: String::new(),
+        }
     }
 
     #[test]
-    fn tmux_pane_hydration_mode_uses_viewport_when_flag_is_disabled() {
-        let mode = TerminalView::tmux_pane_hydration_mode_for_launch(
-            false,
-            &TmuxLaunchTarget::Managed { persistence: true },
-        );
-        assert_eq!(mode, TmuxPaneHydrationMode::ViewportOnly);
-    }
-
-    #[test]
-    fn tmux_pane_hydration_mode_uses_viewport_for_non_persistent_managed_runtime() {
-        let mode = TerminalView::tmux_pane_hydration_mode_for_launch(
-            true,
-            &TmuxLaunchTarget::Managed { persistence: false },
-        );
-        assert_eq!(mode, TmuxPaneHydrationMode::ViewportOnly);
-    }
-
-    #[test]
-    fn tmux_pane_hydration_mode_uses_viewport_for_explicit_session_launch() {
-        let mode = TerminalView::tmux_pane_hydration_mode_for_launch(
-            true,
-            &TmuxLaunchTarget::Session {
-                name: "work".to_string(),
-                socket: termy_terminal_ui::TmuxSocketTarget::Named("work".to_string()),
-            },
-        );
-        assert_eq!(mode, TmuxPaneHydrationMode::ViewportOnly);
+    fn terminal_size_for_pane_state_clamps_zero_dimensions() {
+        let pane = pane_state(0, 0);
+        let size = TerminalView::terminal_size_for_pane_state(&pane, None);
+        assert_eq!(size.cols, 1);
+        assert_eq!(size.rows, 1);
     }
 }

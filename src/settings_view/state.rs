@@ -198,7 +198,6 @@ impl SettingsWindow {
         const TERMINAL_SETTINGS: &[RootSettingId] = &[
             RootSettingId::TmuxEnabled,
             RootSettingId::TmuxPersistence,
-            RootSettingId::TmuxPersistScrollback,
             RootSettingId::TmuxShowActivePaneBorder,
             RootSettingId::TmuxBinary,
             RootSettingId::CursorBlink,

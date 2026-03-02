@@ -241,7 +241,6 @@ fn enum_keys_parse_table_driven() {
 
 #[derive(Clone, Copy)]
 enum BoolField {
-    TmuxPersistScrollback,
     TmuxShowActivePaneBorder,
     ShowTermyInTitlebar,
     CursorBlink,
@@ -254,7 +253,6 @@ enum BoolField {
 impl BoolField {
     fn key(self) -> &'static str {
         match self {
-            Self::TmuxPersistScrollback => "tmux_persist_scrollback",
             Self::TmuxShowActivePaneBorder => "tmux_show_active_pane_border",
             Self::ShowTermyInTitlebar => "show_termy_in_titlebar",
             Self::CursorBlink => "cursor_blink",
@@ -267,7 +265,6 @@ impl BoolField {
 
     fn read(self, config: &AppConfig) -> bool {
         match self {
-            Self::TmuxPersistScrollback => config.tmux_persist_scrollback,
             Self::TmuxShowActivePaneBorder => config.tmux_show_active_pane_border,
             Self::ShowTermyInTitlebar => config.show_termy_in_titlebar,
             Self::CursorBlink => config.cursor_blink,
@@ -283,7 +280,6 @@ impl BoolField {
 fn bool_keys_parse_table_driven() {
     let defaults = AppConfig::default();
     let fields = [
-        BoolField::TmuxPersistScrollback,
         BoolField::TmuxShowActivePaneBorder,
         BoolField::ShowTermyInTitlebar,
         BoolField::CursorBlink,
@@ -442,7 +438,6 @@ fn tmux_runtime_options_parse() {
     let config = parse(
         "tmux_enabled = true\n\
          tmux_persistence = true\n\
-         tmux_persist_scrollback = true\n\
          tmux_show_active_pane_border = true\n\
          tmux_binary = /opt/homebrew/bin/tmux\n\
          working_dir_fallback = process\n",
@@ -450,10 +445,16 @@ fn tmux_runtime_options_parse() {
 
     assert!(config.tmux_enabled);
     assert!(config.tmux_persistence);
-    assert!(config.tmux_persist_scrollback);
     assert!(config.tmux_show_active_pane_border);
     assert_eq!(config.tmux_binary, "/opt/homebrew/bin/tmux");
     assert_eq!(config.working_dir_fallback, WorkingDirFallback::Process);
+}
+
+#[test]
+fn removed_tmux_persist_scrollback_key_produces_unknown_root_key_diagnostic() {
+    let report = parse_report("tmux_persist_scrollback = true\n");
+    assert_eq!(report.diagnostics.len(), 1);
+    assert_eq!(report.diagnostics[0].kind, ConfigDiagnosticKind::UnknownRootKey);
 }
 
 #[test]

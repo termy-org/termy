@@ -249,14 +249,11 @@ impl SettingsWindow {
     pub(super) fn render_terminal_tmux_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let enabled_meta = Self::setting_metadata_or_fallback("tmux_enabled");
         let persistence_meta = Self::setting_metadata_or_fallback("tmux_persistence");
-        let persist_scrollback_meta =
-            Self::setting_metadata_or_fallback("tmux_persist_scrollback");
         let show_active_border_meta =
             Self::setting_metadata_or_fallback("tmux_show_active_pane_border");
         let binary_meta = Self::setting_metadata_or_fallback("tmux_binary");
         let tmux_enabled = self.config.tmux_enabled;
         let tmux_persistence = self.config.tmux_persistence;
-        let tmux_persist_scrollback = self.config.tmux_persist_scrollback;
         let tmux_show_active_pane_border = self.config.tmux_show_active_pane_border;
         let binary = self.config.tmux_binary.clone();
 
@@ -307,30 +304,6 @@ impl SettingsWindow {
                     }
                 },
             ));
-
-        if tmux_persistence {
-            group = group.child(self.render_setting_row(
-                "tmux_persist_scrollback",
-                "tmux_persist_scrollback-toggle",
-                persist_scrollback_meta.title,
-                persist_scrollback_meta.description,
-                tmux_persist_scrollback,
-                cx,
-                |view, _cx| {
-                    let next = !view.config.tmux_persist_scrollback;
-                    match config::set_root_setting(
-                        RootSettingId::TmuxPersistScrollback,
-                        &next.to_string(),
-                    ) {
-                        Ok(()) => {
-                            view.config.tmux_persist_scrollback = next;
-                            termy_toast::success("Saved");
-                        }
-                        Err(error) => termy_toast::error(error),
-                    }
-                },
-            ));
-        }
 
         group = group
             .child(self.render_setting_row(

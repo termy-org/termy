@@ -761,7 +761,6 @@ pub struct TerminalView {
     terminal_runtime: TerminalRuntimeConfig,
     runtime: RuntimeState,
     tmux_enabled_config: bool,
-    tmux_persist_scrollback: bool,
     tmux_show_active_pane_border: bool,
     config_path: Option<PathBuf>,
     config_fingerprint: Option<u64>,
@@ -1496,7 +1495,6 @@ impl TerminalView {
             terminal_runtime,
             runtime,
             tmux_enabled_config: config.tmux_enabled,
-            tmux_persist_scrollback: config.tmux_persist_scrollback,
             tmux_show_active_pane_border: config.tmux_show_active_pane_border,
             config_path,
             config_fingerprint,
@@ -1623,7 +1621,6 @@ impl TerminalView {
             );
         }
         self.tmux_enabled_config = config.tmux_enabled;
-        self.tmux_persist_scrollback = config.tmux_persist_scrollback;
         self.tmux_show_active_pane_border = config.tmux_show_active_pane_border;
         self.configured_working_dir = config.working_dir.clone();
         self.terminal_runtime = Self::runtime_config_from_app_config(&config);
