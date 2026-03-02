@@ -92,9 +92,18 @@ impl SearchEngine {
             return Vec::new();
         };
 
+        let mut utf8_char_boundaries: Vec<usize> = text.char_indices().map(|(idx, _)| idx).collect();
+        utf8_char_boundaries.push(text.len());
+
         regex
             .find_iter(text)
-            .map(|m| SearchMatch::new(line_idx, m.start(), m.end()))
+            .map(|m| {
+                SearchMatch::new(
+                    line_idx,
+                    byte_offset_to_column(m.start(), &utf8_char_boundaries),
+                    byte_offset_to_column(m.end(), &utf8_char_boundaries),
+                )
+            })
             .collect()
     }
 
@@ -120,6 +129,10 @@ impl SearchEngine {
         matches.reverse();
         SearchResults::from_matches(matches)
     }
+}
+
+fn byte_offset_to_column(byte_offset: usize, utf8_char_boundaries: &[usize]) -> usize {
+    utf8_char_boundaries.partition_point(|boundary| *boundary < byte_offset)
 }
 
 #[cfg(test)]
@@ -243,5 +256,34 @@ mod tests {
 
         let matches = engine.search_line(0, "Hello \u{1F600} World \u{1F600}");
         assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].start_col, 6);
+        assert_eq!(matches[0].end_col, 7);
+        assert_eq!(matches[1].start_col, 14);
+        assert_eq!(matches[1].end_col, 15);
+    }
+
+    #[test]
+    fn test_literal_search_uses_columns_with_multibyte_prefix() {
+        let mut engine = SearchEngine::new(SearchConfig::default());
+        engine.set_pattern("cost").unwrap();
+
+        let matches = engine.search_line(0, "││ cost");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].start_col, 3);
+        assert_eq!(matches[0].end_col, 7);
+    }
+
+    #[test]
+    fn test_regex_search_uses_columns_with_multibyte_prefix() {
+        let mut engine = SearchEngine::new(SearchConfig {
+            case_sensitive: false,
+            mode: SearchMode::Regex,
+        });
+        engine.set_pattern(r"co.t").unwrap();
+
+        let matches = engine.search_line(0, "││ cost");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].start_col, 3);
+        assert_eq!(matches[0].end_col, 7);
     }
 }

@@ -2,8 +2,11 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchMatch {
+    /// Line index in Alacritty coordinates (`0..rows` for viewport, negative for history).
     pub line: i32,
+    /// Start column in terminal cell coordinates (end-exclusive with `end_col`).
     pub start_col: usize,
+    /// End column in terminal cell coordinates (exclusive).
     pub end_col: usize,
 }
 
