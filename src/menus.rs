@@ -8,7 +8,6 @@ const INSTALL_CLI_TITLE: &str = "Install CLI";
 const INSTALL_CLI_INSTALLED_TITLE: &str = "Install CLI (Installed)";
 const SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE: &str = "Split Pane Vertical (tmux required)";
 const SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE: &str = "Split Pane Horizontal (tmux required)";
-const CLOSE_PANE_TMUX_REQUIRED_TITLE: &str = "Close Pane (tmux required)";
 const FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE: &str = "Focus Next Pane (tmux required)";
 
 pub(crate) fn app_menus(install_cli_available: bool, tmux_enabled: bool) -> Vec<Menu> {
@@ -94,7 +93,6 @@ fn tmux_required_menu_title(action: CommandAction) -> Option<&'static str> {
     match action {
         CommandAction::SplitPaneVertical => Some(SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE),
         CommandAction::SplitPaneHorizontal => Some(SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE),
-        CommandAction::ClosePane => Some(CLOSE_PANE_TMUX_REQUIRED_TITLE),
         CommandAction::FocusPaneNext => Some(FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE),
         _ => None,
     }
@@ -103,9 +101,9 @@ fn tmux_required_menu_title(action: CommandAction) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CLOSE_PANE_TMUX_REQUIRED_TITLE, FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE,
-        INSTALL_CLI_INSTALLED_TITLE, INSTALL_CLI_TITLE, SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE,
-        SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE, app_menus,
+        FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE, INSTALL_CLI_INSTALLED_TITLE, INSTALL_CLI_TITLE,
+        SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE, SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE,
+        app_menus,
     };
     use crate::commands::CommandAction;
     use gpui::{MenuItem, OsAction};
@@ -242,7 +240,6 @@ mod tests {
         for action in [
             CommandAction::SplitPaneVertical,
             CommandAction::SplitPaneHorizontal,
-            CommandAction::ClosePane,
             CommandAction::FocusPaneNext,
         ] {
             let availability = action.availability(caps);
@@ -251,6 +248,9 @@ mod tests {
                 Some(CommandUnavailableReason::RequiresTmuxRuntime)
             );
         }
+        let close_pane_or_tab_availability = CommandAction::ClosePaneOrTab.availability(caps);
+        assert!(close_pane_or_tab_availability.enabled);
+        assert_eq!(close_pane_or_tab_availability.reason, None);
 
         let file_menu = app_menus(true, false)
             .into_iter()
@@ -271,13 +271,12 @@ mod tests {
             labels,
             vec![
                 "New Tab",
-                "Close Pane or Tab",
                 "Rename Tab",
                 "<separator>",
+                "Close Pane or Tab",
                 "Manage tmux Sessions…",
                 SPLIT_PANE_VERTICAL_TMUX_REQUIRED_TITLE,
                 SPLIT_PANE_HORIZONTAL_TMUX_REQUIRED_TITLE,
-                CLOSE_PANE_TMUX_REQUIRED_TITLE,
                 FOCUS_NEXT_PANE_TMUX_REQUIRED_TITLE,
             ]
             .into_iter()

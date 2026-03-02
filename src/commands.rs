@@ -363,7 +363,7 @@ define_commands!(
         )),
         Some(menu(
             MenuRoot::File,
-            0,
+            1,
             "Close Pane or Tab",
             MenuVisibility::Always,
             MenuActionRole::Normal
@@ -489,13 +489,7 @@ define_commands!(
             "kill close pane",
             CommandPaletteVisibility::Always
         )),
-        Some(menu(
-            MenuRoot::File,
-            1,
-            "Close Pane",
-            MenuVisibility::Always,
-            MenuActionRole::Normal
-        ))
+        None
     ),
     (
         FocusPaneLeft,
@@ -1056,7 +1050,6 @@ mod tests {
             CommandAction::ClosePaneOrTab,
             CommandAction::SplitPaneVertical,
             CommandAction::SplitPaneHorizontal,
-            CommandAction::ClosePane,
             CommandAction::FocusPaneNext,
         ] {
             assert!(
@@ -1064,6 +1057,17 @@ mod tests {
                 "missing {action:?} from File menu"
             );
         }
+
+        let close_pane_or_tab = file_entries
+            .iter()
+            .find(|entry| entry.action == CommandAction::ClosePaneOrTab)
+            .expect("missing ClosePaneOrTab from File menu");
+        assert_eq!(close_pane_or_tab.section, 1);
+        assert!(
+            !file_entries
+                .iter()
+                .any(|entry| entry.action == CommandAction::ClosePane)
+        );
     }
 
     #[test]
@@ -1091,7 +1095,7 @@ mod tests {
             .iter()
             .map(|entry| entry.section)
             .collect::<Vec<_>>();
-        assert_eq!(sections, [0, 0, 0, 1, 1, 1, 1, 1]);
+        assert_eq!(sections, [0, 0, 1, 1, 1, 1, 1]);
     }
 
     #[test]

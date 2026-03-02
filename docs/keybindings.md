@@ -15,7 +15,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-w` -> `close_pane_or_tab`
 - `secondary-d` -> `split_pane_vertical` (tmux required)
 - `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
-- `secondary-shift-w` -> `close_pane` (tmux required)
+- `secondary-o` -> `focus_pane_next` (tmux required)
 - `secondary-alt-left` -> `focus_pane_left` (tmux required)
 - `secondary-alt-right` -> `focus_pane_right` (tmux required)
 - `secondary-alt-up` -> `focus_pane_up` (tmux required)
@@ -45,7 +45,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-w` -> `close_pane_or_tab`
 - `secondary-d` -> `split_pane_vertical` (tmux required)
 - `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
-- `secondary-shift-w` -> `close_pane` (tmux required)
+- `secondary-o` -> `focus_pane_next` (tmux required)
 - `secondary-alt-left` -> `focus_pane_left` (tmux required)
 - `secondary-alt-right` -> `focus_pane_right` (tmux required)
 - `secondary-alt-up` -> `focus_pane_up` (tmux required)
@@ -74,7 +74,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-w` -> `close_pane_or_tab`
 - `secondary-d` -> `split_pane_vertical` (tmux required)
 - `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
-- `secondary-shift-w` -> `close_pane` (tmux required)
+- `secondary-o` -> `focus_pane_next` (tmux required)
 - `secondary-alt-left` -> `focus_pane_left` (tmux required)
 - `secondary-alt-right` -> `focus_pane_right` (tmux required)
 - `secondary-alt-up` -> `focus_pane_up` (tmux required)
@@ -103,7 +103,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-w` -> `close_pane_or_tab`
 - `secondary-d` -> `split_pane_vertical` (tmux required)
 - `secondary-shift-d` -> `split_pane_horizontal` (tmux required)
-- `secondary-shift-w` -> `close_pane` (tmux required)
+- `secondary-o` -> `focus_pane_next` (tmux required)
 - `secondary-alt-left` -> `focus_pane_left` (tmux required)
 - `secondary-alt-right` -> `focus_pane_right` (tmux required)
 - `secondary-alt-up` -> `focus_pane_up` (tmux required)

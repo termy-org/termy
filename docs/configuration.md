@@ -51,7 +51,7 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - Group: `TMUX`
 
 `tmux_persistence`
-- Default: `false`
+- Default: `true`
 - Reuse tmux tabs and panes across app restarts
 - Group: `TMUX`
 
@@ -122,7 +122,7 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - Group: `UI`
 
 `pane_focus_strength`
-- Default: `0.35`
+- Default: `0.6`
 - Strength of active pane emphasis (0.0 to 2.0)
 - Group: `UI`
 

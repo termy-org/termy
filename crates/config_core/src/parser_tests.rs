@@ -13,6 +13,13 @@ fn parse_report(input: &str) -> ConfigParseReport {
 }
 
 #[test]
+fn defaults_enable_tmux_persistence_and_raise_pane_focus_strength() {
+    let defaults = parse("");
+    assert!(defaults.tmux_persistence);
+    assert!((defaults.pane_focus_strength - 0.6).abs() < f32::EPSILON);
+}
+
+#[test]
 fn from_contents_with_report_captures_diagnostics() {
     let report = parse_report(
         "bad syntax line\n\

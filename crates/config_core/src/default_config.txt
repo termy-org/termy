@@ -4,7 +4,7 @@ theme = termy
 # Enable tmux runtime integration
 tmux_enabled = false
 # Reuse tmux tabs and panes across app restarts
-tmux_persistence = false
+tmux_persistence = true
 # tmux executable path or binary name
 tmux_binary = tmux
 # Show active tmux pane border highlight in managed sessions
@@ -74,7 +74,7 @@ scrollback_history = 2000
 # How inactive panes are visually dimmed when a pane is active
 pane_focus_effect = soft_spotlight
 # Strength of active pane emphasis (0.0 to 2.0)
-pane_focus_strength = 0.35
+pane_focus_strength = 0.6
 # Show shortcut badges in command palette rows
 command_palette_show_keybinds = true
 

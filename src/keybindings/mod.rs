@@ -298,6 +298,17 @@ mod tests {
     }
 
     #[test]
+    fn tmux_mode_keeps_focus_next_pane_default_keybind() {
+        let config = AppConfig::default();
+        let (resolved, warnings) = resolve_keybinds_for_config(&config, true);
+
+        assert!(warnings.is_empty());
+        assert!(resolved.iter().any(|binding| {
+            binding.trigger == "secondary-o" && binding.action == CommandId::FocusPaneNext
+        }));
+    }
+
+    #[test]
     fn keybind_resolution_emits_tmux_suppression_warning_when_tmux_disabled() {
         let mut config = AppConfig::default();
         config.keybind_lines = vec![
