@@ -1617,7 +1617,7 @@ impl TerminalView {
         let tmux_enabled_changed = config.tmux_enabled != self.tmux_enabled_config;
         if next_runtime_kind != self.runtime_kind() && tmux_enabled_changed {
             termy_toast::info(
-                "tmux startup default saved. Use Manage tmux Sessions to switch runtime now.",
+                "tmux startup default saved. Use Tmux Sessions to switch runtime now.",
             );
         }
         self.tmux_enabled_config = config.tmux_enabled;

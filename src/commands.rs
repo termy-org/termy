@@ -437,14 +437,14 @@ define_commands!(
         ManageTmuxSessions,
         TERMINAL_CONTEXT,
         Some(palette(
-            "Manage tmux Sessions",
+            "Tmux Sessions",
             "tmux sessions attach switch create manage",
             CommandPaletteVisibility::Always
         )),
         Some(menu(
             MenuRoot::File,
             1,
-            "Manage tmux Sessions…",
+            "Tmux Sessions",
             MenuVisibility::Always,
             MenuActionRole::Normal
         ))
@@ -678,22 +678,6 @@ define_commands!(
         None
     ),
     (
-        OpenConfig,
-        GLOBAL_CONTEXT,
-        Some(palette(
-            "Open Settings File",
-            "settings file config edit",
-            CommandPaletteVisibility::Always
-        )),
-        Some(menu(
-            MenuRoot::App,
-            1,
-            "Open Config File...",
-            MenuVisibility::Always,
-            MenuActionRole::Normal
-        ))
-    ),
-    (
         OpenSettings,
         GLOBAL_CONTEXT,
         Some(palette(
@@ -705,6 +689,22 @@ define_commands!(
             MenuRoot::App,
             1,
             "Settings...",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
+    ),
+    (
+        OpenConfig,
+        GLOBAL_CONTEXT,
+        Some(palette(
+            "Open Settings File",
+            "settings file config edit",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::App,
+            1,
+            "Open Config File...",
             MenuVisibility::Always,
             MenuActionRole::Normal
         ))

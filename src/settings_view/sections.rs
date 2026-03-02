@@ -293,7 +293,7 @@ impl SettingsWindow {
                 match config::set_root_setting(RootSettingId::TmuxEnabled, &next.to_string()) {
                     Ok(()) => {
                         view.config.tmux_enabled = next;
-                        termy_toast::success("Saved. Use Manage tmux Sessions to switch runtime now.");
+                        termy_toast::success("Saved. Use Tmux Sessions to switch runtime now.");
                     }
                     Err(error) => termy_toast::error(error),
                 }
