@@ -60,6 +60,36 @@ enum PaneCacheUpdateStrategy {
     Full,
 }
 
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct RenderPassCacheStrategyCounts {
+    full: u64,
+    partial: u64,
+    reuse: u64,
+}
+
+#[cfg(debug_assertions)]
+impl RenderPassCacheStrategyCounts {
+    fn record(&mut self, strategy: PaneCacheUpdateStrategy) {
+        match strategy {
+            PaneCacheUpdateStrategy::Reuse => {
+                self.reuse = self.reuse.saturating_add(1);
+            }
+            PaneCacheUpdateStrategy::Partial => {
+                self.partial = self.partial.saturating_add(1);
+            }
+            PaneCacheUpdateStrategy::Full => {
+                self.full = self.full.saturating_add(1);
+            }
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+fn increment_render_count_counter(counters: &mut TerminalRenderMetricsCounters) {
+    counters.render_count = counters.render_count.saturating_add(1);
+}
+
 fn pane_cache_update_strategy(
     cache_has_cells: bool,
     cache_size_matches: bool,
@@ -558,7 +588,7 @@ impl TerminalView {
         cache: &mut TerminalPaneRenderCache,
         cache_key: TerminalPaneRenderCacheKey,
         context: PaneCellBuildContext<'_>,
-    ) -> PaneRenderCells {
+    ) -> (PaneRenderCells, PaneCacheUpdateStrategy) {
         let damage = terminal.take_damage_snapshot();
         let strategy = pane_cache_update_strategy(
             !cache.cells.is_empty(),
@@ -586,7 +616,7 @@ impl TerminalView {
                     cache.rows = rows;
                     cache.display_offset = display_offset;
                     cache.key = Some(cache_key);
-                    return cache.cells.clone();
+                    return (cache.cells.clone(), PaneCacheUpdateStrategy::Full);
                 };
                 self.patch_pane_render_cache(
                     terminal,
@@ -604,7 +634,7 @@ impl TerminalView {
         cache.rows = rows;
         cache.display_offset = display_offset;
         cache.key = Some(cache_key);
-        cache.cells.clone()
+        (cache.cells.clone(), strategy)
     }
 
     fn build_terminal_grid_from_cache(
@@ -656,6 +686,76 @@ impl TerminalView {
             font_size,
             cursor_style,
         }
+    }
+
+    #[cfg(debug_assertions)]
+    fn record_render_metrics_for_pass(&mut self, cache_counts: RenderPassCacheStrategyCounts) {
+        if !self.render_metrics.enabled {
+            return;
+        }
+        increment_render_count_counter(&mut self.render_metrics.counters);
+        self.render_metrics.counters.cache_full_count = self
+            .render_metrics
+            .counters
+            .cache_full_count
+            .saturating_add(cache_counts.full);
+        self.render_metrics.counters.cache_partial_count = self
+            .render_metrics
+            .counters
+            .cache_partial_count
+            .saturating_add(cache_counts.partial);
+        self.render_metrics.counters.cache_reuse_count = self
+            .render_metrics
+            .counters
+            .cache_reuse_count
+            .saturating_add(cache_counts.reuse);
+    }
+
+    #[cfg(debug_assertions)]
+    fn maybe_emit_render_metrics_log(&mut self, now: Instant) {
+        if !self.render_metrics.enabled {
+            return;
+        }
+
+        if let Some(last_emit) = self.render_metrics.last_emit_at
+            && now.duration_since(last_emit) < self.render_metrics.log_interval
+        {
+            return;
+        }
+
+        let terminal_ui_snapshot = terminal_ui_render_metrics_snapshot();
+        let counters_delta = self
+            .render_metrics
+            .counters
+            .saturating_sub(self.render_metrics.last_emit_counters);
+        let terminal_ui_delta =
+            terminal_ui_snapshot.saturating_sub(self.render_metrics.last_emit_terminal_ui);
+        let dt_ms = self
+            .render_metrics
+            .last_emit_at
+            .map(|last_emit| now.duration_since(last_emit).as_millis())
+            .unwrap_or(0);
+
+        log::info!(
+            "render_metrics dt_ms={} render={} grid_paint={} full={} partial={} reuse={} shape_line={} total_render={} total_grid_paint={} total_full={} total_partial={} total_reuse={} total_shape_line={}",
+            dt_ms,
+            counters_delta.render_count,
+            terminal_ui_delta.grid_paint_count,
+            counters_delta.cache_full_count,
+            counters_delta.cache_partial_count,
+            counters_delta.cache_reuse_count,
+            terminal_ui_delta.shape_line_calls,
+            self.render_metrics.counters.render_count,
+            terminal_ui_snapshot.grid_paint_count,
+            self.render_metrics.counters.cache_full_count,
+            self.render_metrics.counters.cache_partial_count,
+            self.render_metrics.counters.cache_reuse_count,
+            terminal_ui_snapshot.shape_line_calls,
+        );
+
+        self.render_metrics.last_emit_counters = self.render_metrics.counters;
+        self.render_metrics.last_emit_terminal_ui = terminal_ui_snapshot;
+        self.render_metrics.last_emit_at = Some(now);
     }
 
     fn refresh_terminal_scrollbar_marker_cache(
@@ -1026,27 +1126,6 @@ impl Render for TerminalView {
             .detach();
         }
 
-        let this = cx.entity().downgrade();
-        window.on_mouse_event({
-            let this = this.clone();
-            move |event: &MouseMoveEvent, phase, _window, cx| {
-                if phase != gpui::DispatchPhase::Bubble {
-                    return;
-                }
-                let _ = this.update(cx, |view, cx| {
-                    view.handle_global_mouse_move_event(event, cx);
-                });
-            }
-        });
-        window.on_mouse_event(move |event: &MouseUpEvent, phase, _window, cx| {
-            if phase != gpui::DispatchPhase::Bubble {
-                return;
-            }
-            let _ = this.update(cx, |view, cx| {
-                view.handle_global_mouse_up_event(event, cx);
-            });
-        });
-
         // Compute update banner state
         #[cfg(target_os = "macos")]
         let banner_state = self.auto_updater.as_ref().map(|e| e.read(cx).state.clone());
@@ -1113,6 +1192,8 @@ impl Render for TerminalView {
         let mut pane_dividers = Vec::<AnyElement>::new();
         let mut pane_focus_accents = Vec::<AnyElement>::new();
         let mut pane_focus_needs_animation = false;
+        #[cfg(debug_assertions)]
+        let mut render_pass_cache_counts = RenderPassCacheStrategyCounts::default();
 
         if let Some(active_tab) = self.tabs.get(self.active_tab) {
             let multi_pane = active_tab.panes.len() > 1;
@@ -1204,7 +1285,7 @@ impl Render for TerminalView {
                 } else {
                     None
                 };
-                let pane_cells = {
+                let (pane_cells, cache_strategy) = {
                     let mut pane_render_cache = pane.render_cache.borrow_mut();
                     self.update_pane_render_cache(
                         terminal,
@@ -1224,6 +1305,8 @@ impl Render for TerminalView {
                         },
                     )
                 };
+                #[cfg(debug_assertions)]
+                render_pass_cache_counts.record(cache_strategy);
 
                 if is_active_pane {
                     terminal_display_offset = pane_display_offset;
@@ -1367,6 +1450,8 @@ impl Render for TerminalView {
         if pane_focus_needs_animation {
             self.schedule_pane_focus_animation(cx);
         }
+        #[cfg(debug_assertions)]
+        self.record_render_metrics_for_pass(render_pass_cache_counts);
 
         let focus_handle = self.focus_handle.clone();
         let titlebar_height = Self::titlebar_height();
@@ -1697,7 +1782,7 @@ impl Render for TerminalView {
         let mut root_bg = colors.background;
         root_bg.a = self.scaled_background_alpha(root_bg.a);
 
-        div()
+        let root = div()
             .id("termy-root")
             .flex()
             .flex_col()
@@ -1706,9 +1791,13 @@ impl Render for TerminalView {
             .font_family(font_family.clone())
             .capture_any_mouse_up(cx.listener(|this, event: &MouseUpEvent, _window, cx| {
                 if event.button == MouseButton::Left {
+                    this.handle_global_mouse_up_event(event, cx);
                     this.disarm_titlebar_window_move();
                     this.commit_tab_drag(cx);
                 }
+            }))
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
+                this.handle_global_mouse_move_event(event, cx);
             }))
             .on_mouse_up_out(
                 MouseButton::Left,
@@ -1807,7 +1896,12 @@ impl Render for TerminalView {
                     .children(search_overlay)
                     .children(ai_input_overlay),
             )
-            .children(toast_overlay)
+            .children(toast_overlay);
+
+        #[cfg(debug_assertions)]
+        self.maybe_emit_render_metrics_log(Instant::now());
+
+        root
     }
 }
 
@@ -2144,5 +2238,43 @@ mod tests {
             }]),
         );
         assert_eq!(strategy, PaneCacheUpdateStrategy::Full);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn record_cache_strategy_increments_reuse() {
+        let mut counts = RenderPassCacheStrategyCounts::default();
+        counts.record(PaneCacheUpdateStrategy::Reuse);
+        assert_eq!(counts.reuse, 1);
+        assert_eq!(counts.partial, 0);
+        assert_eq!(counts.full, 0);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn record_cache_strategy_increments_partial() {
+        let mut counts = RenderPassCacheStrategyCounts::default();
+        counts.record(PaneCacheUpdateStrategy::Partial);
+        assert_eq!(counts.reuse, 0);
+        assert_eq!(counts.partial, 1);
+        assert_eq!(counts.full, 0);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn record_cache_strategy_increments_full() {
+        let mut counts = RenderPassCacheStrategyCounts::default();
+        counts.record(PaneCacheUpdateStrategy::Full);
+        assert_eq!(counts.reuse, 0);
+        assert_eq!(counts.partial, 0);
+        assert_eq!(counts.full, 1);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn render_count_increments_once_per_render_call() {
+        let mut counters = TerminalRenderMetricsCounters::default();
+        increment_render_count_counter(&mut counters);
+        assert_eq!(counters.render_count, 1);
     }
 }

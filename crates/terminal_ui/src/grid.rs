@@ -1,3 +1,4 @@
+use crate::render_metrics::{increment_grid_paint_count, increment_shape_line_calls};
 use gpui::{
     App, Bounds, Element, Font, FontFeatures, FontWeight, Hsla, IntoElement, Pixels, SharedString,
     Size, TextAlign, TextRun, UnderlineStyle, Window, point, px, quad,
@@ -397,6 +398,7 @@ impl Element for TerminalGrid {
         window: &mut Window,
         cx: &mut App,
     ) {
+        increment_grid_paint_count();
         let origin = bounds.origin;
         let grid_bounds = Bounds {
             origin,
@@ -544,6 +546,7 @@ impl Element for TerminalGrid {
                         strikethrough: None,
                     };
 
+                    increment_shape_line_calls();
                     let line = window.text_system().shape_line(
                         batch.text.into(),
                         self.font_size,

@@ -32,6 +32,11 @@ use termy_terminal_ui::{
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
 use termy_toast::ToastManager;
+#[cfg(debug_assertions)]
+use termy_terminal_ui::{
+    TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_reset,
+    terminal_ui_render_metrics_snapshot,
+};
 
 #[cfg(target_os = "macos")]
 use gpui::{AppContext, Entity};
@@ -133,6 +138,8 @@ const PANE_FOCUS_ANIMATION_MS: u64 = 140;
 const PANE_FOCUS_ANIMATION_FRAME_MS: u64 = 16;
 const PANE_FOCUS_ANIMATION_DURATION: Duration = Duration::from_millis(PANE_FOCUS_ANIMATION_MS);
 const MAX_PANE_FOCUS_STRENGTH: f32 = 2.0;
+#[cfg(debug_assertions)]
+const RENDER_METRICS_LOG_INTERVAL: Duration = Duration::from_secs(1);
 
 type TabId = u64;
 
@@ -480,6 +487,71 @@ impl TerminalPaneRenderCache {
         self.rows = 0;
         self.display_offset = 0;
         self.key = None;
+    }
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct TerminalRenderMetricsCounters {
+    render_count: u64,
+    cache_full_count: u64,
+    cache_partial_count: u64,
+    cache_reuse_count: u64,
+}
+
+#[cfg(debug_assertions)]
+impl TerminalRenderMetricsCounters {
+    fn saturating_sub(self, previous: Self) -> Self {
+        Self {
+            render_count: self.render_count.saturating_sub(previous.render_count),
+            cache_full_count: self.cache_full_count.saturating_sub(previous.cache_full_count),
+            cache_partial_count: self
+                .cache_partial_count
+                .saturating_sub(previous.cache_partial_count),
+            cache_reuse_count: self.cache_reuse_count.saturating_sub(previous.cache_reuse_count),
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Debug)]
+struct TerminalRenderMetricsState {
+    enabled: bool,
+    counters: TerminalRenderMetricsCounters,
+    last_emit_counters: TerminalRenderMetricsCounters,
+    last_emit_terminal_ui: TerminalUiRenderMetricsSnapshot,
+    last_emit_at: Option<Instant>,
+    log_interval: Duration,
+}
+
+#[cfg(debug_assertions)]
+impl TerminalRenderMetricsState {
+    fn parse_env_flag(value: &str) -> bool {
+        matches!(value.trim(), "1")
+            || value.eq_ignore_ascii_case("true")
+            || value.eq_ignore_ascii_case("yes")
+            || value.eq_ignore_ascii_case("on")
+    }
+
+    fn enabled_from_env() -> bool {
+        env::var("TERMY_RENDER_METRICS")
+            .ok()
+            .is_some_and(|value| Self::parse_env_flag(value.as_str()))
+    }
+
+    fn from_env() -> Self {
+        let enabled = Self::enabled_from_env();
+        if enabled {
+            terminal_ui_render_metrics_reset();
+        }
+        Self {
+            enabled,
+            counters: TerminalRenderMetricsCounters::default(),
+            last_emit_counters: TerminalRenderMetricsCounters::default(),
+            last_emit_terminal_ui: terminal_ui_render_metrics_snapshot(),
+            last_emit_at: None,
+            log_interval: RENDER_METRICS_LOG_INTERVAL,
+        }
     }
 }
 
@@ -876,6 +948,8 @@ pub struct TerminalView {
     ai_input: InlineInputState,
     // Pending clipboard write from OSC 52
     pending_clipboard: Option<String>,
+    #[cfg(debug_assertions)]
+    render_metrics: TerminalRenderMetricsState,
     quit_prompt_in_flight: bool,
     allow_quit_without_prompt: bool,
     #[cfg(target_os = "macos")]
@@ -1627,6 +1701,8 @@ impl TerminalView {
             ai_input_open: false,
             ai_input: InlineInputState::new(String::new()),
             pending_clipboard: None,
+            #[cfg(debug_assertions)]
+            render_metrics: TerminalRenderMetricsState::from_env(),
             quit_prompt_in_flight: false,
             allow_quit_without_prompt: false,
             #[cfg(target_os = "macos")]
@@ -1966,6 +2042,24 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn render_metrics_env_parser_accepts_truthy_values() {
+        assert!(TerminalRenderMetricsState::parse_env_flag("1"));
+        assert!(TerminalRenderMetricsState::parse_env_flag("true"));
+        assert!(TerminalRenderMetricsState::parse_env_flag("TRUE"));
+        assert!(TerminalRenderMetricsState::parse_env_flag("yes"));
+        assert!(TerminalRenderMetricsState::parse_env_flag("on"));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn render_metrics_env_parser_rejects_empty_and_zero_values() {
+        assert!(!TerminalRenderMetricsState::parse_env_flag(""));
+        assert!(!TerminalRenderMetricsState::parse_env_flag("0"));
+        assert!(!TerminalRenderMetricsState::parse_env_flag("false"));
+    }
 
     #[test]
     fn resolve_background_appearance_is_opaque_when_opacity_is_full() {
