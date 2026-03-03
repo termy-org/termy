@@ -32,6 +32,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-f` -> `open_search`
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
+- `secondary-k` -> `toggle_ai_input`
 - `secondary-m` -> `minimize_window`
 - `secondary-c` -> `copy`
 - `secondary-v` -> `paste`
@@ -62,6 +63,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-f` -> `open_search`
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
+- `secondary-k` -> `toggle_ai_input`
 - `secondary-c` -> `copy`
 - `secondary-v` -> `paste`
 
@@ -91,6 +93,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-f` -> `open_search`
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
+- `secondary-k` -> `toggle_ai_input`
 - `ctrl-shift-c` -> `copy`
 - `ctrl-shift-v` -> `paste`
 
@@ -120,6 +123,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-f` -> `open_search`
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
+- `secondary-k` -> `toggle_ai_input`
 - `ctrl-shift-c` -> `copy`
 - `ctrl-shift-v` -> `paste`
 
@@ -193,6 +197,7 @@ Related UI option:
 - `toggle_search_case_sensitive`
 - `toggle_search_regex`
 - `install_cli`
+- `toggle_ai_input`
 
 ## Customization Examples
 
