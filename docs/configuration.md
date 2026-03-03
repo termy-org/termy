@@ -211,6 +211,12 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - Default startup window height in pixels
 - Group: `WINDOW`
 
+`openai_api_key`
+- Default: unset
+- Aliases: `openai_key`
+- API key for OpenAI integration
+- Group: `AI`
+
 ## Keybindings
 
 `keybind`

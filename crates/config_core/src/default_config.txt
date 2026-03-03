@@ -77,6 +77,8 @@ pane_focus_effect = soft_spotlight
 pane_focus_strength = 0.6
 # Show shortcut badges in command palette rows
 command_palette_show_keybinds = true
+# API key for OpenAI integration
+openai_api_key = none
 
 # Keybindings (repeatable)
 # tmux-only keybind actions require an active tmux session
