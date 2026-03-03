@@ -88,6 +88,7 @@ impl TerminalPane {
             height: state.height,
             degraded,
             terminal,
+            render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
         }
     }
 }

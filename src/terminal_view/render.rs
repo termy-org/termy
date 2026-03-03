@@ -1,7 +1,10 @@
 use super::scrollbar as terminal_scrollbar;
 use super::*;
+use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::index::{Column, Line};
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle};
 use gpui::prelude::FluentBuilder;
+use std::sync::Arc;
 
 fn cell_ranges_overlap(start_a: u32, end_a: u32, start_b: u32, end_b: u32) -> bool {
     start_a < end_b && start_b < end_a
@@ -48,6 +51,59 @@ impl CellColorTransform {
             || self.bg_blend > f32::EPSILON
             || self.desaturate > f32::EPSILON
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PaneCacheUpdateStrategy {
+    Reuse,
+    Partial,
+    Full,
+}
+
+fn pane_cache_update_strategy(
+    cache_has_cells: bool,
+    cache_size_matches: bool,
+    cache_offset_matches: bool,
+    cache_key_matches: bool,
+    damage: &TerminalDamageSnapshot,
+) -> PaneCacheUpdateStrategy {
+    if !cache_has_cells || !cache_size_matches || !cache_offset_matches || !cache_key_matches {
+        return PaneCacheUpdateStrategy::Full;
+    }
+    match damage {
+        TerminalDamageSnapshot::Full => PaneCacheUpdateStrategy::Full,
+        TerminalDamageSnapshot::Partial(spans) if spans.is_empty() => PaneCacheUpdateStrategy::Reuse,
+        TerminalDamageSnapshot::Partial(_) => PaneCacheUpdateStrategy::Partial,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PaneCellBuildContext<'a> {
+    colors: &'a TerminalColors,
+    effective_background_opacity: f32,
+    cell_color_transform: CellColorTransform,
+    pane_focus_target_bg: gpui::Rgba,
+    terminal_surface_bg: gpui::Rgba,
+    selection_range: Option<(SelectionPos, SelectionPos)>,
+    pane_search_results: Option<&'a termy_search::SearchResults>,
+}
+
+fn selection_range_contains(
+    selection_range: Option<(SelectionPos, SelectionPos)>,
+    col: usize,
+    line: i32,
+) -> bool {
+    let Some((start, end)) = selection_range else {
+        return false;
+    };
+    let here = (line, col);
+    here >= (start.line, start.col) && here <= (end.line, end.col)
+}
+
+fn term_line_from_viewport_row(row: usize, display_offset: usize) -> Option<i32> {
+    let row = i64::try_from(row).ok()?;
+    let display_offset = i64::try_from(display_offset).ok()?;
+    i32::try_from(row - display_offset).ok()
 }
 
 fn command_palette_backdrop_transform() -> CellColorTransform {
@@ -187,6 +243,299 @@ impl TerminalView {
                 Some(candidate_top.saturating_sub(pane_bottom))
             })
             .min()
+    }
+
+    fn pane_render_cache_key(
+        &self,
+        is_active_pane: bool,
+        search_active: bool,
+        cell_color_transform: CellColorTransform,
+        effective_background_opacity: f32,
+    ) -> TerminalPaneRenderCacheKey {
+        let (search_results_revision, search_position) = if search_active && is_active_pane {
+            let results = self.search_state.results();
+            (Some(self.search_state.results_revision()), results.position())
+        } else {
+            (None, None)
+        };
+
+        TerminalPaneRenderCacheKey {
+            is_active_pane,
+            selection_range: is_active_pane.then(|| self.selection_range()).flatten(),
+            search_results_revision,
+            search_position,
+            effective_background_opacity_bits: effective_background_opacity.to_bits(),
+            color_transform: TerminalPaneCellColorTransformKey {
+                fg_blend_bits: cell_color_transform.fg_blend.to_bits(),
+                bg_blend_bits: cell_color_transform.bg_blend.to_bits(),
+                desaturate_bits: cell_color_transform.desaturate.to_bits(),
+            },
+        }
+    }
+
+    fn build_cell_render_info(
+        &self,
+        col: usize,
+        row: usize,
+        term_line: i32,
+        cell_content: &alacritty_terminal::term::cell::Cell,
+        context: PaneCellBuildContext<'_>,
+    ) -> CellRenderInfo {
+        let mut fg = context.colors.convert(cell_content.fg);
+        let mut bg = context.colors.convert(cell_content.bg);
+        if cell_content.flags.contains(Flags::INVERSE) {
+            std::mem::swap(&mut fg, &mut bg);
+        }
+        if cell_content.flags.contains(Flags::DIM) {
+            fg.r *= DIM_TEXT_FACTOR;
+            fg.g *= DIM_TEXT_FACTOR;
+            fg.b *= DIM_TEXT_FACTOR;
+        }
+        bg.a *= context.effective_background_opacity;
+        (fg, bg) = apply_cell_color_transform(
+            fg,
+            bg,
+            context.cell_color_transform,
+            context.pane_focus_target_bg,
+            context.terminal_surface_bg,
+        );
+
+        let (search_current, search_match) = if let Some(results) = context.pane_search_results {
+            let is_current = results.is_current_match(term_line, col);
+            let is_any = results.is_any_match(term_line, col);
+            (is_current, is_any && !is_current)
+        } else {
+            (false, false)
+        };
+
+        CellRenderInfo {
+            col,
+            row,
+            char: cell_content.c,
+            fg: fg.into(),
+            bg: bg.into(),
+            bold: cell_content.flags.contains(Flags::BOLD),
+            render_text: !cell_content.flags.intersects(
+                Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN,
+            ),
+            selected: selection_range_contains(context.selection_range, col, term_line),
+            search_current,
+            search_match,
+        }
+    }
+
+    fn rebuild_pane_render_cache(
+        &self,
+        terminal: &Terminal,
+        cols: usize,
+        rows: usize,
+        display_offset: usize,
+        context: PaneCellBuildContext<'_>,
+    ) -> Arc<Vec<CellRenderInfo>> {
+        let mut default_bg = context.colors.background;
+        default_bg.a *= context.effective_background_opacity;
+        let (default_fg, default_bg) = apply_cell_color_transform(
+            context.colors.foreground,
+            default_bg,
+            context.cell_color_transform,
+            context.pane_focus_target_bg,
+            context.terminal_surface_bg,
+        );
+        let mut cells = Vec::with_capacity(cols.saturating_mul(rows));
+        for row in 0..rows {
+            for col in 0..cols {
+                cells.push(CellRenderInfo {
+                    col,
+                    row,
+                    char: ' ',
+                    fg: default_fg.into(),
+                    bg: default_bg.into(),
+                    bold: false,
+                    render_text: false,
+                    selected: false,
+                    search_current: false,
+                    search_match: false,
+                });
+            }
+        }
+
+        let _ = terminal.for_each_renderable_cell(|cell_display_offset, term_line, col, cell_content| {
+            if cell_display_offset != display_offset || col >= cols {
+                return;
+            }
+            let Some(row) = Self::viewport_row_from_term_line(term_line, cell_display_offset) else {
+                return;
+            };
+            if row >= rows {
+                return;
+            }
+            let index = row.saturating_mul(cols).saturating_add(col);
+            if index >= cells.len() {
+                return;
+            }
+            cells[index] = self.build_cell_render_info(col, row, term_line, cell_content, context);
+        });
+        Arc::new(cells)
+    }
+
+    fn patch_pane_render_cache(
+        &self,
+        terminal: &Terminal,
+        cols: usize,
+        rows: usize,
+        display_offset: usize,
+        existing: &Arc<Vec<CellRenderInfo>>,
+        spans: &[TerminalDirtySpan],
+        context: PaneCellBuildContext<'_>,
+    ) -> Arc<Vec<CellRenderInfo>> {
+        if existing.len() != cols.saturating_mul(rows) {
+            return self.rebuild_pane_render_cache(terminal, cols, rows, display_offset, context);
+        }
+
+        let mut cells = (**existing).clone();
+        let _ = terminal.with_grid(|grid| {
+            let Some(screen_lines) = i32::try_from(grid.screen_lines()).ok() else {
+                return;
+            };
+            let Some(total_lines) = i32::try_from(grid.total_lines()).ok() else {
+                return;
+            };
+            let min_line = -(total_lines - screen_lines);
+            let max_line = screen_lines - 1;
+
+            for span in spans {
+                if span.row >= rows || cols == 0 {
+                    continue;
+                }
+
+                let Some(term_line) = term_line_from_viewport_row(span.row, display_offset) else {
+                    continue;
+                };
+                if term_line < min_line || term_line > max_line {
+                    continue;
+                }
+
+                let row = span.row;
+                let line_ref = &grid[Line(term_line)];
+                let left_col = span.left_col.min(cols.saturating_sub(1));
+                let right_col = span.right_col.min(cols.saturating_sub(1));
+                if left_col > right_col {
+                    continue;
+                }
+
+                for col in left_col..=right_col {
+                    let index = row.saturating_mul(cols).saturating_add(col);
+                    if index >= cells.len() {
+                        continue;
+                    }
+                    let cell_content = &line_ref[Column(col)];
+                    cells[index] = self.build_cell_render_info(col, row, term_line, cell_content, context);
+                }
+            }
+        });
+        Arc::new(cells)
+    }
+
+    fn update_pane_render_cache(
+        &self,
+        terminal: &Terminal,
+        cols: usize,
+        rows: usize,
+        display_offset: usize,
+        cache: &mut TerminalPaneRenderCache,
+        cache_key: TerminalPaneRenderCacheKey,
+        context: PaneCellBuildContext<'_>,
+    ) -> Arc<Vec<CellRenderInfo>> {
+        let damage = terminal.take_damage_snapshot();
+        let strategy = pane_cache_update_strategy(
+            !cache.cells.is_empty(),
+            cache.cols == cols && cache.rows == rows,
+            cache.display_offset == display_offset,
+            cache.key.as_ref() == Some(&cache_key),
+            &damage,
+        );
+
+        match strategy {
+            PaneCacheUpdateStrategy::Reuse => {}
+            PaneCacheUpdateStrategy::Full => {
+                cache.cells = self.rebuild_pane_render_cache(terminal, cols, rows, display_offset, context);
+            }
+            PaneCacheUpdateStrategy::Partial => {
+                let TerminalDamageSnapshot::Partial(spans) = damage else {
+                    cache.cells = self.rebuild_pane_render_cache(
+                        terminal,
+                        cols,
+                        rows,
+                        display_offset,
+                        context,
+                    );
+                    cache.cols = cols;
+                    cache.rows = rows;
+                    cache.display_offset = display_offset;
+                    cache.key = Some(cache_key);
+                    return cache.cells.clone();
+                };
+                cache.cells =
+                    self.patch_pane_render_cache(terminal, cols, rows, display_offset, &cache.cells, &spans, context);
+            }
+        }
+
+        cache.cols = cols;
+        cache.rows = rows;
+        cache.display_offset = display_offset;
+        cache.key = Some(cache_key);
+        cache.cells.clone()
+    }
+
+    fn build_terminal_grid_from_cache(
+        &self,
+        cells: Arc<Vec<CellRenderInfo>>,
+        cell_size: Size<Pixels>,
+        cols: usize,
+        rows: usize,
+        colors: &TerminalColors,
+        hovered_link_range: Option<(usize, usize, usize)>,
+        font_family: SharedString,
+        font_size: Pixels,
+        cursor_style: TerminalCursorStyle,
+        cursor_cell: Option<(usize, usize)>,
+    ) -> TerminalGrid {
+        let mut selection_bg = colors.cursor;
+        selection_bg.a = SELECTION_BG_ALPHA;
+        let selection_fg = colors.background;
+        let default_cell_bg: gpui::Hsla = {
+            let mut bg = colors.background;
+            bg.a = self.scaled_background_alpha(bg.a);
+            bg.into()
+        };
+        TerminalGrid {
+            cells,
+            cell_size,
+            cols,
+            rows,
+            clear_bg: gpui::Hsla::transparent_black(),
+            default_bg: default_cell_bg,
+            cursor_color: colors.cursor.into(),
+            selection_bg: selection_bg.into(),
+            selection_fg: selection_fg.into(),
+            search_match_bg: gpui::Hsla {
+                h: 0.14,
+                s: 0.92,
+                l: 0.62,
+                a: 0.62,
+            },
+            search_current_bg: gpui::Hsla {
+                h: 0.09,
+                s: 0.98,
+                l: 0.56,
+                a: 0.86,
+            },
+            hovered_link_range,
+            cursor_cell,
+            font_family,
+            font_size,
+            cursor_style,
+        }
     }
 
     fn refresh_terminal_scrollbar_marker_cache(
@@ -636,6 +985,7 @@ impl Render for TerminalView {
 
         // Pre-compute search match info for active pane.
         let search_active = self.search_open;
+        let terminal_cursor_style = self.terminal_cursor_style();
         let mut terminal_display_offset = 0usize;
         let divider_rgba = pane_divider_color(terminal_surface_bg, colors.foreground);
         let divider_color: gpui::Hsla = divider_rgba.into();
@@ -722,84 +1072,43 @@ impl Render for TerminalView {
                     self.tmux_show_active_pane_border,
                 );
                 let pane_focus_target_bg = colors.background;
-                let estimated_cells = cols.saturating_mul(rows);
-                let mut cells_to_render: Vec<CellRenderInfo> = Vec::with_capacity(estimated_cells);
-                let (cursor_col, cursor_row) = terminal.cursor_position();
-                let mut pane_display_offset = 0usize;
+                let pane_cache_key = self.pane_render_cache_key(
+                    is_active_pane,
+                    search_active,
+                    cell_color_transform,
+                    effective_background_opacity,
+                );
+                let (pane_display_offset, _) = terminal.scroll_state();
                 let pane_search_results = if search_active && is_active_pane {
                     Some(self.search_state.results())
                 } else {
                     None
                 };
-                let _ = terminal.for_each_renderable_cell(
-                    |display_offset, term_line, col, cell_content| {
-                        pane_display_offset = display_offset;
-                        let show_cursor = display_offset == 0 && cursor_visible && is_active_pane;
-                        let Some(row) =
-                            Self::viewport_row_from_term_line(term_line, display_offset)
-                        else {
-                            return;
-                        };
-
-                        let mut fg = colors.convert(cell_content.fg);
-                        let mut bg = colors.convert(cell_content.bg);
-                        if cell_content.flags.contains(Flags::INVERSE) {
-                            std::mem::swap(&mut fg, &mut bg);
-                        }
-                        if cell_content.flags.contains(Flags::DIM) {
-                            fg.r *= DIM_TEXT_FACTOR;
-                            fg.g *= DIM_TEXT_FACTOR;
-                            fg.b *= DIM_TEXT_FACTOR;
-                        }
-                        bg.a *= effective_background_opacity;
-                        (fg, bg) = apply_cell_color_transform(
-                            fg,
-                            bg,
+                let pane_cells = {
+                    let mut pane_render_cache = pane.render_cache.borrow_mut();
+                    self.update_pane_render_cache(
+                        terminal,
+                        cols,
+                        rows,
+                        pane_display_offset,
+                        &mut pane_render_cache,
+                        pane_cache_key.clone(),
+                        PaneCellBuildContext {
+                            colors: &colors,
+                            effective_background_opacity,
                             cell_color_transform,
                             pane_focus_target_bg,
                             terminal_surface_bg,
-                        );
-
-                        let c = cell_content.c;
-                        let is_cursor = show_cursor && col == cursor_col && row == cursor_row;
-                        let selected = is_active_pane && self.cell_is_selected(col, term_line);
-
-                        let (search_current, search_match) =
-                            if let Some(results) = &pane_search_results {
-                                let is_current = results.is_current_match(term_line, col);
-                                let is_any = results.is_any_match(term_line, col);
-                                (is_current, is_any && !is_current)
-                            } else {
-                                (false, false)
-                            };
-
-                        cells_to_render.push(CellRenderInfo {
-                            col,
-                            row,
-                            char: c,
-                            fg: fg.into(),
-                            bg: bg.into(),
-                            bold: cell_content.flags.contains(Flags::BOLD),
-                            render_text: !cell_content.flags.intersects(
-                                Flags::WIDE_CHAR_SPACER
-                                    | Flags::LEADING_WIDE_CHAR_SPACER
-                                    | Flags::HIDDEN,
-                            ),
-                            is_cursor,
-                            selected,
-                            search_current,
-                            search_match,
-                        });
-                    },
-                );
+                            selection_range: pane_cache_key.selection_range,
+                            pane_search_results,
+                        },
+                    )
+                };
 
                 if is_active_pane {
                     terminal_display_offset = pane_display_offset;
                 }
 
-                let mut selection_bg = colors.cursor;
-                selection_bg.a = SELECTION_BG_ALPHA;
-                let selection_fg = colors.background;
                 let hovered_link_range = if is_active_pane {
                     self.hovered_link
                         .as_ref()
@@ -807,41 +1116,27 @@ impl Render for TerminalView {
                 } else {
                     None
                 };
-
-                let default_cell_bg: gpui::Hsla = {
-                    let mut bg = colors.background;
-                    bg.a = self.scaled_background_alpha(bg.a);
-                    bg.into()
+                // Keep cursor state out of cached cells so blink/overlay redraws don't force
+                // full cell-buffer rebuilds.
+                let cursor_cell = if pane_display_offset == 0 && cursor_visible && is_active_pane {
+                    let (cursor_col, cursor_row) = terminal.cursor_position();
+                    (cursor_col < cols && cursor_row < rows).then_some((cursor_col, cursor_row))
+                } else {
+                    None
                 };
 
-                let terminal_grid = TerminalGrid {
-                    cells: cells_to_render,
+                let terminal_grid = self.build_terminal_grid_from_cache(
+                    pane_cells,
                     cell_size,
                     cols,
                     rows,
-                    clear_bg: gpui::Hsla::transparent_black(),
-                    default_bg: default_cell_bg,
-                    cursor_color: colors.cursor.into(),
-                    selection_bg: selection_bg.into(),
-                    selection_fg: selection_fg.into(),
-                    // Search highlight colors tuned for strong contrast on dark terminal themes.
-                    search_match_bg: gpui::Hsla {
-                        h: 0.14,
-                        s: 0.92,
-                        l: 0.62,
-                        a: 0.62,
-                    },
-                    search_current_bg: gpui::Hsla {
-                        h: 0.09,
-                        s: 0.98,
-                        l: 0.56,
-                        a: 0.86,
-                    },
+                    &colors,
                     hovered_link_range,
-                    font_family: font_family.clone(),
+                    font_family.clone(),
                     font_size,
-                    cursor_style: self.terminal_cursor_style(),
-                };
+                    terminal_cursor_style,
+                    cursor_cell,
+                );
 
                 let cell_width: f32 = cell_size.width.into();
                 let cell_height: f32 = cell_size.height.into();
@@ -1414,6 +1709,7 @@ mod tests {
             height: rows,
             degraded: false,
             terminal: Terminal::new_tmux(size, 128),
+            render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
         }
     }
 
@@ -1583,5 +1879,49 @@ mod tests {
     fn pane_focus_active_border_alpha_is_unchanged_when_tmux_border_is_enabled() {
         let alpha = effective_pane_focus_active_border_alpha(0.38, true, true);
         assert_eq!(alpha, 0.38);
+    }
+
+    #[test]
+    fn pane_cache_strategy_reuses_cells_when_damage_is_empty_and_key_matches() {
+        let strategy = pane_cache_update_strategy(
+            true,
+            true,
+            true,
+            true,
+            &TerminalDamageSnapshot::Partial(Vec::new()),
+        );
+        assert_eq!(strategy, PaneCacheUpdateStrategy::Reuse);
+    }
+
+    #[test]
+    fn pane_cache_strategy_forces_full_rebuild_when_cache_key_changes() {
+        let strategy = pane_cache_update_strategy(
+            true,
+            true,
+            true,
+            false,
+            &TerminalDamageSnapshot::Partial(vec![TerminalDirtySpan {
+                row: 0,
+                left_col: 0,
+                right_col: 1,
+            }]),
+        );
+        assert_eq!(strategy, PaneCacheUpdateStrategy::Full);
+    }
+
+    #[test]
+    fn pane_cache_strategy_uses_partial_patch_for_non_empty_partial_damage() {
+        let strategy = pane_cache_update_strategy(
+            true,
+            true,
+            true,
+            true,
+            &TerminalDamageSnapshot::Partial(vec![TerminalDirtySpan {
+                row: 1,
+                left_col: 2,
+                right_col: 4,
+            }]),
+        );
+        assert_eq!(strategy, PaneCacheUpdateStrategy::Partial);
     }
 }

@@ -285,15 +285,6 @@ impl TerminalView {
         }
     }
 
-    pub(in super::super) fn cell_is_selected(&self, col: usize, line: i32) -> bool {
-        let Some((start, end)) = self.selection_range() else {
-            return false;
-        };
-
-        let here = (line, col);
-        here >= (start.line, start.col) && here <= (end.line, end.col)
-    }
-
     pub(in super::super) fn viewport_row_from_term_line(
         term_line: i32,
         display_offset: usize,
@@ -656,6 +647,7 @@ mod tests {
                 height: rows,
                 degraded: false,
                 terminal: left_terminal,
+                render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
             },
             TerminalPane {
                 id: "%right".to_string(),
@@ -665,6 +657,7 @@ mod tests {
                 height: rows,
                 degraded: false,
                 terminal: right_terminal,
+                render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
             },
         ];
 
@@ -719,6 +712,7 @@ mod tests {
                 height: rows,
                 degraded: false,
                 terminal: left_terminal,
+                render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
             },
             TerminalPane {
                 id: "%right".to_string(),
@@ -728,6 +722,7 @@ mod tests {
                 height: rows,
                 degraded: false,
                 terminal: right_terminal,
+                render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
             },
         ];
 

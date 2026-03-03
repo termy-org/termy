@@ -7,7 +7,7 @@ use alacritty_terminal::{
 };
 use std::sync::Arc;
 
-use crate::runtime::TerminalSize;
+use crate::runtime::{TerminalDamageSnapshot, TerminalSize, take_term_damage_snapshot};
 
 struct PaneTerminalInner {
     term: Arc<FairMutex<Term<VoidListener>>>,
@@ -85,6 +85,16 @@ impl PaneTerminal {
         // back into PaneTerminal APIs (for example size()) without lock inversion.
         let term = term.lock();
         f(&term)
+    }
+
+    pub fn with_term_mut<R>(&self, f: impl FnOnce(&mut Term<VoidListener>) -> R) -> R {
+        let term = self.cloned_term_arc();
+        let mut term = term.lock();
+        f(&mut term)
+    }
+
+    pub fn take_damage_snapshot(&self) -> TerminalDamageSnapshot {
+        self.with_term_mut(take_term_damage_snapshot)
     }
 
     pub fn scroll_display(&self, delta_lines: i32) -> bool {

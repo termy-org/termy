@@ -17,6 +17,7 @@ use gpui::{
     WindowBackgroundAppearance, div, point, px,
 };
 use std::{
+    cell::RefCell,
     env,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -26,9 +27,9 @@ use std::{
 use termy_search::SearchState;
 use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
-    TerminalCursorStyle, TerminalEvent, TerminalGrid, TerminalRuntimeConfig, TerminalSize,
-    TmuxLaunchTarget, WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line,
-    keystroke_to_input,
+    TerminalCursorStyle, TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent, TerminalGrid,
+    TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
+    WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
 use termy_toast::ToastManager;
 
@@ -392,6 +393,16 @@ impl Terminal {
         }
     }
 
+    fn take_damage_snapshot(&self) -> TerminalDamageSnapshot {
+        match self {
+            Self::Tmux(terminal) => terminal.take_damage_snapshot(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.take_damage_snapshot())
+                .unwrap_or(TerminalDamageSnapshot::Full),
+        }
+    }
+
     fn for_each_renderable_cell(
         &self,
         mut visitor: impl FnMut(usize, i32, usize, &alacritty_terminal::term::cell::Cell),
@@ -433,6 +444,43 @@ struct TerminalPane {
     height: u16,
     degraded: bool,
     terminal: Terminal,
+    render_cache: RefCell<TerminalPaneRenderCache>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TerminalPaneCellColorTransformKey {
+    fg_blend_bits: u32,
+    bg_blend_bits: u32,
+    desaturate_bits: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TerminalPaneRenderCacheKey {
+    is_active_pane: bool,
+    selection_range: Option<(SelectionPos, SelectionPos)>,
+    search_results_revision: Option<u64>,
+    search_position: Option<(usize, usize)>,
+    effective_background_opacity_bits: u32,
+    color_transform: TerminalPaneCellColorTransformKey,
+}
+
+#[derive(Clone, Default)]
+struct TerminalPaneRenderCache {
+    cells: std::sync::Arc<Vec<CellRenderInfo>>,
+    cols: usize,
+    rows: usize,
+    display_offset: usize,
+    key: Option<TerminalPaneRenderCacheKey>,
+}
+
+impl TerminalPaneRenderCache {
+    fn clear(&mut self) {
+        self.cells = std::sync::Arc::new(Vec::new());
+        self.cols = 0;
+        self.rows = 0;
+        self.display_offset = 0;
+        self.key = None;
+    }
 }
 
 struct TerminalTab {
@@ -996,6 +1044,7 @@ impl TerminalView {
             height: rows.max(1),
             degraded: false,
             terminal,
+            render_cache: RefCell::new(TerminalPaneRenderCache::default()),
         };
         TerminalTab {
             id: tab_id,
@@ -1259,6 +1308,14 @@ impl TerminalView {
 
     pub(super) fn clear_terminal_scrollbar_marker_cache(&mut self) {
         self.terminal_scrollbar_marker_cache.clear();
+    }
+
+    pub(super) fn clear_pane_render_caches(&self) {
+        for tab in &self.tabs {
+            for pane in &tab.panes {
+                pane.render_cache.borrow_mut().clear();
+            }
+        }
     }
 
     pub(super) fn mark_terminal_scrollbar_activity(&mut self, cx: &mut Context<Self>) {
@@ -1707,6 +1764,7 @@ impl TerminalView {
         }
         self.terminal_scrollbar_style = config.terminal_scrollbar_style;
         self.set_command_palette_show_keybinds(config.command_palette_show_keybinds);
+        self.clear_pane_render_caches();
         let inactive_history = self
             .inactive_tab_scrollback
             .unwrap_or(self.terminal_runtime.scrollback_history);

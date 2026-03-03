@@ -3,7 +3,7 @@ use alacritty_terminal::{
     event_loop::{EventLoop, Msg, Notifier},
     grid::{Dimensions, Scroll},
     sync::FairMutex,
-    term::{Config as TermConfig, Term, TermMode},
+    term::{Config as TermConfig, LineDamageBounds, Term, TermDamage, TermMode},
     tty::{self, Options as PtyOptions, Shell},
 };
 use flume::{Receiver, Sender, unbounded};
@@ -319,6 +319,74 @@ pub enum TerminalEvent {
     ClipboardStore(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalDirtySpan {
+    pub row: usize,
+    pub left_col: usize,
+    pub right_col: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TerminalDamageSnapshot {
+    Full,
+    Partial(Vec<TerminalDirtySpan>),
+}
+
+fn normalized_dirty_span(
+    damage: LineDamageBounds,
+    rows: usize,
+    cols: usize,
+    display_offset: usize,
+) -> Option<TerminalDirtySpan> {
+    // Alacritty line damage is tracked in terminal-space line coordinates and can straddle
+    // wide characters. Expand by one column on both sides so partial updates never split
+    // a multi-cell glyph and leave stale spacer artifacts.
+    if rows == 0 || cols == 0 || display_offset != 0 {
+        return None;
+    }
+    if damage.line >= rows {
+        return None;
+    }
+    let left_col = damage.left.saturating_sub(1).min(cols.saturating_sub(1));
+    let right_col = damage.right.saturating_add(1).min(cols.saturating_sub(1));
+    if left_col > right_col {
+        return None;
+    }
+    Some(TerminalDirtySpan {
+        row: damage.line,
+        left_col,
+        right_col,
+    })
+}
+
+pub(crate) fn take_term_damage_snapshot<T: EventListener>(
+    term: &mut Term<T>,
+) -> TerminalDamageSnapshot {
+    let rows = term.grid().screen_lines();
+    let cols = term.grid().columns();
+    let display_offset = term.grid().display_offset();
+    let snapshot = match term.damage() {
+        TermDamage::Full => TerminalDamageSnapshot::Full,
+        TermDamage::Partial(damage_iter) => {
+            if display_offset != 0 {
+                // While viewing history, partial damage coordinates are difficult to map
+                // correctly across viewport-relative lines; force full rebuild for correctness.
+                TerminalDamageSnapshot::Full
+            } else {
+                let mut spans = Vec::new();
+                for damage in damage_iter {
+                    if let Some(span) = normalized_dirty_span(damage, rows, cols, display_offset) {
+                        spans.push(span);
+                    }
+                }
+                TerminalDamageSnapshot::Partial(spans)
+            }
+        }
+    };
+    term.reset_damage();
+    snapshot
+}
+
 /// Event listener that forwards alacritty events to our channel
 #[derive(Clone)]
 pub struct JsonEventListener {
@@ -557,6 +625,17 @@ impl Terminal {
         f(&term)
     }
 
+    /// Access the terminal for in-place mutation.
+    pub fn with_term_mut<R>(&self, f: impl FnOnce(&mut Term<JsonEventListener>) -> R) -> R {
+        let mut term = self.term.lock();
+        f(&mut term)
+    }
+
+    /// Consume and normalize terminal damage spans for incremental rendering.
+    pub fn take_damage_snapshot(&self) -> TerminalDamageSnapshot {
+        self.with_term_mut(take_term_damage_snapshot)
+    }
+
     /// Scroll the displayed viewport through scrollback history.
     /// Positive deltas move up into history, negative deltas move down toward live output.
     pub fn scroll_display(&self, delta_lines: i32) -> bool {
@@ -790,15 +869,15 @@ mod tests {
     use alacritty_terminal::{
         event::VoidListener,
         grid::Dimensions,
-        term::{Config as TermConfig, Term},
+        term::{Config as TermConfig, LineDamageBounds, Term},
         vte::ansi,
     };
     use gpui::{Keystroke, Modifiers, px};
     #[cfg(target_os = "windows")]
     use super::quote_shell_program_if_needed;
     use super::{
-        DEFAULT_TERM, TerminalRuntimeConfig, TerminalSize, keystroke_to_input, pty_env_overrides,
-        resolve_shell_path,
+        DEFAULT_TERM, TerminalDamageSnapshot, TerminalRuntimeConfig, TerminalSize,
+        keystroke_to_input, pty_env_overrides, resolve_shell_path, take_term_damage_snapshot,
     };
 
     fn cursor_after_bytes(input: &[u8]) -> (usize, i32) {
@@ -834,6 +913,69 @@ mod tests {
 
         assert_eq!(size.last_column().0, 0);
         assert_eq!(size.bottommost_line().0, 0);
+    }
+
+    #[test]
+    fn take_term_damage_snapshot_is_full_for_new_term() {
+        let size = TerminalSize {
+            cols: 12,
+            rows: 4,
+            cell_width: px(9.0),
+            cell_height: px(18.0),
+        };
+        let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
+        assert!(matches!(
+            take_term_damage_snapshot(&mut term),
+            TerminalDamageSnapshot::Full
+        ));
+    }
+
+    #[test]
+    fn take_term_damage_snapshot_resets_damage_after_read() {
+        let size = TerminalSize {
+            cols: 12,
+            rows: 4,
+            cell_width: px(9.0),
+            cell_height: px(18.0),
+        };
+        let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
+        let _ = take_term_damage_snapshot(&mut term);
+        let second = take_term_damage_snapshot(&mut term);
+        let third = take_term_damage_snapshot(&mut term);
+        assert!(matches!(second, TerminalDamageSnapshot::Partial(_)));
+        assert_eq!(second, third);
+    }
+
+    #[test]
+    fn take_term_damage_snapshot_returns_partial_spans_for_output() {
+        let size = TerminalSize {
+            cols: 12,
+            rows: 4,
+            cell_width: px(9.0),
+            cell_height: px(18.0),
+        };
+        let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
+        let _ = take_term_damage_snapshot(&mut term);
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, b"abc");
+        assert!(matches!(
+            take_term_damage_snapshot(&mut term),
+            TerminalDamageSnapshot::Partial(spans) if !spans.is_empty()
+        ));
+    }
+
+    #[test]
+    fn normalized_dirty_span_expands_and_clamps_column_bounds() {
+        let span = super::normalized_dirty_span(LineDamageBounds::new(1, 1, 2), 4, 4, 0)
+            .expect("dirty span should normalize");
+        assert_eq!(span.row, 1);
+        assert_eq!(span.left_col, 0);
+        assert_eq!(span.right_col, 3);
+
+        let span = super::normalized_dirty_span(LineDamageBounds::new(0, 0, 0), 4, 4, 0)
+            .expect("left edge should clamp");
+        assert_eq!(span.left_col, 0);
+        assert_eq!(span.right_col, 1);
     }
 
     #[cfg(target_os = "macos")]

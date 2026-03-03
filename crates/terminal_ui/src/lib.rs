@@ -10,8 +10,8 @@ pub use grid::{CellRenderInfo, TerminalCursorStyle, TerminalGrid};
 pub use links::{DetectedLink, classify_link_token, find_link_in_line};
 pub use pane_terminal::PaneTerminal;
 pub use runtime::{
-    TabTitleShellIntegration, Terminal, TerminalEvent, TerminalRuntimeConfig, TerminalSize,
-    WorkingDirFallback, keystroke_to_input,
+    TabTitleShellIntegration, Terminal, TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent,
+    TerminalRuntimeConfig, TerminalSize, WorkingDirFallback, keystroke_to_input,
 };
 pub use tmux::{
     TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,
