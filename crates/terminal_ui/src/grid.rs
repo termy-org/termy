@@ -534,7 +534,8 @@ impl Element for TerminalGrid {
                         batch.text.into(),
                         self.font_size,
                         &[run],
-                        Some(self.cell_size.width * batch.cell_len as f32),
+                        // `force_width` is per-glyph advance, so terminal text must use one cell width.
+                        Some(self.cell_size.width),
                     );
                     let _ = line.paint(
                         point(x, y),
