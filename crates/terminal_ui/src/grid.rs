@@ -534,7 +534,7 @@ impl Element for TerminalGrid {
                         batch.text.into(),
                         self.font_size,
                         &[run],
-                        Some(self.cell_size.width),
+                        Some(self.cell_size.width * batch.cell_len as f32),
                     );
                     let _ = line.paint(
                         point(x, y),
@@ -598,6 +598,7 @@ impl TerminalGrid {
 
     fn collect_draw_ops(&self, cursor_fg: Hsla, highlight_fg: Hsla) -> Vec<TextDrawOp> {
         let mut ops = Vec::new();
+        ops.reserve(self.cells.len());
         let mut current: Option<TextBatch> = None;
 
         for cell in &self.cells {
