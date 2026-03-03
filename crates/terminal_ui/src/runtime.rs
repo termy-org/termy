@@ -368,10 +368,16 @@ pub(crate) fn take_term_damage_snapshot<T: EventListener>(
     let snapshot = match term.damage() {
         TermDamage::Full => TerminalDamageSnapshot::Full,
         TermDamage::Partial(damage_iter) => {
+            let mut damage_iter = damage_iter.peekable();
             if display_offset != 0 {
                 // While viewing history, partial damage coordinates are difficult to map
-                // correctly across viewport-relative lines; force full rebuild for correctness.
-                TerminalDamageSnapshot::Full
+                // correctly across viewport-relative lines. Only force a full rebuild when
+                // alacritty actually reports damaged lines, otherwise keep this as a no-op.
+                if damage_iter.peek().is_some() {
+                    TerminalDamageSnapshot::Full
+                } else {
+                    TerminalDamageSnapshot::Partial(Vec::new())
+                }
             } else {
                 let mut spans = Vec::new();
                 for damage in damage_iter {
@@ -868,7 +874,7 @@ fn is_plain_control(modifiers: Modifiers) -> bool {
 mod tests {
     use alacritty_terminal::{
         event::VoidListener,
-        grid::Dimensions,
+        grid::{Dimensions, Scroll},
         term::{Config as TermConfig, LineDamageBounds, Term},
         vte::ansi,
     };
@@ -961,6 +967,60 @@ mod tests {
         assert!(matches!(
             take_term_damage_snapshot(&mut term),
             TerminalDamageSnapshot::Partial(spans) if !spans.is_empty()
+        ));
+    }
+
+    #[test]
+    fn take_term_damage_snapshot_while_scrolled_returns_empty_partial_without_damage() {
+        let size = TerminalSize {
+            cols: 12,
+            rows: 4,
+            cell_width: px(9.0),
+            cell_height: px(18.0),
+        };
+        let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
+        let _ = take_term_damage_snapshot(&mut term);
+
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, b"1\n2\n3\n4\n5\n6\n");
+        let _ = take_term_damage_snapshot(&mut term);
+
+        term.scroll_display(Scroll::Delta(1));
+        assert!(term.grid().display_offset() > 0);
+
+        assert!(matches!(
+            take_term_damage_snapshot(&mut term),
+            TerminalDamageSnapshot::Full
+        ));
+        assert_eq!(
+            take_term_damage_snapshot(&mut term),
+            TerminalDamageSnapshot::Partial(Vec::new())
+        );
+    }
+
+    #[test]
+    fn take_term_damage_snapshot_while_scrolled_returns_full_for_visible_damage() {
+        let size = TerminalSize {
+            cols: 12,
+            rows: 4,
+            cell_width: px(9.0),
+            cell_height: px(18.0),
+        };
+        let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
+        let _ = take_term_damage_snapshot(&mut term);
+
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, b"1\n2\n3\n4\n5\n6\n");
+        let _ = take_term_damage_snapshot(&mut term);
+
+        term.scroll_display(Scroll::Delta(1));
+        let _ = take_term_damage_snapshot(&mut term);
+        let _ = take_term_damage_snapshot(&mut term);
+
+        ansi::Handler::goto(&mut term, 0, 0);
+        assert!(matches!(
+            take_term_damage_snapshot(&mut term),
+            TerminalDamageSnapshot::Full
         ));
     }
 
