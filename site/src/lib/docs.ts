@@ -105,6 +105,27 @@ export function getDocsByCategory(): Record<string, Doc[]> {
   return grouped;
 }
 
+const CATEGORY_ORDER: Record<string, number> = {
+  "Getting Started": 0,
+  Guides: 1,
+  "Help & Troubleshooting": 2,
+  Architecture: 3,
+  General: 99,
+};
+
+export function sortDocCategories(categories: string[]): string[] {
+  return [...categories].sort((a, b) => {
+    const aOrder = CATEGORY_ORDER[a] ?? 50;
+    const bOrder = CATEGORY_ORDER[b] ?? 50;
+
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder;
+    }
+
+    return a.localeCompare(b);
+  });
+}
+
 // Get a single doc by slug
 export function getDocBySlug(slug: string): Doc | undefined {
   const docs = getAllDocs();

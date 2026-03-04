@@ -146,6 +146,24 @@ export function Download({ release, loading, error }: DownloadProps) {
             <PlatformButton platform="linux" assets={classified?.linux ?? []} />
           </div>
 
+          <div className="mb-12 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <p className="mb-2 text-sm text-amber-200">
+              Termy is not code signed yet.
+            </p>
+            <p className="text-sm text-amber-100/90">
+              On macOS, if Gatekeeper blocks launch after moving Termy to
+              Applications, run{" "}
+              <code className="rounded bg-background px-1.5 py-0.5 text-primary">
+                sudo xattr -d com.apple.quarantine /Applications/Termy.app
+              </code>
+              .
+            </p>
+            <p className="mt-2 text-sm text-amber-100/90">
+              On Windows, click <strong>More info</strong> and then{" "}
+              <strong>Run anyway</strong> in the SmartScreen prompt.
+            </p>
+          </div>
+
           {/* Install via package manager */}
           <div className="mb-12 p-4 rounded-xl border border-border/50 bg-card/30">
             <p className="text-sm text-muted-foreground mb-3">

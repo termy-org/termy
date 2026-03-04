@@ -21,14 +21,54 @@ brew tap lassejlv/termy https://github.com/lassejlv/termy
 brew install --cask termy
 ```
 
+Termy is not code signed yet. If Gatekeeper blocks launch after moving Termy to `Applications`, run:
+```
+sudo xattr -d com.apple.quarantine /Applications/Termy.app
+```
+
+### Windows
+Install using the latest `Setup.exe` release asset.
+
+If SmartScreen appears on first launch:
+1. Click `More info`
+2. Click `Run anyway`
+
+### Linux (AppImage)
+```
+chmod +x Termy-*.AppImage
+./Termy-*.AppImage
+```
+
+### Linux (Tarball)
+```
+tar -xzf Termy-*.tar.gz
+cd termy
+./install.sh
+```
+
 ### Arch Linux
 ```
 paru -S termy-bin
 ```
 
+## Updating
+
+Use the Command Palette and run `Check for updates`.
+
+- macOS: `cmd+p`
+- Windows/Linux: `ctrl+p`
+
 ---
 
 # Documentation
+
+## Docs Index
+
+- Installation: `/docs/installation`
+- First Steps: `/docs/first-steps`
+- Customization Guide: `/docs/customization-guide`
+- Troubleshooting: `/docs/troubleshooting`
+- FAQ: `/docs/faq`
 
 ## Configuration
 

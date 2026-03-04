@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { getDocsByCategory } from "@/lib/docs";
+import { getDocsByCategory, sortDocCategories } from "@/lib/docs";
 import { Sidebar } from "@/components/docs/Sidebar";
 import { useCallback } from "react";
 
@@ -16,7 +16,7 @@ function DocsPage() {
   const { q: search = "" } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const docsByCategory = getDocsByCategory();
-  const categories = Object.keys(docsByCategory);
+  const categories = sortDocCategories(Object.keys(docsByCategory));
 
   const handleSearchChange = useCallback(
     (value: string) => {
@@ -25,14 +25,18 @@ function DocsPage() {
         replace: true,
       });
     },
-    [navigate]
+    [navigate],
   );
 
   return (
     <section className="pt-24 pb-20">
       <div className="flex gap-8">
         {/* Sidebar - hidden on mobile, visible on desktop */}
-        <Sidebar currentSlug="" search={search} onSearchChange={handleSearchChange} />
+        <Sidebar
+          currentSlug=""
+          search={search}
+          onSearchChange={handleSearchChange}
+        />
 
         {/* Main content */}
         <main className="flex-1 min-w-0">
@@ -60,8 +64,38 @@ function DocsPage() {
           <div className="mb-8">
             <h1 className="text-3xl md:text-4xl font-bold">Documentation</h1>
             <p className="mt-3 text-muted-foreground">
-              Learn how to configure and use Termy.
+              Step-by-step guides for installing, configuring, and
+              troubleshooting Termy.
             </p>
+          </div>
+
+          <div className="mb-10 rounded-xl border border-border/50 bg-card/30 p-5">
+            <h2 className="text-lg font-semibold text-foreground mb-3">
+              Start Here
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Link
+                to="/docs/$"
+                params={{ _splat: "installation" }}
+                className="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm text-foreground hover:border-primary/40 transition-colors"
+              >
+                Install Termy
+              </Link>
+              <Link
+                to="/docs/$"
+                params={{ _splat: "first-steps" }}
+                className="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm text-foreground hover:border-primary/40 transition-colors"
+              >
+                First Steps
+              </Link>
+              <Link
+                to="/docs/$"
+                params={{ _splat: "troubleshooting" }}
+                className="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm text-foreground hover:border-primary/40 transition-colors"
+              >
+                Troubleshooting
+              </Link>
+            </div>
           </div>
 
           <div className="space-y-8">

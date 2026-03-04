@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
-import { getDocsByCategory, getAllDocs } from "@/lib/docs";
+import { getDocsByCategory, getAllDocs, sortDocCategories } from "@/lib/docs";
 
 interface SidebarProps {
   currentSlug: string;
@@ -20,11 +20,11 @@ export function Sidebar({ currentSlug, search, onSearchChange }: SidebarProps) {
       (doc) =>
         doc.title.toLowerCase().includes(query) ||
         doc.description?.toLowerCase().includes(query) ||
-        doc.content.toLowerCase().includes(query)
+        doc.content.toLowerCase().includes(query),
     );
   }, [search, allDocs]);
 
-  const categories = Object.keys(docsByCategory);
+  const categories = sortDocCategories(Object.keys(docsByCategory));
 
   return (
     <aside className="hidden lg:block w-64 shrink-0">
@@ -57,8 +57,18 @@ export function Sidebar({ currentSlug, search, onSearchChange }: SidebarProps) {
               onClick={() => onSearchChange("")}
               className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           )}
@@ -74,7 +84,8 @@ export function Sidebar({ currentSlug, search, onSearchChange }: SidebarProps) {
             ) : (
               <>
                 <p className="text-xs text-muted-foreground px-3 mb-2">
-                  {filteredResults.length} result{filteredResults.length !== 1 ? "s" : ""}
+                  {filteredResults.length} result
+                  {filteredResults.length !== 1 ? "s" : ""}
                 </p>
                 {filteredResults.map((doc) => (
                   <Link
