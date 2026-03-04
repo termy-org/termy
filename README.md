@@ -5,7 +5,11 @@
   <p>
     <a href="https://termy.run/docs">Documentation</a> •
     <a href="https://github.com/lassejlv/termy/releases/latest">Download</a> •
-    <a href="https://github.com/lassejlv/termy">GitHub</a>
+    <a href="https://github.com/lassejlv/termy">GitHub</a> •
+    <a href="https://github.com/sponsors/lassejlv">Sponsor</a>
+  </p>
+  <p>
+    If you find Termy useful, please <a href="https://github.com/sponsors/lassejlv">sponsor the project</a>. It would help a lot.
   </p>
 </div>
 
