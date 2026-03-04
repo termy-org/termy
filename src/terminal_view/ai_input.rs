@@ -90,6 +90,7 @@ impl TerminalView {
                 termy_toast::error(format!(
                     "{provider_name} API key not configured. Set it in Settings > Advanced > AI."
                 ));
+                self.notify_overlay(cx);
                 return;
             }
         };
@@ -139,9 +140,9 @@ impl TerminalView {
                         }
                         Err(e) => {
                             termy_toast::error(format!("AI error: {}", e));
+                            view.notify_overlay(cx);
                         }
                     }
-                    cx.notify();
                 })
             });
         })

@@ -18,7 +18,7 @@ impl TerminalView {
     pub(in super::super) fn install_cli_action(&mut self, cx: &mut Context<Self>) {
         if !self.install_cli_available() {
             termy_toast::info("CLI is already installed");
-            cx.notify();
+            self.notify_overlay(cx);
             return;
         }
 
@@ -73,7 +73,7 @@ impl TerminalView {
             }
             Err(error) => {
                 termy_toast::error(error);
-                cx.notify();
+                self.notify_overlay(cx);
             }
         }
     }

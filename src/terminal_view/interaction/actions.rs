@@ -26,7 +26,7 @@ impl TerminalView {
             // Defensive guard: custom keybinds can still target tmux actions even when
             // Windows UI entries are hidden.
             termy_toast::info("tmux integration is unsupported on Windows");
-            cx.notify();
+            self.notify_overlay(cx);
             return;
         }
 
@@ -40,12 +40,12 @@ impl TerminalView {
             match availability.reason {
                 Some(CommandUnavailableReason::RequiresTmuxRuntime) => {
                     termy_toast::info("Attach a tmux session to use this command");
-                    cx.notify();
+                    self.notify_overlay(cx);
                     return;
                 }
                 Some(CommandUnavailableReason::InstallCliAlreadyInstalled) => {
                     termy_toast::info("CLI is already installed");
-                    cx.notify();
+                    self.notify_overlay(cx);
                     return;
                 }
                 _ => {
@@ -55,7 +55,7 @@ impl TerminalView {
                         availability.reason
                     );
                     termy_toast::info("Command unavailable");
-                    cx.notify();
+                    self.notify_overlay(cx);
                     return;
                 }
             }

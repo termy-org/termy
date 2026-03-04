@@ -1033,6 +1033,7 @@ impl TerminalView {
                                 {
                                     AutoUpdater::install(entity.downgrade(), cx);
                                     termy_toast::info("Downloading update...");
+                                    this.notify_overlay(cx);
                                 }
                             }
                             termy_auto_update_ui::UpdateBannerAction::CompleteInstall => {
@@ -1041,6 +1042,7 @@ impl TerminalView {
                                 {
                                     AutoUpdater::complete_install(entity.downgrade(), cx);
                                     termy_toast::info("Starting installation...");
+                                    this.notify_overlay(cx);
                                 }
                             }
                             termy_auto_update_ui::UpdateBannerAction::Restart => {
@@ -1048,6 +1050,7 @@ impl TerminalView {
                                     Ok(()) => cx.quit(),
                                     Err(error) => {
                                         termy_toast::error(format!("Restart failed: {}", error));
+                                        this.notify_overlay(cx);
                                     }
                                 }
                             }
@@ -1144,15 +1147,250 @@ impl TerminalView {
                 .into_any(),
         )
     }
-}
 
-impl Render for TerminalView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Process pending OSC 52 clipboard writes
-        if let Some(text) = self.pending_clipboard.take() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
+    fn render_toast_overlay(
+        &mut self,
+        colors: &TerminalColors,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if self.toast_manager.active().is_empty() {
+            return None;
         }
 
+        let mut container = div().flex().flex_col().gap(px(6.0));
+        for toast in self.toast_manager.active().iter() {
+            let toast_id = toast.id;
+            let toast_message = toast.message.clone();
+            let is_hovered = self.hovered_toast == Some(toast_id);
+            let is_copied = self
+                .copied_toast_feedback
+                .is_some_and(|(id, _)| id == toast_id);
+
+            // Animation values
+            let opacity = toast.opacity();
+            let slide_offset = toast.slide_offset();
+
+            // Clean, minimal icons and subtle accent colors
+            let (icon, accent, _is_loading) = match toast.kind {
+                termy_toast::ToastKind::Info => (
+                    "\u{2139}", // ℹ info symbol
+                    gpui::Rgba {
+                        r: 0.53,
+                        g: 0.70,
+                        b: 0.92,
+                        a: opacity,
+                    },
+                    false,
+                ),
+                termy_toast::ToastKind::Success => (
+                    "\u{2713}", // ✓ checkmark
+                    gpui::Rgba {
+                        r: 0.42,
+                        g: 0.78,
+                        b: 0.55,
+                        a: opacity,
+                    },
+                    false,
+                ),
+                termy_toast::ToastKind::Warning => (
+                    "\u{26A0}", // ⚠ warning
+                    gpui::Rgba {
+                        r: 0.94,
+                        g: 0.76,
+                        b: 0.38,
+                        a: opacity,
+                    },
+                    false,
+                ),
+                termy_toast::ToastKind::Error => (
+                    "\u{2715}", // ✕ x mark
+                    gpui::Rgba {
+                        r: 0.92,
+                        g: 0.45,
+                        b: 0.45,
+                        a: opacity,
+                    },
+                    false,
+                ),
+                termy_toast::ToastKind::Loading => {
+                    // Animated spinner using braille characters
+                    const SPINNER_FRAMES: &[&str] =
+                        &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                    let elapsed_ms = toast.created_at.elapsed().as_millis() as usize;
+                    let frame_index = (elapsed_ms / 80) % SPINNER_FRAMES.len();
+                    (
+                        SPINNER_FRAMES[frame_index],
+                        gpui::Rgba {
+                            r: 0.53,
+                            g: 0.70,
+                            b: 0.92,
+                            a: opacity,
+                        },
+                        true,
+                    )
+                }
+            };
+
+            // Subtle, glassy background with animation
+            let mut bg = colors.background;
+            bg.a = 0.88 * opacity;
+            let mut border = colors.foreground;
+            border.a = 0.08 * opacity;
+            let mut text = colors.foreground;
+            text.a = 0.92 * opacity;
+
+            container = container.child(
+                div()
+                    .id(("toast", toast_id))
+                    .max_w(px(480.0))
+                    .mt(px(slide_offset))
+                    .rounded_lg()
+                    .bg(bg)
+                    .border_1()
+                    .border_color(border)
+                    .shadow_md()
+                    .child(
+                        div()
+                            .px(px(14.0))
+                            .py(px(12.0))
+                            .flex()
+                            .items_start()
+                            .gap(px(10.0))
+                            // Icon
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_size(px(14.0))
+                                    .text_color(accent)
+                                    .mt(px(1.0))
+                                    .child(icon),
+                            )
+                            // Message - max width accounts for icon (24px) + copy btn (68px) + gaps (20px) + padding (28px)
+                            .child(
+                                div()
+                                    .max_w(px(340.0))
+                                    .text_size(px(13.0))
+                                    .text_color(text)
+                                    .child(toast_message.clone()),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .w(px(68.0))
+                                    .h(px(24.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_end()
+                                    .children(is_copied.then(|| {
+                                        let mut copied_bg = accent;
+                                        copied_bg.a = 0.22;
+                                        div()
+                                            .rounded(px(6.0))
+                                            .px(px(8.0))
+                                            .py(px(4.0))
+                                            .text_size(px(11.0))
+                                            .text_color(accent)
+                                            .bg(copied_bg)
+                                            .child("Copied")
+                                    }))
+                                    .children((!is_copied && is_hovered).then(|| {
+                                        let toast_message_for_copy = toast_message.clone();
+                                        div()
+                                            .rounded(px(6.0))
+                                            .px(px(8.0))
+                                            .py(px(4.0))
+                                            .text_size(px(11.0))
+                                            .text_color(text)
+                                            .bg(border)
+                                            .hover(|style| style.bg(accent))
+                                            .cursor_pointer()
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(
+                                                    move |this, _event, _window, cx| {
+                                                        cx.write_to_clipboard(
+                                                            ClipboardItem::new_string(
+                                                                toast_message_for_copy.clone(),
+                                                            ),
+                                                        );
+                                                        this.copied_toast_feedback =
+                                                            Some((toast_id, Instant::now()));
+                                                        this.notify_overlay(cx);
+                                                        cx.spawn(
+                                                            async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                                                                smol::Timer::after(Duration::from_millis(
+                                                                    TOAST_COPY_FEEDBACK_MS,
+                                                                ))
+                                                                .await;
+                                                                let _ = cx.update(|cx| {
+                                                                    this.update(cx, |view, cx| {
+                                                                        if view
+                                                                            .copied_toast_feedback
+                                                                            .is_some_and(
+                                                                                |(id, _)| {
+                                                                                    id == toast_id
+                                                                                },
+                                                                            )
+                                                                        {
+                                                                            view.copied_toast_feedback = None;
+                                                                            view.notify_overlay(cx);
+                                                                        }
+                                                                    })
+                                                                });
+                                                            },
+                                                        )
+                                                        .detach();
+                                                        cx.stop_propagation();
+                                                    },
+                                                ),
+                                            )
+                                            .child("Copy")
+                                    })),
+                            )
+                            .on_mouse_move(cx.listener(move |this, _event, _window, cx| {
+                                if this.hovered_toast != Some(toast_id) {
+                                    this.hovered_toast = Some(toast_id);
+                                    this.notify_overlay(cx);
+                                }
+                                cx.stop_propagation();
+                            })),
+                    ),
+            );
+        }
+
+        Some(
+            div()
+                .id("toast-overlay")
+                .size_full()
+                .absolute()
+                .top_0()
+                .left_0()
+                .child(
+                    div()
+                        .size_full()
+                        .flex()
+                        .flex_col()
+                        .items_end()
+                        .justify_end()
+                        .pr(px(20.0))
+                        .pb(px(20.0))
+                        .on_mouse_move(cx.listener(|this, _event, _window, cx| {
+                            if this.hovered_toast.is_some() {
+                                this.hovered_toast = None;
+                                this.notify_overlay(cx);
+                            }
+                        }))
+                        .child(container),
+                )
+                .into_any(),
+        )
+    }
+
+    pub(super) fn render_overlay_layer(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         self.toast_manager.ingest_pending();
         self.toast_manager.tick_with_hovered(self.hovered_toast);
         if let Some((_, copied_at)) = self.copied_toast_feedback
@@ -1161,8 +1399,7 @@ impl Render for TerminalView {
             self.copied_toast_feedback = None;
         }
 
-        // Request re-render during toast animations for smooth fade in/out
-        // Only schedule one timer at a time to avoid spawning 60 tasks/sec
+        // Request re-render during toast animations for smooth fade in/out.
         if self.toast_manager.is_animating() && !self.toast_animation_scheduled {
             self.toast_animation_scheduled = true;
             cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
@@ -1170,30 +1407,73 @@ impl Render for TerminalView {
                 let _ = cx.update(|cx| {
                     this.update(cx, |view, cx| {
                         view.toast_animation_scheduled = false;
-                        cx.notify();
+                        view.notify_overlay(cx);
                     })
                 });
             })
             .detach();
         }
 
-        // Compute update banner state
+        let colors = self.colors.clone();
+        let command_palette_overlay = if self.is_command_palette_open() {
+            Some(self.render_command_palette_modal(cx))
+        } else {
+            None
+        };
+        let search_overlay = if self.search_open {
+            Some(self.render_search_bar(cx))
+        } else {
+            None
+        };
+        let ai_input_overlay = if self.is_ai_input_open() {
+            Some(self.render_ai_input_modal(cx))
+        } else {
+            None
+        };
+        let toast_overlay = self.render_toast_overlay(&colors, cx);
+
         #[cfg(target_os = "macos")]
-        let banner_state = self.auto_updater.as_ref().map(|e| e.read(cx).state.clone());
-        #[cfg(target_os = "macos")]
-        {
-            self.sync_update_toasts(banner_state.as_ref());
-            self.show_update_banner = matches!(
-                &banner_state,
-                Some(
-                    UpdateState::Available { .. }
-                        | UpdateState::Downloading { .. }
-                        | UpdateState::Downloaded { .. }
-                        | UpdateState::Installing { .. }
-                        | UpdateState::Installed { .. }
-                        | UpdateState::Error(_)
-                )
-            );
+        let banner_overlay: Option<AnyElement> = if self.show_update_banner {
+            let banner_state = self.auto_updater.as_ref().map(|e| e.read(cx).state.clone());
+            banner_state
+                .as_ref()
+                .and_then(|state| self.render_update_banner(state, &colors, cx))
+                .map(|banner| {
+                    div()
+                        .id("update-banner-overlay")
+                        .absolute()
+                        .top(px(Self::titlebar_height()))
+                        .left_0()
+                        .right_0()
+                        .child(banner)
+                        .into_any_element()
+                })
+        } else {
+            None
+        };
+        #[cfg(not(target_os = "macos"))]
+        let banner_overlay: Option<AnyElement> = None;
+
+        div()
+            .id("terminal-overlay-layer")
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .children(banner_overlay)
+            .children(command_palette_overlay)
+            .children(search_overlay)
+            .children(ai_input_overlay)
+            .children(toast_overlay)
+            .into_any_element()
+    }
+}
+
+impl Render for TerminalView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Process pending OSC 52 clipboard writes
+        if let Some(text) = self.pending_clipboard.take() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
 
         let cell_size = self.calculate_cell_size(window, cx);
@@ -1518,13 +1798,17 @@ impl Render for TerminalView {
         let tabbar_bg = terminal_surface_bg;
         let tabs_row = self.render_tab_strip(window, &colors, &font_family, tabbar_bg, cx);
 
-        // Build update banner element (macOS only)
         #[cfg(target_os = "macos")]
-        let banner_element: Option<AnyElement> = banner_state
-            .as_ref()
-            .and_then(|state| self.render_update_banner(state, &colors, cx));
+        let banner_spacer: Option<AnyElement> = self.show_update_banner.then(|| {
+            div()
+                .id("update-banner-spacer")
+                .w_full()
+                .h(px(UPDATE_BANNER_HEIGHT))
+                .flex_none()
+                .into_any_element()
+        });
         #[cfg(not(target_os = "macos"))]
-        let banner_element: Option<AnyElement> = None;
+        let banner_spacer: Option<AnyElement> = None;
         let terminal_surface_bg_hsla: gpui::Hsla = terminal_surface_bg.into();
         if self.terminal_scrollbar_mode() == ui_scrollbar::ScrollbarVisibilityMode::OnScroll
             && !self.terminal_scrollbar_animation_active
@@ -1551,21 +1835,7 @@ impl Render for TerminalView {
             .children(pane_dividers)
             .children(pane_focus_accents)
             .into_any_element();
-        let command_palette_overlay = if self.is_command_palette_open() {
-            Some(self.render_command_palette_modal(cx))
-        } else {
-            None
-        };
-        let search_overlay = if self.search_open {
-            Some(self.render_search_bar(cx))
-        } else {
-            None
-        };
-        let ai_input_overlay = if self.is_ai_input_open() {
-            Some(self.render_ai_input_modal(cx))
-        } else {
-            None
-        };
+        let overlay_view = self.ensure_overlay_view(cx);
         let key_context = if self.has_active_inline_input() {
             "Terminal InlineInput"
         } else {
@@ -1607,237 +1877,6 @@ impl Render for TerminalView {
                 )
                 .into_any()
         });
-        let toast_overlay = if self.toast_manager.active().is_empty() {
-            None
-        } else {
-            let mut container = div().flex().flex_col().gap(px(6.0));
-            for toast in self.toast_manager.active().iter() {
-                let toast_id = toast.id;
-                let toast_message = toast.message.clone();
-                let is_hovered = self.hovered_toast == Some(toast_id);
-                let is_copied = self
-                    .copied_toast_feedback
-                    .is_some_and(|(id, _)| id == toast_id);
-
-                // Animation values
-                let opacity = toast.opacity();
-                let slide_offset = toast.slide_offset();
-
-                // Clean, minimal icons and subtle accent colors
-                let (icon, accent, _is_loading) = match toast.kind {
-                    termy_toast::ToastKind::Info => (
-                        "\u{2139}", // ℹ info symbol
-                        gpui::Rgba {
-                            r: 0.53,
-                            g: 0.70,
-                            b: 0.92,
-                            a: opacity,
-                        },
-                        false,
-                    ),
-                    termy_toast::ToastKind::Success => (
-                        "\u{2713}", // ✓ checkmark
-                        gpui::Rgba {
-                            r: 0.42,
-                            g: 0.78,
-                            b: 0.55,
-                            a: opacity,
-                        },
-                        false,
-                    ),
-                    termy_toast::ToastKind::Warning => (
-                        "\u{26A0}", // ⚠ warning
-                        gpui::Rgba {
-                            r: 0.94,
-                            g: 0.76,
-                            b: 0.38,
-                            a: opacity,
-                        },
-                        false,
-                    ),
-                    termy_toast::ToastKind::Error => (
-                        "\u{2715}", // ✕ x mark
-                        gpui::Rgba {
-                            r: 0.92,
-                            g: 0.45,
-                            b: 0.45,
-                            a: opacity,
-                        },
-                        false,
-                    ),
-                    termy_toast::ToastKind::Loading => {
-                        // Animated spinner using braille characters
-                        const SPINNER_FRAMES: &[&str] =
-                            &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-                        let elapsed_ms = toast.created_at.elapsed().as_millis() as usize;
-                        let frame_index = (elapsed_ms / 80) % SPINNER_FRAMES.len();
-                        (
-                            SPINNER_FRAMES[frame_index],
-                            gpui::Rgba {
-                                r: 0.53,
-                                g: 0.70,
-                                b: 0.92,
-                                a: opacity,
-                            },
-                            true,
-                        )
-                    }
-                };
-
-                // Subtle, glassy background with animation
-                let mut bg = colors.background;
-                bg.a = 0.88 * opacity;
-                let mut border = colors.foreground;
-                border.a = 0.08 * opacity;
-                let mut text = colors.foreground;
-                text.a = 0.92 * opacity;
-
-                container = container.child(
-                    div()
-                        .id(("toast", toast_id))
-                        .max_w(px(480.0))
-                        .mt(px(slide_offset))
-                        .rounded_lg()
-                        .bg(bg)
-                        .border_1()
-                        .border_color(border)
-                        .shadow_md()
-                        .child(
-                            div()
-                                .px(px(14.0))
-                                .py(px(12.0))
-                                .flex()
-                                .items_start()
-                                .gap(px(10.0))
-                                // Icon
-                                .child(
-                                    div()
-                                        .flex_shrink_0()
-                                        .text_size(px(14.0))
-                                        .text_color(accent)
-                                        .mt(px(1.0))
-                                        .child(icon),
-                                )
-                                // Message - max width accounts for icon (24px) + copy btn (68px) + gaps (20px) + padding (28px)
-                                .child(
-                                    div()
-                                        .max_w(px(340.0))
-                                        .text_size(px(13.0))
-                                        .text_color(text)
-                                        .child(toast_message.clone()),
-                                )
-                                .child(
-                                    div()
-                                        .flex_shrink_0()
-                                        .w(px(68.0))
-                                        .h(px(24.0))
-                                        .flex()
-                                        .items_center()
-                                        .justify_end()
-                                        .children(is_copied.then(|| {
-                                            let mut copied_bg = accent;
-                                            copied_bg.a = 0.22;
-                                            div()
-                                                .rounded(px(6.0))
-                                                .px(px(8.0))
-                                                .py(px(4.0))
-                                                .text_size(px(11.0))
-                                                .text_color(accent)
-                                                .bg(copied_bg)
-                                                .child("Copied")
-                                        }))
-                                        .children((!is_copied && is_hovered).then(|| {
-                                            let toast_message_for_copy = toast_message.clone();
-                                            div()
-                                                .rounded(px(6.0))
-                                                .px(px(8.0))
-                                                .py(px(4.0))
-                                                .text_size(px(11.0))
-                                                .text_color(text)
-                                                .bg(border)
-                                                .hover(|style| style.bg(accent))
-                                                .cursor_pointer()
-                                                .on_mouse_down(
-                                                    MouseButton::Left,
-                                                    cx.listener(
-                                                        move |this, _event, _window, cx| {
-                                                            cx.write_to_clipboard(
-                                                                ClipboardItem::new_string(
-                                                                    toast_message_for_copy.clone(),
-                                                                ),
-                                                            );
-                                                            this.copied_toast_feedback =
-                                                                Some((toast_id, Instant::now()));
-                                                            cx.notify();
-                                                            cx.spawn(
-                                                                async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-                                                                    smol::Timer::after(Duration::from_millis(
-                                                                        TOAST_COPY_FEEDBACK_MS,
-                                                                    ))
-                                                                    .await;
-                                                                    let _ = cx.update(|cx| {
-                                                                        this.update(cx, |view, cx| {
-                                                                            if view
-                                                                                .copied_toast_feedback
-                                                                                .is_some_and(
-                                                                                    |(id, _)| {
-                                                                                        id == toast_id
-                                                                                    },
-                                                                                )
-                                                                            {
-                                                                                view.copied_toast_feedback = None;
-                                                                                cx.notify();
-                                                                            }
-                                                                        })
-                                                                    });
-                                                                },
-                                                            )
-                                                            .detach();
-                                                            cx.stop_propagation();
-                                                        },
-                                                    ),
-                                                )
-                                                .child("Copy")
-                                        })),
-                                )
-                                .on_mouse_move(cx.listener(move |this, _event, _window, cx| {
-                                    if this.hovered_toast != Some(toast_id) {
-                                        this.hovered_toast = Some(toast_id);
-                                        cx.notify();
-                                    }
-                                    cx.stop_propagation();
-                                })),
-                        ),
-                );
-            }
-
-            Some(
-                div()
-                    .id("toast-overlay")
-                    .size_full()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .child(
-                        div()
-                            .size_full()
-                            .flex()
-                            .flex_col()
-                            .items_end()
-                            .justify_end()
-                            .pr(px(20.0))
-                            .pb(px(20.0))
-                            .on_mouse_move(cx.listener(|this, _event, _window, cx| {
-                                if this.hovered_toast.is_some() {
-                                    this.hovered_toast = None;
-                                    cx.notify();
-                                }
-                            }))
-                            .child(container),
-                    )
-                    .into_any(),
-            )
-        };
         let mut root_bg = colors.background;
         root_bg.a = self.scaled_background_alpha(root_bg.a);
 
@@ -1866,7 +1905,7 @@ impl Render for TerminalView {
                 }),
             )
             .children(titlebar_element)
-            .children(banner_element)
+            .children(banner_spacer)
             .child(
                 div()
                     .id("terminal")
@@ -1948,12 +1987,9 @@ impl Render for TerminalView {
                     .font_family(font_family.clone())
                     .text_size(font_size)
                     .child(terminal_grid_layer)
-                    .children(terminal_scrollbar_overlay)
-                    .children(command_palette_overlay)
-                    .children(search_overlay)
-                    .children(ai_input_overlay),
+                    .children(terminal_scrollbar_overlay),
             )
-            .children(toast_overlay);
+            .child(overlay_view);
 
         #[cfg(debug_assertions)]
         self.maybe_emit_render_metrics_log(Instant::now());

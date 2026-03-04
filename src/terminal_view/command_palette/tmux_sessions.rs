@@ -8,9 +8,20 @@ impl TerminalView {
         intent: TmuxSessionIntent,
         cx: &mut Context<Self>,
     ) {
+        let was_open = self.command_palette.is_open();
         self.command_palette.open(CommandPaletteMode::TmuxSessions);
         self.command_palette.set_tmux_session_intent(intent);
-        self.apply_command_palette_mode_setup(CommandPaletteMode::TmuxSessions, false, cx);
+        let notify_event = if was_open {
+            CommandPaletteNotifyEvent::InteractionOnly
+        } else {
+            CommandPaletteNotifyEvent::OpenCloseTransition
+        };
+        self.apply_command_palette_mode_setup(
+            CommandPaletteMode::TmuxSessions,
+            false,
+            notify_event,
+            cx,
+        );
     }
 
     pub(super) fn tmux_active_session_name_for_session_palette(&self) -> Option<String> {
@@ -169,14 +180,14 @@ impl TerminalView {
     ) {
         if !enabled {
             termy_toast::info(Self::command_palette_disabled_tmux_session_message(status_hint));
-            cx.notify();
+            self.notify_overlay(cx);
             return;
         }
 
         let session_name = session_name.trim();
         if session_name.is_empty() {
             termy_toast::error("tmux session name cannot be empty");
-            cx.notify();
+            self.notify_overlay(cx);
             return;
         }
 
@@ -187,14 +198,14 @@ impl TerminalView {
         if self.attach_tmux_runtime(launch, cx) {
             self.close_command_palette(cx);
             termy_toast::success(format!("Attached tmux session \"{session_name}\""));
-            cx.notify();
+            self.notify_overlay(cx);
         }
     }
 
     pub(super) fn detach_current_tmux_session_from_palette(&mut self, cx: &mut Context<Self>) {
         if self.detach_tmux_runtime_to_native(cx) {
             self.close_command_palette(cx);
-            cx.notify();
+            self.notify_overlay(cx);
         }
     }
 
@@ -203,7 +214,7 @@ impl TerminalView {
             .set_tmux_session_intent(TmuxSessionIntent::RenameSelect);
         self.command_palette.input_mut().clear();
         self.refresh_command_palette_matches(false, cx);
-        cx.notify();
+        self.notify_overlay(cx);
     }
 
     pub(super) fn open_tmux_session_kill_mode_from_palette(&mut self, cx: &mut Context<Self>) {
@@ -211,7 +222,7 @@ impl TerminalView {
             .set_tmux_session_intent(TmuxSessionIntent::Kill);
         self.command_palette.input_mut().clear();
         self.refresh_command_palette_matches(false, cx);
-        cx.notify();
+        self.notify_overlay(cx);
     }
 
     pub(super) fn select_tmux_session_for_rename_from_palette(
@@ -224,14 +235,14 @@ impl TerminalView {
     ) {
         if !enabled {
             termy_toast::info(Self::command_palette_disabled_tmux_session_message(status_hint));
-            cx.notify();
+            self.notify_overlay(cx);
             return;
         }
 
         self.command_palette
             .begin_tmux_session_rename(session_name, socket_target);
         self.refresh_command_palette_matches(false, cx);
-        cx.notify();
+        self.notify_overlay(cx);
     }
 
     pub(super) fn refresh_tmux_session_palette_after_lifecycle_action(
@@ -244,7 +255,7 @@ impl TerminalView {
             termy_toast::error(format!("Failed to list tmux sessions: {error}"));
         }
         self.refresh_command_palette_matches(false, cx);
-        cx.notify();
+        self.notify_overlay(cx);
     }
 
     pub(super) fn apply_tmux_session_rename_from_palette(
@@ -258,7 +269,7 @@ impl TerminalView {
     ) {
         if !enabled {
             termy_toast::info(Self::command_palette_disabled_tmux_session_message(status_hint));
-            cx.notify();
+            self.notify_overlay(cx);
             return;
         }
 
@@ -266,7 +277,7 @@ impl TerminalView {
             Ok(binary) => binary,
             Err(error) => {
                 termy_toast::error(error);
-                cx.notify();
+                self.notify_overlay(cx);
                 return;
             }
         };
@@ -278,7 +289,7 @@ impl TerminalView {
             next_session_name,
         ) {
             termy_toast::error(format!("Failed to rename tmux session: {error}"));
-            cx.notify();
+            self.notify_overlay(cx);
             return;
         }
 
@@ -303,14 +314,14 @@ impl TerminalView {
     ) {
         if !enabled {
             termy_toast::info(Self::command_palette_disabled_tmux_session_message(status_hint));
-            cx.notify();
+            self.notify_overlay(cx);
             return;
         }
 
         let session_name = session_name.trim().to_string();
         if session_name.is_empty() {
             termy_toast::error("tmux session name cannot be empty");
-            cx.notify();
+            self.notify_overlay(cx);
             return;
         }
 
@@ -332,7 +343,7 @@ impl TerminalView {
                         Ok(binary) => binary,
                         Err(error) => {
                             termy_toast::error(error);
-                            cx.notify();
+                            view.notify_overlay(cx);
                             return;
                         }
                     };
@@ -343,7 +354,7 @@ impl TerminalView {
                         session_name.as_str(),
                     ) {
                         termy_toast::error(format!("Failed to kill tmux session: {error}"));
-                        cx.notify();
+                        view.notify_overlay(cx);
                         return;
                     }
 

@@ -28,7 +28,7 @@ impl TerminalView {
                     }
                     Err(error) => {
                         termy_toast::error(format!("Restart failed: {}", error));
-                        cx.notify();
+                        self.notify_overlay(cx);
                     }
                 }
                 true

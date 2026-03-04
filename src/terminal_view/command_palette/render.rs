@@ -94,7 +94,7 @@ impl TerminalView {
                     .when(is_enabled, |row| row.cursor_pointer())
                     .on_mouse_move(cx.listener(move |this, _event, _window, cx| {
                         if this.command_palette.set_selected_filtered_index(index) {
-                            cx.notify();
+                            this.notify_overlay(cx);
                         }
                     }))
                     .on_mouse_down(

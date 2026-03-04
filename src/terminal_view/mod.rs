@@ -11,10 +11,10 @@ use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
 use gpui::{
     AnyElement, App, AsyncApp, ClipboardItem, Context, Element, ExternalPaths, FocusHandle,
-    Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, ScrollWheelEvent,
-    SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window,
-    WindowBackgroundAppearance, div, point, px,
+    Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, Entity,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render,
+    ScrollWheelEvent, SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase,
+    WeakEntity, Window, WindowBackgroundAppearance, div, point, px,
 };
 use std::{
     cell::RefCell,
@@ -39,7 +39,7 @@ use termy_terminal_ui::{
 };
 
 #[cfg(target_os = "macos")]
-use gpui::{AppContext, Entity};
+use gpui::AppContext;
 #[cfg(target_os = "macos")]
 use termy_auto_update::{AutoUpdater, UpdateState};
 
@@ -47,6 +47,7 @@ mod ai_input;
 mod command_palette;
 mod inline_input;
 mod interaction;
+mod overlay_view;
 mod render;
 mod runtime;
 mod scrollbar;
@@ -59,6 +60,7 @@ mod update_toasts;
 
 use command_palette::{CommandPaletteMode, CommandPaletteState, TmuxSessionIntent};
 use inline_input::{InlineInputAlignment, InlineInputState};
+use overlay_view::TerminalOverlayView;
 use runtime::{RuntimeKind, RuntimeState, TmuxRuntime};
 pub(crate) use tab_strip::constants::*;
 use tab_strip::state::TabStripState;
@@ -928,6 +930,7 @@ pub struct TerminalView {
     copied_toast_feedback: Option<(u64, Instant)>,
     toast_animation_scheduled: bool,
     toast_manager: ToastManager,
+    overlay_view: Option<Entity<TerminalOverlayView>>,
     command_palette: CommandPaletteState,
     install_cli_available: bool,
     tab_strip: TabStripState,
@@ -1304,6 +1307,39 @@ impl TerminalView {
 
     fn overlay_style(&self) -> OverlayStyleBuilder<'_> {
         OverlayStyleBuilder::new(&self.colors, self.background_opacity)
+    }
+
+    fn ensure_overlay_view(&mut self, cx: &mut Context<Self>) -> Entity<TerminalOverlayView> {
+        if let Some(overlay_view) = self.overlay_view.clone() {
+            return overlay_view;
+        }
+
+        let parent = cx.entity().downgrade();
+        let overlay_view = cx.new(|_| TerminalOverlayView::new(parent));
+        self.overlay_view = Some(overlay_view.clone());
+        overlay_view
+    }
+
+    fn notify_overlay(&mut self, cx: &mut Context<Self>) {
+        let overlay_view = self.ensure_overlay_view(cx);
+        let _ = overlay_view.update(cx, |_overlay_view, cx| {
+            cx.notify();
+        });
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn overlay_banner_visible_for_state(state: Option<&UpdateState>) -> bool {
+        matches!(
+            state,
+            Some(
+                UpdateState::Available { .. }
+                    | UpdateState::Downloading { .. }
+                    | UpdateState::Downloaded { .. }
+                    | UpdateState::Installing { .. }
+                    | UpdateState::Installed { .. }
+                    | UpdateState::Error(_)
+            )
+        )
     }
 
     fn scrollbar_color(
@@ -1690,6 +1726,7 @@ impl TerminalView {
             copied_toast_feedback: None,
             toast_animation_scheduled: false,
             toast_manager: ToastManager::new(),
+            overlay_view: None,
             command_palette: CommandPaletteState::new(config.command_palette_show_keybinds),
             install_cli_available: Self::install_cli_available_from_system(),
             tab_strip: TabStripState::new(),
@@ -1752,7 +1789,17 @@ impl TerminalView {
         #[cfg(target_os = "macos")]
         {
             let updater = cx.new(|_| AutoUpdater::new(crate::APP_VERSION));
-            cx.observe(&updater, |_, _, cx| cx.notify()).detach();
+            cx.observe(&updater, |view, updater, cx| {
+                let state = updater.read(cx).state.clone();
+                view.sync_update_toasts(Some(&state));
+                let was_banner_visible = view.show_update_banner;
+                view.show_update_banner = Self::overlay_banner_visible_for_state(Some(&state));
+                view.notify_overlay(cx);
+                if view.show_update_banner != was_banner_visible {
+                    cx.notify();
+                }
+            })
+            .detach();
             let weak = updater.downgrade();
             cx.spawn(async move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
                 smol::Timer::after(Duration::from_millis(5000)).await;
@@ -2166,6 +2213,54 @@ mod tests {
         let opaque = adaptive_overlay_panel_alpha_with_floor_for_opacity(base, 1.0, floor);
         assert!(translucent >= floor);
         assert!(opaque < floor);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn overlay_banner_visibility_tracks_updater_state_policy() {
+        assert!(!TerminalView::overlay_banner_visible_for_state(None));
+        assert!(!TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::Idle
+        )));
+        assert!(!TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::Checking
+        )));
+        assert!(!TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::UpToDate
+        )));
+        assert!(TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::Available {
+                version: "1.2.3".to_string(),
+                url: "https://example.com/installer".to_string(),
+                extension: "dmg".to_string(),
+            }
+        )));
+        assert!(TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::Downloading {
+                version: "1.2.3".to_string(),
+                downloaded: 5,
+                total: 10,
+            }
+        )));
+        assert!(TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::Downloaded {
+                version: "1.2.3".to_string(),
+                installer_path: std::path::PathBuf::from("/tmp/termy-installer.dmg"),
+            }
+        )));
+        assert!(TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::Installing {
+                version: "1.2.3".to_string(),
+            }
+        )));
+        assert!(TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::Installed {
+                version: "1.2.3".to_string(),
+            }
+        )));
+        assert!(TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::Error("boom".to_string())
+        )));
     }
 
     #[test]

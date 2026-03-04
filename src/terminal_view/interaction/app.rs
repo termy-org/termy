@@ -35,7 +35,7 @@ impl TerminalView {
         if let Err(error) = crate::app_actions::open_config_file() {
             log::error!("Failed to open config file from command action: {}", error);
             termy_toast::error(error);
-            cx.notify();
+            self.notify_overlay(cx);
         }
     }
 
@@ -60,19 +60,20 @@ impl TerminalView {
                         Ok(msg) => {
                             termy_toast::success(msg);
                             view.reload_config(cx);
+                            cx.notify();
                         }
                         Err(err) => {
                             termy_toast::error(err);
+                            view.notify_overlay(cx);
                         }
                     }
-                    cx.notify();
                 })
             });
         })
         .detach();
     }
 
-    fn app_info_action(&self, cx: &mut Context<Self>) {
+    fn app_info_action(&mut self, cx: &mut Context<Self>) {
         let config_path = self
             .config_path
             .as_ref()
@@ -86,14 +87,14 @@ impl TerminalView {
             config_path
         );
         termy_toast::info(message);
-        cx.notify();
+        self.notify_overlay(cx);
     }
 
     fn open_settings_action(&mut self, cx: &mut Context<Self>) {
         if let Err(error) = crate::app_actions::open_settings_window(cx) {
             log::error!("{}", error);
             termy_toast::error(error);
-            cx.notify();
+            self.notify_overlay(cx);
         }
     }
 
@@ -103,14 +104,14 @@ impl TerminalView {
             if let Some(updater) = self.auto_updater.as_ref() {
                 AutoUpdater::check(updater.downgrade(), cx);
                 self.update_check_toast_id = Some(termy_toast::loading("Checking for updates"));
-                cx.notify();
+                self.notify_overlay(cx);
             }
         }
 
         #[cfg(not(target_os = "macos"))]
         {
             termy_toast::info("Auto updates are only available on macOS");
-            cx.notify();
+            self.notify_overlay(cx);
         }
     }
 }

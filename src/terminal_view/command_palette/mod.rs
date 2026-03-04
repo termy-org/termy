@@ -30,6 +30,18 @@ enum CommandPaletteNavKey {
     Down,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommandPaletteNotifyTarget {
+    Parent,
+    Overlay,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommandPaletteNotifyEvent {
+    OpenCloseTransition,
+    InteractionOnly,
+}
+
 impl CommandPaletteNavKey {
     fn parse(key: &str) -> Option<Self> {
         match key {
@@ -43,6 +55,26 @@ impl CommandPaletteNavKey {
 }
 
 impl TerminalView {
+    fn command_palette_notify_target_for_event(
+        event: CommandPaletteNotifyEvent,
+    ) -> CommandPaletteNotifyTarget {
+        match event {
+            CommandPaletteNotifyEvent::OpenCloseTransition => CommandPaletteNotifyTarget::Parent,
+            CommandPaletteNotifyEvent::InteractionOnly => CommandPaletteNotifyTarget::Overlay,
+        }
+    }
+
+    fn notify_for_command_palette_event(
+        &mut self,
+        event: CommandPaletteNotifyEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match Self::command_palette_notify_target_for_event(event) {
+            CommandPaletteNotifyTarget::Parent => cx.notify(),
+            CommandPaletteNotifyTarget::Overlay => self.notify_overlay(cx),
+        }
+    }
+
     pub(super) fn is_command_palette_open(&self) -> bool {
         self.command_palette.is_open()
     }
@@ -176,6 +208,7 @@ impl TerminalView {
         &mut self,
         mode: CommandPaletteMode,
         animate_selection: bool,
+        notify_event: CommandPaletteNotifyEvent,
         cx: &mut Context<Self>,
     ) {
         self.command_palette.clear_shortcut_cache();
@@ -202,7 +235,7 @@ impl TerminalView {
         }
 
         self.reset_cursor_blink_phase();
-        cx.notify();
+        self.notify_for_command_palette_event(notify_event, cx);
     }
 
     pub(super) fn set_command_palette_mode(
@@ -212,7 +245,12 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.command_palette.set_mode(mode);
-        self.apply_command_palette_mode_setup(mode, animate_selection, cx);
+        self.apply_command_palette_mode_setup(
+            mode,
+            animate_selection,
+            CommandPaletteNotifyEvent::InteractionOnly,
+            cx,
+        );
     }
 
     pub(super) fn open_command_palette_in_mode(
@@ -220,8 +258,14 @@ impl TerminalView {
         mode: CommandPaletteMode,
         cx: &mut Context<Self>,
     ) {
+        let was_open = self.command_palette.is_open();
         self.command_palette.open(mode);
-        self.apply_command_palette_mode_setup(mode, false, cx);
+        let notify_event = if was_open {
+            CommandPaletteNotifyEvent::InteractionOnly
+        } else {
+            CommandPaletteNotifyEvent::OpenCloseTransition
+        };
+        self.apply_command_palette_mode_setup(mode, false, notify_event, cx);
     }
 
     pub(super) fn open_command_palette(&mut self, cx: &mut Context<Self>) {
@@ -235,7 +279,7 @@ impl TerminalView {
 
         self.command_palette.close();
         self.inline_input_selecting = false;
-        cx.notify();
+        self.notify_for_command_palette_event(CommandPaletteNotifyEvent::OpenCloseTransition, cx);
     }
 
     pub(super) fn refresh_command_palette_matches(
@@ -274,7 +318,12 @@ impl TerminalView {
         }
 
         let mode = self.command_palette.mode();
-        self.apply_command_palette_mode_setup(mode, false, cx);
+        self.apply_command_palette_mode_setup(
+            mode,
+            false,
+            CommandPaletteNotifyEvent::InteractionOnly,
+            cx,
+        );
     }
 
     pub(super) fn animate_command_palette_to_selected(
@@ -322,7 +371,10 @@ impl TerminalView {
                     this.update(cx, |view, cx| {
                         let changed = view.tick_command_palette_scroll_animation();
                         if changed {
-                            cx.notify();
+                            view.notify_for_command_palette_event(
+                                CommandPaletteNotifyEvent::InteractionOnly,
+                                cx,
+                            );
                         }
                         view.command_palette.is_scroll_animating()
                     })
@@ -397,6 +449,7 @@ impl TerminalView {
                             self.apply_command_palette_mode_setup(
                                 CommandPaletteMode::TmuxSessions,
                                 false,
+                                CommandPaletteNotifyEvent::InteractionOnly,
                                 cx,
                             );
                         }
@@ -410,14 +463,20 @@ impl TerminalView {
                 let len = self.command_palette.filtered_len();
                 if self.command_palette.move_selection_up() {
                     self.animate_command_palette_to_selected(len, cx);
-                    cx.notify();
+                    self.notify_for_command_palette_event(
+                        CommandPaletteNotifyEvent::InteractionOnly,
+                        cx,
+                    );
                 }
             }
             CommandPaletteNavKey::Down => {
                 let len = self.command_palette.filtered_len();
                 if self.command_palette.move_selection_down() {
                     self.animate_command_palette_to_selected(len, cx);
-                    cx.notify();
+                    self.notify_for_command_palette_event(
+                        CommandPaletteNotifyEvent::InteractionOnly,
+                        cx,
+                    );
                 }
             }
         }
@@ -476,7 +535,7 @@ impl TerminalView {
                         self.install_cli_available(),
                         self.runtime_uses_tmux(),
                     ));
-                    cx.notify();
+                    self.notify_overlay(cx);
                     return;
                 }
                 self.execute_command_palette_action(action, window, cx)
@@ -569,15 +628,16 @@ impl TerminalView {
             Ok(true) => {
                 self.close_command_palette(cx);
                 termy_toast::success(format!("Theme set to {}", self.theme_id));
-                cx.notify();
+                self.notify_overlay(cx);
             }
             Ok(false) => {
                 self.close_command_palette(cx);
                 termy_toast::info(format!("Theme already set to {}", theme_id));
+                self.notify_overlay(cx);
             }
             Err(error) => {
                 termy_toast::error(error);
-                cx.notify();
+                self.notify_overlay(cx);
             }
         }
     }
@@ -602,7 +662,7 @@ impl TerminalView {
         match action {
             CommandAction::OpenConfig => {
                 termy_toast::info("Opened settings file");
-                cx.notify();
+                self.notify_overlay(cx);
             }
             CommandAction::NewTab => termy_toast::success("Opened new tab"),
             CommandAction::CloseTab => termy_toast::info("Closed active tab"),
@@ -728,6 +788,22 @@ mod tests {
         assert!(!TerminalView::command_palette_should_stay_open(
             CommandAction::NewTab
         ));
+    }
+
+    #[test]
+    fn notify_target_routes_overlay_only_palette_interactions() {
+        assert_eq!(
+            TerminalView::command_palette_notify_target_for_event(
+                CommandPaletteNotifyEvent::OpenCloseTransition
+            ),
+            CommandPaletteNotifyTarget::Parent
+        );
+        assert_eq!(
+            TerminalView::command_palette_notify_target_for_event(
+                CommandPaletteNotifyEvent::InteractionOnly
+            ),
+            CommandPaletteNotifyTarget::Overlay
+        );
     }
 
     #[test]
