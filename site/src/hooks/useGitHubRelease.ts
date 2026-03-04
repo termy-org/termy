@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 
-const OWNER = "lassejlv";
-const REPO = "termy";
-const API_URL = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
+const API_URL = "/api/github/releases/latest";
 
 export interface Asset {
   name: string;
@@ -32,11 +30,7 @@ export function useGitHubRelease(): UseGitHubReleaseResult {
   useEffect(() => {
     async function fetchRelease() {
       try {
-        const response = await fetch(API_URL, {
-          headers: {
-            Accept: "application/vnd.github+json",
-          },
-        });
+        const response = await fetch(API_URL);
 
         if (!response.ok) {
           throw new Error(`GitHub API returned ${response.status}`);
