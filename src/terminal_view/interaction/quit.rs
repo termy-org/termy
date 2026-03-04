@@ -9,6 +9,10 @@ enum CloseRequestTarget {
 }
 
 impl TerminalView {
+    fn should_force_quit_when_prompt_in_flight(target: CloseRequestTarget) -> bool {
+        matches!(target, CloseRequestTarget::Application)
+    }
+
     pub(in super::super) fn execute_quit_command_action(
         &mut self,
         action: CommandAction,
@@ -202,6 +206,12 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.quit_prompt_in_flight {
+            if Self::should_force_quit_when_prompt_in_flight(target) {
+                // If the quit confirm prompt is unresponsive, allow a second
+                // Quit shortcut to force-close the app.
+                self.allow_quit_without_prompt = true;
+                cx.quit();
+            }
             return false;
         }
 
@@ -304,5 +314,23 @@ impl TerminalView {
         }
         let tab_id = self.tabs[index].id;
         let _ = self.request_close(CloseRequestTarget::TabClose { tab_id }, window, cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CloseRequestTarget, TerminalView};
+
+    #[test]
+    fn prompt_in_flight_force_quit_policy_only_allows_application_target() {
+        assert!(TerminalView::should_force_quit_when_prompt_in_flight(
+            CloseRequestTarget::Application
+        ));
+        assert!(!TerminalView::should_force_quit_when_prompt_in_flight(
+            CloseRequestTarget::WindowClose
+        ));
+        assert!(!TerminalView::should_force_quit_when_prompt_in_flight(
+            CloseRequestTarget::TabClose { tab_id: 1 }
+        ));
     }
 }

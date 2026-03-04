@@ -10,6 +10,12 @@ run:
 build:
     cargo build --release
 
+check:
+    cargo check --workspace
+
+clean:
+    cargo clean --workspace && rm -rf ./target
+
 # Generate macOS .icns file from assets/termy_icon@1024px.png
 generate-icon:
     ./scripts/generate-icon.sh
