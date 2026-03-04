@@ -696,6 +696,7 @@ impl TerminalView {
                         TerminalGridPaintDamage::Full,
                     );
                 };
+                #[cfg_attr(not(debug_assertions), allow(unused_variables))]
                 let (patched_cell_count, did_full_rebuild) = self.patch_pane_render_cache(
                     terminal,
                     cols,
@@ -1683,6 +1684,7 @@ impl Render for TerminalView {
                 } else {
                     None
                 };
+                #[cfg_attr(not(debug_assertions), allow(unused_variables))]
                 let (pane_cells, cache_strategy, paint_damage, paint_cache) = {
                     let mut pane_render_cache = pane.render_cache.borrow_mut();
                     let paint_cache = pane_render_cache.paint_cache.clone();
@@ -1994,6 +1996,15 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_move_tab_right_action))
                     .on_action(cx.listener(Self::handle_switch_tab_left_action))
                     .on_action(cx.listener(Self::handle_switch_tab_right_action))
+                    .on_action(cx.listener(Self::handle_switch_to_tab_1_action))
+                    .on_action(cx.listener(Self::handle_switch_to_tab_2_action))
+                    .on_action(cx.listener(Self::handle_switch_to_tab_3_action))
+                    .on_action(cx.listener(Self::handle_switch_to_tab_4_action))
+                    .on_action(cx.listener(Self::handle_switch_to_tab_5_action))
+                    .on_action(cx.listener(Self::handle_switch_to_tab_6_action))
+                    .on_action(cx.listener(Self::handle_switch_to_tab_7_action))
+                    .on_action(cx.listener(Self::handle_switch_to_tab_8_action))
+                    .on_action(cx.listener(Self::handle_switch_to_tab_9_action))
                     .on_action(cx.listener(Self::handle_manage_tmux_sessions_action))
                     .on_action(cx.listener(Self::handle_split_pane_vertical_action))
                     .on_action(cx.listener(Self::handle_split_pane_horizontal_action))

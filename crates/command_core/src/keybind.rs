@@ -69,6 +69,42 @@ pub fn default_keybinds_for_platform(platform: KeybindPlatform) -> Vec<DefaultKe
             action: CommandId::ClosePaneOrTab,
         },
         DefaultKeybind {
+            trigger: "secondary-1",
+            action: CommandId::SwitchToTab1,
+        },
+        DefaultKeybind {
+            trigger: "secondary-2",
+            action: CommandId::SwitchToTab2,
+        },
+        DefaultKeybind {
+            trigger: "secondary-3",
+            action: CommandId::SwitchToTab3,
+        },
+        DefaultKeybind {
+            trigger: "secondary-4",
+            action: CommandId::SwitchToTab4,
+        },
+        DefaultKeybind {
+            trigger: "secondary-5",
+            action: CommandId::SwitchToTab5,
+        },
+        DefaultKeybind {
+            trigger: "secondary-6",
+            action: CommandId::SwitchToTab6,
+        },
+        DefaultKeybind {
+            trigger: "secondary-7",
+            action: CommandId::SwitchToTab7,
+        },
+        DefaultKeybind {
+            trigger: "secondary-8",
+            action: CommandId::SwitchToTab8,
+        },
+        DefaultKeybind {
+            trigger: "secondary-9",
+            action: CommandId::SwitchToTab9,
+        },
+        DefaultKeybind {
             trigger: "secondary-d",
             action: CommandId::SplitPaneVertical,
         },

@@ -432,6 +432,15 @@ define_commands!(
             MenuActionRole::Normal
         ))
     ),
+    (SwitchToTab1, TERMINAL_CONTEXT, None, None),
+    (SwitchToTab2, TERMINAL_CONTEXT, None, None),
+    (SwitchToTab3, TERMINAL_CONTEXT, None, None),
+    (SwitchToTab4, TERMINAL_CONTEXT, None, None),
+    (SwitchToTab5, TERMINAL_CONTEXT, None, None),
+    (SwitchToTab6, TERMINAL_CONTEXT, None, None),
+    (SwitchToTab7, TERMINAL_CONTEXT, None, None),
+    (SwitchToTab8, TERMINAL_CONTEXT, None, None),
+    (SwitchToTab9, TERMINAL_CONTEXT, None, None),
     (
         ManageTmuxSessions,
         TERMINAL_CONTEXT,

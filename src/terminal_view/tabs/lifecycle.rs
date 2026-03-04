@@ -59,6 +59,15 @@ impl TerminalView {
                 self.switch_active_tab_right(cx);
                 true
             }
+            CommandAction::SwitchToTab1 => self.switch_to_tab_position(1, cx),
+            CommandAction::SwitchToTab2 => self.switch_to_tab_position(2, cx),
+            CommandAction::SwitchToTab3 => self.switch_to_tab_position(3, cx),
+            CommandAction::SwitchToTab4 => self.switch_to_tab_position(4, cx),
+            CommandAction::SwitchToTab5 => self.switch_to_tab_position(5, cx),
+            CommandAction::SwitchToTab6 => self.switch_to_tab_position(6, cx),
+            CommandAction::SwitchToTab7 => self.switch_to_tab_position(7, cx),
+            CommandAction::SwitchToTab8 => self.switch_to_tab_position(8, cx),
+            CommandAction::SwitchToTab9 => self.switch_to_tab_position(9, cx),
             CommandAction::SplitPaneVertical => self.split_active_pane_vertical(cx),
             CommandAction::SplitPaneHorizontal => self.split_active_pane_horizontal(cx),
             CommandAction::ClosePane => self.close_active_pane(cx),
@@ -75,6 +84,17 @@ impl TerminalView {
             CommandAction::TogglePaneZoom => self.toggle_pane_zoom(cx),
             _ => false,
         }
+    }
+
+    fn switch_to_tab_position(&mut self, position: usize, cx: &mut Context<Self>) -> bool {
+        let Some(target_index) = position.checked_sub(1) else {
+            return false;
+        };
+        if target_index >= self.tabs.len() {
+            return false;
+        }
+        self.switch_tab(target_index, cx);
+        true
     }
 
     fn close_pane_or_tab_target(
@@ -222,7 +242,8 @@ impl TerminalView {
                     .active_terminal()
                     .map(|terminal| terminal.size())
                     .unwrap_or_default();
-                let preferred_working_dir = self.preferred_working_dir_for_new_native_session();
+                let preferred_working_dir =
+                    self.preferred_working_dir_for_new_native_session(cx);
                 let terminal = match Terminal::new_native(
                     size,
                     preferred_working_dir.as_deref(),
@@ -541,8 +562,13 @@ impl TerminalView {
         }
     }
 
-    fn native_make_terminal(&self, cols: u16, rows: u16) -> Result<Terminal, String> {
-        let preferred_working_dir = self.preferred_working_dir_for_new_native_session();
+    fn native_make_terminal(
+        &mut self,
+        cols: u16,
+        rows: u16,
+        cx: &mut Context<Self>,
+    ) -> Result<Terminal, String> {
+        let preferred_working_dir = self.preferred_working_dir_for_new_native_session(cx);
         Terminal::new_native(
             TerminalSize {
                 cols: cols.max(1),
@@ -622,7 +648,7 @@ impl TerminalView {
             }
         };
 
-        let terminal = match self.native_make_terminal(split_size.2, split_size.3) {
+        let terminal = match self.native_make_terminal(split_size.2, split_size.3, cx) {
             Ok(terminal) => terminal,
             Err(error) => {
                 termy_toast::error(error);

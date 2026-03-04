@@ -101,6 +101,15 @@ impl TerminalView {
             | CommandAction::MoveTabRight
             | CommandAction::SwitchTabLeft
             | CommandAction::SwitchTabRight
+            | CommandAction::SwitchToTab1
+            | CommandAction::SwitchToTab2
+            | CommandAction::SwitchToTab3
+            | CommandAction::SwitchToTab4
+            | CommandAction::SwitchToTab5
+            | CommandAction::SwitchToTab6
+            | CommandAction::SwitchToTab7
+            | CommandAction::SwitchToTab8
+            | CommandAction::SwitchToTab9
             | CommandAction::SplitPaneVertical
             | CommandAction::SplitPaneHorizontal
             | CommandAction::ClosePane
@@ -271,6 +280,87 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::SwitchTabRight, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_switch_to_tab_1_action(
+        &mut self,
+        _: &commands::SwitchToTab1,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchToTab1, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_switch_to_tab_2_action(
+        &mut self,
+        _: &commands::SwitchToTab2,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchToTab2, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_switch_to_tab_3_action(
+        &mut self,
+        _: &commands::SwitchToTab3,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchToTab3, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_switch_to_tab_4_action(
+        &mut self,
+        _: &commands::SwitchToTab4,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchToTab4, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_switch_to_tab_5_action(
+        &mut self,
+        _: &commands::SwitchToTab5,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchToTab5, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_switch_to_tab_6_action(
+        &mut self,
+        _: &commands::SwitchToTab6,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchToTab6, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_switch_to_tab_7_action(
+        &mut self,
+        _: &commands::SwitchToTab7,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchToTab7, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_switch_to_tab_8_action(
+        &mut self,
+        _: &commands::SwitchToTab8,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchToTab8, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_switch_to_tab_9_action(
+        &mut self,
+        _: &commands::SwitchToTab9,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::SwitchToTab9, true, window, cx);
     }
 
     pub(in super::super) fn handle_manage_tmux_sessions_action(

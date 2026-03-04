@@ -686,6 +686,15 @@ impl TerminalView {
             | CommandAction::MoveTabRight
             | CommandAction::SwitchTabLeft
             | CommandAction::SwitchTabRight
+            | CommandAction::SwitchToTab1
+            | CommandAction::SwitchToTab2
+            | CommandAction::SwitchToTab3
+            | CommandAction::SwitchToTab4
+            | CommandAction::SwitchToTab5
+            | CommandAction::SwitchToTab6
+            | CommandAction::SwitchToTab7
+            | CommandAction::SwitchToTab8
+            | CommandAction::SwitchToTab9
             | CommandAction::SplitPaneVertical
             | CommandAction::SplitPaneHorizontal
             | CommandAction::ClosePane
