@@ -7,7 +7,10 @@ mod render_metrics;
 mod runtime;
 mod tmux;
 
-pub use grid::{CellRenderInfo, TerminalCursorStyle, TerminalGrid, TerminalGridRow, TerminalGridRows};
+pub use grid::{
+    CellRenderInfo, TerminalCursorStyle, TerminalGrid, TerminalGridPaintCacheHandle,
+    TerminalGridPaintDamage, TerminalGridRow, TerminalGridRows,
+};
 pub use links::{DetectedLink, classify_link_token, find_link_in_line};
 pub use pane_terminal::PaneTerminal;
 #[cfg(any(debug_assertions, test))]

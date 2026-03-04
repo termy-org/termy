@@ -3,7 +3,7 @@ use gpui::{
     App, Bounds, Element, Font, FontFeatures, FontWeight, Hsla, IntoElement, Pixels, SharedString,
     Size, TextAlign, TextRun, UnderlineStyle, Window, point, px, quad,
 };
-use std::sync::Arc;
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 /// Info needed to render a single cell.
 #[derive(Clone)]
@@ -32,8 +32,27 @@ pub enum TerminalCursorStyle {
 pub type TerminalGridRow = Arc<Vec<CellRenderInfo>>;
 pub type TerminalGridRows = Arc<Vec<TerminalGridRow>>;
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum TerminalGridPaintDamage {
+    #[default]
+    None,
+    Full,
+    Rows(Arc<[usize]>),
+}
+
+#[derive(Clone, Default)]
+pub struct TerminalGridPaintCacheHandle(Rc<RefCell<TerminalGridPaintCache>>);
+
+impl TerminalGridPaintCacheHandle {
+    pub fn clear(&self) {
+        self.0.borrow_mut().clear();
+    }
+}
+
 pub struct TerminalGrid {
     pub cells: TerminalGridRows,
+    pub paint_cache: TerminalGridPaintCacheHandle,
+    pub paint_damage: TerminalGridPaintDamage,
     pub cell_size: Size<Pixels>,
     pub cols: usize,
     pub rows: usize,
@@ -144,6 +163,7 @@ struct TextBatch {
 
 #[derive(Clone, Copy)]
 struct BlockDraw {
+    #[cfg_attr(not(test), allow(dead_code))]
     row: usize,
     col: usize,
     geometry: BlockElementGeometry,
@@ -154,6 +174,59 @@ struct BlockDraw {
 enum TextDrawOp {
     Batch(TextBatch),
     Block(BlockDraw),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BackgroundSpan {
+    start_col: usize,
+    end_col_exclusive: usize,
+    color: Hsla,
+}
+
+#[derive(Clone, Default)]
+struct CachedRowPaintOps {
+    background_spans: Vec<BackgroundSpan>,
+    draw_ops: Vec<TextDrawOp>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct GridPaintStyleKey {
+    cols: usize,
+    rows: usize,
+    cell_width_bits: u32,
+    cell_height_bits: u32,
+    clear_bg: [u32; 4],
+    default_bg: [u32; 4],
+    selection_bg: [u32; 4],
+    selection_fg: [u32; 4],
+    search_match_bg: [u32; 4],
+    search_current_bg: [u32; 4],
+    cursor_style: TerminalCursorStyle,
+    font_family: SharedString,
+    font_size_bits: u32,
+}
+
+#[derive(Default)]
+struct TerminalGridPaintCache {
+    row_ops: Vec<CachedRowPaintOps>,
+    style_key: Option<GridPaintStyleKey>,
+    last_cursor_cell: Option<(usize, usize)>,
+    last_hovered_link_range: Option<(usize, usize, usize)>,
+}
+
+impl TerminalGridPaintCache {
+    fn clear(&mut self) {
+        self.row_ops.clear();
+        self.style_key = None;
+        self.last_cursor_cell = None;
+        self.last_hovered_link_range = None;
+    }
+
+    fn ensure_row_capacity(&mut self, row_count: usize) {
+        if self.row_ops.len() != row_count {
+            self.row_ops = vec![CachedRowPaintOps::default(); row_count];
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -336,6 +409,29 @@ fn paint_block_element_quad(
     }
 }
 
+fn hsla_bits(color: Hsla) -> [u32; 4] {
+    [
+        color.h.to_bits(),
+        color.s.to_bits(),
+        color.l.to_bits(),
+        color.a.to_bits(),
+    ]
+}
+
+fn push_row_if_in_bounds(rows: &mut Vec<usize>, maybe_row: Option<usize>, row_count: usize) {
+    if let Some(row) = maybe_row
+        && row < row_count
+    {
+        rows.push(row);
+    }
+}
+
+fn sorted_dedup_rows(mut rows: Vec<usize>) -> Arc<[usize]> {
+    rows.sort_unstable();
+    rows.dedup();
+    rows.into()
+}
+
 impl Element for TerminalGrid {
     type RequestLayoutState = ();
     type PrepaintState = ();
@@ -399,109 +495,332 @@ impl Element for TerminalGrid {
         cx: &mut App,
     ) {
         increment_grid_paint_count();
-        let origin = bounds.origin;
-        let grid_bounds = Bounds {
-            origin,
-            size: bounds.size,
-        };
+        self.paint_with_row_cache(bounds, window, cx);
+    }
+}
 
-        // Always clear the full terminal surface first to avoid ghosting artifacts
-        // when scrolled content reveals previously untouched cells.
+impl TerminalGrid {
+    fn paint_style_key(&self) -> GridPaintStyleKey {
+        GridPaintStyleKey {
+            cols: self.cols,
+            rows: self.rows,
+            cell_width_bits: Into::<f32>::into(self.cell_size.width).to_bits(),
+            cell_height_bits: Into::<f32>::into(self.cell_size.height).to_bits(),
+            clear_bg: hsla_bits(self.clear_bg),
+            default_bg: hsla_bits(self.default_bg),
+            selection_bg: hsla_bits(self.selection_bg),
+            selection_fg: hsla_bits(self.selection_fg),
+            search_match_bg: hsla_bits(self.search_match_bg),
+            search_current_bg: hsla_bits(self.search_current_bg),
+            cursor_style: self.cursor_style,
+            font_family: self.font_family.clone(),
+            font_size_bits: Into::<f32>::into(self.font_size).to_bits(),
+        }
+    }
+
+    fn row_background_fill(&self, cell: &CellRenderInfo) -> Option<Hsla> {
+        if cell.selected {
+            Some(self.selection_bg)
+        } else if cell.search_current {
+            Some(self.search_current_bg)
+        } else if cell.search_match {
+            Some(self.search_match_bg)
+        } else if cell.bg.a > 0.01 && !colors_approximately_equal(&cell.bg, &self.default_bg) {
+            Some(cell.bg)
+        } else {
+            None
+        }
+    }
+
+    fn build_row_background_spans(&self, row_cells: &[CellRenderInfo]) -> Vec<BackgroundSpan> {
+        if row_cells.is_empty() {
+            return Vec::new();
+        }
+
+        let mut spans = Vec::new();
+        let mut current: Option<BackgroundSpan> = None;
+
+        for cell in row_cells {
+            let fill = self.row_background_fill(cell);
+            match (current.as_mut(), fill) {
+                (Some(span), Some(color))
+                    if span.color == color && span.end_col_exclusive == cell.col =>
+                {
+                    span.end_col_exclusive = cell.col.saturating_add(1);
+                }
+                (Some(span), Some(color)) => {
+                    spans.push(*span);
+                    current = Some(BackgroundSpan {
+                        start_col: cell.col,
+                        end_col_exclusive: cell.col.saturating_add(1),
+                        color,
+                    });
+                }
+                (Some(span), None) => {
+                    spans.push(*span);
+                    current = None;
+                }
+                (None, Some(color)) => {
+                    current = Some(BackgroundSpan {
+                        start_col: cell.col,
+                        end_col_exclusive: cell.col.saturating_add(1),
+                        color,
+                    });
+                }
+                (None, None) => {}
+            }
+        }
+
+        if let Some(span) = current {
+            spans.push(span);
+        }
+
+        spans
+    }
+
+    fn collect_row_draw_ops(
+        &self,
+        row_cells: &[CellRenderInfo],
+        cursor_fg: Hsla,
+        highlight_fg: Hsla,
+    ) -> Vec<TextDrawOp> {
+        let mut ops = Vec::with_capacity(row_cells.len());
+        let mut current: Option<TextBatch> = None;
+
+        for cell in row_cells {
+            if !Self::cell_is_drawable_text(cell) {
+                Self::push_pending_text_batch(&mut current, &mut ops);
+                continue;
+            }
+
+            let fg = self.cell_fg_color(cell, cursor_fg, highlight_fg);
+            if let Some(geometry) = block_element_geometry(cell.char) {
+                Self::push_pending_text_batch(&mut current, &mut ops);
+                ops.push(TextDrawOp::Block(BlockDraw {
+                    row: cell.row,
+                    col: cell.col,
+                    geometry,
+                    fg,
+                }));
+                continue;
+            }
+
+            let underline = self.cell_underline(cell.row, cell.col, fg);
+            let key = TextBatchKey {
+                bold: cell.bold,
+                fg,
+            };
+
+            let should_append = current
+                .as_ref()
+                .is_some_and(|batch| batch.can_append(cell.col, cell.row, key, &underline));
+            if should_append {
+                if let Some(batch) = current.as_mut() {
+                    batch.append_char(cell.char);
+                }
+                continue;
+            }
+
+            Self::push_pending_text_batch(&mut current, &mut ops);
+            current = Some(TextBatch::new(cell.col, cell.row, cell.char, key, underline));
+        }
+
+        Self::push_pending_text_batch(&mut current, &mut ops);
+        ops
+    }
+
+    fn rebuild_cached_row_ops(
+        &self,
+        row_cells: &[CellRenderInfo],
+        cursor_fg: Hsla,
+        highlight_fg: Hsla,
+    ) -> CachedRowPaintOps {
+        CachedRowPaintOps {
+            background_spans: self.build_row_background_spans(row_cells),
+            draw_ops: self.collect_row_draw_ops(row_cells, cursor_fg, highlight_fg),
+        }
+    }
+
+    fn clear_bounds(&self, bounds: Bounds<Pixels>, window: &mut Window) {
         window.paint_quad(quad(
-            grid_bounds,
+            bounds,
             px(0.0),
             self.clear_bg,
             gpui::Edges::default(),
             Hsla::transparent_black(),
             gpui::BorderStyle::default(),
         ));
+    }
 
-        // Paint background colors first.
-        for row_cells in self.cells.iter() {
-            for cell in row_cells.iter() {
-                let x = origin.x + self.cell_size.width * cell.col as f32;
-                let y = origin.y + self.cell_size.height * cell.row as f32;
-
-                let cell_bounds = Bounds {
-                    origin: point(x, y),
-                    size: self.cell_size,
-                };
-
-                if cell.selected {
-                    window.paint_quad(quad(
-                        cell_bounds,
-                        px(0.0),
-                        self.selection_bg,
-                        gpui::Edges::default(),
-                        Hsla::transparent_black(),
-                        gpui::BorderStyle::default(),
-                    ));
-                } else if cell.search_current {
-                    window.paint_quad(quad(
-                        cell_bounds,
-                        px(0.0),
-                        self.search_current_bg,
-                        gpui::Edges::default(),
-                        Hsla::transparent_black(),
-                        gpui::BorderStyle::default(),
-                    ));
-                } else if cell.search_match {
-                    window.paint_quad(quad(
-                        cell_bounds,
-                        px(0.0),
-                        self.search_match_bg,
-                        gpui::Edges::default(),
-                        Hsla::transparent_black(),
-                        gpui::BorderStyle::default(),
-                    ));
-                } else if cell.bg.a > 0.01
-                    && !colors_approximately_equal(&cell.bg, &self.default_bg)
-                {
-                    window.paint_quad(quad(
-                        cell_bounds,
-                        px(0.0),
-                        cell.bg,
-                        gpui::Edges::default(),
-                        Hsla::transparent_black(),
-                        gpui::BorderStyle::default(),
-                    ));
-                }
+    fn paint_cached_row_ops(
+        &self,
+        row: usize,
+        row_ops: &CachedRowPaintOps,
+        origin: gpui::Point<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+        font_normal: &Font,
+        font_bold: &Font,
+    ) {
+        for span in &row_ops.background_spans {
+            if span.start_col >= span.end_col_exclusive {
+                continue;
             }
-        }
-
-        if let Some((cursor_col, cursor_row)) = self.cursor_cell {
-            let x = origin.x + self.cell_size.width * cursor_col as f32;
-            let y = origin.y + self.cell_size.height * cursor_row as f32;
+            let x = origin.x + self.cell_size.width * span.start_col as f32;
+            let width_cells = span.end_col_exclusive.saturating_sub(span.start_col);
+            if width_cells == 0 {
+                continue;
+            }
             let cell_bounds = Bounds {
-                origin: point(x, y),
-                size: self.cell_size,
+                origin: point(x, origin.y),
+                size: Size {
+                    width: self.cell_size.width * width_cells as f32,
+                    height: self.cell_size.height,
+                },
             };
-            let cursor_bounds = match self.cursor_style {
-                TerminalCursorStyle::Block => cell_bounds,
-                TerminalCursorStyle::Line => {
-                    let cell_width: f32 = self.cell_size.width.into();
-                    let cursor_width = px(cell_width.clamp(1.0, 2.0));
-                    Bounds::new(
-                        cell_bounds.origin,
-                        Size {
-                            width: cursor_width,
-                            height: cell_bounds.size.height,
-                        },
-                    )
-                }
-            };
-
             window.paint_quad(quad(
-                cursor_bounds,
+                cell_bounds,
                 px(0.0),
-                self.cursor_color,
+                span.color,
                 gpui::Edges::default(),
                 Hsla::transparent_black(),
                 gpui::BorderStyle::default(),
             ));
         }
 
-        // Pre-create font structs to avoid cloning font_family for every batch.
+        self.paint_cursor_for_row(row, origin, window);
+
+        for op in &row_ops.draw_ops {
+            match op {
+                TextDrawOp::Batch(batch) => {
+                    let x = origin.x + self.cell_size.width * batch.start_col as f32;
+                    let font = if batch.bold { font_bold } else { font_normal };
+                    let run = TextRun {
+                        len: batch.text.len(),
+                        font: font.clone(),
+                        color: batch.fg,
+                        background_color: None,
+                        underline: batch.underline,
+                        strikethrough: None,
+                    };
+
+                    increment_shape_line_calls();
+                    let line = window.text_system().shape_line(
+                        batch.text.clone().into(),
+                        self.font_size,
+                        &[run],
+                        Some(self.cell_size.width),
+                    );
+                    let _ = line.paint(
+                        point(x, origin.y),
+                        self.cell_size.height,
+                        TextAlign::Left,
+                        None,
+                        window,
+                        cx,
+                    );
+                }
+                TextDrawOp::Block(block) => {
+                    let x = origin.x + self.cell_size.width * block.col as f32;
+                    let cell_bounds = Bounds {
+                        origin: point(x, origin.y),
+                        size: self.cell_size,
+                    };
+                    paint_block_element_quad(window, cell_bounds, block.geometry, block.fg);
+                }
+            }
+        }
+    }
+
+    fn dirty_rows_for_pass(&self, cache: &mut TerminalGridPaintCache) -> (bool, Arc<[usize]>) {
+        let style_key = self.paint_style_key();
+        let style_changed = cache.style_key.as_ref() != Some(&style_key);
+        cache.style_key = Some(style_key);
+
+        let mut full_repaint = style_changed || matches!(self.paint_damage, TerminalGridPaintDamage::Full);
+        let mut rows = Vec::new();
+        if let TerminalGridPaintDamage::Rows(damaged_rows) = &self.paint_damage {
+            rows.extend(damaged_rows.iter().copied().filter(|row| *row < self.rows));
+        }
+
+        if cache.last_cursor_cell != self.cursor_cell {
+            push_row_if_in_bounds(
+                &mut rows,
+                cache.last_cursor_cell.map(|(_, row)| row),
+                self.rows,
+            );
+            push_row_if_in_bounds(&mut rows, self.cursor_cell.map(|(_, row)| row), self.rows);
+        }
+
+        if cache.last_hovered_link_range != self.hovered_link_range {
+            push_row_if_in_bounds(
+                &mut rows,
+                cache.last_hovered_link_range.map(|(row, _, _)| row),
+                self.rows,
+            );
+            push_row_if_in_bounds(
+                &mut rows,
+                self.hovered_link_range.map(|(row, _, _)| row),
+                self.rows,
+            );
+        }
+
+        if self.rows == 0 || self.cols == 0 {
+            rows.clear();
+            full_repaint = false;
+        }
+
+        cache.last_cursor_cell = self.cursor_cell;
+        cache.last_hovered_link_range = self.hovered_link_range;
+
+        (full_repaint, sorted_dedup_rows(rows))
+    }
+
+    fn paint_cursor_for_row(
+        &self,
+        row: usize,
+        origin: gpui::Point<Pixels>,
+        window: &mut Window,
+    ) {
+        let Some((cursor_col, cursor_row)) = self.cursor_cell else {
+            return;
+        };
+        if cursor_row != row {
+            return;
+        }
+        let x = origin.x + self.cell_size.width * cursor_col as f32;
+        let y = origin.y;
+        let cell_bounds = Bounds {
+            origin: point(x, y),
+            size: self.cell_size,
+        };
+        let cursor_bounds = match self.cursor_style {
+            TerminalCursorStyle::Block => cell_bounds,
+            TerminalCursorStyle::Line => {
+                let cell_width: f32 = self.cell_size.width.into();
+                let cursor_width = px(cell_width.clamp(1.0, 2.0));
+                Bounds::new(
+                    cell_bounds.origin,
+                    Size {
+                        width: cursor_width,
+                        height: cell_bounds.size.height,
+                    },
+                )
+            }
+        };
+
+        window.paint_quad(quad(
+            cursor_bounds,
+            px(0.0),
+            self.cursor_color,
+            gpui::Edges::default(),
+            Hsla::transparent_black(),
+            gpui::BorderStyle::default(),
+        ));
+    }
+
+    fn paint_with_row_cache(&self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+        let origin = bounds.origin;
         let terminal_font_features = FontFeatures::disable_ligatures();
         let font_normal = Font {
             family: self.font_family.clone(),
@@ -515,8 +834,6 @@ impl Element for TerminalGrid {
             weight: FontWeight::BOLD,
             ..Default::default()
         };
-
-        // Pre-compute cursor foreground color (black on cursor block)
         let cursor_fg = Hsla {
             h: 0.0,
             s: 0.0,
@@ -530,58 +847,61 @@ impl Element for TerminalGrid {
             a: 1.0,
         };
 
-        let draw_ops = self.collect_draw_ops(cursor_fg, highlight_fg);
-        for op in draw_ops {
-            match op {
-                TextDrawOp::Batch(batch) => {
-                    let x = origin.x + self.cell_size.width * batch.start_col as f32;
-                    let y = origin.y + self.cell_size.height * batch.row as f32;
-                    let font = if batch.bold { &font_bold } else { &font_normal };
-                    let run = TextRun {
-                        len: batch.text.len(),
-                        font: font.clone(),
-                        color: batch.fg,
-                        background_color: None,
-                        underline: batch.underline,
-                        strikethrough: None,
-                    };
-
-                    increment_shape_line_calls();
-                    let line = window.text_system().shape_line(
-                        batch.text.into(),
-                        self.font_size,
-                        &[run],
-                        // `force_width` is per-glyph advance, so terminal text must use one cell width.
-                        Some(self.cell_size.width),
-                    );
-                    let _ = line.paint(
-                        point(x, y),
-                        self.cell_size.height,
-                        TextAlign::Left,
-                        None,
-                        window,
-                        cx,
-                    );
+        let mut cache = self.paint_cache.0.borrow_mut();
+        cache.ensure_row_capacity(self.rows);
+        let (full_repaint, dirty_rows) = self.dirty_rows_for_pass(&mut cache);
+        if full_repaint {
+            for row in 0..self.rows {
+                let Some(row_cells) = self.cells.get(row) else {
+                    continue;
+                };
+                cache.row_ops[row] =
+                    self.rebuild_cached_row_ops(row_cells.as_slice(), cursor_fg, highlight_fg);
+            }
+        } else {
+            for row in dirty_rows.iter().copied() {
+                if row >= self.rows {
+                    continue;
                 }
-                TextDrawOp::Block(block) => {
-                    let x = origin.x + self.cell_size.width * block.col as f32;
-                    let y = origin.y + self.cell_size.height * block.row as f32;
-                    let cell_bounds = Bounds {
-                        origin: point(x, y),
-                        size: self.cell_size,
-                    };
-                    paint_block_element_quad(window, cell_bounds, block.geometry, block.fg);
-                }
+                let Some(row_cells) = self.cells.get(row) else {
+                    continue;
+                };
+                cache.row_ops[row] =
+                    self.rebuild_cached_row_ops(row_cells.as_slice(), cursor_fg, highlight_fg);
             }
         }
-    }
-}
 
-impl TerminalGrid {
+        // GPUI paint passes do not preserve previous pixels across frames. Always clear and draw
+        // all rows; damage only controls which cached row ops are recomputed.
+        self.clear_bounds(
+            Bounds {
+                origin,
+                size: bounds.size,
+            },
+            window,
+        );
+        for row in 0..self.rows {
+            let row_origin = point(origin.x, origin.y + self.cell_size.height * row as f32);
+            self.paint_cached_row_ops(
+                row,
+                &cache.row_ops[row],
+                row_origin,
+                window,
+                cx,
+                &font_normal,
+                &font_bold,
+            );
+        }
+
+        drop(cache);
+    }
+
+    #[cfg(test)]
     fn cell_count(&self) -> usize {
         self.cells.iter().map(|row| row.len()).sum()
     }
 
+    #[cfg(test)]
     fn iter_cells(&self) -> impl Iterator<Item = &CellRenderInfo> {
         self.cells.iter().flat_map(|row| row.iter())
     }
@@ -624,6 +944,7 @@ impl TerminalGrid {
         }
     }
 
+    #[cfg(test)]
     fn collect_draw_ops(&self, cursor_fg: Hsla, highlight_fg: Hsla) -> Vec<TextDrawOp> {
         let mut ops = Vec::with_capacity(self.cell_count());
         let mut current: Option<TextBatch> = None;
@@ -700,6 +1021,8 @@ mod tests {
     fn test_grid(cells: Vec<CellRenderInfo>, hovered: Option<(usize, usize, usize)>) -> TerminalGrid {
         TerminalGrid {
             cells: Arc::new(vec![Arc::new(cells)]),
+            paint_cache: TerminalGridPaintCacheHandle::default(),
+            paint_damage: TerminalGridPaintDamage::Full,
             cell_size: Size {
                 width: px(10.0),
                 height: px(20.0),
@@ -1011,5 +1334,70 @@ mod tests {
                 a: 1.0
             }
         );
+    }
+
+    #[test]
+    fn dirty_rows_for_pass_includes_cursor_transition_rows() {
+        let mut grid = test_grid(vec![test_cell(0, 0, 'a')], None);
+        grid.rows = 5;
+        grid.paint_damage = TerminalGridPaintDamage::Rows(vec![2usize].into());
+        grid.cursor_cell = Some((0, 1));
+
+        let mut cache = TerminalGridPaintCache {
+            style_key: Some(grid.paint_style_key()),
+            last_cursor_cell: Some((0, 4)),
+            ..Default::default()
+        };
+        let (full, dirty_rows) = grid.dirty_rows_for_pass(&mut cache);
+        assert!(!full);
+        assert_eq!(&*dirty_rows, &[1usize, 2usize, 4usize]);
+    }
+
+    #[test]
+    fn dirty_rows_for_pass_includes_hover_transition_rows() {
+        let mut grid = test_grid(vec![test_cell(0, 0, 'a')], Some((3, 1, 2)));
+        grid.paint_damage = TerminalGridPaintDamage::None;
+        let mut cache = TerminalGridPaintCache {
+            style_key: Some(grid.paint_style_key()),
+            last_hovered_link_range: Some((1, 0, 0)),
+            ..Default::default()
+        };
+        let (full, dirty_rows) = grid.dirty_rows_for_pass(&mut cache);
+        assert!(!full);
+        assert_eq!(&*dirty_rows, &[1usize, 3usize]);
+    }
+
+    #[test]
+    fn dirty_rows_for_pass_forces_full_repaint_when_style_changes() {
+        let grid = test_grid(vec![test_cell(0, 0, 'a')], None);
+        let mut cache = TerminalGridPaintCache::default();
+        let (full, dirty_rows) = grid.dirty_rows_for_pass(&mut cache);
+        assert!(full);
+        assert!(dirty_rows.is_empty());
+    }
+
+    #[test]
+    fn row_background_spans_merge_contiguous_cells_with_same_fill() {
+        let mut first = test_cell(0, 0, 'a');
+        let mut second = test_cell(1, 0, 'b');
+        let mut third = test_cell(2, 0, 'c');
+        let mut fourth = test_cell(3, 0, 'd');
+        let mut fifth = test_cell(4, 0, 'e');
+        let shared_bg = test_color(0.6, 0.3, 0.2);
+        first.bg = shared_bg;
+        second.bg = shared_bg;
+        third.search_match = true;
+        fourth.search_match = true;
+        fifth.bg = Hsla::transparent_black();
+
+        let grid = test_grid(vec![first, second, third, fourth, fifth], None);
+        let spans = grid.build_row_background_spans(grid.cells[0].as_slice());
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].start_col, 0);
+        assert_eq!(spans[0].end_col_exclusive, 2);
+        assert_eq!(spans[0].color, shared_bg);
+        assert_eq!(spans[1].start_col, 2);
+        assert_eq!(spans[1].end_col_exclusive, 4);
+        assert_eq!(spans[1].color, grid.search_match_bg);
     }
 }

@@ -28,7 +28,8 @@ use termy_search::SearchState;
 use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
     TerminalCursorStyle, TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent, TerminalGrid,
-    TerminalGridRows, TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
+    TerminalGridPaintCacheHandle, TerminalGridPaintDamage, TerminalGridRows,
+    TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
 #[cfg(debug_assertions)]
@@ -480,6 +481,7 @@ struct TerminalPaneRenderCache {
     rows: usize,
     display_offset: usize,
     key: Option<TerminalPaneRenderCacheKey>,
+    paint_cache: TerminalGridPaintCacheHandle,
 }
 
 impl TerminalPaneRenderCache {
@@ -489,6 +491,7 @@ impl TerminalPaneRenderCache {
         self.rows = 0;
         self.display_offset = 0;
         self.key = None;
+        self.paint_cache.clear();
     }
 }
 
