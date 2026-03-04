@@ -6,7 +6,7 @@ pub const DEFAULT_MODEL: &str = "gemini-2.5-flash";
 #[derive(Error, Debug)]
 pub enum GeminiError {
     #[error("HTTP request failed: {0}")]
-    RequestFailed(#[from] ureq::Error),
+    RequestFailed(Box<ureq::Error>),
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -19,6 +19,12 @@ pub enum GeminiError {
 
     #[error("No response content")]
     NoContent,
+}
+
+impl From<ureq::Error> for GeminiError {
+    fn from(error: ureq::Error) -> Self {
+        Self::RequestFailed(Box::new(error))
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

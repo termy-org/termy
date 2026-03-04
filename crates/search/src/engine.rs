@@ -119,7 +119,7 @@ impl SearchEngine {
 
         for line_idx in start_line..=end_line {
             if let Some(text) = line_provider(line_idx) {
-                let line_matches = self.search_line(line_idx, &text);
+                let line_matches = self.search_line(line_idx, text);
                 matches.extend(line_matches);
             }
         }
@@ -252,7 +252,7 @@ mod tests {
         let mut engine = SearchEngine::new(SearchConfig::default());
         engine.set_pattern("test").unwrap();
 
-        let lines = vec![
+        let lines = [
             "line 0 with test",
             "line 1 no match",
             "line 2 test test",

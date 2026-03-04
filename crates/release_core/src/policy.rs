@@ -37,11 +37,11 @@ pub fn normalize_release_version(tag_name: &str) -> String {
 pub fn current_arch() -> &'static str {
     #[cfg(target_arch = "aarch64")]
     {
-        return "arm64";
+        "arm64"
     }
     #[cfg(target_arch = "x86_64")]
     {
-        return "x86_64";
+        "x86_64"
     }
     #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
@@ -52,15 +52,15 @@ pub fn current_arch() -> &'static str {
 pub fn current_platform() -> PlatformKind {
     #[cfg(target_os = "macos")]
     {
-        return PlatformKind::MacOs;
+        PlatformKind::MacOs
     }
     #[cfg(target_os = "windows")]
     {
-        return PlatformKind::Windows;
+        PlatformKind::Windows
     }
     #[cfg(target_os = "linux")]
     {
-        return PlatformKind::Linux;
+        PlatformKind::Linux
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {

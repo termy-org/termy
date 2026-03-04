@@ -31,12 +31,12 @@ use termy_terminal_ui::{
     TerminalGridRows, TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
-use termy_toast::ToastManager;
 #[cfg(debug_assertions)]
 use termy_terminal_ui::{
     TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_reset,
     terminal_ui_render_metrics_snapshot,
 };
+use termy_toast::ToastManager;
 
 #[cfg(target_os = "macos")]
 use gpui::{AppContext, Entity};
@@ -506,12 +506,18 @@ impl TerminalRenderMetricsCounters {
     fn saturating_sub(self, previous: Self) -> Self {
         Self {
             render_count: self.render_count.saturating_sub(previous.render_count),
-            cache_full_count: self.cache_full_count.saturating_sub(previous.cache_full_count),
+            cache_full_count: self
+                .cache_full_count
+                .saturating_sub(previous.cache_full_count),
             cache_partial_count: self
                 .cache_partial_count
                 .saturating_sub(previous.cache_partial_count),
-            cache_reuse_count: self.cache_reuse_count.saturating_sub(previous.cache_reuse_count),
-            dirty_span_count: self.dirty_span_count.saturating_sub(previous.dirty_span_count),
+            cache_reuse_count: self
+                .cache_reuse_count
+                .saturating_sub(previous.cache_reuse_count),
+            dirty_span_count: self
+                .dirty_span_count
+                .saturating_sub(previous.dirty_span_count),
             patched_cell_count: self
                 .patched_cell_count
                 .saturating_sub(previous.patched_cell_count),
@@ -1297,8 +1303,37 @@ impl TerminalView {
             .is_some_and(|terminal| terminal.alternate_screen_mode())
         {
             (0.0, 0.0)
+        } else if self
+            .tabs
+            .get(self.active_tab)
+            .is_some_and(|tab| tab.panes.len() > 1)
+        {
+            // Multi-pane layouts use per-pane content padding (native) or pane-managed
+            // geometry (tmux), so disable global outer padding in that mode.
+            (0.0, 0.0)
         } else {
             (self.padding_x, self.padding_y)
+        }
+    }
+
+    fn native_split_content_padding(&self) -> (f32, f32) {
+        if self.runtime_uses_tmux() {
+            return (0.0, 0.0);
+        }
+        if self
+            .active_terminal()
+            .is_some_and(|terminal| terminal.alternate_screen_mode())
+        {
+            return (0.0, 0.0);
+        }
+        if self
+            .tabs
+            .get(self.active_tab)
+            .is_some_and(|tab| tab.panes.len() > 1)
+        {
+            (self.padding_x, self.padding_y)
+        } else {
+            (0.0, 0.0)
         }
     }
 
@@ -1370,6 +1405,7 @@ impl TerminalView {
         }
 
         let (padding_x, padding_y) = self.effective_terminal_padding();
+        let (content_padding_x, content_padding_y) = self.native_split_content_padding();
         let cell_width: f32 = size.cell_width.into();
         let cell_height: f32 = size.cell_height.into();
         if cell_width <= f32::EPSILON || cell_height <= f32::EPSILON {
@@ -1377,8 +1413,8 @@ impl TerminalView {
         }
 
         Some(TerminalViewportGeometry {
-            origin_x: padding_x + (f32::from(pane.left) * cell_width),
-            origin_y: padding_y + (f32::from(pane.top) * cell_height),
+            origin_x: padding_x + (f32::from(pane.left) * cell_width) + content_padding_x,
+            origin_y: padding_y + (f32::from(pane.top) * cell_height) + content_padding_y,
             width: cell_width * f32::from(size.cols),
             height: cell_height * f32::from(size.rows),
         })

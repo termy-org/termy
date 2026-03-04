@@ -144,19 +144,19 @@ impl ToastManager {
 
     /// Pause a toast's timer.
     pub fn pause(&mut self, id: u64) {
-        if let Some(toast) = self.active.iter_mut().find(|t| t.id == id) {
-            if toast.paused_at.is_none() {
-                toast.paused_at = Some(Instant::now());
-            }
+        if let Some(toast) = self.active.iter_mut().find(|t| t.id == id)
+            && toast.paused_at.is_none()
+        {
+            toast.paused_at = Some(Instant::now());
         }
     }
 
     /// Resume a paused toast's timer.
     pub fn resume(&mut self, id: u64) {
-        if let Some(toast) = self.active.iter_mut().find(|t| t.id == id) {
-            if let Some(paused_at) = toast.paused_at.take() {
-                toast.paused_total += Instant::now().duration_since(paused_at);
-            }
+        if let Some(toast) = self.active.iter_mut().find(|t| t.id == id)
+            && let Some(paused_at) = toast.paused_at.take()
+        {
+            toast.paused_total += Instant::now().duration_since(paused_at);
         }
     }
 

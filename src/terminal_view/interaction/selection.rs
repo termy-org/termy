@@ -158,6 +158,8 @@ fn pane_cell_for_position(
     y: f32,
     padding_x: f32,
     padding_y: f32,
+    pane_content_padding_x: f32,
+    pane_content_padding_y: f32,
     clamp: bool,
     allow_clamp_outside: bool,
 ) -> Option<CellPos> {
@@ -171,8 +173,8 @@ fn pane_cell_for_position(
         return None;
     }
 
-    let origin_x = padding_x + (f32::from(pane.left) * cell_width);
-    let origin_y = padding_y + (f32::from(pane.top) * cell_height);
+    let origin_x = padding_x + (f32::from(pane.left) * cell_width) + pane_content_padding_x;
+    let origin_y = padding_y + (f32::from(pane.top) * cell_height) + pane_content_padding_y;
     let width = f32::from(size.cols) * cell_width;
     let height = f32::from(size.rows) * cell_height;
     if width <= f32::EPSILON || height <= f32::EPSILON {
@@ -218,10 +220,23 @@ fn resolve_pane_cell_for_position(
     y: f32,
     padding_x: f32,
     padding_y: f32,
+    pane_content_padding_x: f32,
+    pane_content_padding_y: f32,
     clamp: bool,
 ) -> Option<(String, CellPos)> {
     let pointer_inside_any_pane = panes.iter().any(|pane| {
-        pane_cell_for_position(pane, x, y, padding_x, padding_y, false, false).is_some()
+        pane_cell_for_position(
+            pane,
+            x,
+            y,
+            padding_x,
+            padding_y,
+            pane_content_padding_x,
+            pane_content_padding_y,
+            false,
+            false,
+        )
+        .is_some()
     });
 
     // When clamping points that are outside all panes, prefer the active pane first
@@ -232,15 +247,33 @@ fn resolve_pane_cell_for_position(
         && let Some(active_pane) = panes
             .iter()
             .find(|pane| pane.id.as_str() == active_pane_id)
-        && let Some(cell) =
-            pane_cell_for_position(active_pane, x, y, padding_x, padding_y, true, true)
+        && let Some(cell) = pane_cell_for_position(
+            active_pane,
+            x,
+            y,
+            padding_x,
+            padding_y,
+            pane_content_padding_x,
+            pane_content_padding_y,
+            true,
+            true,
+        )
     {
         return Some((active_pane.id.clone(), cell));
     }
 
     for pane in panes {
-        if let Some(cell) = pane_cell_for_position(pane, x, y, padding_x, padding_y, clamp, false)
-        {
+        if let Some(cell) = pane_cell_for_position(
+            pane,
+            x,
+            y,
+            padding_x,
+            padding_y,
+            pane_content_padding_x,
+            pane_content_padding_y,
+            clamp,
+            false,
+        ) {
             return Some((pane.id.clone(), cell));
         }
     }
@@ -256,6 +289,7 @@ impl TerminalView {
     ) -> Option<(String, CellPos)> {
         let tab = self.tabs.get(self.active_tab)?;
         let (padding_x, padding_y) = self.effective_terminal_padding();
+        let (pane_content_padding_x, pane_content_padding_y) = self.native_split_content_padding();
         let (x, y) = self.terminal_content_position(position);
         resolve_pane_cell_for_position(
             &tab.panes,
@@ -264,6 +298,8 @@ impl TerminalView {
             y,
             padding_x,
             padding_y,
+            pane_content_padding_x,
+            pane_content_padding_y,
             clamp,
         )
     }
@@ -673,6 +709,8 @@ mod tests {
             pointer_y,
             0.0,
             0.0,
+            0.0,
+            0.0,
             true,
         );
         assert_eq!(
@@ -756,6 +794,8 @@ mod tests {
             pointer_y,
             padding_x,
             padding_y,
+            0.0,
+            0.0,
             true,
         );
         assert_eq!(

@@ -60,7 +60,7 @@ impl AutoUpdater {
         let weak = entity.clone();
         cx.spawn(async move |cx: &mut AsyncApp| {
             let result = bg.await;
-            let _ = cx.update(|cx| {
+            cx.update(|cx| {
                 let Some(this) = weak.upgrade() else { return };
                 this.update(cx, |this, cx| {
                     match result {
@@ -144,7 +144,7 @@ impl AutoUpdater {
         let weak_done = entity.clone();
         cx.spawn(async move |cx: &mut AsyncApp| {
             let result = bg.await;
-            let _ = cx.update(|cx| {
+            cx.update(|cx| {
                 let Some(this) = weak_done.upgrade() else {
                     return;
                 };
@@ -195,7 +195,7 @@ impl AutoUpdater {
         let weak = entity.clone();
         cx.spawn(async move |cx: &mut AsyncApp| {
             let result = bg.await;
-            let _ = cx.update(|cx| {
+            cx.update(|cx| {
                 let Some(this) = weak.upgrade() else { return };
                 this.update(cx, |this, cx| {
                     match result {

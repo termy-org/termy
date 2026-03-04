@@ -6,7 +6,7 @@ pub const DEFAULT_MODEL: &str = "gpt-5-mini";
 #[derive(Error, Debug)]
 pub enum OpenAiError {
     #[error("HTTP request failed: {0}")]
-    RequestFailed(#[from] ureq::Error),
+    RequestFailed(Box<ureq::Error>),
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -22,6 +22,12 @@ pub enum OpenAiError {
 
     #[error("API key not configured")]
     ApiKeyMissing,
+}
+
+impl From<ureq::Error> for OpenAiError {
+    fn from(error: ureq::Error) -> Self {
+        Self::RequestFailed(Box::new(error))
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

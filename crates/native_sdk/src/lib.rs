@@ -1,7 +1,7 @@
 #[cfg(target_os = "macos")]
 use dispatch2::run_on_main;
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn};
+use objc2_app_kit::{NSAlert, NSAlertSecondButtonReturn};
 #[cfg(target_os = "macos")]
 use objc2_foundation::NSString;
 
@@ -95,13 +95,7 @@ pub fn confirm(title: &str, message: &str) -> bool {
             let _ = alert.addButtonWithTitle(&ok);
 
             let response = alert.runModal();
-            if response == NSAlertSecondButtonReturn {
-                true
-            } else if response == NSAlertFirstButtonReturn {
-                false
-            } else {
-                false
-            }
+            response == NSAlertSecondButtonReturn
         })
     }
 

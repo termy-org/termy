@@ -29,15 +29,15 @@ impl KeybindPlatform {
     pub const fn current() -> Self {
         #[cfg(target_os = "macos")]
         {
-            return Self::MacOs;
+            Self::MacOs
         }
         #[cfg(target_os = "windows")]
         {
-            return Self::Windows;
+            Self::Windows
         }
         #[cfg(target_os = "linux")]
         {
-            return Self::Linux;
+            Self::Linux
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {

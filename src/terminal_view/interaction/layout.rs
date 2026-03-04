@@ -247,10 +247,34 @@ impl TerminalView {
         }
 
         for tab in &self.tabs {
+            let tab_uses_native_split_padding = !self.runtime_uses_tmux()
+                && tab.panes.len() > 1
+                && !tab
+                    .active_terminal()
+                    .is_some_and(|terminal| terminal.alternate_screen_mode());
+            let (content_padding_x, content_padding_y) = if tab_uses_native_split_padding {
+                (self.padding_x, self.padding_y)
+            } else {
+                (0.0, 0.0)
+            };
             for pane in &tab.panes {
+                let mut pane_cols = pane.width.max(1);
+                let mut pane_rows = pane.height.max(1);
+                if content_padding_x > 0.0 || content_padding_y > 0.0 {
+                    let pane_width_px = (f32::from(pane.width) * cell_width).max(cell_width);
+                    let pane_height_px = (f32::from(pane.height) * cell_height).max(cell_height);
+                    pane_cols = ((pane_width_px - (content_padding_x * 2.0)).max(cell_width)
+                        / cell_width)
+                        .floor()
+                        .max(1.0) as u16;
+                    pane_rows = ((pane_height_px - (content_padding_y * 2.0)).max(cell_height)
+                        / cell_height)
+                        .floor()
+                        .max(1.0) as u16;
+                }
                 let next_size = TerminalSize {
-                    cols: pane.width.max(1),
-                    rows: pane.height.max(1),
+                    cols: pane_cols,
+                    rows: pane_rows,
                     cell_width: cell_size.width,
                     cell_height: cell_size.height,
                 };

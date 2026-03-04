@@ -123,7 +123,7 @@ impl SearchState {
     }
 
     pub fn next_match(&mut self) {
-        self.results.next();
+        self.results.next_match();
     }
 
     pub fn previous_match(&mut self) {

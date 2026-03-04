@@ -625,8 +625,7 @@ impl TerminalGrid {
     }
 
     fn collect_draw_ops(&self, cursor_fg: Hsla, highlight_fg: Hsla) -> Vec<TextDrawOp> {
-        let mut ops = Vec::new();
-        ops.reserve(self.cell_count());
+        let mut ops = Vec::with_capacity(self.cell_count());
         let mut current: Option<TextBatch> = None;
 
         for cell in self.iter_cells() {

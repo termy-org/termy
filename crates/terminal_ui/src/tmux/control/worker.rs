@@ -27,6 +27,7 @@ use super::{
 };
 
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_control_threads(
     mut child: std::process::Child,
     child_stdin: File,

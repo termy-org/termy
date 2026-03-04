@@ -281,10 +281,9 @@ impl Focusable for TerminalView {
 
 impl TerminalView {
     fn pane_right_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> Option<u32> {
-        let pane_size = pane.terminal.size();
-        let pane_right = u32::from(pane.left) + u32::from(pane_size.cols);
+        let pane_right = u32::from(pane.left) + u32::from(pane.width);
         let pane_top = u32::from(pane.top);
-        let pane_bottom = pane_top + u32::from(pane_size.rows);
+        let pane_bottom = pane_top + u32::from(pane.height);
 
         panes
             .iter()
@@ -298,9 +297,8 @@ impl TerminalView {
                     return None;
                 }
 
-                let candidate_size = candidate.terminal.size();
                 let candidate_top = u32::from(candidate.top);
-                let candidate_bottom = candidate_top + u32::from(candidate_size.rows);
+                let candidate_bottom = candidate_top + u32::from(candidate.height);
                 if !cell_ranges_overlap(pane_top, pane_bottom, candidate_top, candidate_bottom) {
                     return None;
                 }
@@ -312,9 +310,8 @@ impl TerminalView {
 
     fn pane_bottom_gap_cells(pane: &TerminalPane, panes: &[TerminalPane]) -> Option<u32> {
         let pane_left = u32::from(pane.left);
-        let pane_size = pane.terminal.size();
-        let pane_right = pane_left + u32::from(pane_size.cols);
-        let pane_bottom = u32::from(pane.top) + u32::from(pane_size.rows);
+        let pane_right = pane_left + u32::from(pane.width);
+        let pane_bottom = u32::from(pane.top) + u32::from(pane.height);
 
         panes
             .iter()
@@ -328,9 +325,8 @@ impl TerminalView {
                     return None;
                 }
 
-                let candidate_size = candidate.terminal.size();
                 let candidate_left = u32::from(candidate.left);
-                let candidate_right = candidate_left + u32::from(candidate_size.cols);
+                let candidate_right = candidate_left + u32::from(candidate.width);
                 if !cell_ranges_overlap(pane_left, pane_right, candidate_left, candidate_right) {
                     return None;
                 }
@@ -1203,6 +1199,7 @@ impl Render for TerminalView {
         self.sync_window_background_appearance(window);
         let effective_background_opacity = self.background_opacity_factor();
         let (effective_padding_x, effective_padding_y) = self.effective_terminal_padding();
+        let (native_split_padding_x, native_split_padding_y) = self.native_split_content_padding();
         let mut terminal_surface_bg = colors.background;
         terminal_surface_bg.a = self.scaled_background_alpha(terminal_surface_bg.a);
 
@@ -1254,19 +1251,13 @@ impl Render for TerminalView {
             let max_right_cells = active_tab
                 .panes
                 .iter()
-                .map(|pane| {
-                    let pane_size = pane.terminal.size();
-                    u32::from(pane.left).saturating_add(u32::from(pane_size.cols))
-                })
+                .map(|pane| u32::from(pane.left).saturating_add(u32::from(pane.width)))
                 .max()
                 .unwrap_or(0);
             let max_bottom_cells = active_tab
                 .panes
                 .iter()
-                .map(|pane| {
-                    let pane_size = pane.terminal.size();
-                    u32::from(pane.top).saturating_add(u32::from(pane_size.rows))
-                })
+                .map(|pane| u32::from(pane.top).saturating_add(u32::from(pane.height)))
                 .max()
                 .unwrap_or(0);
 
@@ -1397,35 +1388,32 @@ impl Render for TerminalView {
 
                 let cell_width: f32 = cell_size.width.into();
                 let cell_height: f32 = cell_size.height.into();
-                let pane_left = effective_padding_x + (f32::from(pane.left) * cell_width);
-                let pane_top = effective_padding_y + (f32::from(pane.top) * cell_height);
+                let pane_frame_left = effective_padding_x + (f32::from(pane.left) * cell_width);
+                let pane_frame_top = effective_padding_y + (f32::from(pane.top) * cell_height);
+                let pane_frame_width = f32::from(pane.width) * cell_width;
+                let pane_frame_height = f32::from(pane.height) * cell_height;
+                let pane_left = pane_frame_left + native_split_padding_x;
+                let pane_top = pane_frame_top + native_split_padding_y;
                 let pane_width = f32::from(terminal_size.cols) * cell_width;
                 let pane_height = f32::from(terminal_size.rows) * cell_height;
                 if pane_width <= f32::EPSILON || pane_height <= f32::EPSILON {
                     continue;
                 }
 
-                // Keep divider-boundary comparisons in the same geometry space as the
-                // pane pixels computed above to avoid drift from mixed sources.
-                let pane_right_cells = ((pane_left + pane_width - effective_padding_x) / cell_width)
-                    .round()
-                    .max(0.0) as u32;
-                let pane_bottom_cells = ((pane_top + pane_height - effective_padding_y)
-                    / cell_height)
-                    .round()
-                    .max(0.0) as u32;
+                let pane_right_cells = u32::from(pane.left).saturating_add(u32::from(pane.width));
+                let pane_bottom_cells = u32::from(pane.top).saturating_add(u32::from(pane.height));
 
                 if multi_pane && pane_right_cells < max_right_cells {
                     if let Some(gap_cells) = Self::pane_right_gap_cells(pane, &active_tab.panes) {
                         let gap_px = (gap_cells as f32) * cell_width;
-                        let divider_left = pane_left + pane_width + (gap_px * 0.5) - 0.5;
+                        let divider_left = pane_frame_left + pane_frame_width + (gap_px * 0.5) - 0.5;
                         pane_dividers.push(
                             div()
                                 .absolute()
                                 .left(px(divider_left))
-                                .top(px(pane_top))
+                                .top(px(pane_frame_top))
                                 .w(px(1.0))
-                                .h(px(pane_height))
+                                .h(px(pane_frame_height))
                                 .bg(divider_color)
                                 .into_any_element(),
                         );
@@ -1434,13 +1422,13 @@ impl Render for TerminalView {
                 if multi_pane && pane_bottom_cells < max_bottom_cells {
                     if let Some(gap_cells) = Self::pane_bottom_gap_cells(pane, &active_tab.panes) {
                         let gap_px = (gap_cells as f32) * cell_height;
-                        let divider_top = pane_top + pane_height + (gap_px * 0.5) - 0.5;
+                        let divider_top = pane_frame_top + pane_frame_height + (gap_px * 0.5) - 0.5;
                         pane_dividers.push(
                             div()
                                 .absolute()
-                                .left(px(pane_left))
+                                .left(px(pane_frame_left))
                                 .top(px(divider_top))
-                                .w(px(pane_width))
+                                .w(px(pane_frame_width))
                                 .h(px(1.0))
                                 .bg(divider_color)
                                 .into_any_element(),
@@ -1468,10 +1456,10 @@ impl Render for TerminalView {
                         div()
                             .id(SharedString::from(format!("pane-focus-accent-{}", pane.id)))
                             .absolute()
-                            .left(px(pane_left))
-                            .top(px(pane_top))
-                            .w(px(pane_width))
-                            .h(px(pane_height))
+                            .left(px(pane_frame_left))
+                            .top(px(pane_frame_top))
+                            .w(px(pane_frame_width))
+                            .h(px(pane_frame_height))
                             .border_1()
                             .border_color(accent_hsla)
                             .into_any_element(),
@@ -1494,10 +1482,10 @@ impl Render for TerminalView {
                                 pane.id
                             )))
                             .absolute()
-                            .left(px(pane_left))
-                            .top(px(pane_top))
-                            .w(px(pane_width))
-                            .h(px(pane_height))
+                            .left(px(pane_frame_left))
+                            .top(px(pane_frame_top))
+                            .w(px(pane_frame_width))
+                            .h(px(pane_frame_height))
                             .border_1()
                             .border_color(degraded_accent)
                             .into_any_element(),

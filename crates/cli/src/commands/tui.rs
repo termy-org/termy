@@ -224,32 +224,31 @@ fn run_tui() -> io::Result<()> {
     loop {
         terminal.draw(|frame| ui(frame, &mut app))?;
 
-        if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-                        KeyCode::Up | KeyCode::Char('k') => app.previous(),
-                        KeyCode::Down | KeyCode::Char('j') => app.next(),
-                        KeyCode::PageUp => {
-                            for _ in 0..5 {
-                                app.scroll_up();
-                            }
-                        }
-                        KeyCode::PageDown => {
-                            for _ in 0..5 {
-                                app.scroll_down();
-                            }
-                        }
-                        KeyCode::Enter => {
-                            if let Some(MenuItem::EditConfig) = app.selected_item() {
-                                app.should_edit_config = true;
-                                app.should_quit = true;
-                            }
-                        }
-                        _ => {}
+        if event::poll(std::time::Duration::from_millis(100))?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+                KeyCode::Up | KeyCode::Char('k') => app.previous(),
+                KeyCode::Down | KeyCode::Char('j') => app.next(),
+                KeyCode::PageUp => {
+                    for _ in 0..5 {
+                        app.scroll_up();
                     }
                 }
+                KeyCode::PageDown => {
+                    for _ in 0..5 {
+                        app.scroll_down();
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(MenuItem::EditConfig) = app.selected_item() {
+                        app.should_edit_config = true;
+                        app.should_quit = true;
+                    }
+                }
+                _ => {}
             }
         }
 

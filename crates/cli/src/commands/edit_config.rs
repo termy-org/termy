@@ -12,11 +12,11 @@ pub fn run() {
 
     if !path.exists() {
         // Create parent directory if needed
-        if let Some(parent) = path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                eprintln!("Failed to create config directory: {}", e);
-                return;
-            }
+        if let Some(parent) = path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            eprintln!("Failed to create config directory: {}", e);
+            return;
         }
         // Create empty config file
         if let Err(e) = std::fs::write(&path, "") {

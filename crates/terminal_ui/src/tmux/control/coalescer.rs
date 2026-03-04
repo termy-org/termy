@@ -125,12 +125,11 @@ impl NotificationCoalescer {
                     pane_id: tail_pane_id,
                     bytes: tail_bytes,
                 }) = self.queued.back_mut()
+                    && *tail_pane_id == pane_id
                 {
-                    if *tail_pane_id == pane_id {
-                        tail_bytes.extend_from_slice(&bytes);
-                        self.queued_output_bytes = queued_output_bytes;
-                        return Ok(());
-                    }
+                    tail_bytes.extend_from_slice(&bytes);
+                    self.queued_output_bytes = queued_output_bytes;
+                    return Ok(());
                 }
 
                 self.queued.push_back(TmuxNotification::Output { pane_id, bytes });

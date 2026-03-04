@@ -39,6 +39,7 @@ pub enum WorkingDirFallback {
     Process,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for WorkingDirFallback {
     fn default() -> Self {
         #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -553,8 +554,10 @@ impl Terminal {
         };
 
         // Create terminal config with configurable scrollback history
-        let mut term_config = TermConfig::default();
-        term_config.scrolling_history = runtime_config.scrollback_history;
+        let term_config = TermConfig {
+            scrolling_history: runtime_config.scrollback_history,
+            ..TermConfig::default()
+        };
 
         // Create the terminal emulator
         let listener =
@@ -694,8 +697,10 @@ impl Terminal {
         // Create a new config with the updated scrollback history
         // We use default values for other config options since they don't
         // typically change at runtime
-        let mut config = TermConfig::default();
-        config.scrolling_history = history_size;
+        let config = TermConfig {
+            scrolling_history: history_size,
+            ..TermConfig::default()
+        };
         term.set_options(config);
     }
 

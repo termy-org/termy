@@ -87,7 +87,7 @@ impl SearchResults {
         self.current_index.map(|i| (i + 1, self.matches.len()))
     }
 
-    pub fn next(&mut self) -> Option<&SearchMatch> {
+    pub fn next_match(&mut self) -> Option<&SearchMatch> {
         if self.matches.is_empty() {
             return None;
         }
@@ -210,14 +210,14 @@ mod tests {
         assert_eq!(results.position(), Some((1, 3)));
         assert_eq!(results.current().unwrap().line, 0);
 
-        results.next();
+        results.next_match();
         assert_eq!(results.position(), Some((2, 3)));
         assert_eq!(results.current().unwrap().line, 1);
 
-        results.next();
+        results.next_match();
         assert_eq!(results.position(), Some((3, 3)));
 
-        results.next();
+        results.next_match();
         assert_eq!(results.position(), Some((1, 3)));
 
         results.previous();

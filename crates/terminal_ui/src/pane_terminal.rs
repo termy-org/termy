@@ -33,8 +33,10 @@ impl PaneTerminal {
 
     pub fn new(size: TerminalSize, scrollback_history: usize) -> Self {
         let size = Self::normalized_size(size);
-        let mut config = TermConfig::default();
-        config.scrolling_history = scrollback_history;
+        let config = TermConfig {
+            scrolling_history: scrollback_history,
+            ..TermConfig::default()
+        };
 
         let term = Arc::new(FairMutex::new(Term::new(config, &size, VoidListener)));
         Self {
@@ -153,8 +155,10 @@ impl PaneTerminal {
         }
         // Keep term options and cached metadata synchronized while both locks
         // are held so concurrent updates cannot leave them divergent.
-        let mut config = TermConfig::default();
-        config.scrolling_history = history_size;
+        let config = TermConfig {
+            scrolling_history: history_size,
+            ..TermConfig::default()
+        };
         term.set_options(config);
         inner.scrollback_history = history_size;
     }
