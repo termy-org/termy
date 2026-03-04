@@ -70,7 +70,12 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         match Self::command_palette_notify_target_for_event(event) {
-            CommandPaletteNotifyTarget::Parent => cx.notify(),
+            CommandPaletteNotifyTarget::Parent => {
+                cx.notify();
+                if event == CommandPaletteNotifyEvent::OpenCloseTransition {
+                    self.notify_overlay(cx);
+                }
+            }
             CommandPaletteNotifyTarget::Overlay => self.notify_overlay(cx),
         }
     }
