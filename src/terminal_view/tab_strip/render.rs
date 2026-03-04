@@ -311,6 +311,30 @@ impl TerminalView {
         widths
     }
 
+    fn termy_branding_reserved_width(
+        &mut self,
+        window: &Window,
+        font_family: &SharedString,
+        font_family_key: &str,
+    ) -> f32 {
+        if !cfg!(target_os = "macos") || !self.show_termy_in_titlebar {
+            return 0.0;
+        }
+
+        let text_width = self.measure_text_width(
+            window,
+            font_family,
+            font_family_key,
+            TOP_STRIP_TERMY_BRANDING_TEXT,
+            TOP_STRIP_TERMY_BRANDING_FONT_SIZE,
+        );
+        if text_width <= f32::EPSILON {
+            return 0.0;
+        }
+
+        text_width + (TOP_STRIP_TERMY_BRANDING_SIDE_PADDING * 2.0)
+    }
+
     fn resolve_tab_strip_palette(
         &self,
         colors: &TerminalColors,
@@ -453,8 +477,12 @@ impl TerminalView {
         width: f32,
         tab_baseline_y: f32,
         tab_stroke_color: gpui::Rgba,
+        font_family: &SharedString,
+        termy_branding_slot_start_x: f32,
+        termy_branding_slot_width: f32,
+        termy_branding_text_color: gpui::Rgba,
     ) -> AnyElement {
-        div()
+        let lane = div()
             .id("tabbar-left-inset")
             .relative()
             .flex_none()
@@ -468,8 +496,33 @@ impl TerminalView {
                     .top(px(tab_baseline_y))
                     .h(px(TAB_STROKE_THICKNESS))
                     .bg(tab_stroke_color),
-            )
-            .into_any_element()
+            );
+
+        if termy_branding_slot_width <= f32::EPSILON {
+            return lane.into_any_element();
+        }
+
+        lane.child(
+            div()
+                .id("tabbar-termy-branding")
+                .absolute()
+                .left(px(termy_branding_slot_start_x.max(0.0)))
+                .top_0()
+                .bottom_0()
+                .w(px(termy_branding_slot_width.max(0.0)))
+                .overflow_hidden()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .font_family(font_family.clone())
+                        .text_size(px(TOP_STRIP_TERMY_BRANDING_FONT_SIZE))
+                        .text_color(termy_branding_text_color)
+                        .child(TOP_STRIP_TERMY_BRANDING_TEXT),
+                ),
+        )
+        .into_any_element()
     }
 
     fn render_gutter_lane(
@@ -938,8 +991,26 @@ impl TerminalView {
         self.sync_tab_title_text_widths(&measured_title_widths);
 
         let base_left_inset_width = Self::titlebar_left_padding_for_platform();
-        let state = self.build_tab_strip_render_state(window, base_left_inset_width);
+        let termy_branding_reserved_width =
+            self.termy_branding_reserved_width(window, font_family, font_family_key.as_str());
+        let termy_branding_tab_gap = if termy_branding_reserved_width > f32::EPSILON {
+            TOP_STRIP_TERMY_BRANDING_TAB_GAP
+        } else {
+            0.0
+        };
+        let state = self.build_tab_strip_render_state(
+            window,
+            base_left_inset_width + termy_branding_reserved_width + termy_branding_tab_gap,
+        );
         let palette = self.resolve_tab_strip_palette(colors, tabbar_bg);
+        let termy_branding_slot_start_x =
+            base_left_inset_width.min(state.geometry.left_inset_width);
+        let termy_branding_slot_width = (state.geometry.left_inset_width
+            - termy_branding_slot_start_x)
+            .max(0.0)
+            .min(termy_branding_reserved_width.max(0.0));
+        let mut termy_branding_text_color = palette.inactive_tab_text;
+        termy_branding_text_color.a = termy_branding_text_color.a.max(0.82);
         let tabs_scroll_content = self.build_tabs_scroll_content(
             window,
             &state,
@@ -970,6 +1041,10 @@ impl TerminalView {
                     state.geometry.left_inset_width,
                     state.chrome_layout.baseline_y,
                     palette.tab_stroke_color,
+                    font_family,
+                    termy_branding_slot_start_x,
+                    termy_branding_slot_width,
+                    termy_branding_text_color,
                 )
             }))
             .child(

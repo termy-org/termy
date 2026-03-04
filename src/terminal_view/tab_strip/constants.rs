@@ -5,6 +5,10 @@ pub(crate) const TOP_STRIP_MACOS_TRAFFIC_LIGHT_PADDING: f32 = 78.0;
 #[cfg(not(macos_sdk_26))]
 pub(crate) const TOP_STRIP_MACOS_TRAFFIC_LIGHT_PADDING: f32 = 71.0;
 pub(crate) const TOP_STRIP_CONTENT_OFFSET_Y: f32 = 0.0;
+pub(crate) const TOP_STRIP_TERMY_BRANDING_TEXT: &str = "termy";
+pub(crate) const TOP_STRIP_TERMY_BRANDING_FONT_SIZE: f32 = 12.0;
+pub(crate) const TOP_STRIP_TERMY_BRANDING_SIDE_PADDING: f32 = 10.0;
+pub(crate) const TOP_STRIP_TERMY_BRANDING_TAB_GAP: f32 = 8.0;
 pub(crate) const TAB_HORIZONTAL_PADDING: f32 = 0.0;
 pub(crate) const TAB_ITEM_HEIGHT: f32 = 32.0;
 pub(crate) const TAB_ITEM_GAP: f32 = 0.0;
