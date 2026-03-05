@@ -184,6 +184,34 @@ fn term_line_from_viewport_row(row: usize, display_offset: usize) -> Option<i32>
     i32::try_from(row - display_offset).ok()
 }
 
+fn filtered_cursor_state(
+    cursor_state: Option<TerminalCursorState>,
+    pane_display_offset: usize,
+    is_active_pane: bool,
+    cols: usize,
+    rows: usize,
+) -> Option<TerminalCursorState> {
+    cursor_state
+        .filter(|_| pane_display_offset == 0 && is_active_pane)
+        .filter(|cursor| cursor.col < cols && cursor.row < rows)
+}
+
+fn cursor_state_for_pane(
+    terminal: &Terminal,
+    pane_display_offset: usize,
+    is_active_pane: bool,
+    cols: usize,
+    rows: usize,
+) -> Option<TerminalCursorState> {
+    filtered_cursor_state(
+        terminal.cursor_state(),
+        pane_display_offset,
+        is_active_pane,
+        cols,
+        rows,
+    )
+}
+
 type PaneRenderRow = Arc<Vec<CellRenderInfo>>;
 type PaneRenderCells = Arc<Vec<PaneRenderRow>>;
 
@@ -1725,10 +1753,8 @@ impl Render for TerminalView {
                 };
                 // Keep cursor state out of cached cells so blink/overlay redraws don't force
                 // full cell-buffer rebuilds.
-                let pane_cursor_state = terminal
-                    .cursor_state()
-                    .filter(|_| pane_display_offset == 0 && is_active_pane)
-                    .filter(|cursor| cursor.col < cols && cursor.row < rows);
+                let pane_cursor_state =
+                    cursor_state_for_pane(terminal, pane_display_offset, is_active_pane, cols, rows);
                 let (cursor_cell, pane_cursor_style) = match pane_cursor_state {
                     Some(cursor) => (
                         cursor_visible.then_some((cursor.col, cursor.row)),
@@ -2096,18 +2122,6 @@ impl Render for TerminalView {
 mod tests {
     use super::*;
 
-    fn resolved_cursor_state_for_test(
-        cursor_state: Option<TerminalCursorState>,
-        pane_display_offset: usize,
-        is_active_pane: bool,
-        cols: usize,
-        rows: usize,
-    ) -> Option<TerminalCursorState> {
-        cursor_state
-            .filter(|_| pane_display_offset == 0 && is_active_pane)
-            .filter(|cursor| cursor.col < cols && cursor.row < rows)
-    }
-
     fn test_render_cell(col: usize, row: usize, c: char) -> CellRenderInfo {
         CellRenderInfo {
             col,
@@ -2153,7 +2167,7 @@ mod tests {
 
     #[test]
     fn resolved_cursor_state_for_pane_keeps_terminal_hidden_cursor_hidden() {
-        let resolved = resolved_cursor_state_for_test(None, 0, true, 10, 4);
+        let resolved = filtered_cursor_state(None, 0, true, 10, 4);
         assert_eq!(resolved, None);
     }
 
@@ -2165,15 +2179,15 @@ mod tests {
             style: TerminalCursorStyle::Line,
         };
         assert_eq!(
-            resolved_cursor_state_for_test(Some(cursor), 1, true, 10, 4),
+            filtered_cursor_state(Some(cursor), 1, true, 10, 4),
             None
         );
         assert_eq!(
-            resolved_cursor_state_for_test(Some(cursor), 0, false, 10, 4),
+            filtered_cursor_state(Some(cursor), 0, false, 10, 4),
             None
         );
         assert_eq!(
-            resolved_cursor_state_for_test(
+            filtered_cursor_state(
                 Some(TerminalCursorState {
                     col: 12,
                     row: 1,
@@ -2187,7 +2201,7 @@ mod tests {
             None
         );
         assert_eq!(
-            resolved_cursor_state_for_test(Some(cursor), 0, true, 10, 4),
+            filtered_cursor_state(Some(cursor), 0, true, 10, 4),
             Some(cursor)
         );
     }
