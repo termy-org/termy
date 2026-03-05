@@ -303,6 +303,30 @@ impl TerminalView {
         )
     }
 
+    pub(in super::super) fn position_to_cell_in_pane(
+        &self,
+        pane_id: &str,
+        position: gpui::Point<Pixels>,
+        clamp: bool,
+    ) -> Option<CellPos> {
+        let tab = self.tabs.get(self.active_tab)?;
+        let pane = tab.panes.iter().find(|pane| pane.id == pane_id)?;
+        let (padding_x, padding_y) = self.effective_terminal_padding();
+        let (pane_content_padding_x, pane_content_padding_y) = self.native_split_content_padding();
+        let (x, y) = self.terminal_content_position(position);
+        pane_cell_for_position(
+            pane,
+            x,
+            y,
+            padding_x,
+            padding_y,
+            pane_content_padding_x,
+            pane_content_padding_y,
+            clamp,
+            true,
+        )
+    }
+
     pub(in super::super) fn has_selection(&self) -> bool {
         matches!((self.selection_anchor, self.selection_head), (Some(anchor), Some(head)) if self.selection_moved || anchor != head)
     }

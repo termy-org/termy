@@ -1959,8 +1959,13 @@ impl Render for TerminalView {
             .bg(root_bg)
             .font_family(font_family.clone())
             .capture_any_mouse_up(cx.listener(|this, event: &MouseUpEvent, _window, cx| {
-                if event.button == MouseButton::Left {
+                if matches!(
+                    event.button,
+                    MouseButton::Left | MouseButton::Middle | MouseButton::Right
+                ) {
                     this.handle_global_mouse_up_event(event, cx);
+                }
+                if event.button == MouseButton::Left {
                     this.disarm_titlebar_window_move();
                     this.commit_tab_drag(cx);
                 }
@@ -2056,8 +2061,12 @@ impl Render for TerminalView {
                     .on_key_down(cx.listener(Self::handle_key_down))
                     .on_scroll_wheel(cx.listener(Self::handle_terminal_scroll_wheel))
                     .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
+                    .on_mouse_down(MouseButton::Middle, cx.listener(Self::handle_mouse_down))
+                    .on_mouse_down(MouseButton::Right, cx.listener(Self::handle_mouse_down))
                     .on_mouse_move(cx.listener(Self::handle_mouse_move))
                     .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))
+                    .on_mouse_up(MouseButton::Middle, cx.listener(Self::handle_mouse_up))
+                    .on_mouse_up(MouseButton::Right, cx.listener(Self::handle_mouse_up))
                     .on_drop(cx.listener(Self::handle_file_drop))
                     .relative()
                     .flex_1()

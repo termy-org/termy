@@ -1,6 +1,7 @@
 mod grid;
 mod links;
 mod locale;
+mod mouse_protocol;
 mod pane_terminal;
 mod path_env;
 mod render_metrics;
@@ -14,6 +15,10 @@ pub use grid::{
     TerminalGridPaintDamage, TerminalGridRow, TerminalGridRows,
 };
 pub use links::{DetectedLink, classify_link_token, find_link_in_line};
+pub use mouse_protocol::{
+    TerminalMouseButton, TerminalMouseEventKind, TerminalMouseMode, TerminalMouseModifiers,
+    TerminalMousePosition, encode_mouse_report,
+};
 pub use pane_terminal::PaneTerminal;
 #[cfg(any(debug_assertions, test))]
 pub use render_metrics::{

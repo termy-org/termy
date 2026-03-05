@@ -364,6 +364,10 @@ impl TerminalView {
             return;
         }
 
+        if self.try_forward_scroll_wheel(event, cx) {
+            return;
+        }
+
         cx.stop_propagation();
         let delta_lines = self.terminal_scroll_delta_to_lines(event);
         let attempted_retarget =

@@ -283,6 +283,10 @@ impl TerminalView {
         event: &MouseMoveEvent,
         cx: &mut Context<Self>,
     ) {
+        if self.try_forward_mouse_move(event, cx) {
+            return;
+        }
+
         if event.pressed_button != Some(MouseButton::Left) || !self.selection_dragging {
             return;
         }
@@ -295,6 +299,10 @@ impl TerminalView {
         event: &MouseUpEvent,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.try_forward_mouse_up(event, cx) {
+            return true;
+        }
+
         if !Self::should_finish_selection_drag(event.button, self.selection_dragging) {
             return false;
         }
@@ -322,6 +330,10 @@ impl TerminalView {
         }
         if changed {
             cx.notify();
+        }
+
+        if self.try_forward_mouse_down(event, cx) {
+            return;
         }
 
         if event.button != MouseButton::Left {
@@ -428,6 +440,10 @@ impl TerminalView {
                 cx.notify();
             }
             cx.stop_propagation();
+            return;
+        }
+
+        if self.try_forward_mouse_move(event, cx) {
             return;
         }
 

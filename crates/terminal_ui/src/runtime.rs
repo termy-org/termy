@@ -1,5 +1,6 @@
 #[cfg(unix)]
 use crate::locale::{Utf8LocaleOverridePlan, preferred_utf8_locale, utf8_locale_override_plan};
+use crate::mouse_protocol::TerminalMouseMode;
 #[cfg(not(target_os = "windows"))]
 use crate::path_env::normalized_path_env;
 use alacritty_terminal::{
@@ -74,6 +75,17 @@ impl Default for TerminalRuntimeConfig {
             working_dir_fallback: WorkingDirFallback::default(),
             scrollback_history: DEFAULT_SCROLLBACK_HISTORY,
         }
+    }
+}
+
+fn terminal_mouse_mode_from_term_mode(mode: TermMode) -> TerminalMouseMode {
+    TerminalMouseMode {
+        enabled: mode.intersects(TermMode::MOUSE_MODE) && !mode.contains(TermMode::VI),
+        report_click: mode.contains(TermMode::MOUSE_REPORT_CLICK),
+        report_drag: mode.contains(TermMode::MOUSE_DRAG),
+        report_motion: mode.contains(TermMode::MOUSE_MOTION),
+        sgr_encoding: mode.contains(TermMode::SGR_MOUSE),
+        utf8_encoding: mode.contains(TermMode::UTF8_MOUSE),
     }
 }
 
@@ -734,6 +746,12 @@ impl Terminal {
         term.mode().contains(TermMode::BRACKETED_PASTE)
     }
 
+    /// Return current xterm mouse-reporting mode bits.
+    pub fn mouse_mode(&self) -> TerminalMouseMode {
+        let term = self.term.lock();
+        terminal_mouse_mode_from_term_mode(*term.mode())
+    }
+
     /// Check if the terminal is currently in alternate screen mode
     pub fn alternate_screen_mode(&self) -> bool {
         let term = self.term.lock();
@@ -909,6 +927,7 @@ mod tests {
     use super::{
         DEFAULT_TERM, TerminalDamageSnapshot, TerminalRuntimeConfig, TerminalSize,
         keystroke_to_input, pty_env_overrides, resolve_shell_path, take_term_damage_snapshot,
+        terminal_mouse_mode_from_term_mode,
     };
     use alacritty_terminal::{
         event::VoidListener,
@@ -932,6 +951,19 @@ mod tests {
         (point.column.0, point.line.0)
     }
 
+    fn mouse_mode_after_bytes(input: &[u8]) -> crate::mouse_protocol::TerminalMouseMode {
+        let size = TerminalSize {
+            cols: 32,
+            rows: 4,
+            cell_width: px(9.0),
+            cell_height: px(18.0),
+        };
+        let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, input);
+        terminal_mouse_mode_from_term_mode(*term.mode())
+    }
+
     fn keystroke(key: &str, modifiers: Modifiers) -> Keystroke {
         Keystroke {
             modifiers,
@@ -951,6 +983,36 @@ mod tests {
 
         assert_eq!(size.last_column().0, 0);
         assert_eq!(size.bottommost_line().0, 0);
+    }
+
+    #[test]
+    fn mouse_mode_detects_click_reporting() {
+        let mode = mouse_mode_after_bytes(b"\x1b[?1000h");
+        assert!(mode.enabled);
+        assert!(mode.report_click);
+        assert!(!mode.report_drag);
+        assert!(!mode.report_motion);
+    }
+
+    #[test]
+    fn mouse_mode_detects_drag_reporting() {
+        let mode = mouse_mode_after_bytes(b"\x1b[?1002h");
+        assert!(mode.enabled);
+        assert!(mode.report_drag);
+        assert!(!mode.report_motion);
+    }
+
+    #[test]
+    fn mouse_mode_detects_motion_reporting() {
+        let mode = mouse_mode_after_bytes(b"\x1b[?1003h");
+        assert!(mode.enabled);
+        assert!(mode.report_motion);
+    }
+
+    #[test]
+    fn mouse_mode_detects_sgr_encoding() {
+        let mode = mouse_mode_after_bytes(b"\x1b[?1006h");
+        assert!(mode.sgr_encoding);
     }
 
     #[test]
