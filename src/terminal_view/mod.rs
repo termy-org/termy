@@ -236,6 +236,7 @@ struct MouseReportingState {
     left_button: Option<MouseReportTargetCell>,
     middle_button: Option<MouseReportTargetCell>,
     right_button: Option<MouseReportTargetCell>,
+    hover_target: Option<MouseReportTargetCell>,
     scroll_accumulator_x: f32,
     scroll_accumulator_y: f32,
 }
