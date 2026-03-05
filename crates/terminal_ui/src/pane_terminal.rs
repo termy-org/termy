@@ -2,21 +2,20 @@ use alacritty_terminal::{
     event::VoidListener,
     grid::{Dimensions, Scroll},
     sync::FairMutex,
-    term::{Config as TermConfig, Term, TermMode},
+    term::{Term, TermMode},
     vte::ansi,
 };
 use std::sync::Arc;
 
 use crate::mouse_protocol::TerminalMouseMode;
 use crate::runtime::{
-    TerminalDamageSnapshot, TerminalSize, take_term_damage_snapshot,
-    termmode_to_terminal_mouse_mode,
+    TerminalCursorState, TerminalDamageSnapshot, TerminalOptions, TerminalSize,
+    cursor_state_from_term, take_term_damage_snapshot, termmode_to_terminal_mouse_mode,
 };
 
 struct PaneTerminalInner {
     term: Arc<FairMutex<Term<VoidListener>>>,
     size: TerminalSize,
-    scrollback_history: usize,
 }
 
 /// In-memory terminal emulator for a tmux pane.
@@ -35,19 +34,15 @@ impl PaneTerminal {
         }
     }
 
-    pub fn new(size: TerminalSize, scrollback_history: usize) -> Self {
+    pub fn new(size: TerminalSize, options: TerminalOptions) -> Self {
         let size = Self::normalized_size(size);
-        let config = TermConfig {
-            scrolling_history: scrollback_history,
-            ..TermConfig::default()
-        };
+        let config = options.term_config();
 
         let term = Arc::new(FairMutex::new(Term::new(config, &size, VoidListener)));
         Self {
             inner: FairMutex::new(PaneTerminalInner {
                 term,
                 size,
-                scrollback_history,
             }),
             parser: FairMutex::new(ansi::Processor::new()),
         }
@@ -142,29 +137,14 @@ impl PaneTerminal {
         (grid.display_offset(), grid.history_size())
     }
 
-    pub fn cursor_position(&self) -> (usize, usize) {
+    pub fn cursor_state(&self) -> Option<TerminalCursorState> {
         let term = self.cloned_term_arc();
         let term = term.lock();
-        let cursor = term.grid().cursor.point;
-        let row = usize::try_from(cursor.line.0).unwrap_or(0);
-        (cursor.column.0, row)
+        cursor_state_from_term(&term)
     }
 
-    pub fn set_scrollback_history(&self, history_size: usize) {
-        let term = self.cloned_term_arc();
-        let mut term = term.lock();
-        let mut inner = self.inner.lock();
-        if inner.scrollback_history == history_size {
-            return;
-        }
-        // Keep term options and cached metadata synchronized while both locks
-        // are held so concurrent updates cannot leave them divergent.
-        let config = TermConfig {
-            scrolling_history: history_size,
-            ..TermConfig::default()
-        };
-        term.set_options(config);
-        inner.scrollback_history = history_size;
+    pub fn set_term_options(&self, options: TerminalOptions) {
+        self.with_term_mut(|term, _inner| term.set_options(options.term_config()));
     }
 
     pub fn bracketed_paste_mode(&self) -> bool {
@@ -213,8 +193,15 @@ impl Dimensions for PaneTerminal {
 #[cfg(test)]
 mod tests {
     use super::PaneTerminal;
-    use crate::runtime::TerminalSize;
+    use crate::runtime::{TerminalOptions, TerminalSize};
     use alacritty_terminal::grid::Dimensions;
+
+    fn test_term_options(scrollback_history: usize) -> TerminalOptions {
+        TerminalOptions {
+            scrollback_history,
+            ..TerminalOptions::default()
+        }
+    }
 
     fn visible_viewport_text(terminal: &PaneTerminal) -> String {
         let size = terminal.size();
@@ -259,7 +246,7 @@ mod tests {
                 rows: 10,
                 ..TerminalSize::default()
             },
-            2000,
+            test_term_options(2000),
         );
 
         terminal.feed_output(
@@ -284,7 +271,7 @@ mod tests {
                 rows: 0,
                 ..TerminalSize::default()
             },
-            2000,
+            test_term_options(2000),
         );
         assert_eq!(terminal.size().cols, 1);
         assert_eq!(terminal.size().rows, 1);
@@ -310,7 +297,7 @@ mod tests {
                 rows: 3,
                 ..TerminalSize::default()
             },
-            2000,
+            test_term_options(2000),
         );
 
         terminal.with_term_mut(|term, _inner| {
@@ -334,7 +321,7 @@ mod tests {
                 rows: 3,
                 ..TerminalSize::default()
             },
-            2000,
+            test_term_options(2000),
         );
 
         terminal.feed_output(b"\x1b[?1000h\x1b[?1006h");
@@ -354,7 +341,7 @@ mod tests {
                 rows: 3,
                 ..TerminalSize::default()
             },
-            2000,
+            test_term_options(2000),
         );
 
         terminal.feed_output(b"\x1b[?1002h");

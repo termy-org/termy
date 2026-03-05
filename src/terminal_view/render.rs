@@ -1588,7 +1588,7 @@ impl Render for TerminalView {
 
         // Pre-compute search match info for active pane.
         let search_active = self.search_open;
-        let terminal_cursor_style = self.terminal_cursor_style();
+        let configured_cursor_style = self.terminal_cursor_style();
         let mut terminal_display_offset = 0usize;
         let divider_rgba = pane_divider_color(terminal_surface_bg, colors.foreground);
         let divider_color: gpui::Hsla = divider_rgba.into();
@@ -1725,11 +1725,16 @@ impl Render for TerminalView {
                 };
                 // Keep cursor state out of cached cells so blink/overlay redraws don't force
                 // full cell-buffer rebuilds.
-                let cursor_cell = if pane_display_offset == 0 && cursor_visible && is_active_pane {
-                    let (cursor_col, cursor_row) = terminal.cursor_position();
-                    (cursor_col < cols && cursor_row < rows).then_some((cursor_col, cursor_row))
-                } else {
-                    None
+                let pane_cursor_state = terminal
+                    .cursor_state()
+                    .filter(|_| pane_display_offset == 0 && is_active_pane)
+                    .filter(|cursor| cursor.col < cols && cursor.row < rows);
+                let (cursor_cell, pane_cursor_style) = match pane_cursor_state {
+                    Some(cursor) => (
+                        cursor_visible.then_some((cursor.col, cursor.row)),
+                        cursor.style,
+                    ),
+                    None => (None, configured_cursor_style),
                 };
 
                 let terminal_grid = self.build_terminal_grid_from_cache(
@@ -1743,7 +1748,7 @@ impl Render for TerminalView {
                     hovered_link_range,
                     font_family.clone(),
                     font_size,
-                    terminal_cursor_style,
+                    pane_cursor_style,
                     cursor_cell,
                 );
 
@@ -2091,6 +2096,18 @@ impl Render for TerminalView {
 mod tests {
     use super::*;
 
+    fn resolved_cursor_state_for_test(
+        cursor_state: Option<TerminalCursorState>,
+        pane_display_offset: usize,
+        is_active_pane: bool,
+        cols: usize,
+        rows: usize,
+    ) -> Option<TerminalCursorState> {
+        cursor_state
+            .filter(|_| pane_display_offset == 0 && is_active_pane)
+            .filter(|cursor| cursor.col < cols && cursor.row < rows)
+    }
+
     fn test_render_cell(col: usize, row: usize, c: char) -> CellRenderInfo {
         CellRenderInfo {
             col,
@@ -2119,13 +2136,60 @@ mod tests {
             width: cols,
             height: rows,
             degraded: false,
-            terminal: Terminal::new_tmux(size, 128),
+            terminal: Terminal::new_tmux(
+                size,
+                TerminalOptions {
+                    scrollback_history: 128,
+                    ..TerminalOptions::default()
+                },
+            ),
             render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
         }
     }
 
     fn test_render_rows(rows: Vec<Vec<CellRenderInfo>>) -> PaneRenderCells {
         Arc::new(rows.into_iter().map(Arc::new).collect())
+    }
+
+    #[test]
+    fn resolved_cursor_state_for_pane_keeps_terminal_hidden_cursor_hidden() {
+        let resolved = resolved_cursor_state_for_test(None, 0, true, 10, 4);
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn resolved_cursor_state_for_pane_filters_inactive_scrolled_and_out_of_bounds_cursors() {
+        let cursor = TerminalCursorState {
+            col: 3,
+            row: 1,
+            style: TerminalCursorStyle::Line,
+        };
+        assert_eq!(
+            resolved_cursor_state_for_test(Some(cursor), 1, true, 10, 4),
+            None
+        );
+        assert_eq!(
+            resolved_cursor_state_for_test(Some(cursor), 0, false, 10, 4),
+            None
+        );
+        assert_eq!(
+            resolved_cursor_state_for_test(
+                Some(TerminalCursorState {
+                    col: 12,
+                    row: 1,
+                    style: TerminalCursorStyle::Block,
+                }),
+                0,
+                true,
+                10,
+                4,
+            ),
+            None
+        );
+        assert_eq!(
+            resolved_cursor_state_for_test(Some(cursor), 0, true, 10, 4),
+            Some(cursor)
+        );
     }
 
     #[test]

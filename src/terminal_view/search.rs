@@ -444,7 +444,13 @@ mod tests {
             ..TerminalSize::default()
         };
 
-        let tmux = Terminal::new_tmux(size, 256);
+        let tmux = Terminal::new_tmux(
+            size,
+            TerminalOptions {
+                scrollback_history: 256,
+                ..TerminalOptions::default()
+            },
+        );
         tmux.feed_output(b"tmux-line\r\n");
         let tmux_lines = collect_search_line_texts(&tmux, 0, i32::from(size.rows) - 1);
         assert_eq!(tmux_lines.len(), usize::from(size.rows));

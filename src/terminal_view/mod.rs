@@ -31,9 +31,9 @@ use termy_auto_update::{AutoUpdater, UpdateState};
 use termy_search::SearchState;
 use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
-    TerminalCursorStyle, TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent, TerminalGrid,
-    TerminalGridPaintCacheHandle, TerminalGridPaintDamage, TerminalGridRows, TerminalMouseMode,
-    TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
+    TerminalCursorState, TerminalCursorStyle, TerminalDamageSnapshot, TerminalDirtySpan,
+    TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle, TerminalGridPaintDamage, TerminalGridRows,
+    TerminalMouseMode, TerminalOptions, TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
 #[cfg(debug_assertions)]
@@ -270,8 +270,8 @@ enum Terminal {
 }
 
 impl Terminal {
-    fn new_tmux(size: TerminalSize, scrollback_history: usize) -> Self {
-        Self::Tmux(PaneTerminal::new(size, scrollback_history))
+    fn new_tmux(size: TerminalSize, options: TerminalOptions) -> Self {
+        Self::Tmux(PaneTerminal::new(size, options))
     }
 
     fn new_native(
@@ -375,22 +375,22 @@ impl Terminal {
         }
     }
 
-    fn cursor_position(&self) -> (usize, usize) {
+    fn cursor_state(&self) -> Option<TerminalCursorState> {
         match self {
-            Self::Tmux(terminal) => terminal.cursor_position(),
+            Self::Tmux(terminal) => terminal.cursor_state(),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.cursor_position())
-                .unwrap_or((0, 0)),
+                .map(|terminal| terminal.cursor_state())
+                .unwrap_or(None),
         }
     }
 
-    fn set_scrollback_history(&self, history_size: usize) {
+    fn set_term_options(&self, options: TerminalOptions) {
         match self {
-            Self::Tmux(terminal) => terminal.set_scrollback_history(history_size),
+            Self::Tmux(terminal) => terminal.set_term_options(options),
             Self::Native(terminal) => {
                 if let Ok(terminal) = terminal.lock() {
-                    terminal.set_scrollback_history(history_size);
+                    terminal.set_term_options(options);
                 }
             }
         }
@@ -1071,6 +1071,10 @@ impl TerminalView {
             colorterm: config.colorterm.clone(),
             working_dir_fallback,
             scrollback_history: config.scrollback_history,
+            default_cursor_style: match config.cursor_style {
+                AppCursorStyle::Line => TerminalCursorStyle::Line,
+                AppCursorStyle::Block => TerminalCursorStyle::Block,
+            },
         }
     }
 
@@ -2172,14 +2176,18 @@ impl TerminalView {
         let inactive_history = self
             .inactive_tab_scrollback
             .unwrap_or(self.terminal_runtime.scrollback_history);
+        let active_options = self.terminal_runtime.term_options();
+        let inactive_options = (inactive_history != active_options.scrollback_history).then(|| {
+            active_options.with_scrollback_history(inactive_history)
+        });
         for (tab_index, tab) in self.tabs.iter().enumerate() {
-            let history = if tab_index == self.active_tab {
-                self.terminal_runtime.scrollback_history
+            let options = if tab_index == self.active_tab {
+                active_options
             } else {
-                inactive_history
+                inactive_options.unwrap_or(active_options)
             };
             for pane in &tab.panes {
-                pane.terminal.set_scrollback_history(history);
+                pane.terminal.set_term_options(options);
             }
         }
 
@@ -2708,7 +2716,13 @@ mod tests {
 
     #[test]
     fn create_native_tab_starts_with_one_full_size_pane() {
-        let terminal = Terminal::new_tmux(TerminalSize::default(), 2000);
+        let terminal = Terminal::new_tmux(
+            TerminalSize::default(),
+            TerminalOptions {
+                scrollback_history: 2000,
+                ..TerminalOptions::default()
+            },
+        );
         let tab = TerminalView::create_native_tab(7, terminal, 120, 42, None);
 
         assert_eq!(tab.panes.len(), 1);

@@ -26,8 +26,9 @@ pub use render_metrics::{
     terminal_ui_render_metrics_snapshot,
 };
 pub use runtime::{
-    TabTitleShellIntegration, Terminal, TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent,
-    TerminalRuntimeConfig, TerminalSize, WorkingDirFallback, keystroke_to_input,
+    TabTitleShellIntegration, Terminal, TerminalCursorState, TerminalDamageSnapshot,
+    TerminalDirtySpan, TerminalEvent, TerminalOptions, TerminalRuntimeConfig, TerminalSize,
+    WorkingDirFallback, keystroke_to_input,
 };
 pub use tmux::{
     TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,

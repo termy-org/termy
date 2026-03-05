@@ -589,7 +589,13 @@ mod tests {
             rows: 3,
             ..TerminalSize::default()
         };
-        let terminal = Terminal::new_tmux(size, 256);
+        let terminal = Terminal::new_tmux(
+            size,
+            TerminalOptions {
+                scrollback_history: 256,
+                ..TerminalOptions::default()
+            },
+        );
         terminal.feed_output(b"line-0\r\nline-1\r\nline-2\r\nline-3\r\nline-4\r\n");
 
         let lines = non_empty_grid_lines(&terminal);
@@ -636,7 +642,13 @@ mod tests {
             ..TerminalSize::default()
         };
 
-        let tmux = Terminal::new_tmux(size, 128);
+        let tmux = Terminal::new_tmux(
+            size,
+            TerminalOptions {
+                scrollback_history: 128,
+                ..TerminalOptions::default()
+            },
+        );
         tmux.feed_output(b"row-adapter\r\n");
         let tmux_row = row_text_from_terminal(&tmux, 0, usize::from(size.cols));
         assert_eq!(tmux_row.len(), usize::from(size.cols));
@@ -691,7 +703,10 @@ mod tests {
                 rows,
                 ..TerminalSize::default()
             },
-            128,
+            TerminalOptions {
+                scrollback_history: 128,
+                ..TerminalOptions::default()
+            },
         );
         let right_terminal = Terminal::new_tmux(
             TerminalSize {
@@ -699,7 +714,10 @@ mod tests {
                 rows,
                 ..TerminalSize::default()
             },
-            128,
+            TerminalOptions {
+                scrollback_history: 128,
+                ..TerminalOptions::default()
+            },
         );
 
         let panes = vec![
@@ -758,7 +776,10 @@ mod tests {
                 rows,
                 ..TerminalSize::default()
             },
-            128,
+            TerminalOptions {
+                scrollback_history: 128,
+                ..TerminalOptions::default()
+            },
         );
         let right_terminal = Terminal::new_tmux(
             TerminalSize {
@@ -766,7 +787,10 @@ mod tests {
                 rows,
                 ..TerminalSize::default()
             },
-            128,
+            TerminalOptions {
+                scrollback_history: 128,
+                ..TerminalOptions::default()
+            },
         );
 
         let panes = vec![

@@ -382,12 +382,14 @@ impl TerminalView {
                 }
 
                 if let Some(inactive_scrollback) = self.inactive_tab_scrollback {
+                    let active_options = self.terminal_runtime.term_options();
+                    let inactive_options =
+                        active_options.with_scrollback_history(inactive_scrollback);
                     for pane in &self.tabs[old_active].panes {
-                        pane.terminal.set_scrollback_history(inactive_scrollback);
+                        pane.terminal.set_term_options(inactive_options);
                     }
                     for pane in &self.tabs[index].panes {
-                        pane.terminal
-                            .set_scrollback_history(self.terminal_runtime.scrollback_history);
+                        pane.terminal.set_term_options(active_options);
                     }
                 }
 
@@ -664,8 +666,6 @@ impl TerminalView {
                 return false;
             }
         };
-        terminal.set_scrollback_history(self.terminal_runtime.scrollback_history);
-
         let pane_id = self.native_allocate_pane_id();
         let Some(tab) = self.tabs.get_mut(self.active_tab) else {
             return false;

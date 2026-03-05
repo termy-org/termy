@@ -1,5 +1,6 @@
 #[cfg(unix)]
 use crate::locale::{Utf8LocaleOverridePlan, preferred_utf8_locale, utf8_locale_override_plan};
+use crate::grid::TerminalCursorStyle;
 use crate::mouse_protocol::TerminalMouseMode;
 #[cfg(not(target_os = "windows"))]
 use crate::path_env::normalized_path_env;
@@ -10,6 +11,7 @@ use alacritty_terminal::{
     sync::FairMutex,
     term::{Config as TermConfig, LineDamageBounds, Term, TermDamage, TermMode},
     tty::{self, Options as PtyOptions, Shell},
+    vte::ansi::{CursorShape, CursorStyle as AlacrittyCursorStyle},
 };
 use flume::{Receiver, Sender, unbounded};
 use gpui::{Keystroke, Modifiers, Pixels, px};
@@ -57,6 +59,28 @@ impl Default for WorkingDirFallback {
 
 const DEFAULT_SCROLLBACK_HISTORY: usize = 2000;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalCursorState {
+    pub col: usize,
+    pub row: usize,
+    pub style: TerminalCursorStyle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerminalOptions {
+    pub scrollback_history: usize,
+    pub default_cursor_style: TerminalCursorStyle,
+}
+
+impl Default for TerminalOptions {
+    fn default() -> Self {
+        Self {
+            scrollback_history: DEFAULT_SCROLLBACK_HISTORY,
+            default_cursor_style: TerminalCursorStyle::Block,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TerminalRuntimeConfig {
     pub shell: Option<String>,
@@ -64,6 +88,7 @@ pub struct TerminalRuntimeConfig {
     pub colorterm: Option<String>,
     pub working_dir_fallback: WorkingDirFallback,
     pub scrollback_history: usize,
+    pub default_cursor_style: TerminalCursorStyle,
 }
 
 impl Default for TerminalRuntimeConfig {
@@ -74,8 +99,65 @@ impl Default for TerminalRuntimeConfig {
             colorterm: Some(DEFAULT_COLORTERM.to_string()),
             working_dir_fallback: WorkingDirFallback::default(),
             scrollback_history: DEFAULT_SCROLLBACK_HISTORY,
+            default_cursor_style: TerminalCursorStyle::Block,
         }
     }
+}
+
+impl TerminalOptions {
+    pub(crate) fn term_config(&self) -> TermConfig {
+        let shape = match self.default_cursor_style {
+            TerminalCursorStyle::Line => CursorShape::Beam,
+            TerminalCursorStyle::Block => CursorShape::Block,
+        };
+        TermConfig {
+            scrolling_history: self.scrollback_history,
+            default_cursor_style: AlacrittyCursorStyle {
+                shape,
+                blinking: false,
+            },
+            ..TermConfig::default()
+        }
+    }
+
+    pub fn with_scrollback_history(self, scrollback_history: usize) -> Self {
+        Self {
+            scrollback_history,
+            ..self
+        }
+    }
+}
+
+impl TerminalRuntimeConfig {
+    pub fn term_options(&self) -> TerminalOptions {
+        TerminalOptions {
+            scrollback_history: self.scrollback_history,
+            default_cursor_style: self.default_cursor_style,
+        }
+    }
+}
+
+fn terminal_cursor_style_from_shape(shape: CursorShape) -> Option<TerminalCursorStyle> {
+    match shape {
+        CursorShape::Hidden => None,
+        // Collapse shapes we do not render distinctly yet onto the existing
+        // two-style renderer rather than reintroducing a fake app-level cursor.
+        CursorShape::Block | CursorShape::HollowBlock => Some(TerminalCursorStyle::Block),
+        CursorShape::Underline | CursorShape::Beam => Some(TerminalCursorStyle::Line),
+    }
+}
+
+pub(crate) fn cursor_state_from_term<T: EventListener>(
+    term: &Term<T>,
+) -> Option<TerminalCursorState> {
+    let cursor = term.renderable_content().cursor;
+    let style = terminal_cursor_style_from_shape(cursor.shape)?;
+    let row = usize::try_from(cursor.point.line.0).ok()?;
+    Some(TerminalCursorState {
+        col: cursor.point.column.0,
+        row,
+        style,
+    })
 }
 
 pub(crate) fn termmode_to_terminal_mouse_mode(mode: TermMode) -> TerminalMouseMode {
@@ -584,10 +666,7 @@ impl Terminal {
         };
 
         // Create terminal config with configurable scrollback history
-        let term_config = TermConfig {
-            scrolling_history: runtime_config.scrollback_history,
-            ..TermConfig::default()
-        };
+        let term_config = runtime_config.term_options().term_config();
 
         // Create the terminal emulator
         let listener =
@@ -713,11 +792,10 @@ impl Terminal {
         (grid.display_offset(), grid.history_size())
     }
 
-    /// Get the cursor position (column, row)
-    pub fn cursor_position(&self) -> (usize, usize) {
+    /// Get the cursor state the terminal currently intends to render.
+    pub fn cursor_state(&self) -> Option<TerminalCursorState> {
         let term = self.term.lock();
-        let cursor = term.grid().cursor.point;
-        (cursor.column.0, cursor.line.0 as usize)
+        cursor_state_from_term(&term)
     }
 
     /// Check if there are pending events
@@ -726,18 +804,9 @@ impl Terminal {
         !self.events_rx.is_empty()
     }
 
-    /// Update the scrollback history size. This can be used to reduce memory
-    /// for inactive tabs by temporarily shrinking their history.
-    pub fn set_scrollback_history(&self, history_size: usize) {
-        let mut term = self.term.lock();
-        // Create a new config with the updated scrollback history
-        // We use default values for other config options since they don't
-        // typically change at runtime
-        let config = TermConfig {
-            scrolling_history: history_size,
-            ..TermConfig::default()
-        };
-        term.set_options(config);
+    /// Sync live term options derived from the current runtime configuration.
+    pub fn set_term_options(&self, options: TerminalOptions) {
+        self.with_term_mut(|term| term.set_options(options.term_config()));
     }
 
     /// Check if bracketed paste mode is enabled
@@ -925,25 +994,30 @@ mod tests {
     #[cfg(target_os = "windows")]
     use super::quote_shell_program_if_needed;
     use super::{
-        DEFAULT_TERM, TerminalDamageSnapshot, TerminalRuntimeConfig, TerminalSize,
-        keystroke_to_input, pty_env_overrides, resolve_shell_path, take_term_damage_snapshot,
-        termmode_to_terminal_mouse_mode,
+        DEFAULT_TERM, TerminalCursorState, TerminalDamageSnapshot, TerminalRuntimeConfig,
+        TerminalSize, cursor_state_from_term, keystroke_to_input, pty_env_overrides,
+        resolve_shell_path, take_term_damage_snapshot, termmode_to_terminal_mouse_mode,
     };
+    use crate::grid::TerminalCursorStyle;
     use alacritty_terminal::{
         event::VoidListener,
         grid::{Dimensions, Scroll},
         term::{Config as TermConfig, LineDamageBounds, Term},
-        vte::ansi,
+        vte::ansi::{self, CursorShape},
     };
     use gpui::{Keystroke, Modifiers, px};
 
-    fn cursor_after_bytes(input: &[u8]) -> (usize, i32) {
-        let size = TerminalSize {
+    fn test_terminal_size() -> TerminalSize {
+        TerminalSize {
             cols: 32,
             rows: 4,
             cell_width: px(9.0),
             cell_height: px(18.0),
-        };
+        }
+    }
+
+    fn cursor_after_bytes(input: &[u8]) -> (usize, i32) {
+        let size = test_terminal_size();
         let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
         let mut parser: ansi::Processor = ansi::Processor::new();
         parser.advance(&mut term, input);
@@ -951,13 +1025,20 @@ mod tests {
         (point.column.0, point.line.0)
     }
 
+    fn cursor_state_after_bytes(
+        input: &[u8],
+        runtime_config: TerminalRuntimeConfig,
+    ) -> Option<TerminalCursorState> {
+        let size = test_terminal_size();
+        let mut term: Term<VoidListener> =
+            Term::new(runtime_config.term_options().term_config(), &size, VoidListener);
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, input);
+        cursor_state_from_term(&term)
+    }
+
     fn mouse_mode_after_bytes(input: &[u8]) -> crate::mouse_protocol::TerminalMouseMode {
-        let size = TerminalSize {
-            cols: 32,
-            rows: 4,
-            cell_width: px(9.0),
-            cell_height: px(18.0),
-        };
+        let size = test_terminal_size();
         let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
         let mut parser: ansi::Processor = ansi::Processor::new();
         parser.advance(&mut term, input);
@@ -1380,6 +1461,124 @@ mod tests {
         let ascii = cursor_after_bytes(b"\x1b]2;termy:tab:prompt:/tmp\x1b\\> ");
         let starship = cursor_after_bytes("\x1b]2;termy:tab:prompt:/tmp\x1b\\❯ ".as_bytes());
         assert_eq!(ascii, starship);
+    }
+
+    #[test]
+    fn cursor_state_hides_and_restores_with_terminal_visibility_sequences() {
+        let hidden = cursor_state_after_bytes(
+            b"prompt\x1b[?25l",
+            TerminalRuntimeConfig::default(),
+        );
+        assert_eq!(hidden, None);
+
+        let restored = cursor_state_after_bytes(
+            b"prompt\x1b[?25l\x1b[?25h",
+            TerminalRuntimeConfig::default(),
+        );
+        assert_eq!(
+            restored,
+            Some(TerminalCursorState {
+                col: 6,
+                row: 0,
+                style: TerminalCursorStyle::Block,
+            })
+        );
+    }
+
+    #[test]
+    fn cursor_state_maps_terminal_requested_shapes_to_supported_renderer_styles() {
+        let block = cursor_state_after_bytes(
+            b"\x1b[2 q",
+            TerminalRuntimeConfig {
+                default_cursor_style: TerminalCursorStyle::Line,
+                ..TerminalRuntimeConfig::default()
+            },
+        );
+        assert_eq!(
+            block,
+            Some(TerminalCursorState {
+                col: 0,
+                row: 0,
+                style: TerminalCursorStyle::Block,
+            })
+        );
+
+        let underline = cursor_state_after_bytes(
+            b"\x1b[4 q",
+            TerminalRuntimeConfig::default(),
+        );
+        assert_eq!(
+            underline,
+            Some(TerminalCursorState {
+                col: 0,
+                row: 0,
+                style: TerminalCursorStyle::Line,
+            })
+        );
+
+        let beam = cursor_state_after_bytes(
+            b"\x1b[6 q",
+            TerminalRuntimeConfig::default(),
+        );
+        assert_eq!(
+            beam,
+            Some(TerminalCursorState {
+                col: 0,
+                row: 0,
+                style: TerminalCursorStyle::Line,
+            })
+        );
+    }
+
+    #[test]
+    fn applying_runtime_options_preserves_default_cursor_style_when_scrollback_changes() {
+        let size = test_terminal_size();
+        let initial = TerminalRuntimeConfig {
+            scrollback_history: 256,
+            default_cursor_style: TerminalCursorStyle::Line,
+            ..TerminalRuntimeConfig::default()
+        };
+        let mut term: Term<VoidListener> =
+            Term::new(initial.term_options().term_config(), &size, VoidListener);
+
+        let updated = TerminalRuntimeConfig {
+            scrollback_history: 8,
+            ..initial.clone()
+        };
+        term.set_options(updated.term_options().term_config());
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        let output = (0..80)
+            .map(|index| format!("line-{index}\r\n"))
+            .collect::<String>();
+        parser.advance(&mut term, output.as_bytes());
+
+        assert_eq!(term.grid().history_size(), 8);
+        assert_eq!(term.cursor_style().shape, CursorShape::Beam);
+    }
+
+    #[test]
+    fn applying_runtime_options_preserves_scrollback_when_cursor_style_changes() {
+        let size = test_terminal_size();
+        let initial = TerminalRuntimeConfig {
+            scrollback_history: 8,
+            ..TerminalRuntimeConfig::default()
+        };
+        let mut term: Term<VoidListener> =
+            Term::new(initial.term_options().term_config(), &size, VoidListener);
+
+        let updated = TerminalRuntimeConfig {
+            default_cursor_style: TerminalCursorStyle::Line,
+            ..initial.clone()
+        };
+        term.set_options(updated.term_options().term_config());
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        let output = (0..80)
+            .map(|index| format!("line-{index}\r\n"))
+            .collect::<String>();
+        parser.advance(&mut term, output.as_bytes());
+
+        assert_eq!(term.grid().history_size(), 8);
+        assert_eq!(term.cursor_style().shape, CursorShape::Beam);
     }
 
     #[cfg(unix)]

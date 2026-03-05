@@ -47,12 +47,12 @@ impl TerminalView {
     fn hydrate_pane_terminal(
         tmux_client: &TmuxClient,
         pane: &TmuxPaneState,
-        scrollback_history: usize,
+        options: TerminalOptions,
         cell_size: Option<Size<Pixels>>,
     ) -> (Terminal, Option<String>) {
         let terminal = Terminal::new_tmux(
             Self::terminal_size_for_pane_state(pane, cell_size),
-            scrollback_history,
+            options,
         );
 
         // Always rebuild panes from full tmux history and let terminal content
@@ -61,7 +61,7 @@ impl TerminalView {
         // position escapes during hydration.
         // Bound capture to local retention + current viewport so hydration keeps
         // user-visible context without paying unbounded tmux history costs.
-        let capture_rows = Self::hydration_capture_row_budget(scrollback_history, pane.height);
+        let capture_rows = Self::hydration_capture_row_budget(options.scrollback_history, pane.height);
         let capture = tmux_client.capture_pane(&pane.id, capture_rows);
 
         match capture {
@@ -128,6 +128,10 @@ impl TerminalView {
             self.terminal_runtime.scrollback_history,
             self.inactive_tab_scrollback,
         );
+        let hydration_options = self
+            .terminal_runtime
+            .term_options()
+            .with_scrollback_history(hydration_scrollback_history);
         for window in &snapshot.windows {
             let mut panes = Vec::new();
             for pane_state in &window.panes {
@@ -138,7 +142,7 @@ impl TerminalView {
                         let (terminal, hydration_error) = Self::hydrate_pane_terminal(
                             &self.tmux_runtime().client,
                             pane_state,
-                            hydration_scrollback_history,
+                            hydration_options,
                             self.cell_size,
                         );
                         (terminal, hydration_error.is_some(), hydration_error)
@@ -226,14 +230,18 @@ impl TerminalView {
         let inactive_history = self
             .inactive_tab_scrollback
             .unwrap_or(self.terminal_runtime.scrollback_history);
+        let active_options = self.terminal_runtime.term_options();
+        let inactive_options = (inactive_history != active_options.scrollback_history).then(|| {
+            active_options.with_scrollback_history(inactive_history)
+        });
         for (tab_index, tab) in self.tabs.iter().enumerate() {
-            let history = if tab_index == self.active_tab {
-                self.terminal_runtime.scrollback_history
+            let options = if tab_index == self.active_tab {
+                active_options
             } else {
-                inactive_history
+                inactive_options.unwrap_or(active_options)
             };
             for pane in &tab.panes {
-                pane.terminal.set_scrollback_history(history);
+                pane.terminal.set_term_options(options);
             }
         }
         self.mark_tab_strip_layout_dirty();
