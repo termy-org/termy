@@ -2,6 +2,7 @@ use super::search::SettingMetadata;
 use super::*;
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex};
+use termy_plugin_core::{PluginCapability, PluginPermission};
 
 const FALLBACK_SETTING_METADATA: SettingMetadata = SettingMetadata {
     key: "__missing_setting_metadata__",
@@ -42,6 +43,7 @@ impl SettingsWindow {
                 SettingsSection::ThemeStore => {
                     self.render_theme_store_section(cx).into_any_element()
                 }
+                SettingsSection::Plugins => self.render_plugins_section(cx).into_any_element(),
                 SettingsSection::Advanced => self.render_advanced_section(cx).into_any_element(),
                 SettingsSection::Colors => self.render_colors_section(cx).into_any_element(),
                 SettingsSection::Keybindings => {
@@ -504,6 +506,183 @@ impl SettingsWindow {
                 cx,
             ))
             .child(self.render_tabs_theme_store_group(cx))
+    }
+
+    pub(super) fn render_plugins_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let bg_card = self.bg_card();
+        let border_color = self.border_color();
+        let bg_input = self.bg_input();
+        let hover_bg = self.bg_hover();
+        let text_primary = self.text_primary();
+        let text_secondary = self.text_secondary();
+        let text_muted = self.text_muted();
+        let accent = self.accent();
+        let accent_hover = self.accent_with_alpha(0.8);
+        let button_text = self.contrasting_text_for_fill(accent, bg_card);
+        let button_hover_text = self.contrasting_text_for_fill(accent_hover, bg_card);
+        let plugin_directory = self
+            .plugin_directory
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "plugin directory unavailable".to_string());
+
+        let host_rows = vec![
+            div()
+                .py_4()
+                .px_4()
+                .bg(bg_card)
+                .border_1()
+                .border_color(border_color)
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(text_primary)
+                        .child("Plugin Directory"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(text_muted)
+                        .line_height(px(17.0))
+                        .child("Each plugin lives in its own folder with a `termy-plugin.json` manifest."),
+                )
+                .child(div().text_xs().text_color(text_secondary).child(plugin_directory))
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .id("plugins-reload-btn")
+                                .px_4()
+                                .py_2()
+                                .rounded(px(0.0))
+                                .bg(accent)
+                                .text_sm()
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(button_text)
+                                .cursor_pointer()
+                                .hover(move |s| s.bg(accent_hover).text_color(button_hover_text))
+                                .child("Reload")
+                                .on_click(cx.listener(|view, _, _, cx| {
+                                    view.refresh_plugin_inventory();
+                                    if let Some(error) = view.plugin_inventory_error.clone() {
+                                        termy_toast::error(error);
+                                    } else {
+                                        termy_toast::success("Reloaded plugin inventory");
+                                    }
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            div()
+                                .id("plugins-open-directory-btn")
+                                .px_4()
+                                .py_2()
+                                .rounded(px(0.0))
+                                .bg(bg_input)
+                                .border_1()
+                                .border_color(border_color)
+                                .text_sm()
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(text_secondary)
+                                .cursor_pointer()
+                                .hover(move |s| s.bg(hover_bg).text_color(text_primary))
+                                .child("Open Folder")
+                                .on_click(cx.listener(|view, _, _, cx| {
+                                    if let Some(path) = view.plugin_directory.clone() {
+                                        if let Err(error) = SettingsWindow::open_path(&path) {
+                                            termy_toast::error(error);
+                                        }
+                                    } else if let Some(error) = view.plugin_inventory_error.clone() {
+                                        termy_toast::error(error);
+                                    } else {
+                                        termy_toast::error("Plugin directory unavailable");
+                                    }
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .into_any_element(),
+        ];
+
+        let plugin_rows: Vec<AnyElement> = if let Some(error) = self.plugin_inventory_error.clone()
+        {
+            vec![
+                div()
+                    .py_4()
+                    .px_4()
+                    .bg(bg_card)
+                    .border_1()
+                    .border_color(self.accent_with_alpha(0.45))
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(text_primary)
+                            .child("Plugin inventory unavailable"),
+                    )
+                    .child(
+                        div()
+                            .mt_2()
+                            .text_xs()
+                            .text_color(text_muted)
+                            .line_height(px(17.0))
+                            .child(error),
+                    )
+                    .into_any_element(),
+            ]
+        } else if self.plugin_inventory.is_empty() {
+            vec![
+                div()
+                    .py_4()
+                    .px_4()
+                    .bg(bg_card)
+                    .border_1()
+                    .border_color(border_color)
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(text_primary)
+                            .child("No plugins found"),
+                    )
+                    .child(
+                        div()
+                            .mt_2()
+                            .text_xs()
+                            .text_color(text_muted)
+                            .line_height(px(17.0))
+                            .child(
+                                "Drop a plugin into the plugin directory, then reload this page.",
+                            ),
+                    )
+                    .into_any_element(),
+            ]
+        } else {
+            self.plugin_inventory
+                .iter()
+                .cloned()
+                .map(|plugin| self.render_plugin_inventory_card(plugin, cx))
+                .collect()
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(self.render_section_header(
+                "Plugins",
+                "Inspect installed plugins and manage startup behavior",
+                SettingsSection::Plugins,
+                cx,
+            ))
+            .child(self.render_settings_group("PLUGIN HOST", host_rows))
+            .child(self.render_settings_group("INSTALLED PLUGINS", plugin_rows))
     }
 
     pub(super) fn render_tabs_title_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -1075,6 +1254,243 @@ impl SettingsWindow {
         }
 
         self.render_settings_group("THEME STORE", rows)
+    }
+
+    fn render_plugin_inventory_card(
+        &self,
+        plugin: PluginInventoryEntry,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let bg_card = self.bg_card();
+        let border_color = if plugin.load_error.is_some() {
+            self.accent_with_alpha(0.45)
+        } else if plugin.is_running {
+            self.accent_with_alpha(0.3)
+        } else {
+            self.border_color()
+        };
+        let bg_input = self.bg_input();
+        let hover_bg = self.bg_hover();
+        let text_primary = self.text_primary();
+        let text_secondary = self.text_secondary();
+        let text_muted = self.text_muted();
+        let permissions = if plugin.permissions.is_empty() {
+            "none".to_string()
+        } else {
+            plugin
+                .permissions
+                .iter()
+                .map(Self::plugin_permission_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let capabilities = if plugin.capabilities.is_empty() {
+            "none reported".to_string()
+        } else {
+            plugin
+                .capabilities
+                .iter()
+                .map(Self::plugin_capability_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let commands = if plugin.commands.is_empty() {
+            "none".to_string()
+        } else {
+            plugin
+                .commands
+                .iter()
+                .map(|command| format!("{} ({})", command.title, command.id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let description = plugin
+            .description
+            .clone()
+            .unwrap_or_else(|| "No description provided.".to_string());
+        let status = if let Some(error) = plugin.load_error.clone() {
+            format!("Failed to start: {error}")
+        } else if plugin.is_running {
+            "Running".to_string()
+        } else if plugin.autostart {
+            "Installed, will start on next launch".to_string()
+        } else {
+            "Installed, autostart disabled".to_string()
+        };
+        let autostart_label = if plugin.autostart {
+            "Disable Autostart"
+        } else {
+            "Enable Autostart"
+        };
+        let plugin_id = plugin.id.clone();
+        let plugin_root = plugin.root_dir.clone();
+        let next_autostart = !plugin.autostart;
+
+        div()
+            .py_4()
+            .px_4()
+            .bg(bg_card)
+            .border_1()
+            .border_color(border_color)
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .gap_3()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .text_color(text_primary)
+                                    .child(format!("{} v{}", plugin.name, plugin.version)),
+                            )
+                            .child(div().text_xs().text_color(text_muted).child(plugin.id.clone()))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(text_secondary)
+                                    .line_height(px(17.0))
+                                    .child(description),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(if plugin.is_running {
+                                self.accent()
+                            } else {
+                                text_muted
+                            })
+                            .child(if plugin.is_running { "RUNNING" } else { "IDLE" }),
+                    ),
+            )
+            .child(div().text_xs().text_color(text_secondary).child(status))
+            .when(plugin.author.is_some(), |s| {
+                s.child(
+                    div()
+                        .text_xs()
+                        .text_color(text_muted)
+                        .child(format!("Author: {}", plugin.author.clone().unwrap_or_default())),
+                )
+            })
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_muted)
+                    .line_height(px(17.0))
+                    .child(format!("Entrypoint: {}", plugin.entrypoint.display())),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_muted)
+                    .line_height(px(17.0))
+                    .child(format!("Permissions: {permissions}")),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_muted)
+                    .line_height(px(17.0))
+                    .child(format!("Capabilities: {capabilities}")),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_muted)
+                    .line_height(px(17.0))
+                    .child(format!("Commands: {commands}")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("plugin-toggle-{}", plugin.id)))
+                            .px_3()
+                            .py_2()
+                            .rounded(px(0.0))
+                            .bg(bg_input)
+                            .border_1()
+                            .border_color(self.border_color())
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(text_secondary)
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover_bg).text_color(text_primary))
+                            .child(autostart_label)
+                            .on_click(cx.listener(move |view, _, _, cx| {
+                                match crate::plugins::set_plugin_autostart(
+                                    &plugin_id,
+                                    next_autostart,
+                                ) {
+                                    Ok(()) => {
+                                        view.refresh_plugin_inventory();
+                                        termy_toast::success(
+                                            "Saved plugin manifest. Restart Termy to apply startup changes.",
+                                        );
+                                    }
+                                    Err(error) => termy_toast::error(error),
+                                }
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("plugin-open-{}", plugin.id)))
+                            .px_3()
+                            .py_2()
+                            .rounded(px(0.0))
+                            .bg(bg_input)
+                            .border_1()
+                            .border_color(self.border_color())
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(text_secondary)
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover_bg).text_color(text_primary))
+                            .child("Open Folder")
+                            .on_click(cx.listener(move |_view, _, _, cx| {
+                                if let Err(error) = SettingsWindow::open_path(&plugin_root) {
+                                    termy_toast::error(error);
+                                }
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn plugin_permission_label(permission: &PluginPermission) -> &'static str {
+        match permission {
+            PluginPermission::FilesystemRead => "filesystem_read",
+            PluginPermission::FilesystemWrite => "filesystem_write",
+            PluginPermission::Network => "network",
+            PluginPermission::Shell => "shell",
+            PluginPermission::Clipboard => "clipboard",
+            PluginPermission::Notifications => "notifications",
+            PluginPermission::TerminalRead => "terminal_read",
+            PluginPermission::TerminalWrite => "terminal_write",
+            PluginPermission::UiPanels => "ui_panels",
+        }
+    }
+
+    fn plugin_capability_label(capability: &PluginCapability) -> &'static str {
+        match capability {
+            PluginCapability::CommandProvider => "command_provider",
+            PluginCapability::EventSubscriber => "event_subscriber",
+            PluginCapability::UiPanel => "ui_panel",
+        }
     }
 
     pub(super) fn render_advanced_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {

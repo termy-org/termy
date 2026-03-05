@@ -6,6 +6,7 @@ mod commands;
 mod config;
 mod keybindings;
 mod menus;
+mod plugins;
 mod settings_view;
 mod startup;
 mod terminal_view;
@@ -194,6 +195,7 @@ fn main() {
         };
         keybindings::install_keybindings(cx, &app_config, tmux_runtime_active);
         let startup_config = app_config;
+        plugins::initialize_plugins(APP_VERSION);
 
         open_main_window(cx, startup_config).unwrap();
     });

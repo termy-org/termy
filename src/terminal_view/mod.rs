@@ -32,9 +32,10 @@ use termy_search::SearchState;
 use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
     TerminalCursorState, TerminalCursorStyle, TerminalDamageSnapshot, TerminalDirtySpan,
-    TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle, TerminalGridPaintDamage, TerminalGridRows,
-    TerminalMouseMode, TerminalOptions, TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
-    WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
+    TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle, TerminalGridPaintDamage,
+    TerminalGridRows, TerminalMouseMode, TerminalOptions, TerminalRuntimeConfig, TerminalSize,
+    TmuxLaunchTarget, WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line,
+    keystroke_to_input,
 };
 #[cfg(debug_assertions)]
 use termy_terminal_ui::{
@@ -2177,9 +2178,8 @@ impl TerminalView {
             .inactive_tab_scrollback
             .unwrap_or(self.terminal_runtime.scrollback_history);
         let active_options = self.terminal_runtime.term_options();
-        let inactive_options = (inactive_history != active_options.scrollback_history).then(|| {
-            active_options.with_scrollback_history(inactive_history)
-        });
+        let inactive_options = (inactive_history != active_options.scrollback_history)
+            .then(|| active_options.with_scrollback_history(inactive_history));
         for (tab_index, tab) in self.tabs.iter().enumerate() {
             let options = if tab_index == self.active_tab {
                 active_options

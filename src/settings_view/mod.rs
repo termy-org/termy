@@ -1,5 +1,6 @@
 use crate::colors::TerminalColors;
 use crate::config::{self, AiProvider as ConfigAiProvider, AppConfig};
+use crate::plugins::{self, PluginInventoryEntry};
 use crate::text_input::{TextInputAlignment, TextInputElement, TextInputProvider, TextInputState};
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle, ScrollbarRange};
 use gpui::{
@@ -67,6 +68,7 @@ enum SettingsSection {
     Terminal,
     Tabs,
     ThemeStore,
+    Plugins,
     Advanced,
     Colors,
     Keybindings,
@@ -115,6 +117,9 @@ pub struct SettingsWindow {
     theme_store_loading: bool,
     theme_store_error: Option<String>,
     theme_store_installed_versions: HashMap<String, String>,
+    plugin_directory: Option<PathBuf>,
+    plugin_inventory: Vec<PluginInventoryEntry>,
+    plugin_inventory_error: Option<String>,
 }
 
 impl SettingsWindow {
@@ -137,6 +142,8 @@ impl SettingsWindow {
             Self::build_searchable_setting_indices(&searchable_settings);
         let content_scroll_handle = ScrollHandle::new();
         let setting_scroll_anchors = Self::build_setting_scroll_anchors(&content_scroll_handle);
+        let (plugin_directory, plugin_inventory, plugin_inventory_error) =
+            Self::load_plugin_inventory();
         let view = Self {
             active_section: SettingsSection::Appearance,
             config,
@@ -171,6 +178,9 @@ impl SettingsWindow {
             theme_store_loading: false,
             theme_store_error: None,
             theme_store_installed_versions: Self::load_installed_theme_versions(),
+            plugin_directory,
+            plugin_inventory,
+            plugin_inventory_error,
         };
         view.focus_handle.focus(window, cx);
 
@@ -214,6 +224,20 @@ impl SettingsWindow {
 
     fn theme_store_api_base_url() -> String {
         std::env::var("THEME_STORE_API_URL").unwrap_or_else(|_| DEFAULT_THEME_STORE_API_URL.into())
+    }
+
+    fn load_plugin_inventory() -> (Option<PathBuf>, Vec<PluginInventoryEntry>, Option<String>) {
+        match plugins::plugin_inventory() {
+            Ok(inventory) => (Some(inventory.root_dir), inventory.entries, None),
+            Err(error) => (None, Vec::new(), Some(error)),
+        }
+    }
+
+    fn refresh_plugin_inventory(&mut self) {
+        let (directory, entries, error) = Self::load_plugin_inventory();
+        self.plugin_directory = directory;
+        self.plugin_inventory = entries;
+        self.plugin_inventory_error = error;
     }
 
     fn ensure_theme_store_themes_loaded(&mut self, cx: &mut Context<Self>) {
@@ -537,6 +561,45 @@ impl SettingsWindow {
         }
         #[allow(unreachable_code)]
         Err("Opening URLs is unsupported on this platform".to_string())
+    }
+
+    pub(super) fn open_path(path: &std::path::Path) -> Result<(), String> {
+        let path_str = path.to_string_lossy().to_string();
+        #[cfg(target_os = "macos")]
+        {
+            Command::new("open")
+                .arg(&path_str)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|error| format!("Failed to open path: {error}"))?;
+            return Ok(());
+        }
+        #[cfg(target_os = "linux")]
+        {
+            Command::new("xdg-open")
+                .arg(&path_str)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|error| format!("Failed to open path: {error}"))?;
+            return Ok(());
+        }
+        #[cfg(target_os = "windows")]
+        {
+            Command::new("cmd")
+                .args(["/C", "start", "", &path_str])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|error| format!("Failed to open path: {error}"))?;
+            return Ok(());
+        }
+        #[allow(unreachable_code)]
+        Err("Opening paths is not supported on this platform".to_string())
     }
 
     fn apply_runtime_config(&mut self, config: AppConfig) -> bool {

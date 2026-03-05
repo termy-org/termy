@@ -262,6 +262,7 @@ impl SettingsWindow {
             SettingsSection::Tabs => TABS_SETTINGS,
             SettingsSection::Advanced => ADVANCED_SETTINGS,
             SettingsSection::ThemeStore
+            | SettingsSection::Plugins
             | SettingsSection::Colors
             | SettingsSection::Keybindings => &[],
         }
@@ -289,6 +290,7 @@ impl SettingsWindow {
                 .iter()
                 .any(|spec| self.custom_color_for_id(spec.id).is_some()),
             SettingsSection::ThemeStore => false,
+            SettingsSection::Plugins => false,
             SettingsSection::Keybindings => !self.config.keybind_lines.is_empty(),
             _ => Self::section_root_settings(section)
                 .iter()
@@ -345,6 +347,7 @@ impl SettingsWindow {
             SettingsSection::Colors => "Colors",
             SettingsSection::Keybindings => "Keybindings",
             SettingsSection::ThemeStore => return,
+            SettingsSection::Plugins => return,
         };
         let title = "Reset Section";
         let message = format!(
@@ -411,6 +414,7 @@ impl SettingsWindow {
                 .iter()
                 .try_for_each(|spec| config::set_color_setting(spec.id, None)),
             SettingsSection::ThemeStore => Ok(()),
+            SettingsSection::Plugins => Ok(()),
             SettingsSection::Keybindings => Ok(()),
         };
 

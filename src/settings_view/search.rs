@@ -142,6 +142,13 @@ static SETTINGS_METADATA: LazyLock<Vec<SettingMetadata>> = LazyLock::new(|| {
         description: "Browse and install community themes from the online store.",
         keywords: &["theme", "store", "install", "colors"],
     });
+    entries.push(SettingMetadata {
+        key: "plugins",
+        section: SettingsSection::Plugins,
+        title: "Plugins",
+        description: "Inspect installed plugins, permissions, startup state, and failures.",
+        keywords: &["plugins", "extensions", "permissions", "autostart"],
+    });
 
     entries
 });
@@ -163,18 +170,20 @@ impl SettingsWindow {
             SettingsSection::Terminal => "Terminal",
             SettingsSection::Tabs => "Tabs",
             SettingsSection::ThemeStore => "Theme Store",
+            SettingsSection::Plugins => "Plugins",
             SettingsSection::Advanced => "Advanced",
             SettingsSection::Colors => "Colors",
             SettingsSection::Keybindings => "Keybindings",
         }
     }
 
-    pub(super) fn settings_sections_in_order() -> [SettingsSection; 7] {
+    pub(super) fn settings_sections_in_order() -> [SettingsSection; 8] {
         [
             SettingsSection::Appearance,
             SettingsSection::Terminal,
             SettingsSection::Tabs,
             SettingsSection::ThemeStore,
+            SettingsSection::Plugins,
             SettingsSection::Advanced,
             SettingsSection::Colors,
             SettingsSection::Keybindings,
@@ -570,6 +579,7 @@ impl SettingsWindow {
                     .child(self.render_sidebar_item("Terminal", SettingsSection::Terminal, cx))
                     .child(self.render_sidebar_item("Tabs", SettingsSection::Tabs, cx))
                     .child(self.render_sidebar_item("Theme Store", SettingsSection::ThemeStore, cx))
+                    .child(self.render_sidebar_item("Plugins", SettingsSection::Plugins, cx))
                     .child(self.render_sidebar_item("Advanced", SettingsSection::Advanced, cx))
                     .child(self.render_sidebar_item("Colors", SettingsSection::Colors, cx))
                     .child(self.render_sidebar_item(

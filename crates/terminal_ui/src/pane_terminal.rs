@@ -40,10 +40,7 @@ impl PaneTerminal {
 
         let term = Arc::new(FairMutex::new(Term::new(config, &size, VoidListener)));
         Self {
-            inner: FairMutex::new(PaneTerminalInner {
-                term,
-                size,
-            }),
+            inner: FairMutex::new(PaneTerminalInner { term, size }),
             parser: FairMutex::new(ansi::Processor::new()),
         }
     }

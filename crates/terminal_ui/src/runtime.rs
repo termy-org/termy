@@ -1,6 +1,6 @@
+use crate::grid::TerminalCursorStyle;
 #[cfg(unix)]
 use crate::locale::{Utf8LocaleOverridePlan, preferred_utf8_locale, utf8_locale_override_plan};
-use crate::grid::TerminalCursorStyle;
 use crate::mouse_protocol::TerminalMouseMode;
 #[cfg(not(target_os = "windows"))]
 use crate::path_env::normalized_path_env;
@@ -1030,8 +1030,11 @@ mod tests {
         runtime_config: TerminalRuntimeConfig,
     ) -> Option<TerminalCursorState> {
         let size = test_terminal_size();
-        let mut term: Term<VoidListener> =
-            Term::new(runtime_config.term_options().term_config(), &size, VoidListener);
+        let mut term: Term<VoidListener> = Term::new(
+            runtime_config.term_options().term_config(),
+            &size,
+            VoidListener,
+        );
         let mut parser: ansi::Processor = ansi::Processor::new();
         parser.advance(&mut term, input);
         cursor_state_from_term(&term)
@@ -1465,10 +1468,7 @@ mod tests {
 
     #[test]
     fn cursor_state_hides_and_restores_with_terminal_visibility_sequences() {
-        let hidden = cursor_state_after_bytes(
-            b"prompt\x1b[?25l",
-            TerminalRuntimeConfig::default(),
-        );
+        let hidden = cursor_state_after_bytes(b"prompt\x1b[?25l", TerminalRuntimeConfig::default());
         assert_eq!(hidden, None);
 
         let restored = cursor_state_after_bytes(
@@ -1503,10 +1503,7 @@ mod tests {
             })
         );
 
-        let underline = cursor_state_after_bytes(
-            b"\x1b[4 q",
-            TerminalRuntimeConfig::default(),
-        );
+        let underline = cursor_state_after_bytes(b"\x1b[4 q", TerminalRuntimeConfig::default());
         assert_eq!(
             underline,
             Some(TerminalCursorState {
@@ -1516,10 +1513,7 @@ mod tests {
             })
         );
 
-        let beam = cursor_state_after_bytes(
-            b"\x1b[6 q",
-            TerminalRuntimeConfig::default(),
-        );
+        let beam = cursor_state_after_bytes(b"\x1b[6 q", TerminalRuntimeConfig::default());
         assert_eq!(
             beam,
             Some(TerminalCursorState {

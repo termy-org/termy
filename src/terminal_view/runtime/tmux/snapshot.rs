@@ -50,10 +50,8 @@ impl TerminalView {
         options: TerminalOptions,
         cell_size: Option<Size<Pixels>>,
     ) -> (Terminal, Option<String>) {
-        let terminal = Terminal::new_tmux(
-            Self::terminal_size_for_pane_state(pane, cell_size),
-            options,
-        );
+        let terminal =
+            Terminal::new_tmux(Self::terminal_size_for_pane_state(pane, cell_size), options);
 
         // Always rebuild panes from full tmux history and let terminal content
         // define cursor state. Snapshot cursor coordinates can drift relative to
@@ -61,7 +59,8 @@ impl TerminalView {
         // position escapes during hydration.
         // Bound capture to local retention + current viewport so hydration keeps
         // user-visible context without paying unbounded tmux history costs.
-        let capture_rows = Self::hydration_capture_row_budget(options.scrollback_history, pane.height);
+        let capture_rows =
+            Self::hydration_capture_row_budget(options.scrollback_history, pane.height);
         let capture = tmux_client.capture_pane(&pane.id, capture_rows);
 
         match capture {
@@ -231,9 +230,8 @@ impl TerminalView {
             .inactive_tab_scrollback
             .unwrap_or(self.terminal_runtime.scrollback_history);
         let active_options = self.terminal_runtime.term_options();
-        let inactive_options = (inactive_history != active_options.scrollback_history).then(|| {
-            active_options.with_scrollback_history(inactive_history)
-        });
+        let inactive_options = (inactive_history != active_options.scrollback_history)
+            .then(|| active_options.with_scrollback_history(inactive_history));
         for (tab_index, tab) in self.tabs.iter().enumerate() {
             let options = if tab_index == self.active_tab {
                 active_options

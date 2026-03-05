@@ -1753,8 +1753,13 @@ impl Render for TerminalView {
                 };
                 // Keep cursor state out of cached cells so blink/overlay redraws don't force
                 // full cell-buffer rebuilds.
-                let pane_cursor_state =
-                    cursor_state_for_pane(terminal, pane_display_offset, is_active_pane, cols, rows);
+                let pane_cursor_state = cursor_state_for_pane(
+                    terminal,
+                    pane_display_offset,
+                    is_active_pane,
+                    cols,
+                    rows,
+                );
                 let (cursor_cell, pane_cursor_style) = match pane_cursor_state {
                     Some(cursor) => (
                         cursor_visible.then_some((cursor.col, cursor.row)),
@@ -2178,14 +2183,8 @@ mod tests {
             row: 1,
             style: TerminalCursorStyle::Line,
         };
-        assert_eq!(
-            filtered_cursor_state(Some(cursor), 1, true, 10, 4),
-            None
-        );
-        assert_eq!(
-            filtered_cursor_state(Some(cursor), 0, false, 10, 4),
-            None
-        );
+        assert_eq!(filtered_cursor_state(Some(cursor), 1, true, 10, 4), None);
+        assert_eq!(filtered_cursor_state(Some(cursor), 0, false, 10, 4), None);
         assert_eq!(
             filtered_cursor_state(
                 Some(TerminalCursorState {

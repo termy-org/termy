@@ -7264,7 +7264,7 @@ dependencies = [
 
 [[package]]
 name = "termy"
-version = "0.1.43"
+version = "0.1.44"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7289,6 +7289,8 @@ dependencies = [
  "termy_gemini",
  "termy_native_sdk",
  "termy_openai",
+ "termy_plugin_core",
+ "termy_plugin_host",
  "termy_search",
  "termy_terminal_ui",
  "termy_themes",
@@ -7345,7 +7347,7 @@ dependencies = [
 
 [[package]]
 name = "termy_cli"
-version = "0.1.43"
+version = "0.1.44"
 dependencies = [
  "anyhow",
  "clap",
@@ -7357,6 +7359,7 @@ dependencies = [
  "termy_cli_install_core",
  "termy_command_core",
  "termy_config_core",
+ "termy_plugin_host",
  "termy_release_core",
  "termy_theme_core",
  "termy_themes",
@@ -7410,6 +7413,39 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "ureq",
+]
+
+[[package]]
+name = "termy_plugin_core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "termy_plugin_host"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "serde",
+ "serde_json",
+ "termy_config_core",
+ "termy_plugin_core",
+ "termy_toast",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "termy_plugin_sdk"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "termy_plugin_core",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

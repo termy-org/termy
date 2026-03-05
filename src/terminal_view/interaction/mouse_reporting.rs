@@ -78,7 +78,10 @@ fn quantized_scroll_steps(accumulated: &mut f32, delta_pixels: f32, cell_extent:
     steps
 }
 
-fn mouse_forward_outcome(mode: TerminalMouseMode, packet_send_result: Option<bool>) -> MouseForwardOutcome {
+fn mouse_forward_outcome(
+    mode: TerminalMouseMode,
+    packet_send_result: Option<bool>,
+) -> MouseForwardOutcome {
     if !mode.enabled {
         return MouseForwardOutcome::NotHandled;
     }
@@ -195,7 +198,11 @@ impl TerminalView {
         mouse_forward_outcome(mode, send_result)
     }
 
-    fn set_pressed_mouse_target(&mut self, button: MouseTrackedButton, target: MouseReportTargetCell) {
+    fn set_pressed_mouse_target(
+        &mut self,
+        button: MouseTrackedButton,
+        target: MouseReportTargetCell,
+    ) {
         *mouse_pressed_target_slot(&mut self.mouse_reporting, button) = Some(target);
     }
 
@@ -277,11 +284,15 @@ impl TerminalView {
                 changed = true;
             }
         }
-        let clear_hover = self.mouse_reporting.hover_target.as_ref().is_some_and(|target| {
-            pane_ids
-                .iter()
-                .any(|pane_id| pane_id.as_str() == target.pane_id.as_str())
-        });
+        let clear_hover = self
+            .mouse_reporting
+            .hover_target
+            .as_ref()
+            .is_some_and(|target| {
+                pane_ids
+                    .iter()
+                    .any(|pane_id| pane_id.as_str() == target.pane_id.as_str())
+            });
         if clear_hover {
             self.mouse_reporting.hover_target = None;
             changed = true;
@@ -339,7 +350,8 @@ impl TerminalView {
             },
         );
         self.mouse_reporting.hover_target = None;
-        if should_focus_target_after_mouse_press(outcome, self.is_active_pane_id(pane_id.as_str())) {
+        if should_focus_target_after_mouse_press(outcome, self.is_active_pane_id(pane_id.as_str()))
+        {
             let _ = self.focus_pane_target(pane_id.as_str(), cx);
         }
         cx.stop_propagation();
@@ -374,7 +386,9 @@ impl TerminalView {
 
             if !should_emit_drag_report(&tracked, cell) {
                 self.pane_mouse_mode(tracked.pane_id.as_str())
-                    .map_or(MouseForwardOutcome::NotHandled, |mode| mouse_forward_outcome(mode, None))
+                    .map_or(MouseForwardOutcome::NotHandled, |mode| {
+                        mouse_forward_outcome(mode, None)
+                    })
             } else {
                 let outcome = self.try_send_mouse_event_to_pane(
                     tracked.pane_id.as_str(),
@@ -399,10 +413,16 @@ impl TerminalView {
                 self.mouse_reporting.hover_target = None;
                 return false;
             };
-            if !should_emit_move_report(self.mouse_reporting.hover_target.as_ref(), pane_id.as_str(), cell) {
+            if !should_emit_move_report(
+                self.mouse_reporting.hover_target.as_ref(),
+                pane_id.as_str(),
+                cell,
+            ) {
                 let outcome = self
                     .pane_mouse_mode(pane_id.as_str())
-                    .map_or(MouseForwardOutcome::NotHandled, |mode| mouse_forward_outcome(mode, None));
+                    .map_or(MouseForwardOutcome::NotHandled, |mode| {
+                        mouse_forward_outcome(mode, None)
+                    });
                 if outcome.is_handled() {
                     self.mouse_reporting.hover_target = Some(MouseReportTargetCell {
                         pane_id,
@@ -542,9 +562,12 @@ impl TerminalView {
                     } else {
                         TerminalMouseEventKind::WheelDown
                     };
-                    if let Some(packet) = Self::encode_mouse_packet(mode, event_kind, cell, event.modifiers) {
+                    if let Some(packet) =
+                        Self::encode_mouse_packet(mode, event_kind, cell, event.modifiers)
+                    {
                         for _ in 0..vertical_steps {
-                            if !self.send_mouse_packet_to_pane(pane_id.as_str(), packet.as_slice()) {
+                            if !self.send_mouse_packet_to_pane(pane_id.as_str(), packet.as_slice())
+                            {
                                 break;
                             }
                         }
@@ -557,9 +580,12 @@ impl TerminalView {
                     } else {
                         TerminalMouseEventKind::WheelRight
                     };
-                    if let Some(packet) = Self::encode_mouse_packet(mode, event_kind, cell, event.modifiers) {
+                    if let Some(packet) =
+                        Self::encode_mouse_packet(mode, event_kind, cell, event.modifiers)
+                    {
                         for _ in 0..horizontal_steps {
-                            if !self.send_mouse_packet_to_pane(pane_id.as_str(), packet.as_slice()) {
+                            if !self.send_mouse_packet_to_pane(pane_id.as_str(), packet.as_slice())
+                            {
                                 break;
                             }
                         }
@@ -662,7 +688,10 @@ mod tests {
             col: 3,
             row: 7,
         };
-        assert!(!should_emit_drag_report(&target, CellPos { col: 3, row: 7 }));
+        assert!(!should_emit_drag_report(
+            &target,
+            CellPos { col: 3, row: 7 }
+        ));
     }
 
     #[test]
