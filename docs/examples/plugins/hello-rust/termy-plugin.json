@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "id": "example.hello-rust",
+  "name": "Hello Rust Plugin",
+  "version": "0.1.0",
+  "description": "Minimal Rust plugin example using termy_plugin_sdk",
+  "runtime": "executable",
+  "entrypoint": "./target/debug/hello_rust_plugin",
+  "autostart": false,
+  "permissions": ["notifications"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "example.hello-rust.run",
+        "title": "Run Hello Rust"
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "id": "example.hello",
+  "name": "Hello Plugin",
+  "version": "0.1.0",
+  "description": "Minimal shell plugin example for Termy",
+  "runtime": "executable",
+  "entrypoint": "./plugin.sh",
+  "autostart": true,
+  "permissions": ["network"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "example.hello.run",
+        "title": "Run Hello"
+      }
+    ]
+  }
+}
