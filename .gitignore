@@ -1,3 +1,4 @@
 /target
 AGENTS.md
 .ds_store
+.env

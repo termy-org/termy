@@ -11,9 +11,14 @@ type NavLink =
 const navLinks: NavLink[] = [
   { label: "Features", href: "/#features" },
   { label: "Download", href: "/#download" },
+  { label: "Themes", to: "/themes" },
   { label: "Releases", to: "/releases" },
   { label: "Docs", to: "/docs" },
-  { label: "GitHub", href: "https://github.com/lassejlv/termy", external: true },
+  {
+    label: "GitHub",
+    href: "https://github.com/lassejlv/termy",
+    external: true,
+  },
 ];
 
 const linkClass =
@@ -129,7 +134,11 @@ export function Header(): JSX.Element {
             onClick={toggleTheme}
             className="text-muted-foreground/60 hover:text-foreground"
           >
-            {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {theme === "light" ? (
+              <Moon className="w-4 h-4" />
+            ) : (
+              <Sun className="w-4 h-4" />
+            )}
           </Button>
         </div>
 
@@ -143,7 +152,11 @@ export function Header(): JSX.Element {
           aria-controls="mobile-menu"
           className="text-muted-foreground/60 hover:text-foreground md:hidden"
         >
-          {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          {isMobileMenuOpen ? (
+            <X className="h-5 w-5" />
+          ) : (
+            <Menu className="h-5 w-5" />
+          )}
         </Button>
       </nav>
 
@@ -161,7 +174,12 @@ export function Header(): JSX.Element {
       >
         <div className="flex flex-col gap-1">
           {navLinks.map((link) => (
-            <NavItem key={link.label} link={link} className={mobileLinkClass} onClick={closeMobileMenu} />
+            <NavItem
+              key={link.label}
+              link={link}
+              className={mobileLinkClass}
+              onClick={closeMobileMenu}
+            />
           ))}
           <div className="my-2 h-px bg-border/30" />
           <Button

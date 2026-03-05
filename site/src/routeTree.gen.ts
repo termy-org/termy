@@ -9,15 +9,31 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root"
+import { Route as AddRouteImport } from "./routes/add"
 import { Route as IndexRouteImport } from "./routes/index"
+import { Route as ThemesIndexRouteImport } from "./routes/themes/index"
 import { Route as ReleasesIndexRouteImport } from "./routes/releases/index"
 import { Route as DocsIndexRouteImport } from "./routes/docs/index"
+import { Route as ThemesStudioRouteImport } from "./routes/themes/studio"
+import { Route as ThemesAddRouteImport } from "./routes/themes/add"
+import { Route as ThemesSlugRouteImport } from "./routes/themes/$slug"
 import { Route as ReleasesTagRouteImport } from "./routes/releases/$tag"
 import { Route as DocsSplatRouteImport } from "./routes/docs/$"
+import { Route as ThemesSlugUpdateRouteImport } from "./routes/themes/$slug/update"
 
+const AddRoute = AddRouteImport.update({
+  id: "/add",
+  path: "/add",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ThemesIndexRoute = ThemesIndexRouteImport.update({
+  id: "/themes/",
+  path: "/themes/",
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReleasesIndexRoute = ReleasesIndexRouteImport.update({
@@ -30,6 +46,21 @@ const DocsIndexRoute = DocsIndexRouteImport.update({
   path: "/docs/",
   getParentRoute: () => rootRouteImport,
 } as any)
+const ThemesStudioRoute = ThemesStudioRouteImport.update({
+  id: "/themes/studio",
+  path: "/themes/studio",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ThemesAddRoute = ThemesAddRouteImport.update({
+  id: "/themes/add",
+  path: "/themes/add",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ThemesSlugRoute = ThemesSlugRouteImport.update({
+  id: "/themes/$slug",
+  path: "/themes/$slug",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReleasesTagRoute = ReleasesTagRouteImport.update({
   id: "/releases/$tag",
   path: "/releases/$tag",
@@ -40,52 +71,128 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
   path: "/docs/$",
   getParentRoute: () => rootRouteImport,
 } as any)
+const ThemesSlugUpdateRoute = ThemesSlugUpdateRouteImport.update({
+  id: "/update",
+  path: "/update",
+  getParentRoute: () => ThemesSlugRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
+  "/add": typeof AddRoute
   "/docs/$": typeof DocsSplatRoute
   "/releases/$tag": typeof ReleasesTagRoute
+  "/themes/$slug": typeof ThemesSlugRouteWithChildren
+  "/themes/add": typeof ThemesAddRoute
+  "/themes/studio": typeof ThemesStudioRoute
   "/docs/": typeof DocsIndexRoute
   "/releases/": typeof ReleasesIndexRoute
+  "/themes/": typeof ThemesIndexRoute
+  "/themes/$slug/update": typeof ThemesSlugUpdateRoute
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
+  "/add": typeof AddRoute
   "/docs/$": typeof DocsSplatRoute
   "/releases/$tag": typeof ReleasesTagRoute
+  "/themes/$slug": typeof ThemesSlugRouteWithChildren
+  "/themes/add": typeof ThemesAddRoute
+  "/themes/studio": typeof ThemesStudioRoute
   "/docs": typeof DocsIndexRoute
   "/releases": typeof ReleasesIndexRoute
+  "/themes": typeof ThemesIndexRoute
+  "/themes/$slug/update": typeof ThemesSlugUpdateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
+  "/add": typeof AddRoute
   "/docs/$": typeof DocsSplatRoute
   "/releases/$tag": typeof ReleasesTagRoute
+  "/themes/$slug": typeof ThemesSlugRouteWithChildren
+  "/themes/add": typeof ThemesAddRoute
+  "/themes/studio": typeof ThemesStudioRoute
   "/docs/": typeof DocsIndexRoute
   "/releases/": typeof ReleasesIndexRoute
+  "/themes/": typeof ThemesIndexRoute
+  "/themes/$slug/update": typeof ThemesSlugUpdateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: "/" | "/docs/$" | "/releases/$tag" | "/docs/" | "/releases/"
+  fullPaths:
+    | "/"
+    | "/add"
+    | "/docs/$"
+    | "/releases/$tag"
+    | "/themes/$slug"
+    | "/themes/add"
+    | "/themes/studio"
+    | "/docs/"
+    | "/releases/"
+    | "/themes/"
+    | "/themes/$slug/update"
   fileRoutesByTo: FileRoutesByTo
-  to: "/" | "/docs/$" | "/releases/$tag" | "/docs" | "/releases"
-  id: "__root__" | "/" | "/docs/$" | "/releases/$tag" | "/docs/" | "/releases/"
+  to:
+    | "/"
+    | "/add"
+    | "/docs/$"
+    | "/releases/$tag"
+    | "/themes/$slug"
+    | "/themes/add"
+    | "/themes/studio"
+    | "/docs"
+    | "/releases"
+    | "/themes"
+    | "/themes/$slug/update"
+  id:
+    | "__root__"
+    | "/"
+    | "/add"
+    | "/docs/$"
+    | "/releases/$tag"
+    | "/themes/$slug"
+    | "/themes/add"
+    | "/themes/studio"
+    | "/docs/"
+    | "/releases/"
+    | "/themes/"
+    | "/themes/$slug/update"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AddRoute: typeof AddRoute
   DocsSplatRoute: typeof DocsSplatRoute
   ReleasesTagRoute: typeof ReleasesTagRoute
+  ThemesSlugRoute: typeof ThemesSlugRouteWithChildren
+  ThemesAddRoute: typeof ThemesAddRoute
+  ThemesStudioRoute: typeof ThemesStudioRoute
   DocsIndexRoute: typeof DocsIndexRoute
   ReleasesIndexRoute: typeof ReleasesIndexRoute
+  ThemesIndexRoute: typeof ThemesIndexRoute
 }
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
+    "/add": {
+      id: "/add"
+      path: "/add"
+      fullPath: "/add"
+      preLoaderRoute: typeof AddRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/": {
       id: "/"
       path: "/"
       fullPath: "/"
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/themes/": {
+      id: "/themes/"
+      path: "/themes"
+      fullPath: "/themes/"
+      preLoaderRoute: typeof ThemesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     "/releases/": {
@@ -102,6 +209,27 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof DocsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/themes/studio": {
+      id: "/themes/studio"
+      path: "/themes/studio"
+      fullPath: "/themes/studio"
+      preLoaderRoute: typeof ThemesStudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/themes/add": {
+      id: "/themes/add"
+      path: "/themes/add"
+      fullPath: "/themes/add"
+      preLoaderRoute: typeof ThemesAddRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    "/themes/$slug": {
+      id: "/themes/$slug"
+      path: "/themes/$slug"
+      fullPath: "/themes/$slug"
+      preLoaderRoute: typeof ThemesSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/releases/$tag": {
       id: "/releases/$tag"
       path: "/releases/$tag"
@@ -116,15 +244,39 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof DocsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/themes/$slug/update": {
+      id: "/themes/$slug/update"
+      path: "/update"
+      fullPath: "/themes/$slug/update"
+      preLoaderRoute: typeof ThemesSlugUpdateRouteImport
+      parentRoute: typeof ThemesSlugRoute
+    }
   }
 }
 
+interface ThemesSlugRouteChildren {
+  ThemesSlugUpdateRoute: typeof ThemesSlugUpdateRoute
+}
+
+const ThemesSlugRouteChildren: ThemesSlugRouteChildren = {
+  ThemesSlugUpdateRoute: ThemesSlugUpdateRoute,
+}
+
+const ThemesSlugRouteWithChildren = ThemesSlugRoute._addFileChildren(
+  ThemesSlugRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AddRoute: AddRoute,
   DocsSplatRoute: DocsSplatRoute,
   ReleasesTagRoute: ReleasesTagRoute,
+  ThemesSlugRoute: ThemesSlugRouteWithChildren,
+  ThemesAddRoute: ThemesAddRoute,
+  ThemesStudioRoute: ThemesStudioRoute,
   DocsIndexRoute: DocsIndexRoute,
   ReleasesIndexRoute: ReleasesIndexRoute,
+  ThemesIndexRoute: ThemesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

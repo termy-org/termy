@@ -7,6 +7,7 @@ const app = new Hono();
 const NOTRA_ORG_ID = process.env.NOTRA_ORG_ID;
 const NOTRA_API_KEY = process.env.NOTRA_API_KEY;
 const PORT = Number(process.env.PORT) || 3000;
+const THEME_STORE_API_URL = process.env.THEME_STORE_API_URL || "http://127.0.0.1:8080";
 const GITHUB_LATEST_RELEASE_URL =
   "https://api.github.com/repos/lassejlv/termy/releases/latest";
 const GITHUB_RELEASE_CACHE_TTL_MS = Math.max(
@@ -258,6 +259,31 @@ app.get("/api/changelogs/:id", async (c) => {
     }
     return c.json({ error: "Failed to fetch changelog from Notra" }, 502);
   }
+});
+
+app.all("/theme-api/*", async (c) => {
+  const incomingUrl = new URL(c.req.url);
+  const proxiedPath = incomingUrl.pathname.replace(/^\/theme-api/, "") || "/";
+  const targetUrl = new URL(`${proxiedPath}${incomingUrl.search}`, THEME_STORE_API_URL);
+
+  const requestHeaders = new Headers(c.req.raw.headers);
+  requestHeaders.delete("host");
+
+  const method = c.req.method;
+  const hasRequestBody = method !== "GET" && method !== "HEAD";
+  const body = hasRequestBody ? await c.req.arrayBuffer() : undefined;
+
+  const upstreamResponse = await fetch(targetUrl, {
+    method,
+    headers: requestHeaders,
+    body,
+    redirect: "manual",
+  });
+
+  return new Response(upstreamResponse.body, {
+    status: upstreamResponse.status,
+    headers: upstreamResponse.headers,
+  });
 });
 
 app.use("/*", serveStatic({ root: "./dist" }));

@@ -1,0 +1,53 @@
+FROM rust:bookworm AS builder
+
+WORKDIR /app
+
+COPY Cargo.toml Cargo.lock ./
+COPY crates/theme-store/Cargo.toml crates/theme-store/Cargo.toml
+
+RUN mkdir -p crates/theme-store/src \
+    && echo "fn main() {}" > crates/theme-store/src/main.rs \
+    && cargo build --release -p termy_theme_store \
+    && rm -rf crates/theme-store/src
+
+COPY crates/theme-store crates/theme-store
+COPY theme.schema.json theme.schema.json
+
+ARG DATABASE_URL
+ARG GITHUB_CLIENT_ID
+ARG GITHUB_CLIENT_SECRET
+ARG GITHUB_REDIRECT_URI
+ARG S3_BUCKET
+ARG S3_REGION
+ARG S3_ENDPOINT
+ARG AWS_ACCESS_KEY_ID
+ARG AWS_SECRET_ACCESS_KEY
+
+
+RUN cargo build --release -p termy_theme_store
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /app/target/release/termy_theme_store /usr/local/bin/termy_theme_store
+
+ENV THEME_STORE_BIND=0.0.0.0:8080
+
+ARG DATABASE_URL
+ARG GITHUB_CLIENT_ID
+ARG GITHUB_CLIENT_SECRET
+ARG GITHUB_REDIRECT_URI
+ARG S3_BUCKET
+ARG S3_REGION
+ARG S3_ENDPOINT
+ARG AWS_ACCESS_KEY_ID
+ARG AWS_SECRET_ACCESS_KEY
+
+EXPOSE 8080
+
+CMD ["termy_theme_store"]

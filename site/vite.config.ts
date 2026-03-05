@@ -21,6 +21,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      "/theme-api": {
+        target: "http://127.0.0.1:8080",
+        changeOrigin: true,
+        rewrite: (routePath) => routePath.replace(/^\/theme-api/, ""),
+      },
       "/api": "http://localhost:3000",
     },
   },
