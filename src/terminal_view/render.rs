@@ -2201,6 +2201,20 @@ mod tests {
             None
         );
         assert_eq!(
+            filtered_cursor_state(
+                Some(TerminalCursorState {
+                    col: 3,
+                    row: 4,
+                    style: TerminalCursorStyle::Block,
+                }),
+                0,
+                true,
+                10,
+                4,
+            ),
+            None
+        );
+        assert_eq!(
             filtered_cursor_state(Some(cursor), 0, true, 10, 4),
             Some(cursor)
         );
