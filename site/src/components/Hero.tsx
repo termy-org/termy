@@ -116,14 +116,12 @@ function TerminalWithTabs(): JSX.Element {
         )}
       </div>
 
-      {tabs.map((tab) => (
-        <div
-          key={tab.id}
-          style={{ display: activeTabId === tab.id ? "block" : "none" }}
-        >
-          <InteractiveTerminal />
-        </div>
-      ))}
+      {tabs.map(
+        (tab) =>
+          activeTabId === tab.id && (
+            <InteractiveTerminal key={tab.id} />
+          ),
+      )}
     </div>
   );
 }
@@ -155,6 +153,16 @@ export function Hero({ release }: HeroProps): JSX.Element {
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
   }
+
+  const pmButtons = packageManagers.map((key) => (
+    <button
+      key={key}
+      onClick={() => handlePackageManagerChange(key)}
+      className={getPackageManagerButtonClass(pm, key)}
+    >
+      {pmLabels[key]}
+    </button>
+  ));
 
   return (
     <section className="relative pt-20 sm:pt-28 pb-20">
@@ -257,7 +265,9 @@ export function Hero({ release }: HeroProps): JSX.Element {
             style={{ animationDelay: "350ms" }}
           >
             <div className="rounded-lg border border-border/50 bg-secondary/50 overflow-hidden">
-              {pmButtons}
+              <div className="flex items-center gap-1 px-3 py-1.5 shrink-0 border-b border-border/50 sm:hidden">
+                {pmButtons}
+              </div>
               <div className="flex items-center h-10">
                 <div className="hidden sm:flex items-center gap-1 px-3 shrink-0 border-r border-border/50">
                   {pmButtons}

@@ -37,7 +37,7 @@ export function ContributorCard({ contributor, rank, index }: ContributorCardPro
   return (
     <div
       className="animate-blur-in bg-card/30 border border-border/40 rounded-xl p-5 transition-all hover:border-primary/20 hover:bg-card/60"
-      style={{ animationDelay: `${index * 80}ms` }}
+      style={{ animationDelay: `${Math.min(index * 80, 600)}ms` }}
     >
       <div className="flex items-center gap-3 mb-4">
         <img

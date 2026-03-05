@@ -147,7 +147,7 @@ export function Header(): JSX.Element {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/80 border-b border-border/30">
+      <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-background/80">
         <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5">
           <Link
             to="/"
@@ -281,7 +281,7 @@ export function Header(): JSX.Element {
           />
           <div
             id="mobile-menu"
-            className="fixed top-14 left-0 right-0 z-50 border-b border-border/30 bg-background/95 backdrop-blur-xl px-5 py-3 shadow-lg md:hidden"
+            className="fixed top-14 left-0 right-0 z-50 bg-background/95 backdrop-blur-xl px-5 py-3 shadow-lg md:hidden"
           >
             <nav className="mx-auto flex max-w-6xl flex-col gap-0.5">
               {navLinks.map((link) => (
