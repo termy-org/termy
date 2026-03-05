@@ -288,6 +288,12 @@ impl TerminalView {
         if index >= self.tabs.len() {
             return;
         }
+        let removed_pane_ids = self.tabs[index]
+            .panes
+            .iter()
+            .map(|pane| pane.id.clone())
+            .collect::<Vec<_>>();
+        let _ = self.release_forwarded_mouse_presses_for_panes(&removed_pane_ids);
 
         match self.runtime_kind() {
             RuntimeKind::Tmux => {
@@ -449,6 +455,10 @@ impl TerminalView {
     }
 
     pub(crate) fn close_active_pane(&mut self, cx: &mut Context<Self>) -> bool {
+        if let Some(active_pane_id) = self.active_pane_id().map(str::to_string) {
+            let _ = self
+                .release_forwarded_mouse_presses_for_panes(std::slice::from_ref(&active_pane_id));
+        }
         match self.runtime_kind() {
             RuntimeKind::Tmux => self.tmux_close_active_pane(cx),
             RuntimeKind::Native => self.native_close_active_pane(cx),

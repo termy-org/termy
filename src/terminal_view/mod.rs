@@ -1789,6 +1789,7 @@ impl TerminalView {
 
     pub fn new(window: &mut Window, cx: &mut Context<Self>, config: AppConfig) -> Self {
         let focus_handle = cx.focus_handle();
+        let blur_focus_handle = focus_handle.clone();
         let (event_wakeup_tx, event_wakeup_rx) = bounded(1);
         let config_change_rx = config::subscribe_config_changes();
 
@@ -2039,6 +2040,18 @@ impl TerminalView {
                 }
             }
         }
+        cx.observe_window_activation(window, |view, window, cx| {
+            if !window.is_window_active() && view.release_all_forwarded_mouse_presses() {
+                cx.notify();
+            }
+        })
+        .detach();
+        cx.on_blur(&blur_focus_handle, window, |view, _window, cx| {
+            if view.release_all_forwarded_mouse_presses() {
+                cx.notify();
+            }
+        })
+        .detach();
 
         #[cfg(target_os = "macos")]
         if config.auto_update {

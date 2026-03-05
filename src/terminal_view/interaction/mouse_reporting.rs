@@ -10,6 +10,11 @@ enum MouseTrackedButton {
     Middle,
     Right,
 }
+const TRACKED_MOUSE_BUTTONS: [MouseTrackedButton; 3] = [
+    MouseTrackedButton::Left,
+    MouseTrackedButton::Middle,
+    MouseTrackedButton::Right,
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MouseForwardOutcome {
@@ -45,6 +50,13 @@ impl MouseTrackedButton {
 
 fn is_mouse_reporting_bypass(modifiers: gpui::Modifiers) -> bool {
     modifiers.shift
+}
+
+fn should_skip_mouse_reporting_for_bypass(
+    modifiers: gpui::Modifiers,
+    has_forwarded_press: bool,
+) -> bool {
+    is_mouse_reporting_bypass(modifiers) && !has_forwarded_press
 }
 
 fn terminal_mouse_modifiers(modifiers: gpui::Modifiers) -> TerminalMouseModifiers {
@@ -124,6 +136,10 @@ fn mouse_pressed_target_slot(
     }
 }
 
+fn has_forwarded_press(state: &MouseReportingState) -> bool {
+    state.left_button.is_some() || state.middle_button.is_some() || state.right_button.is_some()
+}
+
 impl TerminalView {
     fn pane_mouse_mode(&self, pane_id: &str) -> Option<TerminalMouseMode> {
         self.pane_terminal_by_id(pane_id).map(Terminal::mouse_mode)
@@ -194,6 +210,100 @@ impl TerminalView {
         mouse_pressed_target_ref(&self.mouse_reporting, button)
     }
 
+    fn has_forwarded_mouse_press(&self) -> bool {
+        has_forwarded_press(&self.mouse_reporting)
+    }
+
+    fn send_synthetic_mouse_release(
+        &self,
+        button: MouseTrackedButton,
+        target: &MouseReportTargetCell,
+    ) {
+        let _ = self.try_send_mouse_event_to_pane(
+            target.pane_id.as_str(),
+            TerminalMouseEventKind::Release(button.terminal_button()),
+            CellPos {
+                col: target.col,
+                row: target.row,
+            },
+            gpui::Modifiers::default(),
+        );
+    }
+
+    fn target_pane_is_missing(&self, target: &MouseReportTargetCell) -> bool {
+        self.pane_terminal_by_id(target.pane_id.as_str()).is_none()
+    }
+
+    fn drop_missing_forwarded_mouse_targets(&mut self) {
+        for button in TRACKED_MOUSE_BUTTONS {
+            let missing = self
+                .pressed_mouse_target(button)
+                .is_some_and(|target| self.target_pane_is_missing(target));
+            if missing {
+                self.take_pressed_mouse_target(button);
+            }
+        }
+        let hover_missing = self
+            .mouse_reporting
+            .hover_target
+            .as_ref()
+            .is_some_and(|target| self.target_pane_is_missing(target));
+        if hover_missing {
+            self.mouse_reporting.hover_target = None;
+        }
+    }
+
+    pub(crate) fn release_forwarded_mouse_presses_for_panes(
+        &mut self,
+        pane_ids: &[String],
+    ) -> bool {
+        if pane_ids.is_empty() {
+            return false;
+        }
+
+        let mut changed = false;
+        for button in TRACKED_MOUSE_BUTTONS {
+            let should_release = self.pressed_mouse_target(button).is_some_and(|target| {
+                pane_ids
+                    .iter()
+                    .any(|pane_id| pane_id.as_str() == target.pane_id.as_str())
+            });
+            if !should_release {
+                continue;
+            }
+
+            if let Some(target) = self.take_pressed_mouse_target(button) {
+                self.send_synthetic_mouse_release(button, &target);
+                changed = true;
+            }
+        }
+        let clear_hover = self.mouse_reporting.hover_target.as_ref().is_some_and(|target| {
+            pane_ids
+                .iter()
+                .any(|pane_id| pane_id.as_str() == target.pane_id.as_str())
+        });
+        if clear_hover {
+            self.mouse_reporting.hover_target = None;
+            changed = true;
+        }
+
+        changed
+    }
+
+    pub(crate) fn release_all_forwarded_mouse_presses(&mut self) -> bool {
+        let mut changed = false;
+        for button in TRACKED_MOUSE_BUTTONS {
+            if let Some(target) = self.take_pressed_mouse_target(button) {
+                self.send_synthetic_mouse_release(button, &target);
+                changed = true;
+            }
+        }
+        if self.mouse_reporting.hover_target.take().is_some() {
+            changed = true;
+        }
+        changed
+    }
+
     pub(in super::super) fn try_forward_mouse_down(
         &mut self,
         event: &MouseDownEvent,
@@ -241,7 +351,9 @@ impl TerminalView {
         event: &MouseMoveEvent,
         cx: &mut Context<Self>,
     ) -> bool {
-        if is_mouse_reporting_bypass(event.modifiers) {
+        self.drop_missing_forwarded_mouse_targets();
+        if should_skip_mouse_reporting_for_bypass(event.modifiers, self.has_forwarded_mouse_press())
+        {
             return false;
         }
 
@@ -333,7 +445,9 @@ impl TerminalView {
         event: &MouseUpEvent,
         cx: &mut Context<Self>,
     ) -> bool {
-        if is_mouse_reporting_bypass(event.modifiers) {
+        self.drop_missing_forwarded_mouse_targets();
+        if should_skip_mouse_reporting_for_bypass(event.modifiers, self.has_forwarded_mouse_press())
+        {
             return false;
         }
 
@@ -480,6 +594,8 @@ mod tests {
         };
         assert!(is_mouse_reporting_bypass(modifiers));
         assert!(!is_mouse_reporting_bypass(Modifiers::default()));
+        assert!(should_skip_mouse_reporting_for_bypass(modifiers, false));
+        assert!(!should_skip_mouse_reporting_for_bypass(modifiers, true));
     }
 
     #[test]

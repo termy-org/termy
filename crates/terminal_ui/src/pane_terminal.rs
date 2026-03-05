@@ -8,7 +8,10 @@ use alacritty_terminal::{
 use std::sync::Arc;
 
 use crate::mouse_protocol::TerminalMouseMode;
-use crate::runtime::{TerminalDamageSnapshot, TerminalSize, take_term_damage_snapshot};
+use crate::runtime::{
+    TerminalDamageSnapshot, TerminalSize, take_term_damage_snapshot,
+    termmode_to_terminal_mouse_mode,
+};
 
 struct PaneTerminalInner {
     term: Arc<FairMutex<Term<VoidListener>>>,
@@ -171,16 +174,8 @@ impl PaneTerminal {
 
     pub fn mouse_mode(&self) -> TerminalMouseMode {
         let term = self.cloned_term_arc();
-        let term = term.lock();
-        let mode = *term.mode();
-        TerminalMouseMode {
-            enabled: mode.intersects(TermMode::MOUSE_MODE) && !mode.contains(TermMode::VI),
-            report_click: mode.contains(TermMode::MOUSE_REPORT_CLICK),
-            report_drag: mode.contains(TermMode::MOUSE_DRAG),
-            report_motion: mode.contains(TermMode::MOUSE_MOTION),
-            sgr_encoding: mode.contains(TermMode::SGR_MOUSE),
-            utf8_encoding: mode.contains(TermMode::UTF8_MOUSE),
-        }
+        let mode = *term.lock().mode();
+        termmode_to_terminal_mouse_mode(mode)
     }
 
     pub fn alternate_screen_mode(&self) -> bool {

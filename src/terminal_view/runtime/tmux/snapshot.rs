@@ -86,6 +86,19 @@ impl TerminalView {
         snapshot: TmuxSnapshot,
         reuse_existing_terminals: bool,
     ) {
+        let snapshot_pane_ids = snapshot
+            .windows
+            .iter()
+            .flat_map(|window| window.panes.iter().map(|pane| pane.id.as_str()))
+            .collect::<std::collections::HashSet<_>>();
+        let removed_pane_ids = self
+            .tabs
+            .iter()
+            .flat_map(|tab| tab.panes.iter().map(|pane| pane.id.clone()))
+            .filter(|pane_id| !snapshot_pane_ids.contains(pane_id.as_str()))
+            .collect::<Vec<_>>();
+        let _ = self.release_forwarded_mouse_presses_for_panes(&removed_pane_ids);
+
         let previous_active_window_id = self
             .tabs
             .get(self.active_tab)

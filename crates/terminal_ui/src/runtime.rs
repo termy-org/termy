@@ -78,7 +78,7 @@ impl Default for TerminalRuntimeConfig {
     }
 }
 
-fn terminal_mouse_mode_from_term_mode(mode: TermMode) -> TerminalMouseMode {
+pub(crate) fn termmode_to_terminal_mouse_mode(mode: TermMode) -> TerminalMouseMode {
     TerminalMouseMode {
         enabled: mode.intersects(TermMode::MOUSE_MODE) && !mode.contains(TermMode::VI),
         report_click: mode.contains(TermMode::MOUSE_REPORT_CLICK),
@@ -749,7 +749,7 @@ impl Terminal {
     /// Return current xterm mouse-reporting mode bits.
     pub fn mouse_mode(&self) -> TerminalMouseMode {
         let term = self.term.lock();
-        terminal_mouse_mode_from_term_mode(*term.mode())
+        termmode_to_terminal_mouse_mode(*term.mode())
     }
 
     /// Check if the terminal is currently in alternate screen mode
@@ -927,7 +927,7 @@ mod tests {
     use super::{
         DEFAULT_TERM, TerminalDamageSnapshot, TerminalRuntimeConfig, TerminalSize,
         keystroke_to_input, pty_env_overrides, resolve_shell_path, take_term_damage_snapshot,
-        terminal_mouse_mode_from_term_mode,
+        termmode_to_terminal_mouse_mode,
     };
     use alacritty_terminal::{
         event::VoidListener,
@@ -961,7 +961,7 @@ mod tests {
         let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
         let mut parser: ansi::Processor = ansi::Processor::new();
         parser.advance(&mut term, input);
-        terminal_mouse_mode_from_term_mode(*term.mode())
+        termmode_to_terminal_mouse_mode(*term.mode())
     }
 
     fn keystroke(key: &str, modifiers: Modifiers) -> Keystroke {
@@ -1013,6 +1013,12 @@ mod tests {
     fn mouse_mode_detects_sgr_encoding() {
         let mode = mouse_mode_after_bytes(b"\x1b[?1006h");
         assert!(mode.sgr_encoding);
+    }
+
+    #[test]
+    fn mouse_mode_detects_utf8_reporting() {
+        let mode = mouse_mode_after_bytes(b"\x1b[?1005h");
+        assert!(mode.utf8_encoding);
     }
 
     #[test]
