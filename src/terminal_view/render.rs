@@ -1896,6 +1896,9 @@ impl Render for TerminalView {
         if pane_focus_needs_animation {
             self.schedule_pane_focus_animation(cx);
         }
+        if self.tab_switch_hint_animation_active(now) {
+            self.schedule_tab_switch_hint_animation(cx);
+        }
         #[cfg(debug_assertions)]
         self.record_render_metrics_for_pass(render_pass_cache_counts);
 

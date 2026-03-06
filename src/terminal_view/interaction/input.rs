@@ -1,6 +1,31 @@
 use super::*;
 
 impl TerminalView {
+    fn should_suppress_tab_switch_hint_for_key(key: &str) -> bool {
+        !matches!(key, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+    }
+
+    fn maybe_suppress_tab_switch_hint_for_key_down(
+        &mut self,
+        key: &str,
+        modifiers: gpui::Modifiers,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.show_tab_switch_modifier_hints
+            || !self.tab_switch_modifier_held
+            || self.tab_switch_hint_suppressed_for_hold
+            || !Self::secondary_modifier_held_alone(modifiers)
+            || !Self::should_suppress_tab_switch_hint_for_key(key)
+        {
+            return;
+        }
+
+        self.tab_switch_hint_suppressed_for_hold = true;
+        if self.tab_switch_hint_progress(Instant::now()) > 0.0 {
+            cx.notify();
+        }
+    }
+
     pub(in super::super) fn handle_modifiers_changed(
         &mut self,
         event: &ModifiersChangedEvent,
@@ -8,15 +33,25 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         if !self.show_tab_switch_modifier_hints {
-            if std::mem::take(&mut self.tab_switch_modifier_held) {
+            if self.reset_tab_switch_hint_hold_state() {
                 cx.notify();
             }
             return;
         }
 
         let next = Self::secondary_modifier_held_alone(event.modifiers);
-        if self.tab_switch_modifier_held != next {
-            self.tab_switch_modifier_held = next;
+        if next {
+            if !self.tab_switch_modifier_held {
+                self.tab_switch_modifier_held = true;
+                self.tab_switch_modifier_hold_started_at = Some(Instant::now());
+                self.tab_switch_hint_suppressed_for_hold = false;
+                self.tab_switch_hint_animation_scheduled = false;
+                cx.notify();
+            }
+            return;
+        }
+
+        if self.reset_tab_switch_hint_hold_state() {
             cx.notify();
         }
     }
@@ -184,6 +219,7 @@ impl TerminalView {
     ) {
         self.reset_cursor_blink_phase();
         let key = event.keystroke.key.as_str();
+        self.maybe_suppress_tab_switch_hint_for_key_down(key, event.keystroke.modifiers, cx);
 
         if self.is_command_palette_open() {
             self.handle_command_palette_key_down(key, window, cx);

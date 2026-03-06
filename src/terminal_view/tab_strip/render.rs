@@ -191,11 +191,24 @@ mod tests {
 
     #[test]
     fn tab_switch_hint_visibility_requires_setting_modifier_and_supported_index() {
-        assert!(TerminalView::should_render_tab_switch_hint(true, true, false, 0));
-        assert!(!TerminalView::should_render_tab_switch_hint(false, true, false, 0));
-        assert!(!TerminalView::should_render_tab_switch_hint(true, false, false, 0));
-        assert!(!TerminalView::should_render_tab_switch_hint(true, true, true, 0));
-        assert!(!TerminalView::should_render_tab_switch_hint(true, true, false, 9));
+        assert!(TerminalView::should_render_tab_switch_hint(
+            true, true, false, 1.0, 0
+        ));
+        assert!(!TerminalView::should_render_tab_switch_hint(
+            false, true, false, 1.0, 0
+        ));
+        assert!(!TerminalView::should_render_tab_switch_hint(
+            true, false, false, 1.0, 0
+        ));
+        assert!(!TerminalView::should_render_tab_switch_hint(
+            true, true, true, 1.0, 0
+        ));
+        assert!(!TerminalView::should_render_tab_switch_hint(
+            true, true, false, 0.0, 0
+        ));
+        assert!(!TerminalView::should_render_tab_switch_hint(
+            true, true, false, 1.0, 9
+        ));
     }
 }
 
@@ -247,9 +260,14 @@ impl TerminalView {
         show_tab_switch_modifier_hints: bool,
         tab_switch_modifier_held: bool,
         is_renaming: bool,
+        hint_progress: f32,
         index: usize,
     ) -> bool {
-        show_tab_switch_modifier_hints && tab_switch_modifier_held && !is_renaming && index < 9
+        show_tab_switch_modifier_hints
+            && tab_switch_modifier_held
+            && !is_renaming
+            && hint_progress > f32::EPSILON
+            && index < 9
     }
 
     fn edge_divider_collision_state(
@@ -418,12 +436,13 @@ impl TerminalView {
         close_button_hover_bg.a = self.scaled_chrome_alpha(0.24);
         let mut close_button_hover_text = colors.foreground;
         close_button_hover_text.a = 0.98;
+        let hint_progress = self.tab_switch_hint_progress(Instant::now());
         let mut switch_hint_bg = colors.cursor;
-        switch_hint_bg.a = self.scaled_chrome_alpha(0.18);
+        switch_hint_bg.a = self.scaled_chrome_alpha(0.18 * hint_progress);
         let mut switch_hint_border = colors.cursor;
-        switch_hint_border.a = self.scaled_chrome_alpha(0.52);
+        switch_hint_border.a = self.scaled_chrome_alpha(0.52 * hint_progress);
         let mut switch_hint_text = colors.foreground;
-        switch_hint_text.a = 0.99;
+        switch_hint_text.a = (0.99 * hint_progress).clamp(0.0, 1.0);
         let mut tab_drop_marker_color = colors.cursor;
         tab_drop_marker_color.a = self.scaled_chrome_alpha(0.95);
         let mut tabbar_new_tab_bg = colors.foreground;
@@ -871,6 +890,7 @@ impl TerminalView {
         colors: &TerminalColors,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let hint_progress = self.tab_switch_hint_progress(Instant::now());
         let mut tabs_scroll_content = div()
             .id("tabs-scroll-content")
             .flex_none()
@@ -912,6 +932,7 @@ impl TerminalView {
                 self.show_tab_switch_modifier_hints,
                 self.tab_switch_modifier_held,
                 is_renaming,
+                hint_progress,
                 index,
             );
             let switch_hint_label = show_switch_hint
