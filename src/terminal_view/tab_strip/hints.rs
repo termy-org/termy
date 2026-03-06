@@ -51,8 +51,7 @@ impl TabSwitchHintState {
     }
 
     pub(crate) fn label_for_index(index: usize) -> Option<String> {
-        Self::supports_tab_index(index)
-            .then_some(format!("{}{}", Self::label_prefix(), index + 1))
+        Self::supports_tab_index(index).then(|| format!("{}{}", Self::label_prefix(), index + 1))
     }
 
     pub(crate) fn supports_tab_index(index: usize) -> bool {
