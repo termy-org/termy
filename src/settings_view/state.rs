@@ -220,8 +220,31 @@ impl SettingsWindow {
         let section = Self::root_setting_section(section);
         root_setting_specs()
             .iter()
-            .filter(move |spec| Some(spec.section) == section && !spec.repeatable)
+            .filter(move |spec| {
+                Some(spec.section) == section
+                    && !spec.repeatable
+                    && Self::root_setting_visible_in_current_settings(spec.id)
+            })
             .map(|spec| spec.id)
+    }
+
+    fn root_setting_visible_in_current_settings(setting: RootSettingId) -> bool {
+        #[cfg(target_os = "windows")]
+        {
+            !matches!(
+                setting,
+                RootSettingId::TmuxEnabled
+                    | RootSettingId::TmuxPersistence
+                    | RootSettingId::TmuxShowActivePaneBorder
+                    | RootSettingId::TmuxBinary
+            )
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = setting;
+            true
+        }
     }
 
     fn is_root_setting_at_default(&self, setting: RootSettingId) -> bool {

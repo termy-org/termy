@@ -180,7 +180,7 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 
 `tab_switch_modifier_hints`
 - Default: `true`
-- Show secondary+number badges on tabs while the secondary modifier is held
+- Show secondary+1..9 number badges on the first nine tabs while the secondary modifier is held
 - Group: `TAB STRIP`
 
 `show_termy_in_titlebar`

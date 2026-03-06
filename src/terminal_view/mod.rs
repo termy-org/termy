@@ -77,6 +77,7 @@ const TITLEBAR_HEIGHT: f32 = 34.0;
 const MAX_TAB_TITLE_CHARS: usize = 96;
 const DEFAULT_TAB_TITLE: &str = "Terminal";
 const COMMAND_TITLE_DELAY_MS: u64 = 250;
+#[cfg(not(test))]
 const CONFIG_WATCH_INTERVAL_MS: u64 = 750;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 530;
 const TMUX_TITLE_REFRESH_DEBOUNCE_MS: u64 = 120;
@@ -1877,32 +1878,35 @@ impl TerminalView {
             .detach();
         }
 
-        // Poll config file timestamp and hot-reload UI settings on change.
-        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-            loop {
-                smol::Timer::after(Duration::from_millis(CONFIG_WATCH_INTERVAL_MS)).await;
-                let result = cx.update(|cx| {
-                    this.update(cx, |view, cx| {
-                        let config_changed = view.reload_config_if_changed(cx);
-                        let availability_changed = view.refresh_install_cli_availability();
-                        if availability_changed {
-                            view.refresh_command_palette_items_for_current_mode(cx);
-                            cx.set_menus(crate::menus::app_menus(
-                                view.install_cli_available(),
-                                view.runtime_uses_tmux(),
-                            ));
-                        }
-                        if config_changed || availability_changed {
-                            cx.notify();
-                        }
-                    })
-                });
-                if result.is_err() {
-                    break;
+        #[cfg(not(test))]
+        {
+            // Poll config file timestamp and hot-reload UI settings on change.
+            cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                loop {
+                    smol::Timer::after(Duration::from_millis(CONFIG_WATCH_INTERVAL_MS)).await;
+                    let result = cx.update(|cx| {
+                        this.update(cx, |view, cx| {
+                            let config_changed = view.reload_config_if_changed(cx);
+                            let availability_changed = view.refresh_install_cli_availability();
+                            if availability_changed {
+                                view.refresh_command_palette_items_for_current_mode(cx);
+                                cx.set_menus(crate::menus::app_menus(
+                                    view.install_cli_available(),
+                                    view.runtime_uses_tmux(),
+                                ));
+                            }
+                            if config_changed || availability_changed {
+                                cx.notify();
+                            }
+                        })
+                    });
+                    if result.is_err() {
+                        break;
+                    }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
 
         // Toggle cursor visibility for blink in both terminal and inline inputs.
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
@@ -2254,6 +2258,7 @@ impl TerminalView {
         true
     }
 
+    #[cfg(not(test))]
     fn reload_config_if_changed(&mut self, cx: &mut Context<Self>) -> bool {
         let path = match self.config_path.clone() {
             Some(path) => path,

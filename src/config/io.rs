@@ -1,7 +1,6 @@
 use std::{
     fs,
     io::Write,
-    panic::{AssertUnwindSafe, catch_unwind},
     path::{Path, PathBuf},
     process::Command,
     sync::{LazyLock, Mutex},
@@ -18,13 +17,22 @@ pub(crate) fn notify_config_changed() {
     let Ok(mut subscribers) = CONFIG_CHANGE_SUBSCRIBERS.lock() else {
         return;
     };
-    subscribers.retain(|tx| {
-        // Tests can leave behind receivers tied to torn-down async runtimes. Treat
-        // panicking wakeups the same as disconnected subscribers and prune them.
-        catch_unwind(AssertUnwindSafe(|| tx.send(())))
-            .ok()
-            .is_some_and(|result| result.is_ok())
-    });
+    #[cfg(test)]
+    subscribers.retain(test_subscriber_is_alive);
+
+    #[cfg(not(test))]
+    subscribers.retain(|tx| tx.send(()).is_ok());
+}
+
+#[cfg(test)]
+fn test_subscriber_is_alive(tx: &flume::Sender<()>) -> bool {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    // Tests can leave behind receivers tied to torn-down async runtimes. Treat
+    // panicking wakeups the same as disconnected subscribers and prune them.
+    catch_unwind(AssertUnwindSafe(|| tx.send(())))
+        .ok()
+        .is_some_and(|result| result.is_ok())
 }
 
 pub fn subscribe_config_changes() -> flume::Receiver<()> {

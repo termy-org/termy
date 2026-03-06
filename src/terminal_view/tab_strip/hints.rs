@@ -208,11 +208,15 @@ impl TabSwitchHintState {
             return 1.0;
         }
 
-        super::super::pane_focus_ease_out(
+        ease_out_cubic(
             fade_elapsed.as_secs_f32() / TAB_SWITCH_HINT_FADE_DURATION.as_secs_f32(),
         )
         .clamp(0.0, 1.0)
     }
+}
+
+fn ease_out_cubic(progress: f32) -> f32 {
+    1.0 - (1.0 - progress).powi(3)
 }
 
 #[cfg(test)]
