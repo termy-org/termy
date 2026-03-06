@@ -1,5 +1,6 @@
 use super::super::*;
 use super::chrome;
+use super::hints::TabSwitchHintState;
 use super::layout::TabStripGeometry;
 use super::state::{TabDropMarkerSide, TabStripOverflowState};
 use gpui::{Hsla, TextRun};
@@ -168,48 +169,6 @@ mod tests {
         assert!(!collisions.right);
     }
 
-    #[test]
-    fn tab_switch_hint_labels_cover_first_nine_tabs_only() {
-        assert_eq!(
-            TerminalView::tab_switch_hint_label_for_index(0).as_deref(),
-            Some(if cfg!(target_os = "macos") {
-                "⌘1"
-            } else {
-                "⌃1"
-            })
-        );
-        assert_eq!(
-            TerminalView::tab_switch_hint_label_for_index(8).as_deref(),
-            Some(if cfg!(target_os = "macos") {
-                "⌘9"
-            } else {
-                "⌃9"
-            })
-        );
-        assert_eq!(TerminalView::tab_switch_hint_label_for_index(9), None);
-    }
-
-    #[test]
-    fn tab_switch_hint_visibility_requires_setting_modifier_and_supported_index() {
-        assert!(TerminalView::should_render_tab_switch_hint(
-            true, true, false, 1.0, 0
-        ));
-        assert!(!TerminalView::should_render_tab_switch_hint(
-            false, true, false, 1.0, 0
-        ));
-        assert!(!TerminalView::should_render_tab_switch_hint(
-            true, false, false, 1.0, 0
-        ));
-        assert!(!TerminalView::should_render_tab_switch_hint(
-            true, true, true, 1.0, 0
-        ));
-        assert!(!TerminalView::should_render_tab_switch_hint(
-            true, true, false, 0.0, 0
-        ));
-        assert!(!TerminalView::should_render_tab_switch_hint(
-            true, true, false, 1.0, 9
-        ));
-    }
 }
 
 struct TabStripRenderState {
@@ -240,36 +199,6 @@ struct TabItemRenderInput {
 }
 
 impl TerminalView {
-    fn tab_switch_hint_prefix() -> &'static str {
-        if cfg!(target_os = "macos") {
-            "⌘"
-        } else {
-            "⌃"
-        }
-    }
-
-    fn tab_switch_hint_label_for_index(index: usize) -> Option<String> {
-        if index < 9 {
-            Some(format!("{}{}", Self::tab_switch_hint_prefix(), index + 1))
-        } else {
-            None
-        }
-    }
-
-    fn should_render_tab_switch_hint(
-        show_tab_switch_modifier_hints: bool,
-        tab_switch_modifier_held: bool,
-        is_renaming: bool,
-        hint_progress: f32,
-        index: usize,
-    ) -> bool {
-        show_tab_switch_modifier_hints
-            && tab_switch_modifier_held
-            && !is_renaming
-            && hint_progress > f32::EPSILON
-            && index < 9
-    }
-
     fn edge_divider_collision_state(
         layout: &chrome::TabChromeLayout,
         scroll_offset_x: f32,
@@ -436,7 +365,8 @@ impl TerminalView {
         close_button_hover_bg.a = self.scaled_chrome_alpha(0.24);
         let mut close_button_hover_text = colors.foreground;
         close_button_hover_text.a = 0.98;
-        let hint_progress = self.tab_switch_hint_progress(Instant::now());
+        let now = Instant::now();
+        let hint_progress = self.tab_switch_hint_progress(now);
         let mut switch_hint_bg = colors.cursor;
         switch_hint_bg.a = self.scaled_chrome_alpha(0.18 * hint_progress);
         let mut switch_hint_border = colors.cursor;
@@ -890,7 +820,7 @@ impl TerminalView {
         colors: &TerminalColors,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let hint_progress = self.tab_switch_hint_progress(Instant::now());
+        let now = Instant::now();
         let mut tabs_scroll_content = div()
             .id("tabs-scroll-content")
             .flex_none()
@@ -928,15 +858,14 @@ impl TerminalView {
                 index,
             );
             let is_renaming = self.renaming_tab == Some(index);
-            let show_switch_hint = Self::should_render_tab_switch_hint(
-                self.show_tab_switch_modifier_hints,
-                self.tab_switch_modifier_held,
-                is_renaming,
-                hint_progress,
+            let show_switch_hint = self.tab_strip.switch_hints.should_render(
                 index,
+                is_renaming,
+                self.tab_switch_hints_blocked(),
+                now,
             );
             let switch_hint_label = show_switch_hint
-                .then(|| Self::tab_switch_hint_label_for_index(index))
+                .then(|| TabSwitchHintState::label_for_index(index))
                 .flatten();
             let show_tab_close = show_close_button && switch_hint_label.is_none();
             let close_slot_width = if show_tab_close || switch_hint_label.is_some() {

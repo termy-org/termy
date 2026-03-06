@@ -161,12 +161,11 @@ impl TerminalView {
         )
     }
 
-    fn command_palette_command_items_for_state(
-        &self,
+    fn command_palette_core_command_items_for_state(
         install_cli_available: bool,
         tmux_enabled: bool,
     ) -> Vec<CommandPaletteItem> {
-        let mut items = CommandAction::palette_entries()
+        CommandAction::palette_entries()
             .into_iter()
             .map(|entry| {
                 Self::command_palette_command_item_for_state(
@@ -177,7 +176,16 @@ impl TerminalView {
                     tmux_enabled,
                 )
             })
-            .collect::<Vec<_>>();
+            .collect()
+    }
+
+    fn command_palette_command_items_for_state(
+        &self,
+        install_cli_available: bool,
+        tmux_enabled: bool,
+    ) -> Vec<CommandPaletteItem> {
+        let mut items =
+            Self::command_palette_core_command_items_for_state(install_cli_available, tmux_enabled);
 
         if let Ok(plugin_entries) = crate::plugins::command_palette_entries() {
             items.extend(plugin_entries.into_iter().map(|entry| {
@@ -872,8 +880,9 @@ mod tests {
 
     #[test]
     fn install_cli_command_is_present_and_tracks_availability_state() {
-        let available_items = TerminalView::command_palette_command_items_for_state(true, true);
-        let unavailable_items = TerminalView::command_palette_command_items_for_state(false, true);
+        let available_items = TerminalView::command_palette_core_command_items_for_state(true, true);
+        let unavailable_items =
+            TerminalView::command_palette_core_command_items_for_state(false, true);
 
         let available_install_cli = available_items
             .iter()
@@ -902,7 +911,7 @@ mod tests {
 
     #[test]
     fn tmux_query_surfaces_only_tmux_sessions_entry() {
-        let items = TerminalView::command_palette_command_items_for_state(true, true);
+        let items = TerminalView::command_palette_core_command_items_for_state(true, true);
         let filtered_indices =
             super::state::filter_command_palette_item_indices_by_query(&items, "tmux");
         let filtered_actions = filtered_indices
@@ -921,7 +930,7 @@ mod tests {
 
     #[test]
     fn tmux_only_commands_are_present_but_disabled_when_tmux_runtime_is_off() {
-        let items = TerminalView::command_palette_command_items_for_state(false, false);
+        let items = TerminalView::command_palette_core_command_items_for_state(false, false);
         let resize = items.iter().find(|item| {
             matches!(
                 item.kind,

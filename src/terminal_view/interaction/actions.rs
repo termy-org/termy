@@ -14,36 +14,16 @@ impl TerminalView {
         self.has_active_inline_input()
     }
 
-    fn should_keep_tab_switch_hint_for_action(action: CommandAction) -> bool {
-        matches!(
-            action,
-            CommandAction::SwitchToTab1
-                | CommandAction::SwitchToTab2
-                | CommandAction::SwitchToTab3
-                | CommandAction::SwitchToTab4
-                | CommandAction::SwitchToTab5
-                | CommandAction::SwitchToTab6
-                | CommandAction::SwitchToTab7
-                | CommandAction::SwitchToTab8
-                | CommandAction::SwitchToTab9
-        )
-    }
-
     fn maybe_suppress_tab_switch_hint_for_action(
         &mut self,
         action: CommandAction,
         cx: &mut Context<Self>,
     ) {
-        if !self.show_tab_switch_modifier_hints
-            || !self.tab_switch_modifier_held
-            || self.tab_switch_hint_suppressed_for_hold
-            || Self::should_keep_tab_switch_hint_for_action(action)
-        {
-            return;
-        }
-
-        self.tab_switch_hint_suppressed_for_hold = true;
-        if self.tab_switch_hint_progress(Instant::now()) > 0.0 {
+        if self.tab_strip.switch_hints.suppress_for_action(
+            action,
+            self.tab_switch_hints_blocked(),
+            Instant::now(),
+        ) {
             cx.notify();
         }
     }
@@ -688,21 +668,5 @@ mod tests {
             TerminalView::command_palette_mode_for_action(CommandAction::OpenConfig),
             None
         );
-    }
-
-    #[test]
-    fn tab_switch_hint_action_filter_keeps_only_numeric_switch_actions() {
-        assert!(TerminalView::should_keep_tab_switch_hint_for_action(
-            CommandAction::SwitchToTab1
-        ));
-        assert!(TerminalView::should_keep_tab_switch_hint_for_action(
-            CommandAction::SwitchToTab9
-        ));
-        assert!(!TerminalView::should_keep_tab_switch_hint_for_action(
-            CommandAction::ToggleCommandPalette
-        ));
-        assert!(!TerminalView::should_keep_tab_switch_hint_for_action(
-            CommandAction::OpenSearch
-        ));
     }
 }

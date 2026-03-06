@@ -143,11 +143,7 @@ const SEARCH_INPUT_SELECTION_ALPHA: f32 = 0.30;
 const PANE_FOCUS_ANIMATION_MS: u64 = 140;
 const PANE_FOCUS_ANIMATION_FRAME_MS: u64 = 16;
 const PANE_FOCUS_ANIMATION_DURATION: Duration = Duration::from_millis(PANE_FOCUS_ANIMATION_MS);
-const TAB_SWITCH_HINT_HOLD_DELAY_MS: u64 = 260;
-const TAB_SWITCH_HINT_FADE_MS: u64 = 140;
 const TAB_SWITCH_HINT_ANIMATION_FRAME_MS: u64 = 16;
-const TAB_SWITCH_HINT_HOLD_DELAY: Duration = Duration::from_millis(TAB_SWITCH_HINT_HOLD_DELAY_MS);
-const TAB_SWITCH_HINT_FADE_DURATION: Duration = Duration::from_millis(TAB_SWITCH_HINT_FADE_MS);
 const MAX_PANE_FOCUS_STRENGTH: f32 = 2.0;
 #[cfg(debug_assertions)]
 const RENDER_METRICS_LOG_INTERVAL: Duration = Duration::from_secs(1);
@@ -952,10 +948,6 @@ pub struct TerminalView {
     tab_title: TabTitleConfig,
     tab_close_visibility: TabCloseVisibility,
     tab_width_mode: TabWidthMode,
-    show_tab_switch_modifier_hints: bool,
-    tab_switch_modifier_held: bool,
-    tab_switch_modifier_hold_started_at: Option<Instant>,
-    tab_switch_hint_suppressed_for_hold: bool,
     show_termy_in_titlebar: bool,
     tab_shell_integration: TabTitleShellIntegration,
     configured_working_dir: Option<String>,
@@ -988,7 +980,6 @@ pub struct TerminalView {
     pane_focus_last_target: Option<PaneFocusTarget>,
     pane_focus_transition: Option<PaneFocusTransition>,
     pane_focus_animation_scheduled: bool,
-    tab_switch_hint_animation_scheduled: bool,
     line_height: f32,
     selection_anchor: Option<SelectionPos>,
     selection_head: Option<SelectionPos>,
@@ -1430,82 +1421,29 @@ impl TerminalView {
         scaled_chrome_alpha_for_opacity(base_alpha, self.background_opacity)
     }
 
-    pub(crate) fn secondary_modifier_held_alone(modifiers: gpui::Modifiers) -> bool {
-        modifiers.secondary() && modifiers.number_of_modifiers() == 1
-    }
-
-    fn tab_switch_hint_progress_for_elapsed(elapsed: Duration) -> f32 {
-        if elapsed < TAB_SWITCH_HINT_HOLD_DELAY {
-            return 0.0;
-        }
-        let fade_elapsed = elapsed.saturating_sub(TAB_SWITCH_HINT_HOLD_DELAY);
-        if fade_elapsed >= TAB_SWITCH_HINT_FADE_DURATION {
-            return 1.0;
-        }
-
-        pane_focus_ease_out(
-            fade_elapsed.as_secs_f32() / TAB_SWITCH_HINT_FADE_DURATION.as_secs_f32(),
-        )
-        .clamp(0.0, 1.0)
-    }
-
-    fn reset_tab_switch_hint_hold_state(&mut self) -> bool {
-        let changed = self.tab_switch_modifier_held
-            || self.tab_switch_modifier_hold_started_at.is_some()
-            || self.tab_switch_hint_suppressed_for_hold;
-        self.tab_switch_modifier_held = false;
-        self.tab_switch_modifier_hold_started_at = None;
-        self.tab_switch_hint_suppressed_for_hold = false;
-        self.tab_switch_hint_animation_scheduled = false;
-        changed
+    fn tab_switch_hints_blocked(&self) -> bool {
+        self.is_command_palette_open() || self.search_open || self.ai_input_open
     }
 
     pub(crate) fn tab_switch_hint_progress(&self, now: Instant) -> f32 {
-        if !self.show_tab_switch_modifier_hints
-            || !self.tab_switch_modifier_held
-            || self.tab_switch_hint_suppressed_for_hold
-            || self.is_command_palette_open()
-            || self.search_open
-            || self.ai_input_open
-        {
-            return 0.0;
-        }
-
-        let Some(started_at) = self.tab_switch_modifier_hold_started_at else {
-            return 0.0;
-        };
-        let elapsed = now.saturating_duration_since(started_at);
-        Self::tab_switch_hint_progress_for_elapsed(elapsed)
-    }
-
-    fn tab_switch_hint_animation_active(&self, now: Instant) -> bool {
-        if !self.show_tab_switch_modifier_hints
-            || !self.tab_switch_modifier_held
-            || self.tab_switch_hint_suppressed_for_hold
-        {
-            return false;
-        }
-
-        let Some(started_at) = self.tab_switch_modifier_hold_started_at else {
-            return false;
-        };
-        now.saturating_duration_since(started_at)
-            < TAB_SWITCH_HINT_HOLD_DELAY + TAB_SWITCH_HINT_FADE_DURATION
+        self.tab_strip
+            .switch_hints
+            .progress(now, self.tab_switch_hints_blocked())
     }
 
     fn schedule_tab_switch_hint_animation(&mut self, cx: &mut Context<Self>) {
-        if self.tab_switch_hint_animation_scheduled
-            || !self.tab_switch_hint_animation_active(Instant::now())
-        {
+        if !self.tab_strip.switch_hints.begin_animation_frame(
+            Instant::now(),
+            self.tab_switch_hints_blocked(),
+        ) {
             return;
         }
 
-        self.tab_switch_hint_animation_scheduled = true;
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             smol::Timer::after(Duration::from_millis(TAB_SWITCH_HINT_ANIMATION_FRAME_MS)).await;
             let _ = cx.update(|cx| {
                 this.update(cx, |view, cx| {
-                    view.tab_switch_hint_animation_scheduled = false;
+                    view.tab_strip.switch_hints.finish_animation_frame();
                     cx.notify();
                 })
             });
@@ -1891,6 +1829,8 @@ impl TerminalView {
         let blur_focus_handle = focus_handle.clone();
         let (event_wakeup_tx, event_wakeup_rx) = bounded(1);
         let config_change_rx = config::subscribe_config_changes();
+        #[cfg(test)]
+        let _ = &config_change_rx;
 
         // Focus the terminal immediately
         focus_handle.focus(window, cx);
@@ -1913,22 +1853,29 @@ impl TerminalView {
         })
         .detach();
 
-        // Reload immediately when config is updated in-process (e.g. settings/theme actions).
-        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-            while config_change_rx.recv_async().await.is_ok() {
-                while config_change_rx.try_recv().is_ok() {}
-                let result = cx.update(|cx| {
-                    this.update(cx, |view, cx| {
-                        view.reload_config(cx);
-                        cx.notify();
-                    })
-                });
-                if result.is_err() {
-                    break;
+        #[cfg(not(test))]
+        {
+            // Reload immediately when config is updated in-process (e.g. settings/theme actions).
+            cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                loop {
+                    let wait_rx = config_change_rx.clone();
+                    if smol::unblock(move || wait_rx.recv()).await.is_err() {
+                        break;
+                    }
+                    while config_change_rx.try_recv().is_ok() {}
+                    let result = cx.update(|cx| {
+                        this.update(cx, |view, cx| {
+                            view.reload_config(cx);
+                            cx.notify();
+                        })
+                    });
+                    if result.is_err() {
+                        break;
+                    }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
 
         // Poll config file timestamp and hot-reload UI settings on change.
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
@@ -2034,10 +1981,6 @@ impl TerminalView {
             tab_title,
             tab_close_visibility: config.tab_close_visibility,
             tab_width_mode: config.tab_width_mode,
-            show_tab_switch_modifier_hints: config.tab_switch_modifier_hints,
-            tab_switch_modifier_held: false,
-            tab_switch_modifier_hold_started_at: None,
-            tab_switch_hint_suppressed_for_hold: false,
             show_termy_in_titlebar: config.show_termy_in_titlebar,
             tab_shell_integration,
             configured_working_dir,
@@ -2073,7 +2016,6 @@ impl TerminalView {
             pane_focus_last_target: None,
             pane_focus_transition: None,
             pane_focus_animation_scheduled: false,
-            tab_switch_hint_animation_scheduled: false,
             line_height: 1.4,
             selection_anchor: None,
             selection_head: None,
@@ -2087,7 +2029,7 @@ impl TerminalView {
             overlay_view: None,
             command_palette: CommandPaletteState::new(config.command_palette_show_keybinds),
             install_cli_available: Self::install_cli_available_from_system(),
-            tab_strip: TabStripState::new(),
+            tab_strip: TabStripState::new(config.tab_switch_modifier_hints),
             inline_input_selecting: false,
             mouse_reporting: MouseReportingState::default(),
             terminal_scroll_accumulator_y: 0.0,
@@ -2152,7 +2094,7 @@ impl TerminalView {
         .detach();
         cx.on_blur(&blur_focus_handle, window, |view, _window, cx| {
             let released_mouse_presses = view.release_all_forwarded_mouse_presses();
-            let cleared_tab_switch_hint_state = view.reset_tab_switch_hint_hold_state();
+            let cleared_tab_switch_hint_state = view.tab_strip.switch_hints.reset_hold_state();
             if released_mouse_presses || cleared_tab_switch_hint_state {
                 cx.notify();
             }
@@ -2201,15 +2143,11 @@ impl TerminalView {
         let tab_close_visibility_changed = self.tab_close_visibility != config.tab_close_visibility;
         let tab_width_mode_changed = self.tab_width_mode != config.tab_width_mode;
         let tab_switch_modifier_hints_changed =
-            self.show_tab_switch_modifier_hints != config.tab_switch_modifier_hints;
+            self.tab_strip.switch_hints.sync_enabled(config.tab_switch_modifier_hints);
         let show_termy_in_titlebar_changed =
             self.show_termy_in_titlebar != config.show_termy_in_titlebar;
         self.tab_close_visibility = config.tab_close_visibility;
         self.tab_width_mode = config.tab_width_mode;
-        self.show_tab_switch_modifier_hints = config.tab_switch_modifier_hints;
-        if !self.show_tab_switch_modifier_hints {
-            self.reset_tab_switch_hint_hold_state();
-        }
         self.show_termy_in_titlebar = config.show_termy_in_titlebar;
         self.tab_shell_integration = TabTitleShellIntegration {
             enabled: self.tab_title.shell_integration,
@@ -2822,49 +2760,6 @@ mod tests {
     #[test]
     fn tmux_runtime_uses_event_driven_wakeup_strategy() {
         assert!(TerminalView::uses_event_driven_tmux_wakeup());
-    }
-
-    #[test]
-    fn secondary_modifier_detection_requires_secondary_alone() {
-        let secondary_only = gpui::Modifiers::secondary_key();
-        assert!(TerminalView::secondary_modifier_held_alone(secondary_only));
-
-        let secondary_with_shift = gpui::Modifiers {
-            shift: true,
-            ..gpui::Modifiers::secondary_key()
-        };
-        assert!(!TerminalView::secondary_modifier_held_alone(
-            secondary_with_shift
-        ));
-
-        assert!(!TerminalView::secondary_modifier_held_alone(
-            gpui::Modifiers::default()
-        ));
-    }
-
-    #[test]
-    fn tab_switch_hint_progress_respects_hold_delay_and_fade() {
-        assert_eq!(
-            TerminalView::tab_switch_hint_progress_for_elapsed(Duration::from_millis(0)),
-            0.0
-        );
-        assert_eq!(
-            TerminalView::tab_switch_hint_progress_for_elapsed(
-                TAB_SWITCH_HINT_HOLD_DELAY.saturating_sub(Duration::from_millis(1))
-            ),
-            0.0
-        );
-        assert!(
-            TerminalView::tab_switch_hint_progress_for_elapsed(
-                TAB_SWITCH_HINT_HOLD_DELAY + Duration::from_millis(40)
-            ) > 0.0
-        );
-        assert_eq!(
-            TerminalView::tab_switch_hint_progress_for_elapsed(
-                TAB_SWITCH_HINT_HOLD_DELAY + TAB_SWITCH_HINT_FADE_DURATION
-            ),
-            1.0
-        );
     }
 
     #[test]

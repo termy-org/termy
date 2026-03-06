@@ -133,6 +133,8 @@ impl SettingsWindow {
         let config_path = loaded.path;
         let config_fingerprint = loaded.fingerprint;
         let config_change_rx = config::subscribe_config_changes();
+        #[cfg(test)]
+        let _ = &config_change_rx;
         let mut available_font_families = window.text_system().all_font_names();
         available_font_families.sort_unstable_by_key(|font| font.to_ascii_lowercase());
         available_font_families.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
@@ -184,22 +186,29 @@ impl SettingsWindow {
         };
         view.focus_handle.focus(window, cx);
 
-        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-            while config_change_rx.recv_async().await.is_ok() {
-                while config_change_rx.try_recv().is_ok() {}
-                let result = cx.update(|cx| {
-                    this.update(cx, |view, cx| {
-                        if view.reload_config_if_changed(cx) {
-                            cx.notify();
-                        }
-                    })
-                });
-                if result.is_err() {
-                    break;
+        #[cfg(not(test))]
+        {
+            cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                loop {
+                    let wait_rx = config_change_rx.clone();
+                    if smol::unblock(move || wait_rx.recv()).await.is_err() {
+                        break;
+                    }
+                    while config_change_rx.try_recv().is_ok() {}
+                    let result = cx.update(|cx| {
+                        this.update(cx, |view, cx| {
+                            if view.reload_config_if_changed(cx) {
+                                cx.notify();
+                            }
+                        })
+                    });
+                    if result.is_err() {
+                        break;
+                    }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
 
         // Fallback polling in case filesystem notifications are coalesced/missed.
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {

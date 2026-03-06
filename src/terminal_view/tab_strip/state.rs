@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use gpui::ScrollHandle;
 
+use super::hints::TabSwitchHintState;
 use super::layout::TabStripLayoutSnapshot;
 
 const TAB_TITLE_WIDTH_CACHE_MAX_ENTRIES: usize = 512;
@@ -78,6 +79,7 @@ pub(crate) struct TabDragState {
 
 pub(crate) struct TabStripState {
     pub(crate) scroll_handle: ScrollHandle,
+    pub(crate) switch_hints: TabSwitchHintState,
     pub(crate) hovered_tab: Option<usize>,
     pub(crate) hovered_tab_close: Option<usize>,
     pub(crate) drag: Option<TabDragState>,
@@ -93,9 +95,10 @@ pub(crate) struct TabStripState {
 }
 
 impl TabStripState {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(show_tab_switch_modifier_hints: bool) -> Self {
         Self {
             scroll_handle: ScrollHandle::new(),
+            switch_hints: TabSwitchHintState::new(show_tab_switch_modifier_hints),
             hovered_tab: None,
             hovered_tab_close: None,
             drag: None,

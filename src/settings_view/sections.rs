@@ -31,6 +31,37 @@ impl SettingsWindow {
         &FALLBACK_SETTING_METADATA
     }
 
+    fn render_root_bool_setting_row(
+        &self,
+        setting_key: &'static str,
+        toggle_id: &'static str,
+        setting: RootSettingId,
+        checked: bool,
+        success_message: &'static str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let metadata = Self::setting_metadata_or_fallback(setting_key);
+        self.render_setting_row(
+            setting_key,
+            toggle_id,
+            metadata.title,
+            metadata.description,
+            checked,
+            cx,
+            move |view, cx| {
+                let next = !checked;
+                match config::set_root_setting(setting, &next.to_string()) {
+                    Ok(()) => {
+                        let _ = view.reload_config_if_changed(cx);
+                        termy_toast::success(success_message);
+                        cx.notify();
+                    }
+                    Err(error) => termy_toast::error(error),
+                }
+            },
+        )
+    }
+
     pub(super) fn render_content(&mut self, cx: &mut Context<Self>) -> AnyElement {
         div()
             .w_full()
@@ -61,7 +92,6 @@ impl SettingsWindow {
         let padding_x = self.config.padding_x;
         let padding_y = self.config.padding_y;
         let theme_meta = Self::setting_metadata_or_fallback("theme");
-        let blur_meta = Self::setting_metadata_or_fallback("background_blur");
         let opacity_meta = Self::setting_metadata_or_fallback("background_opacity");
         let font_family_meta = Self::setting_metadata_or_fallback("font_family");
         let font_size_meta = Self::setting_metadata_or_fallback("font_size");
@@ -79,24 +109,13 @@ impl SettingsWindow {
         let theme_group = self.render_settings_group("THEME", theme_rows);
 
         let window_rows = vec![
-            self.render_setting_row(
+            self.render_root_bool_setting_row(
                 "background_blur",
                 "blur-toggle",
-                blur_meta.title,
-                blur_meta.description,
+                RootSettingId::BackgroundBlur,
                 background_blur,
+                "Saved",
                 cx,
-                |view, _cx| {
-                    let next = !view.config.background_blur;
-                    match config::set_root_setting(RootSettingId::BackgroundBlur, &next.to_string())
-                    {
-                        Ok(()) => {
-                            view.config.background_blur = next;
-                            termy_toast::success("Saved");
-                        }
-                        Err(error) => termy_toast::error(error),
-                    }
-                },
             ),
             self.render_background_opacity_row(
                 "background_opacity",
@@ -201,28 +220,17 @@ impl SettingsWindow {
     }
 
     pub(super) fn render_terminal_cursor_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let cursor_blink_meta = Self::setting_metadata_or_fallback("cursor_blink");
         let cursor_style_meta = Self::setting_metadata_or_fallback("cursor_style");
         let cursor_blink = self.config.cursor_blink;
 
         let rows = vec![
-            self.render_setting_row(
+            self.render_root_bool_setting_row(
                 "cursor_blink",
                 "cursor_blink-toggle",
-                cursor_blink_meta.title,
-                cursor_blink_meta.description,
+                RootSettingId::CursorBlink,
                 cursor_blink,
+                "Saved",
                 cx,
-                |view, _cx| {
-                    let next = !view.config.cursor_blink;
-                    match config::set_root_setting(RootSettingId::CursorBlink, &next.to_string()) {
-                        Ok(()) => {
-                            view.config.cursor_blink = next;
-                            termy_toast::success("Saved");
-                        }
-                        Err(error) => termy_toast::error(error),
-                    }
-                },
             ),
             self.render_editable_row(
                 "cursor_style",
@@ -283,77 +291,37 @@ impl SettingsWindow {
 
     #[cfg(not(target_os = "windows"))]
     pub(super) fn render_terminal_tmux_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let enabled_meta = Self::setting_metadata_or_fallback("tmux_enabled");
-        let persistence_meta = Self::setting_metadata_or_fallback("tmux_persistence");
-        let show_active_border_meta =
-            Self::setting_metadata_or_fallback("tmux_show_active_pane_border");
         let binary_meta = Self::setting_metadata_or_fallback("tmux_binary");
         let tmux_enabled = self.config.tmux_enabled;
         let tmux_persistence = self.config.tmux_persistence;
         let tmux_show_active_pane_border = self.config.tmux_show_active_pane_border;
         let binary = self.config.tmux_binary.clone();
 
-        let mut rows = vec![self.render_setting_row(
+        let mut rows = vec![self.render_root_bool_setting_row(
             "tmux_enabled",
             "tmux_enabled-toggle",
-            enabled_meta.title,
-            enabled_meta.description,
+            RootSettingId::TmuxEnabled,
             tmux_enabled,
+            "Saved. Use Tmux Sessions to switch runtime now.",
             cx,
-            |view, _cx| {
-                let next = !view.config.tmux_enabled;
-                match config::set_root_setting(RootSettingId::TmuxEnabled, &next.to_string()) {
-                    Ok(()) => {
-                        view.config.tmux_enabled = next;
-                        termy_toast::success("Saved. Use Tmux Sessions to switch runtime now.");
-                    }
-                    Err(error) => termy_toast::error(error),
-                }
-            },
         )];
 
         if tmux_enabled {
-            rows.push(self.render_setting_row(
+            rows.push(self.render_root_bool_setting_row(
                 "tmux_persistence",
                 "tmux_persistence-toggle",
-                persistence_meta.title,
-                persistence_meta.description,
+                RootSettingId::TmuxPersistence,
                 tmux_persistence,
+                "Saved",
                 cx,
-                |view, _cx| {
-                    let next = !view.config.tmux_persistence;
-                    match config::set_root_setting(
-                        RootSettingId::TmuxPersistence,
-                        &next.to_string(),
-                    ) {
-                        Ok(()) => {
-                            view.config.tmux_persistence = next;
-                            termy_toast::success("Saved");
-                        }
-                        Err(error) => termy_toast::error(error),
-                    }
-                },
             ));
-            rows.push(self.render_setting_row(
+            rows.push(self.render_root_bool_setting_row(
                 "tmux_show_active_pane_border",
                 "tmux_show_active_pane_border-toggle",
-                show_active_border_meta.title,
-                show_active_border_meta.description,
+                RootSettingId::TmuxShowActivePaneBorder,
                 tmux_show_active_pane_border,
+                "Saved",
                 cx,
-                |view, _cx| {
-                    let next = !view.config.tmux_show_active_pane_border;
-                    match config::set_root_setting(
-                        RootSettingId::TmuxShowActivePaneBorder,
-                        &next.to_string(),
-                    ) {
-                        Ok(()) => {
-                            view.config.tmux_show_active_pane_border = next;
-                            termy_toast::success("Saved");
-                        }
-                        Err(error) => termy_toast::error(error),
-                    }
-                },
             ));
             rows.push(self.render_editable_row(
                 "tmux_binary",
@@ -427,7 +395,6 @@ impl SettingsWindow {
     pub(super) fn render_terminal_ui_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let pane_focus_effect_meta = Self::setting_metadata_or_fallback("pane_focus_effect");
         let pane_focus_strength_meta = Self::setting_metadata_or_fallback("pane_focus_strength");
-        let palette_meta = Self::setting_metadata_or_fallback("command_palette_show_keybinds");
         let pane_focus_strength_percent = self.pane_focus_strength_display_percent();
         let command_palette_show_keybinds = self.config.command_palette_show_keybinds;
 
@@ -448,26 +415,13 @@ impl SettingsWindow {
                 format!("{}%", pane_focus_strength_percent),
                 cx,
             ),
-            self.render_setting_row(
+            self.render_root_bool_setting_row(
                 "command_palette_show_keybinds",
                 "command_palette_show_keybinds-toggle",
-                palette_meta.title,
-                palette_meta.description,
+                RootSettingId::CommandPaletteShowKeybinds,
                 command_palette_show_keybinds,
+                "Saved",
                 cx,
-                |view, _cx| {
-                    let next = !view.config.command_palette_show_keybinds;
-                    match config::set_root_setting(
-                        RootSettingId::CommandPaletteShowKeybinds,
-                        &next.to_string(),
-                    ) {
-                        Ok(()) => {
-                            view.config.command_palette_show_keybinds = next;
-                            termy_toast::success("Saved");
-                        }
-                        Err(error) => termy_toast::error(error),
-                    }
-                },
             ),
         ];
         self.render_settings_group("UI", rows)
@@ -736,8 +690,6 @@ impl SettingsWindow {
         let explicit_prefix = self.config.tab_title.explicit_prefix.clone();
         let prompt_format = self.config.tab_title.prompt_format.clone();
         let command_format = self.config.tab_title.command_format.clone();
-        let shell_integration_meta =
-            Self::setting_metadata_or_fallback("tab_title_shell_integration");
         let title_mode_meta = Self::setting_metadata_or_fallback("tab_title_mode");
         let fallback_meta = Self::setting_metadata_or_fallback("tab_title_fallback");
         let title_priority_meta = Self::setting_metadata_or_fallback("tab_title_priority");
@@ -754,26 +706,13 @@ impl SettingsWindow {
                 self.editable_field_value(EditableField::TabTitleMode),
                 cx,
             ),
-            self.render_setting_row(
+            self.render_root_bool_setting_row(
                 "tab_title_shell_integration",
                 "tab_title_shell_integration-toggle",
-                shell_integration_meta.title,
-                shell_integration_meta.description,
+                RootSettingId::TabTitleShellIntegration,
                 shell_integration,
+                "Saved",
                 cx,
-                |view, _cx| {
-                    let next = !view.config.tab_title.shell_integration;
-                    match config::set_root_setting(
-                        RootSettingId::TabTitleShellIntegration,
-                        &next.to_string(),
-                    ) {
-                        Ok(()) => {
-                            view.config.tab_title.shell_integration = next;
-                            termy_toast::success("Saved");
-                        }
-                        Err(error) => termy_toast::error(error),
-                    }
-                },
             ),
             self.render_editable_row(
                 "tab_title_fallback",
@@ -826,9 +765,6 @@ impl SettingsWindow {
         let show_switch_hints = self.config.tab_switch_modifier_hints;
         let close_visibility_meta = Self::setting_metadata_or_fallback("tab_close_visibility");
         let width_mode_meta = Self::setting_metadata_or_fallback("tab_width_mode");
-        let show_switch_hints_meta =
-            Self::setting_metadata_or_fallback("tab_switch_modifier_hints");
-
         let rows = vec![
             self.render_editable_row(
                 "tab_close_visibility",
@@ -846,26 +782,13 @@ impl SettingsWindow {
                 width_mode,
                 cx,
             ),
-            self.render_setting_row(
+            self.render_root_bool_setting_row(
                 "tab_switch_modifier_hints",
                 "tab_switch_modifier_hints-toggle",
-                show_switch_hints_meta.title,
-                show_switch_hints_meta.description,
+                RootSettingId::TabSwitchModifierHints,
                 show_switch_hints,
+                "Saved",
                 cx,
-                |view, _cx| {
-                    let next = !view.config.tab_switch_modifier_hints;
-                    match config::set_root_setting(
-                        RootSettingId::TabSwitchModifierHints,
-                        &next.to_string(),
-                    ) {
-                        Ok(()) => {
-                            view.config.tab_switch_modifier_hints = next;
-                            termy_toast::success("Saved");
-                        }
-                        Err(error) => termy_toast::error(error),
-                    }
-                },
             ),
         ];
 
@@ -874,28 +797,13 @@ impl SettingsWindow {
 
     pub(super) fn render_tabs_titlebar_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let show_termy = self.config.show_termy_in_titlebar;
-        let show_termy_meta = Self::setting_metadata_or_fallback("show_termy_in_titlebar");
-
-        let rows = vec![self.render_setting_row(
+        let rows = vec![self.render_root_bool_setting_row(
             "show_termy_in_titlebar",
             "show_termy_in_titlebar-toggle",
-            show_termy_meta.title,
-            show_termy_meta.description,
+            RootSettingId::ShowTermyInTitlebar,
             show_termy,
+            "Saved",
             cx,
-            |view, _cx| {
-                let next = !view.config.show_termy_in_titlebar;
-                match config::set_root_setting(
-                    RootSettingId::ShowTermyInTitlebar,
-                    &next.to_string(),
-                ) {
-                    Ok(()) => {
-                        view.config.show_termy_in_titlebar = next;
-                        termy_toast::success("Saved");
-                    }
-                    Err(error) => termy_toast::error(error),
-                }
-            },
         )];
 
         self.render_settings_group("TITLE BAR", rows)
@@ -1689,8 +1597,6 @@ impl SettingsWindow {
         let button_hover_text = self.contrasting_text_for_fill(accent_hover, bg_card);
         let working_dir_meta = Self::setting_metadata_or_fallback("working_dir");
         let working_dir_fallback_meta = Self::setting_metadata_or_fallback("working_dir_fallback");
-        let warn_on_quit_meta =
-            Self::setting_metadata_or_fallback("warn_on_quit_with_running_process");
         let window_width_meta = Self::setting_metadata_or_fallback("window_width");
         let window_height_meta = Self::setting_metadata_or_fallback("window_height");
         let config_path_display = self
@@ -1720,26 +1626,13 @@ impl SettingsWindow {
         ];
         let startup_group = self.render_settings_group("STARTUP", startup_rows);
 
-        let safety_rows = vec![self.render_setting_row(
+        let safety_rows = vec![self.render_root_bool_setting_row(
             "warn_on_quit_with_running_process",
             "warn_on_quit-toggle",
-            warn_on_quit_meta.title,
-            warn_on_quit_meta.description,
+            RootSettingId::WarnOnQuitWithRunningProcess,
             warn_on_quit,
+            "Saved",
             cx,
-            |view, _cx| {
-                let next = !view.config.warn_on_quit_with_running_process;
-                match config::set_root_setting(
-                    RootSettingId::WarnOnQuitWithRunningProcess,
-                    &next.to_string(),
-                ) {
-                    Ok(()) => {
-                        view.config.warn_on_quit_with_running_process = next;
-                        termy_toast::success("Saved");
-                    }
-                    Err(error) => termy_toast::error(error),
-                }
-            },
         )];
         let safety_group = self.render_settings_group("SAFETY", safety_rows);
 
@@ -1831,25 +1724,14 @@ impl SettingsWindow {
         ];
         let ai_group = self.render_settings_group("AI", ai_rows);
 
-        let auto_update_meta = Self::setting_metadata_or_fallback("auto_update");
         let auto_update = self.config.auto_update;
-        let updates_rows = vec![self.render_setting_row(
+        let updates_rows = vec![self.render_root_bool_setting_row(
             "auto_update",
             "auto_update-toggle",
-            auto_update_meta.title,
-            auto_update_meta.description,
+            RootSettingId::AutoUpdate,
             auto_update,
+            "Saved",
             cx,
-            |view, _cx| {
-                let next = !view.config.auto_update;
-                match config::set_root_setting(RootSettingId::AutoUpdate, &next.to_string()) {
-                    Ok(()) => {
-                        view.config.auto_update = next;
-                        termy_toast::success("Saved");
-                    }
-                    Err(error) => termy_toast::error(error),
-                }
-            },
         )];
         let updates_group = self.render_settings_group("UPDATES", updates_rows);
 

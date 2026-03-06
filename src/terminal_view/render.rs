@@ -1896,7 +1896,11 @@ impl Render for TerminalView {
         if pane_focus_needs_animation {
             self.schedule_pane_focus_animation(cx);
         }
-        if self.tab_switch_hint_animation_active(now) {
+        if self
+            .tab_strip
+            .switch_hints
+            .animation_active(now, self.tab_switch_hints_blocked())
+        {
             self.schedule_tab_switch_hint_animation(cx);
         }
         #[cfg(debug_assertions)]

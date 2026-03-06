@@ -203,70 +203,25 @@ impl SettingsWindow {
         root_setting_default_value(&defaults, setting)
     }
 
-    fn section_root_settings(section: SettingsSection) -> &'static [RootSettingId] {
-        const APPEARANCE_SETTINGS: &[RootSettingId] = &[
-            RootSettingId::Theme,
-            RootSettingId::BackgroundBlur,
-            RootSettingId::BackgroundOpacity,
-            RootSettingId::FontFamily,
-            RootSettingId::FontSize,
-            RootSettingId::PaddingX,
-            RootSettingId::PaddingY,
-        ];
-        const TERMINAL_SETTINGS: &[RootSettingId] = &[
-            RootSettingId::TmuxEnabled,
-            RootSettingId::TmuxPersistence,
-            RootSettingId::TmuxShowActivePaneBorder,
-            RootSettingId::TmuxBinary,
-            RootSettingId::CursorBlink,
-            RootSettingId::CursorStyle,
-            RootSettingId::Shell,
-            RootSettingId::Term,
-            RootSettingId::Colorterm,
-            RootSettingId::ScrollbackHistory,
-            RootSettingId::InactiveTabScrollback,
-            RootSettingId::MouseScrollMultiplier,
-            RootSettingId::ScrollbarVisibility,
-            RootSettingId::ScrollbarStyle,
-            RootSettingId::PaneFocusEffect,
-            RootSettingId::PaneFocusStrength,
-            RootSettingId::CommandPaletteShowKeybinds,
-        ];
-        const TABS_SETTINGS: &[RootSettingId] = &[
-            RootSettingId::TabTitleMode,
-            RootSettingId::TabTitleShellIntegration,
-            RootSettingId::TabTitleFallback,
-            RootSettingId::TabTitlePriority,
-            RootSettingId::TabTitleExplicitPrefix,
-            RootSettingId::TabTitlePromptFormat,
-            RootSettingId::TabTitleCommandFormat,
-            RootSettingId::TabCloseVisibility,
-            RootSettingId::TabWidthMode,
-            RootSettingId::TabSwitchModifierHints,
-            RootSettingId::ShowTermyInTitlebar,
-        ];
-        const ADVANCED_SETTINGS: &[RootSettingId] = &[
-            RootSettingId::WorkingDir,
-            RootSettingId::WorkingDirFallback,
-            RootSettingId::WarnOnQuitWithRunningProcess,
-            RootSettingId::WindowWidth,
-            RootSettingId::WindowHeight,
-            RootSettingId::AiProvider,
-            RootSettingId::OpenaiApiKey,
-            RootSettingId::GeminiApiKey,
-            RootSettingId::OpenaiModel,
-        ];
-
+    fn root_setting_section(section: SettingsSection) -> Option<CoreSettingsSection> {
         match section {
-            SettingsSection::Appearance => APPEARANCE_SETTINGS,
-            SettingsSection::Terminal => TERMINAL_SETTINGS,
-            SettingsSection::Tabs => TABS_SETTINGS,
-            SettingsSection::Advanced => ADVANCED_SETTINGS,
+            SettingsSection::Appearance => Some(CoreSettingsSection::Appearance),
+            SettingsSection::Terminal => Some(CoreSettingsSection::Terminal),
+            SettingsSection::Tabs => Some(CoreSettingsSection::Tabs),
+            SettingsSection::Advanced => Some(CoreSettingsSection::Advanced),
             SettingsSection::ThemeStore
             | SettingsSection::Plugins
             | SettingsSection::Colors
-            | SettingsSection::Keybindings => &[],
+            | SettingsSection::Keybindings => None,
         }
+    }
+
+    fn section_root_settings(section: SettingsSection) -> impl Iterator<Item = RootSettingId> {
+        let section = Self::root_setting_section(section);
+        root_setting_specs()
+            .iter()
+            .filter(move |spec| Some(spec.section) == section && !spec.repeatable)
+            .map(|spec| spec.id)
     }
 
     fn is_root_setting_at_default(&self, setting: RootSettingId) -> bool {
@@ -294,8 +249,7 @@ impl SettingsWindow {
             SettingsSection::Plugins => false,
             SettingsSection::Keybindings => !self.config.keybind_lines.is_empty(),
             _ => Self::section_root_settings(section)
-                .iter()
-                .any(|setting| !self.is_root_setting_at_default(*setting)),
+                .any(|setting| !self.is_root_setting_at_default(setting)),
         }
     }
 
@@ -409,8 +363,7 @@ impl SettingsWindow {
             | SettingsSection::Terminal
             | SettingsSection::Tabs
             | SettingsSection::Advanced => Self::section_root_settings(section)
-                .iter()
-                .try_for_each(|setting| self.reset_root_setting_to_default(*setting)),
+                .try_for_each(|setting| self.reset_root_setting_to_default(setting)),
             SettingsSection::Colors => color_setting_specs()
                 .iter()
                 .try_for_each(|spec| config::set_color_setting(spec.id, None)),

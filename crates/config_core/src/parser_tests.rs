@@ -1,7 +1,8 @@
 use crate::{
     AiProvider, AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle, PaneFocusEffect,
-    Rgb8, TabCloseVisibility, TabTitleMode, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
-    TerminalScrollbarVisibility, WorkingDirFallback,
+    Rgb8, RootSettingId, RootSettingValueKind, TabCloseVisibility, TabTitleMode, TabTitleSource,
+    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
+    root_setting_specs,
 };
 
 fn parse(input: &str) -> AppConfig {
@@ -246,77 +247,56 @@ fn enum_keys_parse_table_driven() {
     );
 }
 
-#[derive(Clone, Copy)]
-enum BoolField {
-    TmuxShowActivePaneBorder,
-    ShowTermyInTitlebar,
-    TabSwitchModifierHints,
-    CursorBlink,
-    BackgroundBlur,
-    WarnOnQuit,
-    CommandPaletteShowKeybinds,
-    TabTitleShellIntegration,
-}
-
-impl BoolField {
-    fn key(self) -> &'static str {
-        match self {
-            Self::TmuxShowActivePaneBorder => "tmux_show_active_pane_border",
-            Self::ShowTermyInTitlebar => "show_termy_in_titlebar",
-            Self::TabSwitchModifierHints => "tab_switch_modifier_hints",
-            Self::CursorBlink => "cursor_blink",
-            Self::BackgroundBlur => "background_blur",
-            Self::WarnOnQuit => "warn_on_quit_with_running_process",
-            Self::CommandPaletteShowKeybinds => "command_palette_show_keybinds",
-            Self::TabTitleShellIntegration => "tab_title_shell_integration",
-        }
-    }
-
-    fn read(self, config: &AppConfig) -> bool {
-        match self {
-            Self::TmuxShowActivePaneBorder => config.tmux_show_active_pane_border,
-            Self::ShowTermyInTitlebar => config.show_termy_in_titlebar,
-            Self::TabSwitchModifierHints => config.tab_switch_modifier_hints,
-            Self::CursorBlink => config.cursor_blink,
-            Self::BackgroundBlur => config.background_blur,
-            Self::WarnOnQuit => config.warn_on_quit_with_running_process,
-            Self::CommandPaletteShowKeybinds => config.command_palette_show_keybinds,
-            Self::TabTitleShellIntegration => config.tab_title.shell_integration,
-        }
+fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option<bool> {
+    match setting {
+        RootSettingId::AutoUpdate => Some(config.auto_update),
+        RootSettingId::TmuxEnabled => Some(config.tmux_enabled),
+        RootSettingId::TmuxPersistence => Some(config.tmux_persistence),
+        RootSettingId::TmuxShowActivePaneBorder => Some(config.tmux_show_active_pane_border),
+        RootSettingId::WarnOnQuitWithRunningProcess => Some(config.warn_on_quit_with_running_process),
+        RootSettingId::TabTitleShellIntegration => Some(config.tab_title.shell_integration),
+        RootSettingId::TabSwitchModifierHints => Some(config.tab_switch_modifier_hints),
+        RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar),
+        RootSettingId::CursorBlink => Some(config.cursor_blink),
+        RootSettingId::BackgroundBlur => Some(config.background_blur),
+        RootSettingId::CommandPaletteShowKeybinds => Some(config.command_palette_show_keybinds),
+        _ => None,
     }
 }
 
 #[test]
-fn bool_keys_parse_table_driven() {
+fn bool_root_settings_parse_table_driven_from_schema() {
     let defaults = AppConfig::default();
-    let fields = [
-        BoolField::TmuxShowActivePaneBorder,
-        BoolField::ShowTermyInTitlebar,
-        BoolField::TabSwitchModifierHints,
-        BoolField::CursorBlink,
-        BoolField::BackgroundBlur,
-        BoolField::WarnOnQuit,
-        BoolField::CommandPaletteShowKeybinds,
-        BoolField::TabTitleShellIntegration,
-    ];
+    let bool_specs = root_setting_specs()
+        .iter()
+        .filter(|spec| spec.value_kind == RootSettingValueKind::Boolean && !spec.repeatable)
+        .collect::<Vec<_>>();
 
-    for field in fields {
-        let key = field.key();
+    for spec in bool_specs {
+        let key = spec.key;
+        assert!(
+            bool_root_setting_value(&defaults, spec.id).is_some(),
+            "missing bool accessor for {}",
+            key
+        );
 
         let enabled = parse(&format!("{} = true\n", key));
-        assert!(field.read(&enabled));
+        assert_eq!(bool_root_setting_value(&enabled, spec.id), Some(true));
 
         let enabled_numeric = parse(&format!("{} = 1\n", key));
-        assert!(field.read(&enabled_numeric));
+        assert_eq!(bool_root_setting_value(&enabled_numeric, spec.id), Some(true));
 
         let disabled = parse(&format!("{} = false\n", key));
-        assert!(!field.read(&disabled));
+        assert_eq!(bool_root_setting_value(&disabled, spec.id), Some(false));
 
         let disabled_numeric = parse(&format!("{} = 0\n", key));
-        assert!(!field.read(&disabled_numeric));
+        assert_eq!(bool_root_setting_value(&disabled_numeric, spec.id), Some(false));
 
         let invalid = parse(&format!("{} = maybe\n", key));
-        assert_eq!(field.read(&invalid), field.read(&defaults));
+        assert_eq!(
+            bool_root_setting_value(&invalid, spec.id),
+            bool_root_setting_value(&defaults, spec.id)
+        );
     }
 }
 
