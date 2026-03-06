@@ -19,6 +19,7 @@ macro_rules! termy_command_catalog {
             (SwitchToTab8, "switch_to_tab_8"),
             (SwitchToTab9, "switch_to_tab_9"),
             (ManageTmuxSessions, "manage_tmux_sessions"),
+            (ManageSavedLayouts, "manage_saved_layouts"),
             (SplitPaneVertical, "split_pane_vertical"),
             (SplitPaneHorizontal, "split_pane_horizontal"),
             (ClosePane, "close_pane"),

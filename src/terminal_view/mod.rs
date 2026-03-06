@@ -15,8 +15,8 @@ use gpui::{
     Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
     ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     ParentElement, Pixels, Render, ScrollWheelEvent, SharedString, Size,
-    StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window,
-    WindowBackgroundAppearance, div, point, px,
+    StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window, WindowBackgroundAppearance,
+    div, point, px,
 };
 use std::{
     cell::RefCell,
@@ -50,6 +50,7 @@ mod command_palette;
 mod inline_input;
 mod interaction;
 mod overlay_view;
+mod persistence;
 mod render;
 mod runtime;
 mod scrollbar;
@@ -146,6 +147,8 @@ const PANE_FOCUS_ANIMATION_FRAME_MS: u64 = 16;
 const PANE_FOCUS_ANIMATION_DURATION: Duration = Duration::from_millis(PANE_FOCUS_ANIMATION_MS);
 const TAB_SWITCH_HINT_ANIMATION_FRAME_MS: u64 = 16;
 const MAX_PANE_FOCUS_STRENGTH: f32 = 2.0;
+const NATIVE_PANE_MIN_COLS: u16 = 24;
+const NATIVE_PANE_MIN_ROWS: u16 = 8;
 #[cfg(debug_assertions)]
 const RENDER_METRICS_LOG_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -297,6 +300,17 @@ impl Terminal {
     fn feed_output(&self, bytes: &[u8]) {
         if let Self::Tmux(terminal) = self {
             terminal.feed_output(bytes);
+        }
+    }
+
+    fn hydrate_output(&self, bytes: &[u8]) {
+        match self {
+            Self::Tmux(terminal) => terminal.feed_output(bytes),
+            Self::Native(terminal) => {
+                if let Ok(terminal) = terminal.lock() {
+                    terminal.hydrate_output(bytes);
+                }
+            }
         }
     }
 
@@ -957,6 +971,10 @@ pub struct TerminalView {
     terminal_runtime: TerminalRuntimeConfig,
     runtime: RuntimeState,
     tmux_enabled_config: bool,
+    native_tab_persistence: bool,
+    native_layout_autosave: bool,
+    native_buffer_persistence: bool,
+    current_named_layout: Option<String>,
     tmux_show_active_pane_border: bool,
     config_path: Option<PathBuf>,
     config_fingerprint: Option<u64>,
@@ -1433,10 +1451,11 @@ impl TerminalView {
     }
 
     fn schedule_tab_switch_hint_animation(&mut self, cx: &mut Context<Self>) {
-        if !self.tab_strip.switch_hints.begin_animation_frame(
-            Instant::now(),
-            self.tab_switch_hints_blocked(),
-        ) {
+        if !self
+            .tab_strip
+            .switch_hints
+            .begin_animation_frame(Instant::now(), self.tab_switch_hints_blocked())
+        {
             return;
         }
 
@@ -1993,6 +2012,10 @@ impl TerminalView {
             terminal_runtime,
             runtime,
             tmux_enabled_config: config.tmux_enabled,
+            native_tab_persistence: config.native_tab_persistence,
+            native_layout_autosave: config.native_layout_autosave,
+            native_buffer_persistence: config.native_buffer_persistence,
+            current_named_layout: None,
             tmux_show_active_pane_border: config.tmux_show_active_pane_border,
             config_path,
             config_fingerprint,
@@ -2072,10 +2095,23 @@ impl TerminalView {
             // Surface explicit feedback when a synced/shared config requests tmux on Windows.
             termy_toast::warning(TMUX_UNSUPPORTED_WINDOWS_TOAST);
         }
+        let restored_native_workspace = if !config.tmux_enabled {
+            match view.restore_persisted_native_workspace(cx) {
+                Ok(restored) => restored,
+                Err(error) => {
+                    log::error!("Failed to restore native tab workspace: {}", error);
+                    termy_toast::error("Failed to restore saved native tabs");
+                    false
+                }
+            }
+        } else {
+            false
+        };
+
         match initial_snapshot {
             Some(initial_snapshot) => view.apply_tmux_snapshot(initial_snapshot),
             None => {
-                if let Some(native_terminal) = native_terminal {
+                if !restored_native_workspace && let Some(native_terminal) = native_terminal {
                     let tab_id = view.allocate_tab_id();
                     view.tabs = vec![Self::create_native_tab(
                         tab_id,
@@ -2146,8 +2182,10 @@ impl TerminalView {
         self.tab_title = config.tab_title.clone();
         let tab_close_visibility_changed = self.tab_close_visibility != config.tab_close_visibility;
         let tab_width_mode_changed = self.tab_width_mode != config.tab_width_mode;
-        let tab_switch_modifier_hints_changed =
-            self.tab_strip.switch_hints.sync_enabled(config.tab_switch_modifier_hints);
+        let tab_switch_modifier_hints_changed = self
+            .tab_strip
+            .switch_hints
+            .sync_enabled(config.tab_switch_modifier_hints);
         let show_termy_in_titlebar_changed =
             self.show_termy_in_titlebar != config.show_termy_in_titlebar;
         self.tab_close_visibility = config.tab_close_visibility;
@@ -2173,9 +2211,21 @@ impl TerminalView {
             );
         }
         self.tmux_enabled_config = config.tmux_enabled;
+        let native_tab_persistence_changed =
+            self.native_tab_persistence != config.native_tab_persistence;
+        self.native_tab_persistence = config.native_tab_persistence;
+        self.native_layout_autosave = config.native_layout_autosave;
+        self.native_buffer_persistence = config.native_buffer_persistence;
         self.tmux_show_active_pane_border = config.tmux_show_active_pane_border;
         self.configured_working_dir = config.working_dir.clone();
         self.terminal_runtime = Self::runtime_config_from_app_config(&config);
+        if native_tab_persistence_changed {
+            if self.native_tab_persistence {
+                self.sync_persisted_native_workspace();
+            } else if let Err(error) = self.clear_persisted_native_workspace() {
+                log::error!("Failed to clear saved native tab workspace: {}", error);
+            }
+        }
         let reconnect_managed_tmux = self.runtime_uses_tmux()
             && matches!(
                 self.tmux_runtime().config.launch,
@@ -2421,6 +2471,7 @@ impl TerminalView {
 
         if should_quit {
             // Shell `exit` in the last native pane should close the app immediately.
+            self.sync_persisted_native_workspace();
             self.allow_quit_without_prompt = true;
             cx.quit();
         }

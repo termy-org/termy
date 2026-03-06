@@ -150,6 +150,27 @@ impl AppConfig {
                         config.tmux_persistence = parsed;
                     }
                 }
+                RootSettingId::NativeTabPersistence => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.native_tab_persistence = parsed;
+                    }
+                }
+                RootSettingId::NativeLayoutAutosave => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.native_layout_autosave = parsed;
+                    }
+                }
+                RootSettingId::NativeBufferPersistence => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.native_buffer_persistence = parsed;
+                    }
+                }
                 RootSettingId::TmuxBinary => {
                     if let Some(parsed) = parse_string_field(
                         &mut diagnostics,

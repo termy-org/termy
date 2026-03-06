@@ -27,6 +27,7 @@ impl TerminalView {
             CommandAction::RestartApp => {
                 match self.restart_application() {
                     Ok(()) => {
+                        self.sync_persisted_native_workspace();
                         self.allow_quit_without_prompt = true;
                         cx.quit();
                     }
@@ -187,11 +188,15 @@ impl TerminalView {
     ) -> bool {
         match target {
             CloseRequestTarget::Application => {
+                self.sync_persisted_native_workspace();
                 self.allow_quit_without_prompt = true;
                 cx.quit();
                 false
             }
-            CloseRequestTarget::WindowClose => true,
+            CloseRequestTarget::WindowClose => {
+                self.sync_persisted_native_workspace();
+                true
+            }
             CloseRequestTarget::TabClose { tab_id } => {
                 self.close_tab_by_id(tab_id, cx);
                 false
@@ -276,6 +281,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.allow_quit_without_prompt {
+            self.sync_persisted_native_workspace();
             self.allow_quit_without_prompt = false;
             return true;
         }

@@ -20,13 +20,14 @@ members = [
   "crates/plugin_core",
   "crates/plugin_host",
   "crates/plugin_sdk",
-  "crates/termy_api", "crates/plugin_release_notes",
+  "crates/termy_api",
+  "crates/plugin_release_notes",
 ]
 resolver = "2"
 
 [package]
 name = "termy"
-version = "0.1.44"
+version = "0.1.45"
 edition = "2024"
 
 [package.metadata.bundle]

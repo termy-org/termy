@@ -3,13 +3,47 @@ use super::*;
 const SELECTION_DRAG_AUTOSCROLL_MAX_LINES: i32 = 3;
 
 impl TerminalView {
+    fn native_resize_overlap_cells(a_start: u16, a_end: u16, b_start: u16, b_end: u16) -> u16 {
+        let start = a_start.max(b_start);
+        let end = a_end.min(b_end);
+        end.saturating_sub(start)
+    }
+
+    pub(in super::super) fn begin_pane_resize_drag(
+        &mut self,
+        pane_id: &str,
+        axis: PaneResizeAxis,
+        edge: PaneResizeEdge,
+        position: gpui::Point<Pixels>,
+    ) -> bool {
+        let (x, y) = self.terminal_content_position(position);
+        self.pane_resize_drag = Some(PaneResizeDragState {
+            pane_id: pane_id.to_string(),
+            axis,
+            edge,
+            start_x: x,
+            start_y: y,
+            applied_steps: 0,
+        });
+        true
+    }
+
     fn pane_resize_hit_test(&self, position: gpui::Point<Pixels>) -> Option<PaneResizeDragState> {
-        if self.runtime_kind() != RuntimeKind::Tmux {
-            return None;
-        }
         const DIVIDER_HIT_MARGIN_PX: f32 = 4.0;
 
         let tab = self.tabs.get(self.active_tab)?;
+        let max_right_cells = tab
+            .panes
+            .iter()
+            .map(|pane| u32::from(pane.left).saturating_add(u32::from(pane.width)))
+            .max()
+            .unwrap_or(0);
+        let max_bottom_cells = tab
+            .panes
+            .iter()
+            .map(|pane| u32::from(pane.top).saturating_add(u32::from(pane.height)))
+            .max()
+            .unwrap_or(0);
         let (padding_x, padding_y) = self.effective_terminal_padding();
         let (x, y) = self.terminal_content_position(position);
         let mut best: Option<(f32, PaneResizeAxis, PaneResizeEdge, String)> = None;
@@ -37,12 +71,10 @@ impl TerminalView {
 
             let near_left = (x - left).abs() <= DIVIDER_HIT_MARGIN_PX && pane.left > 0;
             let near_right = (x - right).abs() <= DIVIDER_HIT_MARGIN_PX
-                && (u32::from(pane.left) + u32::from(pane.width))
-                    < u32::from(self.tmux_client_cols());
+                && (u32::from(pane.left) + u32::from(pane.width)) < max_right_cells;
             let near_top = (y - top).abs() <= DIVIDER_HIT_MARGIN_PX && pane.top > 0;
             let near_bottom = (y - bottom).abs() <= DIVIDER_HIT_MARGIN_PX
-                && (u32::from(pane.top) + u32::from(pane.height))
-                    < u32::from(self.tmux_client_rows());
+                && (u32::from(pane.top) + u32::from(pane.height)) < max_bottom_cells;
 
             if near_left || near_right {
                 let distance = (x - if near_left { left } else { right }).abs();
@@ -88,10 +120,208 @@ impl TerminalView {
         })
     }
 
-    fn apply_pane_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
-        if self.runtime_kind() != RuntimeKind::Tmux {
+    fn native_resize_pane_step(
+        &mut self,
+        pane_id: &str,
+        axis: PaneResizeAxis,
+        edge: PaneResizeEdge,
+        divider_delta: i16,
+    ) -> bool {
+        fn overlaps_any(span_start: u16, span_end: u16, spans: &[(u16, u16)]) -> bool {
+            spans.iter().any(|(start, end)| {
+                TerminalView::native_resize_overlap_cells(span_start, span_end, *start, *end) > 0
+            })
+        }
+
+        if divider_delta == 0 {
             return false;
         }
+
+        let Some(tab) = self.tabs.get_mut(self.active_tab) else {
+            return false;
+        };
+        let Some(target_index) = tab.panes.iter().position(|pane| pane.id == pane_id) else {
+            return false;
+        };
+        let Some(target) = tab.panes.get(target_index) else {
+            return false;
+        };
+
+        match axis {
+            PaneResizeAxis::Horizontal => {
+                let boundary = match edge {
+                    PaneResizeEdge::Left => target.left,
+                    PaneResizeEdge::Right => target.left.saturating_add(target.width),
+                    PaneResizeEdge::Top | PaneResizeEdge::Bottom => return false,
+                };
+                let mut spans = vec![(target.top, target.top.saturating_add(target.height))];
+                let mut left_indices = Vec::<usize>::new();
+                let mut right_indices = Vec::<usize>::new();
+
+                loop {
+                    let mut changed = false;
+                    for (index, pane) in tab.panes.iter().enumerate() {
+                        let pane_top = pane.top;
+                        let pane_bottom = pane.top.saturating_add(pane.height);
+                        if !overlaps_any(pane_top, pane_bottom, &spans) {
+                            continue;
+                        }
+
+                        let pane_left = pane.left;
+                        let pane_right = pane.left.saturating_add(pane.width);
+                        if pane_right == boundary && !left_indices.contains(&index) {
+                            left_indices.push(index);
+                            spans.push((pane_top, pane_bottom));
+                            changed = true;
+                        }
+                        if pane_left == boundary && !right_indices.contains(&index) {
+                            right_indices.push(index);
+                            spans.push((pane_top, pane_bottom));
+                            changed = true;
+                        }
+                    }
+                    if !changed {
+                        break;
+                    }
+                }
+
+                if left_indices.is_empty() || right_indices.is_empty() {
+                    return false;
+                }
+                let min_width = Self::native_min_extent_allowed(
+                    tab.panes
+                        .iter()
+                        .map(|pane| pane.left.saturating_add(pane.width))
+                        .max()
+                        .unwrap_or(0),
+                    tab.panes.len(),
+                    Self::native_pane_min_extent_for_axis(PaneResizeAxis::Horizontal),
+                );
+
+                if divider_delta > 0 {
+                    if right_indices.iter().any(|index| {
+                        tab.panes[*index].width
+                            < min_width.saturating_add(divider_delta.unsigned_abs())
+                    }) {
+                        return false;
+                    }
+                    for index in left_indices {
+                        tab.panes[index].width =
+                            tab.panes[index].width.saturating_add(divider_delta as u16);
+                    }
+                    for index in right_indices {
+                        tab.panes[index].left =
+                            tab.panes[index].left.saturating_add(divider_delta as u16);
+                        tab.panes[index].width =
+                            tab.panes[index].width.saturating_sub(divider_delta as u16);
+                    }
+                } else {
+                    let shrink = divider_delta.unsigned_abs();
+                    if left_indices
+                        .iter()
+                        .any(|index| tab.panes[*index].width < min_width.saturating_add(shrink))
+                    {
+                        return false;
+                    }
+                    for index in left_indices {
+                        tab.panes[index].width = tab.panes[index].width.saturating_sub(shrink);
+                    }
+                    for index in right_indices {
+                        tab.panes[index].left = tab.panes[index].left.saturating_sub(shrink);
+                        tab.panes[index].width = tab.panes[index].width.saturating_add(shrink);
+                    }
+                }
+            }
+            PaneResizeAxis::Vertical => {
+                let boundary = match edge {
+                    PaneResizeEdge::Top => target.top,
+                    PaneResizeEdge::Bottom => target.top.saturating_add(target.height),
+                    PaneResizeEdge::Left | PaneResizeEdge::Right => return false,
+                };
+                let mut spans = vec![(target.left, target.left.saturating_add(target.width))];
+                let mut top_indices = Vec::<usize>::new();
+                let mut bottom_indices = Vec::<usize>::new();
+
+                loop {
+                    let mut changed = false;
+                    for (index, pane) in tab.panes.iter().enumerate() {
+                        let pane_left = pane.left;
+                        let pane_right = pane.left.saturating_add(pane.width);
+                        if !overlaps_any(pane_left, pane_right, &spans) {
+                            continue;
+                        }
+
+                        let pane_top = pane.top;
+                        let pane_bottom = pane.top.saturating_add(pane.height);
+                        if pane_bottom == boundary && !top_indices.contains(&index) {
+                            top_indices.push(index);
+                            spans.push((pane_left, pane_right));
+                            changed = true;
+                        }
+                        if pane_top == boundary && !bottom_indices.contains(&index) {
+                            bottom_indices.push(index);
+                            spans.push((pane_left, pane_right));
+                            changed = true;
+                        }
+                    }
+                    if !changed {
+                        break;
+                    }
+                }
+
+                if top_indices.is_empty() || bottom_indices.is_empty() {
+                    return false;
+                }
+                let min_height = Self::native_min_extent_allowed(
+                    tab.panes
+                        .iter()
+                        .map(|pane| pane.top.saturating_add(pane.height))
+                        .max()
+                        .unwrap_or(0),
+                    tab.panes.len(),
+                    Self::native_pane_min_extent_for_axis(PaneResizeAxis::Vertical),
+                );
+
+                if divider_delta > 0 {
+                    if bottom_indices.iter().any(|index| {
+                        tab.panes[*index].height
+                            < min_height.saturating_add(divider_delta.unsigned_abs())
+                    }) {
+                        return false;
+                    }
+                    for index in top_indices {
+                        tab.panes[index].height =
+                            tab.panes[index].height.saturating_add(divider_delta as u16);
+                    }
+                    for index in bottom_indices {
+                        tab.panes[index].top =
+                            tab.panes[index].top.saturating_add(divider_delta as u16);
+                        tab.panes[index].height =
+                            tab.panes[index].height.saturating_sub(divider_delta as u16);
+                    }
+                } else {
+                    let shrink = divider_delta.unsigned_abs();
+                    if top_indices
+                        .iter()
+                        .any(|index| tab.panes[*index].height < min_height.saturating_add(shrink))
+                    {
+                        return false;
+                    }
+                    for index in top_indices {
+                        tab.panes[index].height = tab.panes[index].height.saturating_sub(shrink);
+                    }
+                    for index in bottom_indices {
+                        tab.panes[index].top = tab.panes[index].top.saturating_sub(shrink);
+                        tab.panes[index].height = tab.panes[index].height.saturating_add(shrink);
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    fn apply_pane_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
         let Some(drag_state) = self.pane_resize_drag.as_ref() else {
             return false;
         };
@@ -130,15 +360,26 @@ impl TerminalView {
         if step_delta == 0 {
             return false;
         }
-        // Left/top drags invert the tmux resize direction relative to cursor delta,
-        // because dragging toward the pane interior shrinks that edge.
-        let positive_direction = match edge {
-            PaneResizeEdge::Left | PaneResizeEdge::Top => step_delta.is_negative(),
-            PaneResizeEdge::Right | PaneResizeEdge::Bottom => step_delta.is_positive(),
-        };
         let mut completed_steps = 0i32;
         for _ in 0..step_delta.unsigned_abs() {
-            if self.tmux_resize_pane_step(pane_id.as_str(), axis, positive_direction) {
+            let resized = match self.runtime_kind() {
+                RuntimeKind::Tmux => {
+                    // Left/top drags invert the tmux resize direction relative to cursor delta,
+                    // because dragging toward the pane interior shrinks that edge.
+                    let positive_direction = match edge {
+                        PaneResizeEdge::Left | PaneResizeEdge::Top => step_delta.is_negative(),
+                        PaneResizeEdge::Right | PaneResizeEdge::Bottom => step_delta.is_positive(),
+                    };
+                    self.tmux_resize_pane_step(pane_id.as_str(), axis, positive_direction)
+                }
+                RuntimeKind::Native => self.native_resize_pane_step(
+                    pane_id.as_str(),
+                    axis,
+                    edge,
+                    if step_delta.is_positive() { 1 } else { -1 },
+                ),
+            };
+            if resized {
                 completed_steps += 1;
             } else {
                 break;
@@ -437,6 +678,9 @@ impl TerminalView {
                     cx.notify();
                 }
             } else if self.pane_resize_drag.take().is_some() {
+                if self.runtime_kind() == RuntimeKind::Native {
+                    self.sync_persisted_native_workspace();
+                }
                 cx.notify();
             }
             cx.stop_propagation();
@@ -483,6 +727,9 @@ impl TerminalView {
             return;
         }
         if event.button == MouseButton::Left && self.pane_resize_drag.take().is_some() {
+            if self.runtime_kind() == RuntimeKind::Native {
+                self.sync_persisted_native_workspace();
+            }
             cx.stop_propagation();
             cx.notify();
             return;

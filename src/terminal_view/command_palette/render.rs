@@ -63,7 +63,15 @@ impl TerminalView {
                 | CommandPaletteItemKind::TmuxSessionOpenKillMode
                 | CommandPaletteItemKind::TmuxSessionRenameSelect { .. }
                 | CommandPaletteItemKind::TmuxSessionRenameApply { .. }
-                | CommandPaletteItemKind::TmuxSessionKill { .. } => None,
+                | CommandPaletteItemKind::TmuxSessionKill { .. }
+                | CommandPaletteItemKind::SavedLayoutOpen { .. }
+                | CommandPaletteItemKind::SavedLayoutOpenSaveMode
+                | CommandPaletteItemKind::SavedLayoutSaveAs { .. }
+                | CommandPaletteItemKind::SavedLayoutOpenRenameMode
+                | CommandPaletteItemKind::SavedLayoutRenameSelect { .. }
+                | CommandPaletteItemKind::SavedLayoutRenameApply { .. }
+                | CommandPaletteItemKind::SavedLayoutOpenDeleteMode
+                | CommandPaletteItemKind::SavedLayoutDelete { .. } => None,
             };
             let title = item.title.clone();
             let status_hint = item.status_hint;
@@ -179,6 +187,13 @@ impl TerminalView {
                 TmuxSessionIntent::RenameInput => "tmux Sessions: Rename".to_string(),
                 TmuxSessionIntent::Kill => "tmux Sessions: Kill".to_string(),
             },
+            CommandPaletteMode::Layouts => match self.command_palette.saved_layout_intent() {
+                SavedLayoutIntent::Browse => "Saved Layouts".to_string(),
+                SavedLayoutIntent::SaveInput => "Saved Layouts: Save".to_string(),
+                SavedLayoutIntent::RenameSelect => "Saved Layouts: Rename".to_string(),
+                SavedLayoutIntent::RenameInput => "Saved Layouts: Rename".to_string(),
+                SavedLayoutIntent::Delete => "Saved Layouts: Delete".to_string(),
+            },
         };
         let footer_hint = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Enter: Run  Esc: Close  Up/Down: Navigate",
@@ -195,19 +210,40 @@ impl TerminalView {
                 }
                 TmuxSessionIntent::Kill => "Enter: Kill Session  Esc: Back  Up/Down: Navigate",
             },
+            CommandPaletteMode::Layouts => match self.command_palette.saved_layout_intent() {
+                SavedLayoutIntent::Browse => {
+                    "Enter: Load/Save/Manage Layout  Esc: Back  Up/Down: Navigate"
+                }
+                SavedLayoutIntent::SaveInput => "Enter: Save Layout  Esc: Back  Up/Down: Navigate",
+                SavedLayoutIntent::RenameSelect => {
+                    "Enter: Select Layout  Esc: Back  Up/Down: Navigate"
+                }
+                SavedLayoutIntent::RenameInput => {
+                    "Enter: Rename Layout  Esc: Back  Up/Down: Navigate"
+                }
+                SavedLayoutIntent::Delete => "Enter: Delete Layout  Esc: Back  Up/Down: Navigate",
+            },
         };
         let style = CommandPaletteStyle::resolve(self);
         let input_font = Font {
             family: self.font_family.clone(),
             ..Font::default()
         };
-        let empty_state_message = if self.command_palette.mode() == CommandPaletteMode::TmuxSessions
-            && self.command_palette.tmux_session_intent() == TmuxSessionIntent::AttachOrSwitch
-            && self.command_palette.input().text().trim().is_empty()
-        {
-            "No tmux sessions found. Type a name and press Enter to create one."
-        } else {
-            "No matching items"
+        let empty_state_message = match self.command_palette.mode() {
+            CommandPaletteMode::TmuxSessions
+                if self.command_palette.tmux_session_intent()
+                    == TmuxSessionIntent::AttachOrSwitch
+                    && self.command_palette.input().text().trim().is_empty() =>
+            {
+                "No tmux sessions found. Type a name and press Enter to create one."
+            }
+            CommandPaletteMode::Layouts
+                if self.command_palette.saved_layout_intent() == SavedLayoutIntent::Browse
+                    && self.command_palette.input().text().trim().is_empty() =>
+            {
+                "No saved layouts yet. Save the current split setup from here."
+            }
+            _ => "No matching items",
         };
 
         let list = if item_count == 0 {

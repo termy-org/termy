@@ -1,4 +1,5 @@
 use super::super::*;
+use super::state_layouts::SavedLayoutIntent;
 use super::state_tmux::{TmuxSessionIntent, TmuxSessionRow, TmuxSessionStatusHint};
 use crate::config::SHELL_DECIDE_THEME_ID;
 use gpui::UniformListScrollHandle;
@@ -10,6 +11,7 @@ pub(in super::super) enum CommandPaletteMode {
     Commands,
     Themes,
     TmuxSessions,
+    Layouts,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,6 +45,25 @@ pub(super) enum CommandPaletteItemKind {
     TmuxSessionKill {
         session_name: String,
         socket_target: TmuxSocketTarget,
+    },
+    SavedLayoutOpen {
+        layout_name: String,
+    },
+    SavedLayoutOpenSaveMode,
+    SavedLayoutSaveAs {
+        layout_name: String,
+    },
+    SavedLayoutOpenRenameMode,
+    SavedLayoutRenameSelect {
+        layout_name: String,
+    },
+    SavedLayoutRenameApply {
+        current_layout_name: String,
+        next_layout_name: String,
+    },
+    SavedLayoutOpenDeleteMode,
+    SavedLayoutDelete {
+        layout_name: String,
     },
 }
 
@@ -119,8 +140,10 @@ pub(in super::super) struct CommandPaletteState {
     open: bool,
     mode: CommandPaletteMode,
     pub(super) tmux_session_intent: TmuxSessionIntent,
+    pub(super) saved_layout_intent: SavedLayoutIntent,
     pub(super) tmux_rename_source_session: Option<String>,
     pub(super) tmux_rename_source_socket: Option<TmuxSocketTarget>,
+    pub(super) saved_layout_rename_source: Option<String>,
     input: InlineInputState,
     items: Vec<CommandPaletteItem>,
     filtered_indices: Vec<usize>,
@@ -134,6 +157,9 @@ pub(in super::super) struct CommandPaletteState {
     shortcut_cache: HashMap<CommandAction, Option<String>>,
     pub(super) tmux_session_rows: Vec<TmuxSessionRow>,
     pub(super) tmux_create_socket_target: TmuxSocketTarget,
+    pub(super) saved_layout_names: Vec<String>,
+    pub(super) saved_layout_live_name: Option<String>,
+    pub(super) saved_layout_autosave_enabled: bool,
 }
 
 impl CommandPaletteState {
@@ -142,8 +168,10 @@ impl CommandPaletteState {
             open: false,
             mode: CommandPaletteMode::Commands,
             tmux_session_intent: TmuxSessionIntent::AttachOrSwitch,
+            saved_layout_intent: SavedLayoutIntent::Browse,
             tmux_rename_source_session: None,
             tmux_rename_source_socket: None,
+            saved_layout_rename_source: None,
             input: InlineInputState::new(String::new()),
             items: Vec::new(),
             filtered_indices: Vec::new(),
@@ -157,6 +185,9 @@ impl CommandPaletteState {
             shortcut_cache: HashMap::new(),
             tmux_session_rows: Vec::new(),
             tmux_create_socket_target: TmuxSocketTarget::Default,
+            saved_layout_names: Vec::new(),
+            saved_layout_live_name: None,
+            saved_layout_autosave_enabled: false,
         }
     }
 
@@ -354,6 +385,10 @@ impl CommandPaletteState {
             self.tmux_session_intent = TmuxSessionIntent::AttachOrSwitch;
             self.tmux_rename_source_session = None;
             self.tmux_rename_source_socket = None;
+        }
+        if self.mode != CommandPaletteMode::Layouts {
+            self.saved_layout_intent = SavedLayoutIntent::Browse;
+            self.saved_layout_rename_source = None;
         }
     }
 }

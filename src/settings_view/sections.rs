@@ -1585,6 +1585,9 @@ impl SettingsWindow {
             .unwrap_or_else(|| "Not set".to_string());
         let working_dir_fallback = self.editable_field_value(EditableField::WorkingDirFallback);
         let warn_on_quit = self.config.warn_on_quit_with_running_process;
+        let native_tab_persistence = self.config.native_tab_persistence;
+        let native_layout_autosave = self.config.native_layout_autosave;
+        let native_buffer_persistence = self.config.native_buffer_persistence;
         let window_width = self.config.window_width;
         let window_height = self.config.window_height;
         let bg_card = self.bg_card();
@@ -1621,6 +1624,30 @@ impl SettingsWindow {
                 working_dir_fallback_meta.title,
                 working_dir_fallback_meta.description,
                 working_dir_fallback,
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "native_tab_persistence",
+                "native-tab-persistence-toggle",
+                RootSettingId::NativeTabPersistence,
+                native_tab_persistence,
+                "Saved",
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "native_layout_autosave",
+                "native-layout-autosave-toggle",
+                RootSettingId::NativeLayoutAutosave,
+                native_layout_autosave,
+                "Saved",
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "native_buffer_persistence",
+                "native-buffer-persistence-toggle",
+                RootSettingId::NativeBufferPersistence,
+                native_buffer_persistence,
+                "Saved",
                 cx,
             ),
         ];

@@ -458,6 +458,16 @@ define_commands!(
         ))
     ),
     (
+        ManageSavedLayouts,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Saved Layouts",
+            "saved layouts split panes tabs restore snapshot",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
         SplitPaneVertical,
         TERMINAL_CONTEXT,
         Some(palette(

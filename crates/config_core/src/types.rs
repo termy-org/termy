@@ -1,11 +1,10 @@
 use crate::constants::{
     DEFAULT_COLORTERM, DEFAULT_CURSOR_BLINK, DEFAULT_INACTIVE_TAB_SCROLLBACK,
     DEFAULT_MOUSE_SCROLL_MULTIPLIER, DEFAULT_PANE_FOCUS_STRENGTH, DEFAULT_SCROLLBACK_HISTORY,
-    DEFAULT_TAB_TITLE_COMMAND_FORMAT, DEFAULT_TAB_TITLE_EXPLICIT_PREFIX,
-    DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT,
-    DEFAULT_TAB_SWITCH_MODIFIER_HINTS, DEFAULT_TERM, DEFAULT_TMUX_BINARY, DEFAULT_TMUX_ENABLED,
-    DEFAULT_TMUX_PERSISTENCE, DEFAULT_TMUX_SHOW_ACTIVE_PANE_BORDER,
-    DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
+    DEFAULT_TAB_SWITCH_MODIFIER_HINTS, DEFAULT_TAB_TITLE_COMMAND_FORMAT,
+    DEFAULT_TAB_TITLE_EXPLICIT_PREFIX, DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT,
+    DEFAULT_TERM, DEFAULT_TMUX_BINARY, DEFAULT_TMUX_ENABLED, DEFAULT_TMUX_PERSISTENCE,
+    DEFAULT_TMUX_SHOW_ACTIVE_PANE_BORDER, DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
 };
 
 pub type ThemeId = String;
@@ -269,6 +268,9 @@ pub struct AppConfig {
     pub auto_update: bool,
     pub tmux_enabled: bool,
     pub tmux_persistence: bool,
+    pub native_tab_persistence: bool,
+    pub native_layout_autosave: bool,
+    pub native_buffer_persistence: bool,
     pub tmux_binary: String,
     pub tmux_show_active_pane_border: bool,
     pub working_dir: Option<String>,
@@ -321,6 +323,9 @@ impl Default for AppConfig {
             auto_update: true,
             tmux_enabled: DEFAULT_TMUX_ENABLED,
             tmux_persistence: DEFAULT_TMUX_PERSISTENCE,
+            native_tab_persistence: false,
+            native_layout_autosave: false,
+            native_buffer_persistence: false,
             tmux_binary: DEFAULT_TMUX_BINARY.to_string(),
             tmux_show_active_pane_border: DEFAULT_TMUX_SHOW_ACTIVE_PANE_BORDER,
             working_dir: None,

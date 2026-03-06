@@ -17,7 +17,26 @@ fn parse_report(input: &str) -> ConfigParseReport {
 fn defaults_enable_tmux_persistence_and_raise_pane_focus_strength() {
     let defaults = parse("");
     assert!(defaults.tmux_persistence);
+    assert!(!defaults.native_tab_persistence);
     assert!((defaults.pane_focus_strength - 0.6).abs() < f32::EPSILON);
+}
+
+#[test]
+fn native_tab_persistence_parses_as_boolean() {
+    assert!(parse("native_tab_persistence = true\n").native_tab_persistence);
+    assert!(!parse("native_tab_persistence = false\n").native_tab_persistence);
+}
+
+#[test]
+fn native_layout_autosave_parses_as_boolean() {
+    assert!(parse("native_layout_autosave = true\n").native_layout_autosave);
+    assert!(!parse("native_layout_autosave = false\n").native_layout_autosave);
+}
+
+#[test]
+fn native_buffer_persistence_parses_as_boolean() {
+    assert!(parse("native_buffer_persistence = true\n").native_buffer_persistence);
+    assert!(!parse("native_buffer_persistence = false\n").native_buffer_persistence);
 }
 
 #[test]
@@ -253,7 +272,9 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::TmuxEnabled => Some(config.tmux_enabled),
         RootSettingId::TmuxPersistence => Some(config.tmux_persistence),
         RootSettingId::TmuxShowActivePaneBorder => Some(config.tmux_show_active_pane_border),
-        RootSettingId::WarnOnQuitWithRunningProcess => Some(config.warn_on_quit_with_running_process),
+        RootSettingId::WarnOnQuitWithRunningProcess => {
+            Some(config.warn_on_quit_with_running_process)
+        }
         RootSettingId::TabTitleShellIntegration => Some(config.tab_title.shell_integration),
         RootSettingId::TabSwitchModifierHints => Some(config.tab_switch_modifier_hints),
         RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar),
@@ -284,13 +305,19 @@ fn bool_root_settings_parse_table_driven_from_schema() {
         assert_eq!(bool_root_setting_value(&enabled, spec.id), Some(true));
 
         let enabled_numeric = parse(&format!("{} = 1\n", key));
-        assert_eq!(bool_root_setting_value(&enabled_numeric, spec.id), Some(true));
+        assert_eq!(
+            bool_root_setting_value(&enabled_numeric, spec.id),
+            Some(true)
+        );
 
         let disabled = parse(&format!("{} = false\n", key));
         assert_eq!(bool_root_setting_value(&disabled, spec.id), Some(false));
 
         let disabled_numeric = parse(&format!("{} = 0\n", key));
-        assert_eq!(bool_root_setting_value(&disabled_numeric, spec.id), Some(false));
+        assert_eq!(
+            bool_root_setting_value(&disabled_numeric, spec.id),
+            Some(false)
+        );
 
         let invalid = parse(&format!("{} = maybe\n", key));
         assert_eq!(

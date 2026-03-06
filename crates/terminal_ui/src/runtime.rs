@@ -11,7 +11,7 @@ use alacritty_terminal::{
     sync::FairMutex,
     term::{Config as TermConfig, LineDamageBounds, Term, TermDamage, TermMode},
     tty::{self, Options as PtyOptions, Shell},
-    vte::ansi::{CursorShape, CursorStyle as AlacrittyCursorStyle},
+    vte::ansi::{self, CursorShape, CursorStyle as AlacrittyCursorStyle},
 };
 use flume::{Receiver, Sender, unbounded};
 use gpui::{Keystroke, Modifiers, Pixels, px};
@@ -610,6 +610,8 @@ impl Dimensions for TerminalSize {
 pub struct Terminal {
     /// The alacritty terminal emulator
     term: Arc<FairMutex<Term<JsonEventListener>>>,
+    /// Parser used for buffer rehydration without writing to the PTY.
+    parser: FairMutex<ansi::Processor>,
     /// Channel to send input to the PTY
     pty_tx: Notifier,
     /// Channel to receive events from alacritty
@@ -686,6 +688,7 @@ impl Terminal {
 
         Ok(Self {
             term,
+            parser: FairMutex::new(ansi::Processor::new()),
             pty_tx,
             events_rx,
             size,
@@ -701,6 +704,17 @@ impl Terminal {
     /// Write bytes to the PTY (user input)
     pub fn write(&self, input: &[u8]) {
         let _ = self.pty_tx.0.send(Msg::Input(input.to_vec().into()));
+    }
+
+    /// Rehydrate saved terminal output into the in-memory grid without sending input to the PTY.
+    pub fn hydrate_output(&self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+
+        let mut parser = self.parser.lock();
+        let mut term = self.term.lock();
+        parser.advance(&mut *term, bytes);
     }
 
     /// Write a string to the PTY

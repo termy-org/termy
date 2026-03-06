@@ -7,6 +7,12 @@ auto_update = true
 tmux_enabled = false
 # Reuse tmux tabs and panes across app restarts
 tmux_persistence = true
+# Restore native tabs and pane splits across app restarts
+native_tab_persistence = false
+# Auto-save changes back into the currently loaded named layout
+native_layout_autosave = false
+# Replay saved buffer text when restoring native layouts
+native_buffer_persistence = false
 # tmux executable path or binary name
 tmux_binary = tmux
 # Show active tmux pane border highlight in managed sessions

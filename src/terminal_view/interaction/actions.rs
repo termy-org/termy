@@ -6,6 +6,7 @@ impl TerminalView {
         match action {
             CommandAction::SwitchTheme => Some(CommandPaletteMode::Themes),
             CommandAction::ManageTmuxSessions => Some(CommandPaletteMode::TmuxSessions),
+            CommandAction::ManageSavedLayouts => Some(CommandPaletteMode::Layouts),
             _ => None,
         }
     }
@@ -94,6 +95,9 @@ impl TerminalView {
             }
             CommandAction::ManageTmuxSessions => {
                 self.open_tmux_session_palette_with_intent(TmuxSessionIntent::AttachOrSwitch, cx)
+            }
+            CommandAction::ManageSavedLayouts => {
+                self.open_saved_layouts_palette(cx);
             }
             CommandAction::Quit => {
                 self.execute_quit_command_action(action, window, cx);
@@ -386,6 +390,15 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::ManageTmuxSessions, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_manage_saved_layouts_action(
+        &mut self,
+        _: &commands::ManageSavedLayouts,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ManageSavedLayouts, true, window, cx);
     }
 
     pub(in super::super) fn handle_split_pane_vertical_action(

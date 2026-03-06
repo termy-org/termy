@@ -8,11 +8,13 @@ use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavai
 
 mod render;
 mod state;
+mod state_layouts;
 mod state_tmux;
 pub(super) mod style;
 mod tmux_sessions;
 
 pub(super) use state::{CommandPaletteMode, CommandPaletteState};
+pub(super) use state_layouts::SavedLayoutIntent;
 pub(super) use state_tmux::TmuxSessionIntent;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,6 +22,7 @@ enum CommandPaletteEscapeAction {
     ClosePalette,
     BackToCommands,
     BackToTmuxRenameSelect,
+    BackToSavedLayoutRenameSelect,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -215,6 +218,9 @@ impl TerminalView {
                 self.tmux_active_session_name_for_session_palette()
                     .as_deref(),
             ),
+            CommandPaletteMode::Layouts => self
+                .command_palette
+                .saved_layout_items_for_query(self.command_palette.input().text()),
         }
     }
 
@@ -251,6 +257,11 @@ impl TerminalView {
                 self.tmux_primary_socket_target_for_session_palette(),
             );
             termy_toast::error(format!("Failed to list tmux sessions: {error}"));
+        }
+        if mode == CommandPaletteMode::Layouts
+            && let Err(error) = self.reload_saved_layout_palette_items()
+        {
+            termy_toast::error(format!("Failed to load saved layouts: {error}"));
         }
         let items = self.command_palette_items_for_mode(mode);
         self.command_palette.set_items(items);
@@ -301,6 +312,15 @@ impl TerminalView {
         self.open_command_palette_in_mode(CommandPaletteMode::Commands, cx);
     }
 
+    pub(super) fn open_saved_layouts_palette(&mut self, cx: &mut Context<Self>) {
+        if self.runtime_kind() != RuntimeKind::Native {
+            termy_toast::info("Switch to the native runtime to use saved layouts");
+            self.notify_overlay(cx);
+            return;
+        }
+        self.open_command_palette_in_mode(CommandPaletteMode::Layouts, cx);
+    }
+
     pub(super) fn close_command_palette(&mut self, cx: &mut Context<Self>) {
         if !self.command_palette.is_open() {
             return;
@@ -322,6 +342,11 @@ impl TerminalView {
                 self.tmux_active_session_name_for_session_palette()
                     .as_deref(),
             );
+            self.command_palette.set_items(items);
+        } else if self.command_palette.mode() == CommandPaletteMode::Layouts {
+            let items = self
+                .command_palette
+                .saved_layout_items_for_query(self.command_palette.input().text());
             self.command_palette.set_items(items);
         } else {
             self.command_palette.refilter_current_query();
@@ -468,6 +493,7 @@ impl TerminalView {
                 match Self::command_palette_escape_action(
                     self.command_palette.mode(),
                     self.command_palette.tmux_session_intent(),
+                    self.command_palette.saved_layout_intent(),
                 ) {
                     CommandPaletteEscapeAction::ClosePalette => self.close_command_palette(cx),
                     CommandPaletteEscapeAction::BackToCommands => {
@@ -477,6 +503,16 @@ impl TerminalView {
                         if self.command_palette.back_from_tmux_rename_input() {
                             self.apply_command_palette_mode_setup(
                                 CommandPaletteMode::TmuxSessions,
+                                false,
+                                CommandPaletteNotifyEvent::InteractionOnly,
+                                cx,
+                            );
+                        }
+                    }
+                    CommandPaletteEscapeAction::BackToSavedLayoutRenameSelect => {
+                        if self.command_palette.back_from_saved_layout_rename_input() {
+                            self.apply_command_palette_mode_setup(
+                                CommandPaletteMode::Layouts,
                                 false,
                                 CommandPaletteNotifyEvent::InteractionOnly,
                                 cx,
@@ -514,6 +550,7 @@ impl TerminalView {
     fn command_palette_escape_action(
         mode: CommandPaletteMode,
         tmux_session_intent: TmuxSessionIntent,
+        saved_layout_intent: SavedLayoutIntent,
     ) -> CommandPaletteEscapeAction {
         match mode {
             CommandPaletteMode::Commands => CommandPaletteEscapeAction::ClosePalette,
@@ -524,6 +561,12 @@ impl TerminalView {
                 CommandPaletteEscapeAction::BackToTmuxRenameSelect
             }
             CommandPaletteMode::TmuxSessions => CommandPaletteEscapeAction::BackToCommands,
+            CommandPaletteMode::Layouts
+                if saved_layout_intent == SavedLayoutIntent::RenameInput =>
+            {
+                CommandPaletteEscapeAction::BackToSavedLayoutRenameSelect
+            }
+            CommandPaletteMode::Layouts => CommandPaletteEscapeAction::BackToCommands,
         }
     }
 
@@ -642,6 +685,174 @@ impl TerminalView {
                 item.tmux_status_hint,
                 cx,
             ),
+            CommandPaletteItemKind::SavedLayoutOpen { layout_name } => {
+                self.load_saved_layout_from_palette(layout_name.as_str(), cx)
+            }
+            CommandPaletteItemKind::SavedLayoutOpenSaveMode => {
+                self.open_save_layout_input_from_palette(cx)
+            }
+            CommandPaletteItemKind::SavedLayoutSaveAs { layout_name } => {
+                self.save_current_layout_from_palette(layout_name.as_str(), item.enabled, cx)
+            }
+            CommandPaletteItemKind::SavedLayoutOpenRenameMode => {
+                self.open_saved_layout_rename_mode_from_palette(cx)
+            }
+            CommandPaletteItemKind::SavedLayoutRenameSelect { layout_name } => {
+                self.select_saved_layout_for_rename_from_palette(layout_name.as_str(), cx)
+            }
+            CommandPaletteItemKind::SavedLayoutRenameApply {
+                current_layout_name,
+                next_layout_name,
+            } => self.apply_saved_layout_rename_from_palette(
+                current_layout_name.as_str(),
+                next_layout_name.as_str(),
+                item.enabled,
+                cx,
+            ),
+            CommandPaletteItemKind::SavedLayoutOpenDeleteMode => {
+                self.open_saved_layout_delete_mode_from_palette(cx)
+            }
+            CommandPaletteItemKind::SavedLayoutDelete { layout_name } => {
+                self.delete_saved_layout_from_palette(layout_name.as_str(), cx)
+            }
+        }
+    }
+
+    fn reload_saved_layout_palette_items(&mut self) -> Result<(), String> {
+        let names = self.saved_layout_names()?;
+        self.command_palette.set_saved_layout_names(
+            names,
+            self.current_named_layout.clone(),
+            self.native_layout_autosave,
+        );
+        Ok(())
+    }
+
+    fn open_save_layout_input_from_palette(&mut self, cx: &mut Context<Self>) {
+        self.command_palette
+            .set_saved_layout_intent(SavedLayoutIntent::SaveInput);
+        self.apply_command_palette_mode_setup(
+            CommandPaletteMode::Layouts,
+            false,
+            CommandPaletteNotifyEvent::InteractionOnly,
+            cx,
+        );
+    }
+
+    fn save_current_layout_from_palette(
+        &mut self,
+        layout_name: &str,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if !enabled {
+            termy_toast::info("Enter a layout name first");
+            self.notify_overlay(cx);
+            return;
+        }
+        match self.save_current_workspace_as_named_layout(layout_name) {
+            Ok(()) => {
+                self.close_command_palette(cx);
+                termy_toast::success(format!("Saved layout \"{}\"", layout_name.trim()));
+                self.notify_overlay(cx);
+            }
+            Err(error) => {
+                termy_toast::error(error);
+                self.notify_overlay(cx);
+            }
+        }
+    }
+
+    fn load_saved_layout_from_palette(&mut self, layout_name: &str, cx: &mut Context<Self>) {
+        match self.load_named_layout(layout_name, cx) {
+            Ok(()) => {
+                self.close_command_palette(cx);
+                termy_toast::success(format!("Loaded layout \"{}\"", layout_name));
+                self.notify_overlay(cx);
+            }
+            Err(error) => {
+                termy_toast::error(error);
+                self.notify_overlay(cx);
+            }
+        }
+    }
+
+    fn open_saved_layout_rename_mode_from_palette(&mut self, cx: &mut Context<Self>) {
+        self.command_palette
+            .set_saved_layout_intent(SavedLayoutIntent::RenameSelect);
+        self.apply_command_palette_mode_setup(
+            CommandPaletteMode::Layouts,
+            false,
+            CommandPaletteNotifyEvent::InteractionOnly,
+            cx,
+        );
+    }
+
+    fn select_saved_layout_for_rename_from_palette(
+        &mut self,
+        layout_name: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.command_palette.begin_saved_layout_rename(layout_name);
+        self.apply_command_palette_mode_setup(
+            CommandPaletteMode::Layouts,
+            false,
+            CommandPaletteNotifyEvent::InteractionOnly,
+            cx,
+        );
+    }
+
+    fn apply_saved_layout_rename_from_palette(
+        &mut self,
+        current_layout_name: &str,
+        next_layout_name: &str,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if !enabled {
+            termy_toast::info("Enter a different layout name");
+            self.notify_overlay(cx);
+            return;
+        }
+        match self.rename_named_layout(current_layout_name, next_layout_name) {
+            Ok(()) => {
+                self.close_command_palette(cx);
+                termy_toast::success(format!(
+                    "Renamed layout \"{}\" to \"{}\"",
+                    current_layout_name,
+                    next_layout_name.trim()
+                ));
+                self.notify_overlay(cx);
+            }
+            Err(error) => {
+                termy_toast::error(error);
+                self.notify_overlay(cx);
+            }
+        }
+    }
+
+    fn open_saved_layout_delete_mode_from_palette(&mut self, cx: &mut Context<Self>) {
+        self.command_palette
+            .set_saved_layout_intent(SavedLayoutIntent::Delete);
+        self.apply_command_palette_mode_setup(
+            CommandPaletteMode::Layouts,
+            false,
+            CommandPaletteNotifyEvent::InteractionOnly,
+            cx,
+        );
+    }
+
+    fn delete_saved_layout_from_palette(&mut self, layout_name: &str, cx: &mut Context<Self>) {
+        match self.delete_named_layout(layout_name) {
+            Ok(()) => {
+                self.close_command_palette(cx);
+                termy_toast::success(format!("Deleted layout \"{}\"", layout_name));
+                self.notify_overlay(cx);
+            }
+            Err(error) => {
+                termy_toast::error(error);
+                self.notify_overlay(cx);
+            }
         }
     }
 
@@ -718,6 +929,7 @@ impl TerminalView {
             CommandAction::Quit
             | CommandAction::SwitchTheme
             | CommandAction::ManageTmuxSessions
+            | CommandAction::ManageSavedLayouts
             | CommandAction::AppInfo
             | CommandAction::RestartApp
             | CommandAction::RenameTab
@@ -787,7 +999,9 @@ impl TerminalView {
     fn command_palette_should_stay_open(action: CommandAction) -> bool {
         matches!(
             action,
-            CommandAction::SwitchTheme | CommandAction::ManageTmuxSessions
+            CommandAction::SwitchTheme
+                | CommandAction::ManageTmuxSessions
+                | CommandAction::ManageSavedLayouts
         )
     }
 }
@@ -802,6 +1016,7 @@ mod tests {
             TerminalView::command_palette_escape_action(
                 CommandPaletteMode::Commands,
                 TmuxSessionIntent::AttachOrSwitch,
+                SavedLayoutIntent::Browse,
             ),
             CommandPaletteEscapeAction::ClosePalette
         );
@@ -809,6 +1024,7 @@ mod tests {
             TerminalView::command_palette_escape_action(
                 CommandPaletteMode::Themes,
                 TmuxSessionIntent::AttachOrSwitch,
+                SavedLayoutIntent::Browse,
             ),
             CommandPaletteEscapeAction::BackToCommands
         );
@@ -816,6 +1032,7 @@ mod tests {
             TerminalView::command_palette_escape_action(
                 CommandPaletteMode::TmuxSessions,
                 TmuxSessionIntent::AttachOrSwitch,
+                SavedLayoutIntent::Browse,
             ),
             CommandPaletteEscapeAction::BackToCommands
         );
@@ -823,6 +1040,7 @@ mod tests {
             TerminalView::command_palette_escape_action(
                 CommandPaletteMode::TmuxSessions,
                 TmuxSessionIntent::RenameInput,
+                SavedLayoutIntent::Browse,
             ),
             CommandPaletteEscapeAction::BackToTmuxRenameSelect
         );
@@ -857,6 +1075,9 @@ mod tests {
         assert!(TerminalView::command_palette_should_stay_open(
             CommandAction::ManageTmuxSessions
         ));
+        assert!(TerminalView::command_palette_should_stay_open(
+            CommandAction::ManageSavedLayouts
+        ));
         assert!(!TerminalView::command_palette_should_stay_open(
             CommandAction::NewTab
         ));
@@ -880,7 +1101,8 @@ mod tests {
 
     #[test]
     fn install_cli_command_is_present_and_tracks_availability_state() {
-        let available_items = TerminalView::command_palette_core_command_items_for_state(true, true);
+        let available_items =
+            TerminalView::command_palette_core_command_items_for_state(true, true);
         let unavailable_items =
             TerminalView::command_palette_core_command_items_for_state(false, true);
 

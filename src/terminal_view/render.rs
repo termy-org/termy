@@ -1622,6 +1622,7 @@ impl Render for TerminalView {
         let divider_color: gpui::Hsla = divider_rgba.into();
         let mut pane_layers = Vec::<AnyElement>::new();
         let mut pane_dividers = Vec::<AnyElement>::new();
+        let mut pane_resize_handles = Vec::<AnyElement>::new();
         let mut pane_focus_accents = Vec::<AnyElement>::new();
         let mut pane_focus_needs_animation = false;
         #[cfg(debug_assertions)]
@@ -1806,6 +1807,9 @@ impl Render for TerminalView {
                 {
                     let gap_px = (gap_cells as f32) * cell_width;
                     let divider_left = pane_frame_left + pane_frame_width + (gap_px * 0.5) - 0.5;
+                    let handle_width = gap_px.max(8.0);
+                    let handle_left = divider_left - ((handle_width - 1.0) * 0.5);
+                    let pane_id = pane.id.clone();
                     pane_dividers.push(
                         div()
                             .absolute()
@@ -1816,6 +1820,32 @@ impl Render for TerminalView {
                             .bg(divider_color)
                             .into_any_element(),
                     );
+                    pane_resize_handles.push(
+                        div()
+                            .id(SharedString::from(format!(
+                                "pane-resize-handle-right-{}",
+                                pane.id
+                            )))
+                            .absolute()
+                            .left(px(handle_left))
+                            .top(px(pane_frame_top))
+                            .w(px(handle_width))
+                            .h(px(pane_frame_height))
+                            .cursor_col_resize()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                                    view.begin_pane_resize_drag(
+                                        pane_id.as_str(),
+                                        PaneResizeAxis::Horizontal,
+                                        PaneResizeEdge::Right,
+                                        event.position,
+                                    );
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .into_any_element(),
+                    );
                 }
                 if multi_pane
                     && pane_bottom_cells < max_bottom_cells
@@ -1823,6 +1853,9 @@ impl Render for TerminalView {
                 {
                     let gap_px = (gap_cells as f32) * cell_height;
                     let divider_top = pane_frame_top + pane_frame_height + (gap_px * 0.5) - 0.5;
+                    let handle_height = gap_px.max(8.0);
+                    let handle_top = divider_top - ((handle_height - 1.0) * 0.5);
+                    let pane_id = pane.id.clone();
                     pane_dividers.push(
                         div()
                             .absolute()
@@ -1831,6 +1864,32 @@ impl Render for TerminalView {
                             .w(px(pane_frame_width))
                             .h(px(1.0))
                             .bg(divider_color)
+                            .into_any_element(),
+                    );
+                    pane_resize_handles.push(
+                        div()
+                            .id(SharedString::from(format!(
+                                "pane-resize-handle-bottom-{}",
+                                pane.id
+                            )))
+                            .absolute()
+                            .left(px(pane_frame_left))
+                            .top(px(handle_top))
+                            .w(px(pane_frame_width))
+                            .h(px(handle_height))
+                            .cursor_row_resize()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                                    view.begin_pane_resize_drag(
+                                        pane_id.as_str(),
+                                        PaneResizeAxis::Vertical,
+                                        PaneResizeEdge::Bottom,
+                                        event.position,
+                                    );
+                                    cx.stop_propagation();
+                                }),
+                            )
                             .into_any_element(),
                     );
                 }
@@ -1947,6 +2006,7 @@ impl Render for TerminalView {
             .h_full()
             .children(pane_layers)
             .children(pane_dividers)
+            .children(pane_resize_handles)
             .children(pane_focus_accents)
             .into_any_element();
         let overlay_view = self.ensure_overlay_view(cx);
@@ -2054,6 +2114,7 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_switch_to_tab_8_action))
                     .on_action(cx.listener(Self::handle_switch_to_tab_9_action))
                     .on_action(cx.listener(Self::handle_manage_tmux_sessions_action))
+                    .on_action(cx.listener(Self::handle_manage_saved_layouts_action))
                     .on_action(cx.listener(Self::handle_split_pane_vertical_action))
                     .on_action(cx.listener(Self::handle_split_pane_horizontal_action))
                     .on_action(cx.listener(Self::handle_close_pane_action))
@@ -2117,6 +2178,10 @@ impl Render for TerminalView {
                     .w_full()
                     .overflow_hidden()
                     .bg(terminal_surface_bg_hsla)
+                    .when_some(self.pane_resize_drag.as_ref(), |s, drag| match drag.axis {
+                        PaneResizeAxis::Horizontal => s.cursor_col_resize(),
+                        PaneResizeAxis::Vertical => s.cursor_row_resize(),
+                    })
                     .font_family(font_family.clone())
                     .text_size(font_size)
                     .child(terminal_grid_layer)

@@ -311,6 +311,9 @@ define_root_settings! {
     (AutoUpdate, "auto_update", [], Advanced, "UPDATES", "Auto Update", "Enable automatic update checks and notifications", ["update", "check", "upgrade", "version"], RootSettingValueKind::Boolean, false),
     (TmuxEnabled, "tmux_enabled", [], Terminal, "TMUX", "Tmux Enabled", "Enable tmux runtime integration", ["tmux", "runtime", "integration", "enabled"], RootSettingValueKind::Boolean, false),
     (TmuxPersistence, "tmux_persistence", [], Terminal, "TMUX", "Tmux Persistence", "Reuse tmux tabs and panes across app restarts", ["tmux", "session", "persistence", "restart"], RootSettingValueKind::Boolean, false),
+    (NativeTabPersistence, "native_tab_persistence", [], Advanced, "STARTUP", "Native Tab Persistence", "Restore native tabs and pane splits across app restarts", ["native", "tabs", "panes", "split", "restore", "startup"], RootSettingValueKind::Boolean, false),
+    (NativeLayoutAutosave, "native_layout_autosave", [], Advanced, "STARTUP", "Native Layout Autosave", "Auto-save changes back into the currently loaded named layout", ["native", "layout", "autosave", "saved", "snapshot"], RootSettingValueKind::Boolean, false),
+    (NativeBufferPersistence, "native_buffer_persistence", [], Advanced, "STARTUP", "Native Buffer Persistence", "Replay saved buffer text when restoring native layouts", ["native", "buffer", "scrollback", "history", "restore"], RootSettingValueKind::Boolean, false),
     (TmuxBinary, "tmux_binary", [], Terminal, "TMUX", "Tmux Binary", "tmux executable path or binary name", ["tmux", "binary", "path"], RootSettingValueKind::Text, false),
     (TmuxShowActivePaneBorder, "tmux_show_active_pane_border", [], Terminal, "TMUX", "Show Active Pane Border", "Show active tmux pane border highlight in managed sessions", ["tmux", "pane", "border", "highlight"], RootSettingValueKind::Boolean, false),
     (WorkingDir, "working_dir", [], Advanced, "STARTUP", "Working Directory", "Initial directory for new sessions", ["working directory", "cwd", "startup", "path"], RootSettingValueKind::Text, false),
@@ -410,6 +413,11 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::AutoUpdate => Some(config.auto_update.to_string()),
         RootSettingId::TmuxEnabled => Some(config.tmux_enabled.to_string()),
         RootSettingId::TmuxPersistence => Some(config.tmux_persistence.to_string()),
+        RootSettingId::NativeTabPersistence => Some(config.native_tab_persistence.to_string()),
+        RootSettingId::NativeLayoutAutosave => Some(config.native_layout_autosave.to_string()),
+        RootSettingId::NativeBufferPersistence => {
+            Some(config.native_buffer_persistence.to_string())
+        }
         RootSettingId::TmuxBinary => Some(config.tmux_binary.clone()),
         RootSettingId::TmuxShowActivePaneBorder => {
             Some(config.tmux_show_active_pane_border.to_string())

@@ -177,6 +177,7 @@ impl TerminalView {
                     .tab_strip
                     .hovered_tab_close
                     .map(|index| Self::remap_index_after_move(index, from, to));
+                self.sync_persisted_native_workspace();
             }
         }
         self.reset_tab_drag_state();
@@ -279,6 +280,7 @@ impl TerminalView {
                 self.mark_tab_strip_layout_dirty();
                 self.reset_tab_interaction_state();
                 self.scroll_active_tab_into_view();
+                self.sync_persisted_native_workspace();
                 cx.notify();
             }
         }
@@ -340,6 +342,7 @@ impl TerminalView {
 
         self.clear_selection();
         self.scroll_active_tab_into_view();
+        self.sync_persisted_native_workspace();
         cx.notify();
     }
 
@@ -397,6 +400,7 @@ impl TerminalView {
                 self.reset_tab_drag_state();
                 self.clear_selection();
                 self.sync_tab_strip_for_active_tab();
+                self.sync_persisted_native_workspace();
                 cx.notify();
             }
         }
@@ -417,6 +421,7 @@ impl TerminalView {
                     .then(|| Self::truncate_tab_title(trimmed))
                     .filter(|title| !title.is_empty());
                 self.refresh_tab_title(index);
+                self.sync_persisted_native_workspace();
             }
         }
 
@@ -608,6 +613,7 @@ impl TerminalView {
         tab.active_pane_id = pane_id.to_string();
         self.clear_selection();
         self.clear_hovered_link();
+        self.sync_persisted_native_workspace();
         cx.notify();
         true
     }
@@ -631,22 +637,32 @@ impl TerminalView {
 
         let (current_size, split_size) = match axis {
             NativeSplitAxis::Vertical => {
-                if width <= 1 {
+                let min_width = Self::native_pane_min_extent_for_axis(PaneResizeAxis::Horizontal);
+                if width < min_width.saturating_mul(2) {
+                    termy_toast::info(format!(
+                        "Pane needs at least {} columns to split vertically",
+                        min_width.saturating_mul(2)
+                    ));
                     return false;
                 }
-                let current_width = (width / 2).max(1);
-                let split_width = width.saturating_sub(current_width).max(1);
+                let current_width = (width / 2).max(min_width);
+                let split_width = width.saturating_sub(current_width).max(min_width);
                 (
                     (left, top, current_width, height),
                     (left.saturating_add(current_width), top, split_width, height),
                 )
             }
             NativeSplitAxis::Horizontal => {
-                if height <= 1 {
+                let min_height = Self::native_pane_min_extent_for_axis(PaneResizeAxis::Vertical);
+                if height < min_height.saturating_mul(2) {
+                    termy_toast::info(format!(
+                        "Pane needs at least {} rows to split horizontally",
+                        min_height.saturating_mul(2)
+                    ));
                     return false;
                 }
-                let current_height = (height / 2).max(1);
-                let split_height = height.saturating_sub(current_height).max(1);
+                let current_height = (height / 2).max(min_height);
+                let split_height = height.saturating_sub(current_height).max(min_height);
                 (
                     (left, top, width, current_height),
                     (
@@ -696,6 +712,7 @@ impl TerminalView {
         tab.active_pane_id = pane_id;
         self.clear_selection();
         self.clear_hovered_link();
+        self.sync_persisted_native_workspace();
         cx.notify();
         true
     }
@@ -855,6 +872,7 @@ impl TerminalView {
 
         self.clear_selection();
         self.clear_hovered_link();
+        self.sync_persisted_native_workspace();
         cx.notify();
         true
     }

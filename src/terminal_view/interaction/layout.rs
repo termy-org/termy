@@ -1,6 +1,32 @@
 use super::*;
 
 impl TerminalView {
+    pub(in super::super) fn native_pane_min_extent_for_axis(axis: PaneResizeAxis) -> u16 {
+        match axis {
+            PaneResizeAxis::Horizontal => NATIVE_PANE_MIN_COLS,
+            PaneResizeAxis::Vertical => NATIVE_PANE_MIN_ROWS,
+        }
+    }
+
+    pub(in super::super) fn native_min_extent_allowed(
+        total_extent: u16,
+        pane_count: usize,
+        min_extent: u16,
+    ) -> u16 {
+        let Some(pane_count) = u16::try_from(pane_count).ok() else {
+            return 1;
+        };
+        if pane_count == 0 {
+            return 1;
+        }
+        let required = min_extent.saturating_mul(pane_count);
+        if total_extent >= required {
+            min_extent
+        } else {
+            (total_extent / pane_count).max(1)
+        }
+    }
+
     fn compute_terminal_cols(terminal_width: f32, cell_width: f32, edge_to_edge_grid: bool) -> u16 {
         let cols = if edge_to_edge_grid {
             (terminal_width / cell_width).ceil()
@@ -72,7 +98,6 @@ impl TerminalView {
             .max()
             .unwrap_or(rows)
             .max(1);
-
         for pane in &mut tab.panes {
             let old_left = pane.left;
             let old_top = pane.top;
