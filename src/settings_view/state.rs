@@ -242,6 +242,7 @@ impl SettingsWindow {
             RootSettingId::TabTitleCommandFormat,
             RootSettingId::TabCloseVisibility,
             RootSettingId::TabWidthMode,
+            RootSettingId::TabSwitchModifierHints,
             RootSettingId::ShowTermyInTitlebar,
         ];
         const ADVANCED_SETTINGS: &[RootSettingId] = &[

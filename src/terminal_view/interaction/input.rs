@@ -1,6 +1,26 @@
 use super::*;
 
 impl TerminalView {
+    pub(in super::super) fn handle_modifiers_changed(
+        &mut self,
+        event: &ModifiersChangedEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.show_tab_switch_modifier_hints {
+            if std::mem::take(&mut self.tab_switch_modifier_held) {
+                cx.notify();
+            }
+            return;
+        }
+
+        let next = Self::secondary_modifier_held_alone(event.modifiers);
+        if self.tab_switch_modifier_held != next {
+            self.tab_switch_modifier_held = next;
+            cx.notify();
+        }
+    }
+
     fn send_input_to_active_pane(&self, input: &[u8]) -> bool {
         match self.runtime_kind() {
             RuntimeKind::Tmux => self.tmux_send_input_to_active_pane(input),

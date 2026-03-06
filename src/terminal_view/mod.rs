@@ -12,9 +12,10 @@ use flume::{Sender, bounded};
 use gpui::AppContext;
 use gpui::{
     AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths, FocusHandle,
-    Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, ScrollWheelEvent,
-    SharedString, Size, StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window,
+    Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Render, ScrollWheelEvent, SharedString, Size,
+    StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window,
     WindowBackgroundAppearance, div, point, px,
 };
 use std::{
@@ -946,6 +947,8 @@ pub struct TerminalView {
     tab_title: TabTitleConfig,
     tab_close_visibility: TabCloseVisibility,
     tab_width_mode: TabWidthMode,
+    show_tab_switch_modifier_hints: bool,
+    tab_switch_modifier_held: bool,
     show_termy_in_titlebar: bool,
     tab_shell_integration: TabTitleShellIntegration,
     configured_working_dir: Option<String>,
@@ -1417,6 +1420,10 @@ impl TerminalView {
 
     fn scaled_chrome_alpha(&self, base_alpha: f32) -> f32 {
         scaled_chrome_alpha_for_opacity(base_alpha, self.background_opacity)
+    }
+
+    pub(crate) fn secondary_modifier_held_alone(modifiers: gpui::Modifiers) -> bool {
+        modifiers.secondary() && modifiers.number_of_modifiers() == 1
     }
 
     fn pane_focus_config(&self) -> Option<(PaneFocusPreset, f32)> {
@@ -1940,6 +1947,8 @@ impl TerminalView {
             tab_title,
             tab_close_visibility: config.tab_close_visibility,
             tab_width_mode: config.tab_width_mode,
+            show_tab_switch_modifier_hints: config.tab_switch_modifier_hints,
+            tab_switch_modifier_held: false,
             show_termy_in_titlebar: config.show_termy_in_titlebar,
             tab_shell_integration,
             configured_working_dir,
@@ -2052,7 +2061,9 @@ impl TerminalView {
         })
         .detach();
         cx.on_blur(&blur_focus_handle, window, |view, _window, cx| {
-            if view.release_all_forwarded_mouse_presses() {
+            let released_mouse_presses = view.release_all_forwarded_mouse_presses();
+            let cleared_tab_switch_hint_state = std::mem::take(&mut view.tab_switch_modifier_held);
+            if released_mouse_presses || cleared_tab_switch_hint_state {
                 cx.notify();
             }
         })
@@ -2099,10 +2110,16 @@ impl TerminalView {
         self.tab_title = config.tab_title.clone();
         let tab_close_visibility_changed = self.tab_close_visibility != config.tab_close_visibility;
         let tab_width_mode_changed = self.tab_width_mode != config.tab_width_mode;
+        let tab_switch_modifier_hints_changed =
+            self.show_tab_switch_modifier_hints != config.tab_switch_modifier_hints;
         let show_termy_in_titlebar_changed =
             self.show_termy_in_titlebar != config.show_termy_in_titlebar;
         self.tab_close_visibility = config.tab_close_visibility;
         self.tab_width_mode = config.tab_width_mode;
+        self.show_tab_switch_modifier_hints = config.tab_switch_modifier_hints;
+        if !self.show_tab_switch_modifier_hints {
+            self.tab_switch_modifier_held = false;
+        }
         self.show_termy_in_titlebar = config.show_termy_in_titlebar;
         self.tab_shell_integration = TabTitleShellIntegration {
             enabled: self.tab_title.shell_integration,
@@ -2197,6 +2214,9 @@ impl TerminalView {
         if tab_close_visibility_changed || tab_width_mode_changed || show_termy_in_titlebar_changed
         {
             self.mark_tab_strip_layout_dirty();
+        }
+        if tab_switch_modifier_hints_changed {
+            cx.notify();
         }
 
         if self.is_command_palette_open() {
@@ -2712,6 +2732,24 @@ mod tests {
     #[test]
     fn tmux_runtime_uses_event_driven_wakeup_strategy() {
         assert!(TerminalView::uses_event_driven_tmux_wakeup());
+    }
+
+    #[test]
+    fn secondary_modifier_detection_requires_secondary_alone() {
+        let secondary_only = gpui::Modifiers::secondary_key();
+        assert!(TerminalView::secondary_modifier_held_alone(secondary_only));
+
+        let secondary_with_shift = gpui::Modifiers {
+            shift: true,
+            ..gpui::Modifiers::secondary_key()
+        };
+        assert!(!TerminalView::secondary_modifier_held_alone(
+            secondary_with_shift
+        ));
+
+        assert!(!TerminalView::secondary_modifier_held_alone(
+            gpui::Modifiers::default()
+        ));
     }
 
     #[test]

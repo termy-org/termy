@@ -823,8 +823,11 @@ impl SettingsWindow {
     pub(super) fn render_tabs_strip_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let close_visibility = self.editable_field_value(EditableField::TabCloseVisibility);
         let width_mode = self.editable_field_value(EditableField::TabWidthMode);
+        let show_switch_hints = self.config.tab_switch_modifier_hints;
         let close_visibility_meta = Self::setting_metadata_or_fallback("tab_close_visibility");
         let width_mode_meta = Self::setting_metadata_or_fallback("tab_width_mode");
+        let show_switch_hints_meta =
+            Self::setting_metadata_or_fallback("tab_switch_modifier_hints");
 
         let rows = vec![
             self.render_editable_row(
@@ -842,6 +845,27 @@ impl SettingsWindow {
                 width_mode_meta.description,
                 width_mode,
                 cx,
+            ),
+            self.render_setting_row(
+                "tab_switch_modifier_hints",
+                "tab_switch_modifier_hints-toggle",
+                show_switch_hints_meta.title,
+                show_switch_hints_meta.description,
+                show_switch_hints,
+                cx,
+                |view, _cx| {
+                    let next = !view.config.tab_switch_modifier_hints;
+                    match config::set_root_setting(
+                        RootSettingId::TabSwitchModifierHints,
+                        &next.to_string(),
+                    ) {
+                        Ok(()) => {
+                            view.config.tab_switch_modifier_hints = next;
+                            termy_toast::success("Saved");
+                        }
+                        Err(error) => termy_toast::error(error),
+                    }
+                },
             ),
         ];
 

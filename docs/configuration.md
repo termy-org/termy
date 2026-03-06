@@ -178,6 +178,11 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - How tab widths react to active state
 - Group: `TAB STRIP`
 
+`tab_switch_modifier_hints`
+- Default: `true`
+- Show secondary+number badges on tabs while the secondary modifier is held
+- Group: `TAB STRIP`
+
 `show_termy_in_titlebar`
 - Default: `true`
 - Show or hide the termy branding in the titlebar

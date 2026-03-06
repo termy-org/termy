@@ -2,8 +2,9 @@ use crate::constants::{
     DEFAULT_COLORTERM, DEFAULT_CURSOR_BLINK, DEFAULT_INACTIVE_TAB_SCROLLBACK,
     DEFAULT_MOUSE_SCROLL_MULTIPLIER, DEFAULT_PANE_FOCUS_STRENGTH, DEFAULT_SCROLLBACK_HISTORY,
     DEFAULT_TAB_TITLE_COMMAND_FORMAT, DEFAULT_TAB_TITLE_EXPLICIT_PREFIX,
-    DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT, DEFAULT_TERM, DEFAULT_TMUX_BINARY,
-    DEFAULT_TMUX_ENABLED, DEFAULT_TMUX_PERSISTENCE, DEFAULT_TMUX_SHOW_ACTIVE_PANE_BORDER,
+    DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT,
+    DEFAULT_TAB_SWITCH_MODIFIER_HINTS, DEFAULT_TERM, DEFAULT_TMUX_BINARY, DEFAULT_TMUX_ENABLED,
+    DEFAULT_TMUX_PERSISTENCE, DEFAULT_TMUX_SHOW_ACTIVE_PANE_BORDER,
     DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
 };
 
@@ -276,6 +277,7 @@ pub struct AppConfig {
     pub tab_title: TabTitleConfig,
     pub tab_close_visibility: TabCloseVisibility,
     pub tab_width_mode: TabWidthMode,
+    pub tab_switch_modifier_hints: bool,
     pub show_termy_in_titlebar: bool,
     pub shell: Option<String>,
     pub term: String,
@@ -327,6 +329,7 @@ impl Default for AppConfig {
             tab_title: TabTitleConfig::default(),
             tab_close_visibility: TabCloseVisibility::default(),
             tab_width_mode: TabWidthMode::default(),
+            tab_switch_modifier_hints: DEFAULT_TAB_SWITCH_MODIFIER_HINTS,
             show_termy_in_titlebar: true,
             shell: None,
             term: DEFAULT_TERM.to_string(),

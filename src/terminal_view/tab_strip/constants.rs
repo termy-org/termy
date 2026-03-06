@@ -21,6 +21,7 @@ pub(crate) const TAB_ADAPTIVE_GROWTH_FACTOR: f32 = 0.85;
 pub(crate) const TAB_ADAPTIVE_HARD_CAP_RATIO: f32 = 0.60;
 pub(crate) const TAB_CLOSE_SLOT_WIDTH: f32 = 24.0;
 pub(crate) const TAB_CLOSE_HITBOX: f32 = TAB_CLOSE_SLOT_WIDTH;
+pub(crate) const TAB_SWITCH_HINT_TEXT_SIZE: f32 = 10.0;
 pub(crate) const TAB_STROKE_FOREGROUND_MIX: f32 = 0.12;
 pub(crate) const TAB_STROKE_THICKNESS: f32 = 1.0;
 pub(crate) const TAB_DROP_MARKER_WIDTH: f32 = 2.0;

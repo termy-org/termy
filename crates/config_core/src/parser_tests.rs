@@ -250,6 +250,7 @@ fn enum_keys_parse_table_driven() {
 enum BoolField {
     TmuxShowActivePaneBorder,
     ShowTermyInTitlebar,
+    TabSwitchModifierHints,
     CursorBlink,
     BackgroundBlur,
     WarnOnQuit,
@@ -262,6 +263,7 @@ impl BoolField {
         match self {
             Self::TmuxShowActivePaneBorder => "tmux_show_active_pane_border",
             Self::ShowTermyInTitlebar => "show_termy_in_titlebar",
+            Self::TabSwitchModifierHints => "tab_switch_modifier_hints",
             Self::CursorBlink => "cursor_blink",
             Self::BackgroundBlur => "background_blur",
             Self::WarnOnQuit => "warn_on_quit_with_running_process",
@@ -274,6 +276,7 @@ impl BoolField {
         match self {
             Self::TmuxShowActivePaneBorder => config.tmux_show_active_pane_border,
             Self::ShowTermyInTitlebar => config.show_termy_in_titlebar,
+            Self::TabSwitchModifierHints => config.tab_switch_modifier_hints,
             Self::CursorBlink => config.cursor_blink,
             Self::BackgroundBlur => config.background_blur,
             Self::WarnOnQuit => config.warn_on_quit_with_running_process,
@@ -289,6 +292,7 @@ fn bool_keys_parse_table_driven() {
     let fields = [
         BoolField::TmuxShowActivePaneBorder,
         BoolField::ShowTermyInTitlebar,
+        BoolField::TabSwitchModifierHints,
         BoolField::CursorBlink,
         BoolField::BackgroundBlur,
         BoolField::WarnOnQuit,

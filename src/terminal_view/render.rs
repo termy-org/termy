@@ -2095,6 +2095,7 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_inline_delete_to_start_action))
                     .on_action(cx.listener(Self::handle_inline_delete_to_end_action))
                     .on_key_down(cx.listener(Self::handle_key_down))
+                    .on_modifiers_changed(cx.listener(Self::handle_modifiers_changed))
                     .on_scroll_wheel(cx.listener(Self::handle_terminal_scroll_wheel))
                     .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
                     .on_mouse_down(MouseButton::Middle, cx.listener(Self::handle_mouse_down))

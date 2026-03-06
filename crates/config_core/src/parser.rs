@@ -307,6 +307,13 @@ impl AppConfig {
                         );
                     }
                 }
+                RootSettingId::TabSwitchModifierHints => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.tab_switch_modifier_hints = parsed;
+                    }
+                }
                 RootSettingId::ShowTermyInTitlebar => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)

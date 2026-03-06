@@ -15,6 +15,7 @@ pub(crate) const DEFAULT_SCROLLBACK_HISTORY: usize = 2000;
 pub(crate) const MAX_SCROLLBACK_HISTORY: usize = 100_000;
 pub(crate) const DEFAULT_INACTIVE_TAB_SCROLLBACK: Option<usize> = None;
 pub(crate) const DEFAULT_PANE_FOCUS_STRENGTH: f32 = 0.6;
+pub(crate) const DEFAULT_TAB_SWITCH_MODIFIER_HINTS: bool = true;
 pub(crate) const MAX_PANE_FOCUS_STRENGTH: f32 = 2.0;
 pub(crate) const MIN_MOUSE_SCROLL_MULTIPLIER: f32 = 0.1;
 pub(crate) const MAX_MOUSE_SCROLL_MULTIPLIER: f32 = 1_000.0;
