@@ -1,1 +1,28 @@
-../plugin-ts-bindings/src/**/*../plugin-ts-bindings/examples/**/*../plugin-ts-bindings/node_modules../plugin-ts-bindings/dist../plugin-ts-bindings/bunup.config.ts
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "Preserve",
+    "moduleDetection": "force",
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    "declaration": true,
+    "isolatedDeclarations": true,
+
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false,
+  },
+
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "bunup.config.ts", "src/generated"],
+}
