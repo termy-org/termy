@@ -25,9 +25,8 @@ impl TerminalView {
                 true
             }
             CommandAction::RestartApp => {
-                match self.restart_application() {
+                match self.restart_application_with_persist() {
                     Ok(()) => {
-                        self.sync_persisted_native_workspace();
                         self.allow_quit_without_prompt = true;
                         cx.quit();
                     }
@@ -42,7 +41,12 @@ impl TerminalView {
         }
     }
 
-    pub(in super::super) fn restart_application(&self) -> Result<(), String> {
+    pub(in super::super) fn restart_application_with_persist(&self) -> Result<(), String> {
+        self.sync_persisted_native_workspace();
+        self.restart_application()
+    }
+
+    fn restart_application(&self) -> Result<(), String> {
         let exe = std::env::current_exe().map_err(|e| format!("current_exe failed: {}", e))?;
 
         #[cfg(target_os = "macos")]

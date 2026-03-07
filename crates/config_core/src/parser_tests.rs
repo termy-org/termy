@@ -271,6 +271,9 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::AutoUpdate => Some(config.auto_update),
         RootSettingId::TmuxEnabled => Some(config.tmux_enabled),
         RootSettingId::TmuxPersistence => Some(config.tmux_persistence),
+        RootSettingId::NativeTabPersistence => Some(config.native_tab_persistence),
+        RootSettingId::NativeLayoutAutosave => Some(config.native_layout_autosave),
+        RootSettingId::NativeBufferPersistence => Some(config.native_buffer_persistence),
         RootSettingId::TmuxShowActivePaneBorder => Some(config.tmux_show_active_pane_border),
         RootSettingId::WarnOnQuitWithRunningProcess => {
             Some(config.warn_on_quit_with_running_process)

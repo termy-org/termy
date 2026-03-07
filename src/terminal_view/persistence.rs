@@ -44,6 +44,15 @@ struct PersistedNativeWorkspaceState {
     layouts: Vec<PersistedNamedLayout>,
 }
 
+#[derive(Clone, Debug)]
+struct PersistedNativeWorkspaceWriteRequest {
+    path: PathBuf,
+    workspace: PersistedNativeWorkspace,
+    current_named_layout: Option<String>,
+    persist_last_session: bool,
+    autosave_named_layout: bool,
+}
+
 impl TerminalView {
     fn extract_persisted_buffer_line(
         grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
@@ -91,26 +100,6 @@ impl TerminalView {
         })?
     }
 
-    fn autosave_current_named_layout_if_enabled(
-        &self,
-        state: &mut PersistedNativeWorkspaceState,
-        workspace: &PersistedNativeWorkspace,
-    ) {
-        if !self.native_layout_autosave {
-            return;
-        }
-        let Some(current_named_layout) = self.current_named_layout.as_deref() else {
-            return;
-        };
-        if let Some(layout) = state
-            .layouts
-            .iter_mut()
-            .find(|layout| layout.name.eq_ignore_ascii_case(current_named_layout))
-        {
-            layout.workspace = workspace.clone();
-        }
-    }
-
     fn should_sync_persisted_native_workspace(&self) -> bool {
         self.runtime_kind() == RuntimeKind::Native
             && (self.native_tab_persistence
@@ -123,6 +112,58 @@ impl TerminalView {
             .parent()
             .ok_or_else(|| format!("Invalid config path '{}'", config_path.display()))?;
         Ok(parent.join(NATIVE_WORKSPACE_STATE_FILE))
+    }
+
+    fn load_persisted_native_workspace_state_from_path(
+        path: &std::path::Path,
+    ) -> Result<PersistedNativeWorkspaceState, String> {
+        let contents = match fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(PersistedNativeWorkspaceState::default());
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Failed to read workspace state '{}': {}",
+                    path.display(),
+                    error
+                ));
+            }
+        };
+
+        Self::parse_persisted_native_workspace_state(&contents)
+    }
+
+    fn store_persisted_native_workspace_state_to_path(
+        path: &std::path::Path,
+        state: PersistedNativeWorkspaceState,
+    ) -> Result<(), String> {
+        if state.last_session.is_none() && state.layouts.is_empty() {
+            match fs::remove_file(path) {
+                Ok(()) => return Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(error) => {
+                    return Err(format!(
+                        "Failed to remove workspace state '{}': {}",
+                        path.display(),
+                        error
+                    ));
+                }
+            }
+        }
+
+        let contents = serde_json::to_string_pretty(&json!({
+            "version": NATIVE_WORKSPACE_STATE_VERSION,
+            "last_session": state.last_session.map(Self::persisted_workspace_to_value),
+            "layouts": state.layouts.into_iter().map(|layout| {
+                json!({
+                    "name": layout.name,
+                    "workspace": Self::persisted_workspace_to_value(layout.workspace),
+                })
+            }).collect::<Vec<_>>(),
+        }))
+        .map_err(|error| format!("Failed to encode native tab workspace: {}", error))?;
+        Self::write_persisted_native_workspace_atomically(path, &contents)
     }
 
     fn write_persisted_native_workspace_atomically(
@@ -384,53 +425,14 @@ impl TerminalView {
         &self,
     ) -> Result<PersistedNativeWorkspaceState, String> {
         let path = Self::persisted_native_workspace_path()?;
-        let contents = match fs::read_to_string(&path) {
-            Ok(contents) => contents,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(PersistedNativeWorkspaceState::default());
-            }
-            Err(error) => {
-                return Err(format!(
-                    "Failed to read workspace state '{}': {}",
-                    path.display(),
-                    error
-                ));
-            }
-        };
-
-        Self::parse_persisted_native_workspace_state(&contents)
+        Self::load_persisted_native_workspace_state_from_path(&path)
     }
 
     fn store_persisted_native_workspace_state(
         state: PersistedNativeWorkspaceState,
     ) -> Result<(), String> {
         let path = Self::persisted_native_workspace_path()?;
-        if state.last_session.is_none() && state.layouts.is_empty() {
-            match fs::remove_file(&path) {
-                Ok(()) => return Ok(()),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-                Err(error) => {
-                    return Err(format!(
-                        "Failed to remove workspace state '{}': {}",
-                        path.display(),
-                        error
-                    ));
-                }
-            }
-        }
-
-        let contents = serde_json::to_string_pretty(&json!({
-            "version": NATIVE_WORKSPACE_STATE_VERSION,
-            "last_session": state.last_session.map(Self::persisted_workspace_to_value),
-            "layouts": state.layouts.into_iter().map(|layout| {
-                json!({
-                    "name": layout.name,
-                    "workspace": Self::persisted_workspace_to_value(layout.workspace),
-                })
-            }).collect::<Vec<_>>(),
-        }))
-        .map_err(|error| format!("Failed to encode native tab workspace: {}", error))?;
-        Self::write_persisted_native_workspace_atomically(&path, &contents)
+        Self::store_persisted_native_workspace_state_to_path(&path, state)
     }
 
     fn restore_workspace(
@@ -541,34 +543,106 @@ impl TerminalView {
         Ok(())
     }
 
-    fn persist_persisted_native_workspace(&self) -> Result<(), String> {
+    fn apply_persisted_native_workspace_write_request(
+        request: PersistedNativeWorkspaceWriteRequest,
+    ) -> Result<(), String> {
+        let mut state = Self::load_persisted_native_workspace_state_from_path(&request.path)?;
+        if request.autosave_named_layout
+            && let Some(current_named_layout) = request.current_named_layout.as_deref()
+            && let Some(layout) = state
+                .layouts
+                .iter_mut()
+                .find(|layout| layout.name.eq_ignore_ascii_case(current_named_layout))
+        {
+            layout.workspace = request.workspace.clone();
+        }
+        if request.persist_last_session {
+            state.last_session = Some(request.workspace);
+        }
+        Self::store_persisted_native_workspace_state_to_path(&request.path, state)
+    }
+
+    fn persisted_native_workspace_write_request(
+        &self,
+    ) -> Option<PersistedNativeWorkspaceWriteRequest> {
         if !self.should_sync_persisted_native_workspace() {
-            return Ok(());
+            return None;
         }
-        let Some(workspace) = self.collect_persisted_native_workspace() else {
-            return Ok(());
+        let workspace = self.collect_persisted_native_workspace()?;
+        let path = match Self::persisted_native_workspace_path() {
+            Ok(path) => path,
+            Err(error) => {
+                log::error!("Failed to resolve native workspace state path: {}", error);
+                return None;
+            }
         };
-        let mut state = self.load_persisted_native_workspace_state()?;
-        self.autosave_current_named_layout_if_enabled(&mut state, &workspace);
-        if self.native_tab_persistence {
-            state.last_session = Some(workspace);
-        }
-        Self::store_persisted_native_workspace_state(state)
+        Some(PersistedNativeWorkspaceWriteRequest {
+            path,
+            workspace,
+            current_named_layout: self.current_named_layout.clone(),
+            persist_last_session: self.native_tab_persistence,
+            autosave_named_layout: self.native_layout_autosave,
+        })
     }
 
     pub(in super::super) fn sync_persisted_native_workspace(&self) {
-        if !self.should_sync_persisted_native_workspace() {
+        let Some(request) = self.persisted_native_workspace_write_request() else {
             return;
-        }
-        if let Err(error) = self.persist_persisted_native_workspace() {
+        };
+        if let Err(error) = Self::apply_persisted_native_workspace_write_request(request) {
             log::error!("Failed to persist native tab workspace: {}", error);
         }
     }
 
+    pub(in super::super) fn schedule_persist_native_workspace(&self) {
+        let Some(request) = self.persisted_native_workspace_write_request() else {
+            return;
+        };
+        let next_revision = self
+            .native_persist_revision
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+            .saturating_add(1);
+        let latest_revision = self.native_persist_revision.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(80));
+            if latest_revision.load(std::sync::atomic::Ordering::Acquire) != next_revision {
+                return;
+            }
+            if let Err(error) =
+                TerminalView::apply_persisted_native_workspace_write_request(request)
+            {
+                log::error!("Failed to persist native tab workspace: {}", error);
+            }
+        });
+    }
+
     pub(in super::super) fn clear_persisted_native_workspace(&self) -> Result<(), String> {
-        let mut state = self.load_persisted_native_workspace_state()?;
+        let path = Self::persisted_native_workspace_path()?;
+        let mut state = Self::load_persisted_native_workspace_state_from_path(&path)
+            .unwrap_or_else(|_| PersistedNativeWorkspaceState::default());
         state.last_session = None;
-        Self::store_persisted_native_workspace_state(state)
+        Self::store_persisted_native_workspace_state_to_path(&path, state)
+    }
+
+    pub(in super::super) fn rewrite_persisted_native_workspace_without_buffers(
+        &self,
+    ) -> Result<(), String> {
+        let path = Self::persisted_native_workspace_path()?;
+        let mut state = self.load_persisted_native_workspace_state()?;
+        let clear_buffers = |workspace: &mut PersistedNativeWorkspace| {
+            for tab in &mut workspace.tabs {
+                for pane in &mut tab.panes {
+                    pane.buffer = None;
+                }
+            }
+        };
+        if let Some(last_session) = state.last_session.as_mut() {
+            clear_buffers(last_session);
+        }
+        for layout in &mut state.layouts {
+            clear_buffers(&mut layout.workspace);
+        }
+        Self::store_persisted_native_workspace_state_to_path(&path, state)
     }
 
     pub(in super::super) fn saved_layout_names(&self) -> Result<Vec<String>, String> {
@@ -611,8 +685,9 @@ impl TerminalView {
                 .layouts
                 .sort_unstable_by_key(|layout| layout.name.to_ascii_lowercase());
         }
+        Self::store_persisted_native_workspace_state(state)?;
         self.current_named_layout = Some(layout_name.to_string());
-        Self::store_persisted_native_workspace_state(state)
+        Ok(())
     }
 
     pub(in super::super) fn load_named_layout(
@@ -662,17 +737,18 @@ impl TerminalView {
             .find(|layout| layout.name.eq_ignore_ascii_case(current_layout_name))
             .ok_or_else(|| format!("Saved layout \"{}\" was not found", current_layout_name))?;
         layout.name = next_layout_name.to_string();
-        if self
+        let update_current_named_layout = self
             .current_named_layout
             .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case(current_layout_name))
-        {
-            self.current_named_layout = Some(next_layout_name.to_string());
-        }
+            .is_some_and(|name| name.eq_ignore_ascii_case(current_layout_name));
         state
             .layouts
             .sort_unstable_by_key(|candidate| candidate.name.to_ascii_lowercase());
-        Self::store_persisted_native_workspace_state(state)
+        Self::store_persisted_native_workspace_state(state)?;
+        if update_current_named_layout {
+            self.current_named_layout = Some(next_layout_name.to_string());
+        }
+        Ok(())
     }
 
     pub(in super::super) fn delete_named_layout(
@@ -691,14 +767,15 @@ impl TerminalView {
         if state.layouts.len() == previous_len {
             return Err(format!("Saved layout \"{}\" was not found", layout_name));
         }
-        if self
+        let clear_current_named_layout = self
             .current_named_layout
             .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case(layout_name))
-        {
+            .is_some_and(|name| name.eq_ignore_ascii_case(layout_name));
+        Self::store_persisted_native_workspace_state(state)?;
+        if clear_current_named_layout {
             self.current_named_layout = None;
         }
-        Self::store_persisted_native_workspace_state(state)
+        Ok(())
     }
 
     pub(in super::super) fn restore_persisted_native_workspace(

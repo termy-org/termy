@@ -24,7 +24,7 @@ use std::{
     env,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::Mutex,
+    sync::{Arc, Mutex, atomic::AtomicU64},
     time::{Duration, Instant},
 };
 #[cfg(target_os = "macos")]
@@ -975,6 +975,7 @@ pub struct TerminalView {
     native_layout_autosave: bool,
     native_buffer_persistence: bool,
     current_named_layout: Option<String>,
+    native_persist_revision: Arc<AtomicU64>,
     tmux_show_active_pane_border: bool,
     config_path: Option<PathBuf>,
     config_fingerprint: Option<u64>,
@@ -1988,6 +1989,7 @@ impl TerminalView {
             initial_cols,
             initial_rows,
         );
+        let resolved_runtime_kind = runtime.kind();
 
         let mut view = Self {
             tabs: Vec::new(),
@@ -2016,6 +2018,7 @@ impl TerminalView {
             native_layout_autosave: config.native_layout_autosave,
             native_buffer_persistence: config.native_buffer_persistence,
             current_named_layout: None,
+            native_persist_revision: Arc::new(AtomicU64::new(0)),
             tmux_show_active_pane_border: config.tmux_show_active_pane_border,
             config_path,
             config_fingerprint,
@@ -2095,7 +2098,7 @@ impl TerminalView {
             // Surface explicit feedback when a synced/shared config requests tmux on Windows.
             termy_toast::warning(TMUX_UNSUPPORTED_WINDOWS_TOAST);
         }
-        let restored_native_workspace = if !config.tmux_enabled {
+        let restored_native_workspace = if resolved_runtime_kind == RuntimeKind::Native {
             match view.restore_persisted_native_workspace(cx) {
                 Ok(restored) => restored,
                 Err(error) => {
@@ -2213,17 +2216,38 @@ impl TerminalView {
         self.tmux_enabled_config = config.tmux_enabled;
         let native_tab_persistence_changed =
             self.native_tab_persistence != config.native_tab_persistence;
+        let native_layout_autosave_changed =
+            self.native_layout_autosave != config.native_layout_autosave;
+        let native_buffer_persistence_changed =
+            self.native_buffer_persistence != config.native_buffer_persistence;
         self.native_tab_persistence = config.native_tab_persistence;
         self.native_layout_autosave = config.native_layout_autosave;
         self.native_buffer_persistence = config.native_buffer_persistence;
         self.tmux_show_active_pane_border = config.tmux_show_active_pane_border;
         self.configured_working_dir = config.working_dir.clone();
         self.terminal_runtime = Self::runtime_config_from_app_config(&config);
-        if native_tab_persistence_changed {
-            if self.native_tab_persistence {
+        if native_tab_persistence_changed
+            || native_layout_autosave_changed
+            || native_buffer_persistence_changed
+        {
+            if native_tab_persistence_changed && !self.native_tab_persistence {
+                if let Err(error) = self.clear_persisted_native_workspace() {
+                    log::error!("Failed to clear saved native tab workspace: {}", error);
+                }
+            }
+            if native_buffer_persistence_changed && !self.native_buffer_persistence {
+                if let Err(error) = self.rewrite_persisted_native_workspace_without_buffers() {
+                    log::error!(
+                        "Failed to rewrite saved native tab workspace without buffers: {}",
+                        error
+                    );
+                }
+            }
+            if self.native_tab_persistence
+                || self.native_layout_autosave
+                || self.native_buffer_persistence
+            {
                 self.sync_persisted_native_workspace();
-            } else if let Err(error) = self.clear_persisted_native_workspace() {
-                log::error!("Failed to clear saved native tab workspace: {}", error);
             }
         }
         let reconnect_managed_tmux = self.runtime_uses_tmux()

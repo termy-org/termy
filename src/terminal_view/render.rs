@@ -1131,8 +1131,11 @@ impl TerminalView {
                                 }
                             }
                             termy_auto_update_ui::UpdateBannerAction::Restart => {
-                                match this.restart_application() {
-                                    Ok(()) => cx.quit(),
+                                match this.restart_application_with_persist() {
+                                    Ok(()) => {
+                                        this.allow_quit_without_prompt = true;
+                                        cx.quit();
+                                    }
                                     Err(error) => {
                                         termy_toast::error(format!("Restart failed: {}", error));
                                         this.notify_overlay(cx);
