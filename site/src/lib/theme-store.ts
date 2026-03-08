@@ -34,6 +34,11 @@ export interface AuthUser {
   name: string | null;
 }
 
+export interface DeviceSessionResponse {
+  sessionToken: string;
+  user: AuthUser;
+}
+
 export interface ThemeWithVersionsResponse {
   theme: Theme;
   versions: ThemeVersion[];
@@ -104,6 +109,12 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
 
 export async function logout(): Promise<void> {
   await requestJson<void>("/auth/logout", { method: "POST" });
+}
+
+export async function createDeviceSession(): Promise<DeviceSessionResponse> {
+  return requestJson<DeviceSessionResponse>("/auth/device-session", {
+    method: "POST",
+  });
 }
 
 export async function fetchThemes(): Promise<Theme[]> {
@@ -254,4 +265,23 @@ export function getThemeLoginUrl(redirectToPath: string): string {
 
   const redirectTo = `${window.location.origin}${redirectToPath}`;
   return `${API_BASE}/auth/github/login?redirect_to=${encodeURIComponent(redirectTo)}`;
+}
+
+export function buildNativeAuthCallbackUrl(
+  session: DeviceSessionResponse,
+): string {
+  const url = new URL("termy://auth/callback");
+  url.searchParams.set("session_token", session.sessionToken);
+  url.searchParams.set("id", session.user.id);
+  url.searchParams.set("github_user_id", String(session.user.githubUserId));
+  url.searchParams.set("github_login", session.user.githubLogin);
+
+  if (session.user.avatarUrl) {
+    url.searchParams.set("avatar_url", session.user.avatarUrl);
+  }
+  if (session.user.name) {
+    url.searchParams.set("name", session.user.name);
+  }
+
+  return url.toString();
 }

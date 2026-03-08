@@ -104,6 +104,7 @@ impl TerminalView {
             }
             _ if shortcuts_suspended => {}
             CommandAction::OpenConfig
+            | CommandAction::ImportThemeStoreAuth
             | CommandAction::ImportColors
             | CommandAction::AppInfo
             | CommandAction::OpenSettings

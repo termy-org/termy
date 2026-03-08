@@ -67,6 +67,7 @@ url = "2.5"
 tempfile = "3"
 fs4 = { version = "0.13.1", features = ["sync"] }
 ureq = { version = "2", features = ["json"] }
+webbrowser = "1.0"
 
 # Termy Workspace Crates
 termy_auto_update = { path = "crates/auto_update" }

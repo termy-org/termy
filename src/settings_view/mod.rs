@@ -537,6 +537,10 @@ impl SettingsWindow {
     }
 
     pub(super) fn open_url(url: &str) -> Result<(), String> {
+        if webbrowser::open(url).is_ok() {
+            return Ok(());
+        }
+
         #[cfg(target_os = "macos")]
         {
             Command::new("open")

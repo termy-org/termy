@@ -40,6 +40,7 @@ macro_rules! termy_command_catalog {
             (RestartApp, "restart_app"),
             (OpenConfig, "open_config"),
             (OpenSettings, "open_settings"),
+            (ImportThemeStoreAuth, "import_theme_store_auth"),
             (ImportColors, "import_colors"),
             (SwitchTheme, "switch_theme"),
             (ZoomIn, "zoom_in"),

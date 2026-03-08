@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root"
+import { Route as DeviceRouteImport } from "./routes/device"
 import { Route as AddRouteImport } from "./routes/add"
 import { Route as IndexRouteImport } from "./routes/index"
 import { Route as ThemesIndexRouteImport } from "./routes/themes/index"
@@ -22,6 +23,11 @@ import { Route as ReleasesTagRouteImport } from "./routes/releases/$tag"
 import { Route as DocsSplatRouteImport } from "./routes/docs/$"
 import { Route as ThemesSlugUpdateRouteImport } from "./routes/themes/$slug/update"
 
+const DeviceRoute = DeviceRouteImport.update({
+  id: "/device",
+  path: "/device",
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AddRoute = AddRouteImport.update({
   id: "/add",
   path: "/add",
@@ -86,6 +92,7 @@ const ThemesSlugUpdateRoute = ThemesSlugUpdateRouteImport.update({
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
   "/add": typeof AddRoute
+  "/device": typeof DeviceRoute
   "/docs/$": typeof DocsSplatRoute
   "/releases/$tag": typeof ReleasesTagRoute
   "/themes/$slug": typeof ThemesSlugRouteWithChildren
@@ -100,6 +107,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
   "/add": typeof AddRoute
+  "/device": typeof DeviceRoute
   "/docs/$": typeof DocsSplatRoute
   "/releases/$tag": typeof ReleasesTagRoute
   "/themes/$slug": typeof ThemesSlugRouteWithChildren
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
   "/add": typeof AddRoute
+  "/device": typeof DeviceRoute
   "/docs/$": typeof DocsSplatRoute
   "/releases/$tag": typeof ReleasesTagRoute
   "/themes/$slug": typeof ThemesSlugRouteWithChildren
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/add"
+    | "/device"
     | "/docs/$"
     | "/releases/$tag"
     | "/themes/$slug"
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/add"
+    | "/device"
     | "/docs/$"
     | "/releases/$tag"
     | "/themes/$slug"
@@ -159,6 +170,7 @@ export interface FileRouteTypes {
     | "__root__"
     | "/"
     | "/add"
+    | "/device"
     | "/docs/$"
     | "/releases/$tag"
     | "/themes/$slug"
@@ -174,6 +186,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AddRoute: typeof AddRoute
+  DeviceRoute: typeof DeviceRoute
   DocsSplatRoute: typeof DocsSplatRoute
   ReleasesTagRoute: typeof ReleasesTagRoute
   ThemesSlugRoute: typeof ThemesSlugRouteWithChildren
@@ -187,6 +200,13 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
+    "/device": {
+      id: "/device"
+      path: "/device"
+      fullPath: "/device"
+      preLoaderRoute: typeof DeviceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/add": {
       id: "/add"
       path: "/add"
@@ -289,6 +309,7 @@ const ThemesSlugRouteWithChildren = ThemesSlugRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AddRoute: AddRoute,
+  DeviceRoute: DeviceRoute,
   DocsSplatRoute: DocsSplatRoute,
   ReleasesTagRoute: ReleasesTagRoute,
   ThemesSlugRoute: ThemesSlugRouteWithChildren,

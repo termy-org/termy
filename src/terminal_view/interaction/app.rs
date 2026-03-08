@@ -11,6 +11,10 @@ impl TerminalView {
                 self.open_config_action(cx);
                 true
             }
+            CommandAction::ImportThemeStoreAuth => {
+                self.import_theme_store_auth_action(cx);
+                true
+            }
             CommandAction::ImportColors => {
                 self.import_colors_action(cx);
                 true
@@ -66,6 +70,49 @@ impl TerminalView {
                         view.notify_overlay(cx);
                     }
                 })
+            });
+        })
+        .detach();
+    }
+
+    fn import_theme_store_auth_action(&mut self, cx: &mut Context<Self>) {
+        let Some(input) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            termy_toast::info("Copy a theme store auth deeplink or session token first");
+            self.notify_overlay(cx);
+            return;
+        };
+
+        let api_base = crate::theme_store::theme_store_api_base_url();
+        let loading_id = termy_toast::loading("Importing theme store auth...");
+
+        cx.spawn(async move |this, cx: &mut AsyncApp| {
+            let result = smol::unblock(move || {
+                crate::theme_store::resolve_auth_session_from_input_blocking(&api_base, &input)
+                    .and_then(|session| {
+                        crate::theme_store::persist_auth_session(&session)?;
+                        Ok(session)
+                    })
+            })
+            .await;
+
+            termy_toast::dismiss_toast(loading_id);
+
+            let _ = cx.update(|cx| match result {
+                Ok(session) => {
+                    crate::app_actions::update_open_settings_windows(cx, |view, settings_cx| {
+                        view.apply_theme_store_auth_session(session.clone(), settings_cx);
+                    });
+                    let _ = this.update(cx, |view, cx| view.notify_overlay(cx));
+                    termy_toast::success(format!("Signed in as @{}", session.user.github_login));
+                }
+                Err(error) => {
+                    log::error!(
+                        "Failed to import theme store auth from clipboard: {}",
+                        error
+                    );
+                    let _ = this.update(cx, |view, cx| view.notify_overlay(cx));
+                    termy_toast::error(error);
+                }
             });
         })
         .detach();

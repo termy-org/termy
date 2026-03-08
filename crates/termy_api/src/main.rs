@@ -156,6 +156,10 @@ fn build_router(state: AppState) -> Router {
         .route("/auth/github/login", get(auth_github_login))
         .route("/auth/github/callback", get(auth_github_callback))
         .route("/auth/me", get(auth_me))
+        .route(
+            "/auth/device-session",
+            axum::routing::post(auth_device_session),
+        )
         .route("/auth/logout", axum::routing::post(auth_logout))
         .route("/themes/me", get(list_my_themes))
         .route("/themes", get(list_themes).post(create_theme))
@@ -248,6 +252,13 @@ struct AuthUser {
     github_login: String,
     avatar_url: Option<String>,
     name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthDeviceSessionResponse {
+    session_token: String,
+    user: AuthUser,
 }
 
 #[derive(Debug, Deserialize)]
@@ -491,6 +502,28 @@ async fn auth_me(
 ) -> Result<Json<AuthUser>, ApiError> {
     let user = require_auth_user(&state, &headers).await?;
     Ok(Json(user))
+}
+
+async fn auth_device_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<AuthDeviceSessionResponse>, ApiError> {
+    let user = require_auth_user(&state, &headers).await?;
+    let token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    let token_hash = hash_token(&token);
+    let expires_at = Utc::now() + Duration::hours(state.auth.session_ttl_hours);
+
+    sqlx::query("INSERT INTO user_session (user_id, token_hash, expires_at) VALUES ($1, $2, $3)")
+        .bind(user.id)
+        .bind(token_hash)
+        .bind(expires_at)
+        .execute(&state.db)
+        .await?;
+
+    Ok(Json(AuthDeviceSessionResponse {
+        session_token: token,
+        user,
+    }))
 }
 
 async fn auth_logout(

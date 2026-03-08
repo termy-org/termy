@@ -1,11 +1,12 @@
 use crate::config;
+use crate::deeplink::{DeepLinkArgument, DeepLinkRoute};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use termy_themes::{Rgb8, ThemeColors, normalize_theme_id};
-use url::Url;
 
 const DEFAULT_THEME_STORE_API_URL: &str = "https://api.termy.run";
 const DEFAULT_THEME_DEEPLINK_API_URL: &str = "https://termy.run/theme-api";
+const DEFAULT_THEME_STORE_DEVICE_URL: &str = "https://termy.run/device";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ThemeStoreTheme {
@@ -43,12 +44,9 @@ pub(crate) fn theme_store_api_base_url() -> String {
 }
 
 pub(crate) fn theme_store_native_login_url(api_base: &str) -> String {
-    let base = api_base.trim_end_matches('/');
-    let mut url = Url::parse(&format!("{base}/auth/github/login"))
-        .expect("theme store API base must be valid");
-    url.query_pairs_mut()
-        .append_pair("redirect_to", "termy://auth/callback");
-    url.into()
+    let _ = api_base;
+    std::env::var("THEME_STORE_DEVICE_URL")
+        .unwrap_or_else(|_| DEFAULT_THEME_STORE_DEVICE_URL.to_string())
 }
 
 pub(crate) fn fetch_theme_store_themes_blocking(
@@ -117,6 +115,18 @@ pub(crate) fn fetch_auth_user_blocking(
     response
         .into_json::<ThemeStoreAuthUser>()
         .map_err(|error| format!("Invalid authenticated user response: {error}"))
+}
+
+pub(crate) fn resolve_auth_session_from_input_blocking(
+    api_base: &str,
+    input: &str,
+) -> Result<ThemeStoreAuthSession, String> {
+    let session_token = extract_auth_session_token_from_input(input)?;
+    let user = fetch_auth_user_blocking(api_base, &session_token)?;
+    Ok(ThemeStoreAuthSession {
+        session_token,
+        user,
+    })
 }
 
 pub(crate) fn logout_auth_session_blocking(
@@ -315,6 +325,26 @@ fn auth_session_path() -> Option<PathBuf> {
     Some(parent.join("theme_store_auth.json"))
 }
 
+fn extract_auth_session_token_from_input(input: &str) -> Result<String, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("Clipboard does not contain a theme store auth token".to_string());
+    }
+
+    if trimmed.starts_with("termy://") {
+        let (route, argument) = DeepLinkRoute::parse(trimmed)?;
+        if route != DeepLinkRoute::AuthCallback {
+            return Err("Clipboard deeplink is not a theme store auth callback".to_string());
+        }
+        let Some(DeepLinkArgument::AuthCallback(payload)) = argument else {
+            return Err("Auth callback deeplink is missing a session token".to_string());
+        };
+        return Ok(payload.session_token);
+    }
+
+    Ok(trimmed.to_string())
+}
+
 fn installed_themes_dir_path() -> Option<PathBuf> {
     let config_path = config::ensure_config_file().ok()?;
     let parent = config_path.parent()?;
@@ -353,6 +383,36 @@ fn normalize_slug(slug: &str) -> Result<String, String> {
         return Err(format!("Invalid theme slug '{slug}'"));
     }
     Ok(slug)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_auth_session_token_from_input;
+
+    #[test]
+    fn extracts_plain_session_token() {
+        assert_eq!(
+            extract_auth_session_token_from_input("  abc123  ").unwrap(),
+            "abc123"
+        );
+    }
+
+    #[test]
+    fn extracts_session_token_from_auth_callback_deeplink() {
+        assert_eq!(
+            extract_auth_session_token_from_input(
+                "termy://auth/callback?session_token=abc123&id=user-1&github_user_id=42&github_login=lasse"
+            )
+            .unwrap(),
+            "abc123"
+        );
+    }
+
+    #[test]
+    fn rejects_non_auth_deeplink() {
+        let error = extract_auth_session_token_from_input("termy://settings").unwrap_err();
+        assert!(error.contains("not a theme store auth callback"));
+    }
 }
 
 fn parse_theme_value(theme: &serde_json::Value) -> Option<ThemeStoreTheme> {

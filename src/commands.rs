@@ -718,6 +718,16 @@ define_commands!(
         ))
     ),
     (
+        ImportThemeStoreAuth,
+        GLOBAL_CONTEXT,
+        Some(palette(
+            "Import Theme Store Auth",
+            "github login auth token session clipboard paste",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
         ImportColors,
         TERMINAL_CONTEXT,
         Some(palette(
