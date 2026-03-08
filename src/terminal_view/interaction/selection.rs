@@ -483,7 +483,13 @@ impl TerminalView {
         let mut start_col = effective_col;
         while start_col > 0 {
             match line[start_col - 1] {
-                None => start_col -= 1,
+                // Spacer: only cross it if the real char beyond it is the same class.
+                None if start_col >= 2
+                    && line[start_col - 2]
+                        .is_some_and(|c| Self::terminal_selection_char_class(c) == class) =>
+                {
+                    start_col -= 1
+                }
                 Some(c) if Self::terminal_selection_char_class(c) == class => start_col -= 1,
                 _ => break,
             }
@@ -492,10 +498,22 @@ impl TerminalView {
         let mut end_col = effective_col;
         while end_col + 1 < line.len() {
             match line[end_col + 1] {
-                None => end_col += 1,
+                // Spacer: only cross it if the real char beyond it is the same class.
+                None if end_col + 2 < line.len()
+                    && line[end_col + 2]
+                        .is_some_and(|c| Self::terminal_selection_char_class(c) == class) =>
+                {
+                    end_col += 1
+                }
                 Some(c) if Self::terminal_selection_char_class(c) == class => end_col += 1,
                 _ => break,
             }
+        }
+
+        // Include the trailing spacer of the last wide char so the
+        // selection highlight covers both cells of the glyph.
+        if end_col + 1 < line.len() && line[end_col + 1].is_none() {
+            end_col += 1;
         }
 
         self.selection_anchor = Some(SelectionPos {
