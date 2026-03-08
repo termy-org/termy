@@ -12,6 +12,13 @@ fn is_hidden_or_spacer(flags: Flags) -> bool {
     flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN)
 }
 
+/// Trailing spacer occupies the right half of a wide character on the same
+/// line.  Only this variant should trigger the "go back one column" fallback
+/// when a selection endpoint or double-click lands on it.
+fn is_trailing_wide_char_spacer(flags: Flags) -> bool {
+    flags.contains(Flags::WIDE_CHAR_SPACER) && !flags.contains(Flags::LEADING_WIDE_CHAR_SPACER)
+}
+
 fn terminal_line_bounds(
     grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
 ) -> Option<(i32, i32)> {
@@ -30,7 +37,7 @@ fn grid_line_text(
     grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
     line_idx: i32,
     cols: usize,
-) -> Option<Vec<char>> {
+) -> Option<Vec<Option<char>>> {
     use alacritty_terminal::index::{Column, Line};
 
     let (min_line, max_line) = terminal_line_bounds(grid)?;
@@ -39,17 +46,25 @@ fn grid_line_text(
     }
 
     let max_cols = cols.min(grid.columns());
-    let mut line = vec![' '; cols];
+    let mut line = vec![Some(' '); cols];
     let line_ref = &grid[Line(line_idx)];
     for col in 0..max_cols {
         let cell = &line_ref[Column(col)];
+        if is_trailing_wide_char_spacer(cell.flags) {
+            // Right half of a wide char — mark as None so it is filtered
+            // during copy and triggers the col-1 fallback for selection.
+            line[col] = None;
+            continue;
+        }
         if is_hidden_or_spacer(cell.flags) {
+            // Leading spacer (wide char wrapped to next line) or hidden
+            // cell — keep as space so it does not trigger col-1 fallback.
             continue;
         }
 
         let c = cell.c;
         if c != '\0' {
-            line[col] = if c.is_control() { ' ' } else { c };
+            line[col] = Some(if c.is_control() { ' ' } else { c });
         }
     }
     Some(line)
@@ -98,7 +113,7 @@ fn selected_text_from_terminal(
                 continue;
             };
 
-            let col_start = if line_idx == selection_start.line {
+            let mut col_start = if line_idx == selection_start.line {
                 selection_start.col
             } else {
                 0
@@ -108,12 +123,18 @@ fn selected_text_from_terminal(
             } else {
                 cols.saturating_sub(1)
             };
+            // If col_start falls on a wide char spacer, move back to the
+            // actual character so it is included in the copied text.
+            if col_start > 0 && line.get(col_start) == Some(&None) {
+                col_start -= 1;
+            }
             if col_start > col_end {
                 continue;
             }
 
             let rendered = line[col_start..=col_end]
                 .iter()
+                .filter_map(|c| *c)
                 .collect::<String>()
                 .trim_end()
                 .to_string();
@@ -128,8 +149,8 @@ fn selected_text_from_terminal(
     }
 }
 
-fn row_text_from_terminal(terminal: &Terminal, row: usize, cols: usize) -> Vec<char> {
-    let mut line = vec![' '; cols];
+fn row_text_from_terminal(terminal: &Terminal, row: usize, cols: usize) -> Vec<Option<char>> {
+    let mut line = vec![Some(' '); cols];
     let _ = terminal.for_each_renderable_cell(|display_offset, term_line, col, cell| {
         let Some(cell_row) = TerminalView::viewport_row_from_term_line(term_line, display_offset)
         else {
@@ -139,13 +160,17 @@ fn row_text_from_terminal(terminal: &Terminal, row: usize, cols: usize) -> Vec<c
             return;
         }
 
+        if is_trailing_wide_char_spacer(cell.flags) {
+            line[col] = None;
+            return;
+        }
         if is_hidden_or_spacer(cell.flags) {
             return;
         }
 
         let c = cell.c;
         if c != '\0' {
-            line[col] = if c.is_control() { ' ' } else { c };
+            line[col] = Some(if c.is_control() { ' ' } else { c });
         }
     });
     line
@@ -402,8 +427,7 @@ impl TerminalView {
         }
 
         let line = row_text_from_terminal(terminal, row, cols);
-
-        Some(line)
+        Some(line.into_iter().map(|c| c.unwrap_or(' ')).collect())
     }
 
     fn terminal_selection_char_class(c: char) -> TerminalSelectionCharClass {
@@ -417,9 +441,16 @@ impl TerminalView {
     }
 
     pub(in super::super) fn select_token_at_cell(&mut self, cell: CellPos) -> bool {
-        let Some(line) = self.row_text(cell.row) else {
+        let Some(terminal) = self.active_terminal() else {
             return false;
         };
+        let size = terminal.size();
+        let cols = size.cols as usize;
+        let rows = size.rows as usize;
+        if cols == 0 || cell.row >= rows {
+            return false;
+        }
+        let line = row_text_from_terminal(terminal, cell.row, cols);
         let Some(term_pos) = self.selection_pos_for_cell(cell) else {
             return false;
         };
@@ -427,9 +458,21 @@ impl TerminalView {
             return false;
         }
 
-        let class = Self::terminal_selection_char_class(line[cell.col]);
+        // If the click lands on a wide char spacer, use the actual character.
+        let effective_col = if line[cell.col].is_none() && cell.col > 0 {
+            cell.col - 1
+        } else {
+            cell.col
+        };
+        let Some(effective_char) = line[effective_col] else {
+            return false;
+        };
+        let class = Self::terminal_selection_char_class(effective_char);
         if class == TerminalSelectionCharClass::Whitespace {
-            let Some(last_non_whitespace) = line.iter().rposition(|c| !c.is_whitespace()) else {
+            let Some(last_non_whitespace) = line
+                .iter()
+                .rposition(|c| c.is_some_and(|ch| !ch.is_whitespace()))
+            else {
                 return false;
             };
             if cell.col > last_non_whitespace {
@@ -437,16 +480,22 @@ impl TerminalView {
             }
         }
 
-        let mut start_col = cell.col;
-        while start_col > 0 && Self::terminal_selection_char_class(line[start_col - 1]) == class {
-            start_col -= 1;
+        let mut start_col = effective_col;
+        while start_col > 0 {
+            match line[start_col - 1] {
+                None => start_col -= 1,
+                Some(c) if Self::terminal_selection_char_class(c) == class => start_col -= 1,
+                _ => break,
+            }
         }
 
-        let mut end_col = cell.col;
-        while end_col + 1 < line.len()
-            && Self::terminal_selection_char_class(line[end_col + 1]) == class
-        {
-            end_col += 1;
+        let mut end_col = effective_col;
+        while end_col + 1 < line.len() {
+            match line[end_col + 1] {
+                None => end_col += 1,
+                Some(c) if Self::terminal_selection_char_class(c) == class => end_col += 1,
+                _ => break,
+            }
         }
 
         self.selection_anchor = Some(SelectionPos {
@@ -573,7 +622,12 @@ mod tests {
                 let Some(chars) = grid_line_text(grid, line_idx, cols) else {
                     continue;
                 };
-                let rendered = chars.iter().collect::<String>().trim_end().to_string();
+                let rendered = chars
+                    .iter()
+                    .filter_map(|c| *c)
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string();
                 if !rendered.is_empty() {
                     lines.push((line_idx, rendered));
                 }
@@ -652,7 +706,11 @@ mod tests {
         tmux.feed_output(b"row-adapter\r\n");
         let tmux_row = row_text_from_terminal(&tmux, 0, usize::from(size.cols));
         assert_eq!(tmux_row.len(), usize::from(size.cols));
-        assert!(tmux_row.iter().any(|c| !c.is_whitespace()));
+        assert!(
+            tmux_row
+                .iter()
+                .any(|c| c.is_some_and(|ch| !ch.is_whitespace()))
+        );
 
         let native = Terminal::new_native(size, None, None, None, None)
             .expect("native terminal should initialize for row adapter test");
@@ -660,7 +718,7 @@ mod tests {
         let expected_native_token = "native-row";
         let mut native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
         for _ in 0..40 {
-            let rendered_native_row: String = native_row.iter().collect();
+            let rendered_native_row: String = native_row.iter().filter_map(|c| *c).collect();
             if rendered_native_row.contains(expected_native_token) {
                 break;
             }
@@ -669,7 +727,7 @@ mod tests {
             native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
         }
         assert_eq!(native_row.len(), usize::from(size.cols));
-        let rendered_native_row: String = native_row.iter().collect();
+        let rendered_native_row: String = native_row.iter().filter_map(|c| *c).collect();
         assert!(rendered_native_row.contains(expected_native_token));
     }
 
