@@ -22,6 +22,7 @@ members = [
   "crates/plugin_sdk",
   "crates/termy_api",
   "crates/plugin_release_notes",
+  "crates/agent_sidebar",
 ]
 resolver = "2"
 
@@ -85,6 +86,7 @@ termy_openai = { path = "crates/openai" }
 termy_gemini = { path = "crates/gemini" }
 termy_plugin_host = { path = "crates/plugin_host" }
 termy_plugin_core = { path = "crates/plugin_core" }
+termy_agent_sidebar = { path = "crates/agent_sidebar" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Pin core-text to 21.0.0 to avoid core-graphics version conflict on macOS.

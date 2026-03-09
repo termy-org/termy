@@ -1,6 +1,14 @@
 use super::*;
 
 impl TerminalView {
+    fn agent_sidebar_width(&self) -> f32 {
+        if self.agent_sidebar_visible() {
+            self.agent_sidebar_width
+        } else {
+            0.0
+        }
+    }
+
     pub(in super::super) fn native_pane_min_extent_for_axis(axis: PaneResizeAxis) -> u16 {
         match axis {
             PaneResizeAxis::Horizontal => NATIVE_PANE_MIN_COLS,
@@ -252,7 +260,8 @@ impl TerminalView {
             return;
         }
 
-        let terminal_width = (viewport_width - (padding_x * 2.0)).max(cell_width * 2.0);
+        let terminal_width =
+            (viewport_width - self.agent_sidebar_width() - (padding_x * 2.0)).max(cell_width * 2.0);
         let terminal_height =
             (viewport_height - self.chrome_height() - (padding_y * 2.0)).max(cell_height);
         let backend_mode = self.runtime_kind();

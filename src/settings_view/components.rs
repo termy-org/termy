@@ -243,7 +243,7 @@ impl SettingsWindow {
 
     pub(super) fn render_switch(
         &self,
-        id: &'static str,
+        id: impl Into<SharedString>,
         checked: bool,
         cx: &mut Context<Self>,
         on_toggle: impl Fn(&mut Self, &mut Context<Self>) + 'static,
@@ -260,7 +260,7 @@ impl SettingsWindow {
         };
 
         div()
-            .id(SharedString::from(id))
+            .id(id.into())
             .w(px(SETTINGS_SWITCH_WIDTH))
             .h(px(SETTINGS_SWITCH_HEIGHT))
             .rounded(px(0.0))

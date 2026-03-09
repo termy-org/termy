@@ -274,6 +274,7 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::NativeTabPersistence => Some(config.native_tab_persistence),
         RootSettingId::NativeLayoutAutosave => Some(config.native_layout_autosave),
         RootSettingId::NativeBufferPersistence => Some(config.native_buffer_persistence),
+        RootSettingId::AgentSidebarEnabled => Some(config.agent_sidebar_enabled),
         RootSettingId::ShowPluginsTab => Some(config.show_plugins_tab),
         RootSettingId::ShowDebugOverlay => Some(config.show_debug_overlay),
         RootSettingId::TmuxShowActivePaneBorder => Some(config.tmux_show_active_pane_border),
@@ -337,6 +338,7 @@ fn numeric_keys_parse_table_driven() {
     let defaults = parse("");
 
     let positive_float_cases = [
+        ("agent_sidebar_width", 360.0, defaults.agent_sidebar_width),
         ("window_width", 1100.0, defaults.window_width),
         ("window_height", 700.0, defaults.window_height),
         ("font_size", 16.0, defaults.font_size),
@@ -344,6 +346,7 @@ fn numeric_keys_parse_table_driven() {
     for (key, expected, fallback) in positive_float_cases {
         let valid = parse(&format!("{} = {}\n", key, expected));
         let parsed = match key {
+            "agent_sidebar_width" => valid.agent_sidebar_width,
             "window_width" => valid.window_width,
             "window_height" => valid.window_height,
             "font_size" => valid.font_size,
@@ -353,6 +356,7 @@ fn numeric_keys_parse_table_driven() {
 
         let invalid = parse(&format!("{} = -1\n", key));
         let parsed = match key {
+            "agent_sidebar_width" => invalid.agent_sidebar_width,
             "window_width" => invalid.window_width,
             "window_height" => invalid.window_height,
             "font_size" => invalid.font_size,

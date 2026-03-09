@@ -38,6 +38,7 @@ impl SettingsWindow {
             | EditableField::WorkingDirFallback
             | EditableField::WindowWidth
             | EditableField::WindowHeight
+            | EditableField::AgentSidebarWidth
             | EditableField::AiProvider
             | EditableField::OpenaiApiKey
             | EditableField::GeminiApiKey
@@ -506,6 +507,21 @@ impl SettingsWindow {
                 self.config.window_height = parsed;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::WindowHeight,
+                    &parsed.to_string(),
+                )
+            }
+            EditableField::AgentSidebarWidth => {
+                let parsed = value
+                    .parse::<f32>()
+                    .map_err(|_| "Agent sidebar width must be a positive number".to_string())?;
+                if parsed < 180.0 || parsed > 1000.0 {
+                    return Err(
+                        "Agent sidebar width must be between 180 and 1000".to_string(),
+                    );
+                }
+                self.config.agent_sidebar_width = parsed;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::AgentSidebarWidth,
                     &parsed.to_string(),
                 )
             }

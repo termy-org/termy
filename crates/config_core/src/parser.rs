@@ -171,6 +171,23 @@ impl AppConfig {
                         config.native_buffer_persistence = parsed;
                     }
                 }
+                RootSettingId::AgentSidebarEnabled => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.agent_sidebar_enabled = parsed;
+                    }
+                }
+                RootSettingId::AgentSidebarWidth => {
+                    if let Some(parsed) = parse_positive_f32_field(
+                        &mut diagnostics,
+                        line_number,
+                        key,
+                        value,
+                    ) {
+                        config.agent_sidebar_width = parsed;
+                    }
+                }
                 RootSettingId::ShowPluginsTab => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)

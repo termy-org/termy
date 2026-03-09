@@ -63,7 +63,7 @@ mod titles;
 mod update_toasts;
 
 use command_palette::{CommandPaletteMode, CommandPaletteState, TmuxSessionIntent};
-use inline_input::{InlineInputAlignment, InlineInputState};
+use inline_input::{InlineInputAlignment, InlineInputElement, InlineInputState};
 use overlay_view::TerminalOverlayView;
 use runtime::{RuntimeKind, RuntimeState, TmuxRuntime};
 pub(crate) use tab_strip::constants::*;
@@ -76,6 +76,8 @@ const ZOOM_STEP: f32 = 1.0;
 const TITLEBAR_HEIGHT: f32 = 32.0;
 #[cfg(not(target_os = "windows"))]
 const TITLEBAR_HEIGHT: f32 = 34.0;
+const AGENT_SIDEBAR_MIN_WIDTH: f32 = 180.0;
+const AGENT_SIDEBAR_MAX_WIDTH: f32 = 1000.0;
 const MAX_TAB_TITLE_CHARS: usize = 96;
 const DEFAULT_TAB_TITLE: &str = "Terminal";
 const COMMAND_TITLE_DELAY_MS: u64 = 250;
@@ -206,6 +208,9 @@ struct PaneResizeDragState {
     start_y: f32,
     applied_steps: i32,
 }
+
+#[derive(Clone, Copy, Debug)]
+struct AgentSidebarResizeDragState;
 
 #[derive(Clone, Copy, Debug)]
 struct TerminalScrollbarHit {
@@ -1052,6 +1057,11 @@ pub struct TerminalView {
     native_tab_persistence: bool,
     native_layout_autosave: bool,
     native_buffer_persistence: bool,
+    agent_sidebar_enabled: bool,
+    agent_sidebar_width: f32,
+    agent_sidebar_open: bool,
+    agent_sidebar_input_active: bool,
+    agent_sidebar_input: InlineInputState,
     current_named_layout: Option<String>,
     native_persist_revision: Arc<AtomicU64>,
     tmux_show_active_pane_border: bool,
@@ -1111,6 +1121,7 @@ pub struct TerminalView {
     terminal_scrollbar_track_hold_local_y: Option<f32>,
     terminal_scrollbar_track_hold_active: bool,
     pane_resize_drag: Option<PaneResizeDragState>,
+    agent_sidebar_resize_drag: Option<AgentSidebarResizeDragState>,
     terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache,
     /// Cached cell dimensions
     cell_size: Option<Size<Pixels>>,
@@ -1853,6 +1864,10 @@ impl TerminalView {
         self.terminal_viewport_geometry()
     }
 
+    pub(super) fn agent_sidebar_visible(&self) -> bool {
+        self.agent_sidebar_enabled && self.agent_sidebar_open
+    }
+
     pub(super) fn clear_terminal_scrollbar_marker_cache(&mut self) {
         self.terminal_scrollbar_marker_cache.clear();
     }
@@ -2180,6 +2195,13 @@ impl TerminalView {
             native_tab_persistence: config.native_tab_persistence,
             native_layout_autosave: config.native_layout_autosave,
             native_buffer_persistence: config.native_buffer_persistence,
+            agent_sidebar_enabled: config.agent_sidebar_enabled,
+            agent_sidebar_width: config
+                .agent_sidebar_width
+                .clamp(AGENT_SIDEBAR_MIN_WIDTH, AGENT_SIDEBAR_MAX_WIDTH),
+            agent_sidebar_open: false,
+            agent_sidebar_input_active: false,
+            agent_sidebar_input: InlineInputState::new(String::new()),
             current_named_layout: None,
             native_persist_revision: Arc::new(AtomicU64::new(0)),
             tmux_show_active_pane_border: config.tmux_show_active_pane_border,
@@ -2242,6 +2264,7 @@ impl TerminalView {
             terminal_scrollbar_track_hold_local_y: None,
             terminal_scrollbar_track_hold_active: false,
             pane_resize_drag: None,
+            agent_sidebar_resize_drag: None,
             terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache::default(),
             cell_size: None,
             search_open: false,
@@ -2393,9 +2416,21 @@ impl TerminalView {
             self.native_layout_autosave != config.native_layout_autosave;
         let native_buffer_persistence_changed =
             self.native_buffer_persistence != config.native_buffer_persistence;
+        let agent_sidebar_enabled_changed =
+            self.agent_sidebar_enabled != config.agent_sidebar_enabled;
+        let clamped_agent_sidebar_width = config
+            .agent_sidebar_width
+            .clamp(AGENT_SIDEBAR_MIN_WIDTH, AGENT_SIDEBAR_MAX_WIDTH);
+        let agent_sidebar_width_changed =
+            (self.agent_sidebar_width - clamped_agent_sidebar_width).abs() > f32::EPSILON;
         self.native_tab_persistence = config.native_tab_persistence;
         self.native_layout_autosave = config.native_layout_autosave;
         self.native_buffer_persistence = config.native_buffer_persistence;
+        self.agent_sidebar_enabled = config.agent_sidebar_enabled;
+        self.agent_sidebar_width = clamped_agent_sidebar_width;
+        if !self.agent_sidebar_enabled {
+            self.agent_sidebar_open = false;
+        }
         self.tmux_show_active_pane_border = config.tmux_show_active_pane_border;
         self.configured_working_dir = config.working_dir.clone();
         self.terminal_runtime = Self::runtime_config_from_app_config(&config);
@@ -2422,6 +2457,11 @@ impl TerminalView {
             {
                 self.sync_persisted_native_workspace();
             }
+        }
+        if agent_sidebar_enabled_changed || agent_sidebar_width_changed {
+            self.clear_pane_render_caches();
+            self.clear_terminal_scrollbar_marker_cache();
+            self.cell_size = None;
         }
         let reconnect_managed_tmux = self.runtime_uses_tmux()
             && matches!(

@@ -3,6 +3,13 @@ name = "termy_plugin_host"
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata.termy.experimental]
+title = "Plugins"
+summary = "External plugins are still experimental."
+details = "The plugin host, manifest surface, permissions, and runtime behavior may change while the system matures."
+toggle_setting_key = "show_plugins_tab"
+settings_section = "Plugins"
+
 [dependencies]
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }

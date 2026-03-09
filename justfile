@@ -7,6 +7,9 @@ set shell := ["bash", "-cu"]
 run:
     cargo run --release
 
+dev:
+    cargo watch -x "run --release"
+
 build:
     cargo build --release
 

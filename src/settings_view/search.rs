@@ -136,6 +136,13 @@ static SETTINGS_METADATA: LazyLock<Vec<SettingMetadata>> = LazyLock::new(|| {
     }));
 
     entries.push(SettingMetadata {
+        key: "experimental",
+        section: SettingsSection::Experimental,
+        title: "Experimental",
+        description: "Track workspace crates and features that are still considered experimental.",
+        keywords: &["experimental", "preview", "beta", "unstable", "crate"],
+    });
+    entries.push(SettingMetadata {
         key: "theme_store",
         section: SettingsSection::ThemeStore,
         title: "Theme Store",
@@ -168,8 +175,20 @@ impl SettingsWindow {
         self.config.show_plugins_tab
     }
 
-    fn is_section_visible_with_plugins(section: SettingsSection, plugins_enabled: bool) -> bool {
-        section != SettingsSection::Plugins || plugins_enabled
+    fn is_experimental_section_enabled() -> bool {
+        crate::experimental::has_entries()
+    }
+
+    fn is_section_visible(
+        section: SettingsSection,
+        plugins_enabled: bool,
+        experimental_enabled: bool,
+    ) -> bool {
+        match section {
+            SettingsSection::Plugins => plugins_enabled,
+            SettingsSection::Experimental => experimental_enabled,
+            _ => true,
+        }
     }
 
     pub(super) fn settings_section_label(section: SettingsSection) -> &'static str {
@@ -177,6 +196,7 @@ impl SettingsWindow {
             SettingsSection::Appearance => "Appearance",
             SettingsSection::Terminal => "Terminal",
             SettingsSection::Tabs => "Tabs",
+            SettingsSection::Experimental => "Experimental",
             SettingsSection::ThemeStore => "Theme Store",
             SettingsSection::Plugins => "Plugins",
             SettingsSection::Advanced => "Advanced",
@@ -187,10 +207,12 @@ impl SettingsWindow {
 
     pub(super) fn settings_sections_in_order(&self) -> Vec<SettingsSection> {
         let plugins_enabled = self.is_plugins_section_enabled();
+        let experimental_enabled = Self::is_experimental_section_enabled();
         [
             SettingsSection::Appearance,
             SettingsSection::Terminal,
             SettingsSection::Tabs,
+            SettingsSection::Experimental,
             SettingsSection::ThemeStore,
             SettingsSection::Plugins,
             SettingsSection::Advanced,
@@ -198,7 +220,7 @@ impl SettingsWindow {
             SettingsSection::Keybindings,
         ]
         .into_iter()
-        .filter(|section| Self::is_section_visible_with_plugins(*section, plugins_enabled))
+        .filter(|section| Self::is_section_visible(*section, plugins_enabled, experimental_enabled))
         .collect()
     }
 
@@ -208,12 +230,15 @@ impl SettingsWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let section =
-            if Self::is_section_visible_with_plugins(section, self.is_plugins_section_enabled()) {
-                section
-            } else {
-                SettingsSection::Appearance
-            };
+        let section = if Self::is_section_visible(
+            section,
+            self.is_plugins_section_enabled(),
+            Self::is_experimental_section_enabled(),
+        ) {
+            section
+        } else {
+            SettingsSection::Appearance
+        };
         self.active_section = section;
         self.active_input = None;
         self.capturing_action = None;
@@ -249,11 +274,14 @@ impl SettingsWindow {
         self.set_active_section(sections[next_index], window, cx);
     }
 
-    pub(super) fn build_searchable_settings(include_plugins: bool) -> Vec<SearchableSetting> {
+    pub(super) fn build_searchable_settings(
+        include_plugins: bool,
+        include_experimental: bool,
+    ) -> Vec<SearchableSetting> {
         SETTINGS_METADATA
             .iter()
             .filter(|metadata| {
-                Self::is_section_visible_with_plugins(metadata.section, include_plugins)
+                Self::is_section_visible(metadata.section, include_plugins, include_experimental)
             })
             .map(|metadata| {
                 let title_lower = metadata.title.to_ascii_lowercase();
@@ -291,11 +319,12 @@ impl SettingsWindow {
     pub(super) fn build_setting_scroll_anchors(
         content_scroll_handle: &ScrollHandle,
         include_plugins: bool,
+        include_experimental: bool,
     ) -> HashMap<&'static str, ScrollAnchor> {
         SETTINGS_METADATA
             .iter()
             .filter(|setting| {
-                Self::is_section_visible_with_plugins(setting.section, include_plugins)
+                Self::is_section_visible(setting.section, include_plugins, include_experimental)
             })
             .map(|setting| {
                 (
@@ -603,6 +632,13 @@ impl SettingsWindow {
                     .child(self.render_sidebar_item("Appearance", SettingsSection::Appearance, cx))
                     .child(self.render_sidebar_item("Terminal", SettingsSection::Terminal, cx))
                     .child(self.render_sidebar_item("Tabs", SettingsSection::Tabs, cx))
+                    .when(Self::is_experimental_section_enabled(), |this| {
+                        this.child(self.render_sidebar_item(
+                            "Experimental",
+                            SettingsSection::Experimental,
+                            cx,
+                        ))
+                    })
                     .child(self.render_sidebar_item("Theme Store", SettingsSection::ThemeStore, cx))
                     .when(self.config.show_plugins_tab, |this| {
                         this.child(self.render_sidebar_item(

@@ -1,0 +1,13 @@
+[package]
+name = "termy_agent_sidebar"
+version = "0.1.0"
+edition = "2024"
+
+[package.metadata.termy.experimental]
+title = "Agent Sidebar"
+summary = "A blank right sidebar reserved for future agent workflows."
+details = "This experimental sidebar can be enabled from Settings and toggled at runtime with cmd+shift+b."
+toggle_setting_key = "agent_sidebar_enabled"
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }

@@ -314,6 +314,8 @@ define_root_settings! {
     (NativeTabPersistence, "native_tab_persistence", [], Advanced, "STARTUP", "Native Tab Persistence", "Restore native tabs and pane splits across app restarts", ["native", "tabs", "panes", "split", "restore", "startup"], RootSettingValueKind::Boolean, false),
     (NativeLayoutAutosave, "native_layout_autosave", [], Advanced, "STARTUP", "Native Layout Autosave", "Auto-save changes back into the currently loaded named layout", ["native", "layout", "autosave", "saved", "snapshot"], RootSettingValueKind::Boolean, false),
     (NativeBufferPersistence, "native_buffer_persistence", [], Advanced, "STARTUP", "Native Buffer Persistence", "Replay saved buffer text when restoring native layouts", ["native", "buffer", "scrollback", "history", "restore"], RootSettingValueKind::Boolean, false),
+    (AgentSidebarEnabled, "agent_sidebar_enabled", [], Advanced, "UI", "Enable Agent Sidebar", "Allow the experimental agent sidebar to be toggled with the keyboard shortcut", ["agent", "sidebar", "experimental", "assistant", "panel"], RootSettingValueKind::Boolean, false),
+    (AgentSidebarWidth, "agent_sidebar_width", [], Advanced, "UI", "Agent Sidebar Width", "Saved width for the experimental agent sidebar in pixels", ["agent", "sidebar", "width", "panel"], RootSettingValueKind::Numeric, false),
     (ShowPluginsTab, "show_plugins_tab", [], Advanced, "UI", "Show Plugins Tab", "Show the Plugins section in Settings", ["plugins", "settings", "sidebar", "tab"], RootSettingValueKind::Boolean, false),
     (ShowDebugOverlay, "show_debug_overlay", [], Advanced, "UI", "Show Debug Overlay", "Show FPS, CPU, and memory in the terminal corner", ["debug", "overlay", "fps", "cpu", "memory"], RootSettingValueKind::Boolean, false),
     (TmuxBinary, "tmux_binary", [], Terminal, "TMUX", "Tmux Binary", "tmux executable path or binary name", ["tmux", "binary", "path"], RootSettingValueKind::Text, false),
@@ -420,6 +422,8 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::NativeBufferPersistence => {
             Some(config.native_buffer_persistence.to_string())
         }
+        RootSettingId::AgentSidebarEnabled => Some(config.agent_sidebar_enabled.to_string()),
+        RootSettingId::AgentSidebarWidth => Some(config.agent_sidebar_width.to_string()),
         RootSettingId::ShowPluginsTab => Some(config.show_plugins_tab.to_string()),
         RootSettingId::ShowDebugOverlay => Some(config.show_debug_overlay.to_string()),
         RootSettingId::TmuxBinary => Some(config.tmux_binary.clone()),

@@ -13,6 +13,10 @@ native_tab_persistence = false
 native_layout_autosave = false
 # Replay saved buffer text when restoring native layouts
 native_buffer_persistence = false
+# Allow the experimental agent sidebar to be toggled with the keyboard shortcut
+agent_sidebar_enabled = false
+# Saved width for the experimental agent sidebar in pixels
+agent_sidebar_width = 320
 # tmux executable path or binary name
 tmux_binary = tmux
 # Show active tmux pane border highlight in managed sessions

@@ -70,6 +70,9 @@ impl SettingsWindow {
                 }
                 SettingsSection::Terminal => self.render_terminal_section(cx).into_any_element(),
                 SettingsSection::Tabs => self.render_tabs_section(cx).into_any_element(),
+                SettingsSection::Experimental => {
+                    self.render_experimental_section(cx).into_any_element()
+                }
                 SettingsSection::ThemeStore => {
                     self.render_theme_store_section(cx).into_any_element()
                 }
@@ -750,13 +753,213 @@ impl SettingsWindow {
             .flex_col()
             .gap_2()
             .child(self.render_section_header(
-                "Plugins [Experimental]",
+                "Plugins",
                 "Inspect installed plugins and manage startup behavior",
                 SettingsSection::Plugins,
                 cx,
             ))
             .child(self.render_settings_group("OVERVIEW", host_rows))
             .child(self.render_settings_group("PLUGINS", plugin_rows))
+    }
+
+    pub(super) fn render_experimental_section(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let cards = crate::experimental::entries()
+            .iter()
+            .map(|entry| {
+                let bg_card = self.bg_card();
+                let bg_input = self.bg_input();
+                let border_color = self.border_color();
+                let text_primary = self.text_primary();
+                let text_muted = self.text_muted();
+                let accent = self.accent();
+                let hover_bg = self.bg_hover();
+                let destination = entry.settings_section;
+                let destination_label = destination.map(Self::settings_section_label);
+                let action_id = SharedString::from(format!(
+                    "experimental-feature-{}",
+                    entry.crate_name
+                ));
+                let toggle_info = entry.toggle_setting_key.and_then(|setting_key| {
+                    let setting = root_setting_from_key(setting_key)?;
+                    (root_setting_value_kind(setting) == RootSettingValueKind::Boolean)
+                        .then_some((setting_key, setting))
+                });
+                let toggle_row = toggle_info.map(|(_setting_key, setting)| {
+                    let enabled = root_setting_default_value(&self.config, setting)
+                        .as_deref()
+                        .and_then(|value| value.parse::<bool>().ok())
+                        .unwrap_or(false);
+                    let toggle_id = SharedString::from(format!(
+                        "experimental-toggle-{}",
+                        entry.crate_name
+                    ));
+
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_4()
+                        .px_3()
+                        .py_2()
+                        .rounded(px(0.0))
+                        .bg(bg_input)
+                        .border_1()
+                        .border_color(border_color)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.0))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .font_weight(gpui::FontWeight::MEDIUM)
+                                        .text_color(text_primary)
+                                        .child("Enabled"),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(text_muted)
+                                        .child(if enabled {
+                                            "This experimental feature is visible in Settings."
+                                        } else {
+                                            "This experimental feature is currently hidden."
+                                        }),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_3()
+                                .child(
+                                    div()
+                                        .w(px(24.0))
+                                        .text_xs()
+                                        .font_weight(gpui::FontWeight::MEDIUM)
+                                        .text_color(if enabled { accent } else { text_muted })
+                                        .text_align(TextAlign::Center)
+                                        .child(if enabled { "On" } else { "Off" }),
+                                )
+                                .child(self.render_switch(
+                                    toggle_id,
+                                    enabled,
+                                    cx,
+                                    move |view, cx| {
+                                        let next = (!enabled).to_string();
+                                        match config::set_root_setting(setting, &next) {
+                                            Ok(()) => {
+                                                let _ = view.reload_config_if_changed(cx);
+                                                termy_toast::success("Saved");
+                                                cx.notify();
+                                            }
+                                            Err(error) => termy_toast::error(error),
+                                        }
+                                    },
+                                )),
+                        )
+                        .into_any_element()
+                });
+
+                div()
+                    .id(action_id)
+                    .py_4()
+                    .px_4()
+                    .rounded(px(0.0))
+                    .bg(bg_card)
+                    .border_1()
+                    .border_color(border_color)
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .justify_between()
+                            .gap_4()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(text_primary)
+                                            .child(entry.title),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(text_muted)
+                                            .child(entry.summary),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(accent)
+                                    .child(entry.crate_name),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .line_height(px(18.0))
+                            .text_color(text_muted)
+                            .child(entry.details),
+                    )
+                    .when_some(toggle_row, |this, toggle| this.child(toggle))
+                    .when_some(destination_label, |this, label| {
+                        this.child(
+                            div()
+                                .id(SharedString::from(format!(
+                                    "experimental-open-{}",
+                                    entry.crate_name
+                                )))
+                                .px_3()
+                                .py_2()
+                                .rounded(px(0.0))
+                                .bg(self.bg_input())
+                                .border_1()
+                                .border_color(border_color)
+                                .text_xs()
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(accent)
+                                .cursor_pointer()
+                                .hover(move |style| {
+                                    style.bg(hover_bg).text_color(text_primary)
+                                })
+                                .child(format!("Open {label}"))
+                                .on_click(cx.listener(move |view, _, window, cx| {
+                                    if let Some(section) = destination {
+                                        view.set_active_section(section, window, cx);
+                                    }
+                                })),
+                        )
+                    })
+                    .into_any_element()
+            })
+            .collect::<Vec<_>>();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(self.render_section_header(
+                "Experimental",
+                "Preview workspace crates and features that may still change",
+                SettingsSection::Experimental,
+                cx,
+            ))
+            .child(self.render_settings_group("FEATURES", cards))
     }
 
     pub(super) fn render_tabs_title_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -1669,8 +1872,10 @@ impl SettingsWindow {
         let native_tab_persistence = self.config.native_tab_persistence;
         let native_layout_autosave = self.config.native_layout_autosave;
         let native_buffer_persistence = self.config.native_buffer_persistence;
+        let agent_sidebar_enabled = self.config.agent_sidebar_enabled;
         let show_plugins_tab = self.config.show_plugins_tab;
         let show_debug_overlay = self.config.show_debug_overlay;
+        let agent_sidebar_width = self.editable_field_value(EditableField::AgentSidebarWidth);
         let window_width = self.config.window_width;
         let window_height = self.config.window_height;
         let bg_card = self.bg_card();
@@ -1685,6 +1890,7 @@ impl SettingsWindow {
         let working_dir_fallback_meta = Self::setting_metadata_or_fallback("working_dir_fallback");
         let window_width_meta = Self::setting_metadata_or_fallback("window_width");
         let window_height_meta = Self::setting_metadata_or_fallback("window_height");
+        let agent_sidebar_width_meta = Self::setting_metadata_or_fallback("agent_sidebar_width");
         let config_path_display = self
             .config_path
             .as_ref()
@@ -1767,6 +1973,22 @@ impl SettingsWindow {
         let window_group = self.render_settings_group("WINDOW", window_rows);
 
         let ui_rows = vec![
+            self.render_root_bool_setting_row(
+                "agent_sidebar_enabled",
+                "agent_sidebar_enabled-toggle",
+                RootSettingId::AgentSidebarEnabled,
+                agent_sidebar_enabled,
+                "Saved",
+                cx,
+            ),
+            self.render_editable_row(
+                "agent_sidebar_width",
+                EditableField::AgentSidebarWidth,
+                agent_sidebar_width_meta.title,
+                agent_sidebar_width_meta.description,
+                format!("{}px", agent_sidebar_width),
+                cx,
+            ),
             self.render_root_bool_setting_row(
                 "show_plugins_tab",
                 "show_plugins_tab-toggle",

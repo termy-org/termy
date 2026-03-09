@@ -2101,6 +2101,87 @@ impl Render for TerminalView {
             .children(pane_resize_handles)
             .children(pane_focus_accents)
             .into_any_element();
+        let mut agent_sidebar_muted: gpui::Hsla = self.colors.foreground.into();
+        agent_sidebar_muted.a = 0.72;
+        let agent_sidebar = self.agent_sidebar_visible().then(|| {
+            let text_color: gpui::Hsla = self.colors.foreground.into();
+            let mut selection_color = text_color;
+            selection_color.a = 0.3;
+            let has_text = !self.agent_sidebar_input.text().is_empty();
+            let input_content = div()
+                .id("agent-sidebar-input")
+                .w_full()
+                .h(px(20.0))
+                .overflow_hidden()
+                .cursor_text()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|view, _event: &MouseDownEvent, window, cx| {
+                        view.agent_sidebar_input_active = true;
+                        view.focus_handle.focus(window, cx);
+                        cx.notify();
+                    }),
+                )
+                .child(if self.agent_sidebar_input_active {
+                    InlineInputElement::new(
+                        cx.entity(),
+                        self.focus_handle.clone(),
+                        Font {
+                            family: self.font_family.clone(),
+                            ..Font::default()
+                        },
+                        px(14.0),
+                        text_color,
+                        selection_color,
+                        InlineInputAlignment::Left,
+                    )
+                    .into_any_element()
+                } else if has_text {
+                    div()
+                        .text_size(px(14.0))
+                        .text_color(text_color)
+                        .child(self.agent_sidebar_input.text().to_string())
+                        .into_any_element()
+                } else {
+                    let mut ghost = agent_sidebar_muted;
+                    ghost.a = 0.74;
+                    div()
+                        .text_size(px(14.0))
+                        .text_color(ghost)
+                        .child("Message Agent")
+                        .into_any_element()
+                })
+                .into_any_element();
+            div()
+                .relative()
+                .h_full()
+                .child(
+                    div()
+                        .id("agent-sidebar-resize-handle")
+                        .absolute()
+                        .left(px(0.0))
+                        .top(px(0.0))
+                        .w(px(8.0))
+                        .h_full()
+                        .cursor_col_resize()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                                view.agent_sidebar_resize_drag = Some(AgentSidebarResizeDragState);
+                                cx.stop_propagation();
+                            }),
+                        ),
+                )
+                .child(termy_agent_sidebar::render_sidebar(
+                    self.agent_sidebar_width,
+                    terminal_surface_bg_hsla,
+                    divider_color,
+                    self.colors.foreground.into(),
+                    agent_sidebar_muted,
+                    input_content,
+                ))
+                .into_any_element()
+        });
         let overlay_view = self.ensure_overlay_view(cx);
         let key_context = if self.has_active_inline_input() {
             "Terminal InlineInput"
@@ -2238,6 +2319,7 @@ impl Render for TerminalView {
                         s.on_action(cx.listener(Self::handle_install_cli_action))
                     })
                     .on_action(cx.listener(Self::handle_toggle_ai_input_action))
+                    .on_action(cx.listener(Self::handle_toggle_agent_sidebar_action))
                     .on_action(cx.listener(Self::handle_inline_backspace_action))
                     .on_action(cx.listener(Self::handle_inline_delete_action))
                     .on_action(cx.listener(Self::handle_inline_move_left_action))
@@ -2253,28 +2335,67 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_inline_delete_to_end_action))
                     .on_key_down(cx.listener(Self::handle_key_down))
                     .on_modifiers_changed(cx.listener(Self::handle_modifiers_changed))
-                    .on_scroll_wheel(cx.listener(Self::handle_terminal_scroll_wheel))
-                    .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
-                    .on_mouse_down(MouseButton::Middle, cx.listener(Self::handle_mouse_down))
-                    .on_mouse_down(MouseButton::Right, cx.listener(Self::handle_mouse_down))
-                    .on_mouse_move(cx.listener(Self::handle_mouse_move))
-                    .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))
-                    .on_mouse_up(MouseButton::Middle, cx.listener(Self::handle_mouse_up))
-                    .on_mouse_up(MouseButton::Right, cx.listener(Self::handle_mouse_up))
-                    .on_drop(cx.listener(Self::handle_file_drop))
                     .relative()
                     .flex_1()
                     .w_full()
                     .overflow_hidden()
-                    .bg(terminal_surface_bg_hsla)
-                    .when_some(self.pane_resize_drag.as_ref(), |s, drag| match drag.axis {
-                        PaneResizeAxis::Horizontal => s.cursor_col_resize(),
-                        PaneResizeAxis::Vertical => s.cursor_row_resize(),
-                    })
-                    .font_family(font_family.clone())
-                    .text_size(font_size)
-                    .child(terminal_grid_layer)
-                    .children(terminal_scrollbar_overlay),
+                    .child(
+                        div()
+                            .id("terminal-content")
+                            .flex()
+                            .w_full()
+                            .h_full()
+                            .child(
+                                div()
+                                    .id("terminal-surface")
+                                    .relative()
+                                    .flex_1()
+                                    .h_full()
+                                    .overflow_hidden()
+                                    .bg(terminal_surface_bg_hsla)
+                                    .on_scroll_wheel(
+                                        cx.listener(Self::handle_terminal_scroll_wheel),
+                                    )
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(Self::handle_mouse_down),
+                                    )
+                                    .on_mouse_down(
+                                        MouseButton::Middle,
+                                        cx.listener(Self::handle_mouse_down),
+                                    )
+                                    .on_mouse_down(
+                                        MouseButton::Right,
+                                        cx.listener(Self::handle_mouse_down),
+                                    )
+                                    .on_mouse_move(cx.listener(Self::handle_mouse_move))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(Self::handle_mouse_up),
+                                    )
+                                    .on_mouse_up(
+                                        MouseButton::Middle,
+                                        cx.listener(Self::handle_mouse_up),
+                                    )
+                                    .on_mouse_up(
+                                        MouseButton::Right,
+                                        cx.listener(Self::handle_mouse_up),
+                                    )
+                                    .on_drop(cx.listener(Self::handle_file_drop))
+                                    .when_some(
+                                        self.pane_resize_drag.as_ref(),
+                                        |s, drag| match drag.axis {
+                                            PaneResizeAxis::Horizontal => s.cursor_col_resize(),
+                                            PaneResizeAxis::Vertical => s.cursor_row_resize(),
+                                        },
+                                    )
+                                    .font_family(font_family.clone())
+                                    .text_size(font_size)
+                                    .child(terminal_grid_layer)
+                                    .children(terminal_scrollbar_overlay),
+                            )
+                            .children(agent_sidebar),
+                    ),
             )
             .child(overlay_view);
 

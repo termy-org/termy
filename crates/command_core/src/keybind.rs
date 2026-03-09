@@ -184,6 +184,10 @@ pub fn default_keybinds_for_platform(platform: KeybindPlatform) -> Vec<DefaultKe
             trigger: "secondary-k",
             action: CommandId::ToggleAiInput,
         },
+        DefaultKeybind {
+            trigger: "secondary-shift-b",
+            action: CommandId::ToggleAgentSidebar,
+        },
     ];
 
     if matches!(platform, KeybindPlatform::MacOs) {

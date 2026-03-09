@@ -5,6 +5,7 @@ mod colors;
 mod commands;
 mod config;
 mod deeplink;
+mod experimental;
 mod keybindings;
 mod menus;
 mod plugins;

@@ -36,6 +36,7 @@ pub(super) enum EditableField {
     WorkingDirFallback,
     WindowWidth,
     WindowHeight,
+    AgentSidebarWidth,
     AiProvider,
     OpenaiApiKey,
     GeminiApiKey,
@@ -209,7 +210,8 @@ impl SettingsWindow {
             SettingsSection::Terminal => Some(CoreSettingsSection::Terminal),
             SettingsSection::Tabs => Some(CoreSettingsSection::Tabs),
             SettingsSection::Advanced => Some(CoreSettingsSection::Advanced),
-            SettingsSection::ThemeStore
+            SettingsSection::Experimental
+            | SettingsSection::ThemeStore
             | SettingsSection::Plugins
             | SettingsSection::Colors
             | SettingsSection::Keybindings => None,
@@ -268,6 +270,7 @@ impl SettingsWindow {
             SettingsSection::Colors => color_setting_specs()
                 .iter()
                 .any(|spec| self.custom_color_for_id(spec.id).is_some()),
+            SettingsSection::Experimental => false,
             SettingsSection::ThemeStore => false,
             SettingsSection::Plugins => false,
             SettingsSection::Keybindings => !self.config.keybind_lines.is_empty(),
@@ -321,6 +324,7 @@ impl SettingsWindow {
             SettingsSection::Appearance => "Appearance",
             SettingsSection::Terminal => "Terminal",
             SettingsSection::Tabs => "Tabs",
+            SettingsSection::Experimental => return,
             SettingsSection::Advanced => "Advanced",
             SettingsSection::Colors => "Colors",
             SettingsSection::Keybindings => "Keybindings",
@@ -390,6 +394,7 @@ impl SettingsWindow {
             SettingsSection::Colors => color_setting_specs()
                 .iter()
                 .try_for_each(|spec| config::set_color_setting(spec.id, None)),
+            SettingsSection::Experimental => Ok(()),
             SettingsSection::ThemeStore => Ok(()),
             SettingsSection::Plugins => Ok(()),
             SettingsSection::Keybindings => Ok(()),
@@ -439,6 +444,7 @@ impl SettingsWindow {
             | EditableField::WorkingDirFallback
             | EditableField::WindowWidth
             | EditableField::WindowHeight
+            | EditableField::AgentSidebarWidth
             | EditableField::AiProvider
             | EditableField::OpenaiApiKey
             | EditableField::GeminiApiKey
@@ -606,6 +612,14 @@ impl SettingsWindow {
                     delta: 10.0,
                     min: 100.0,
                     max: 10000.0,
+                },
+            ),
+            EditableField::AgentSidebarWidth => Self::numeric_field_spec(
+                RootSettingId::AgentSidebarWidth,
+                NumericStepSpec {
+                    delta: 10.0,
+                    min: 180.0,
+                    max: 1000.0,
                 },
             ),
             EditableField::AiProvider => Self::enum_field_spec(RootSettingId::AiProvider),
@@ -974,6 +988,9 @@ impl SettingsWindow {
             .to_string(),
             EditableField::WindowWidth => format!("{}", self.config.window_width.round() as i32),
             EditableField::WindowHeight => format!("{}", self.config.window_height.round() as i32),
+            EditableField::AgentSidebarWidth => {
+                format!("{}", self.config.agent_sidebar_width.round() as i32)
+            }
             EditableField::AiProvider => match self.config.ai_provider {
                 termy_config_core::AiProvider::OpenAi => "openai".to_string(),
                 termy_config_core::AiProvider::Gemini => "gemini".to_string(),
@@ -1138,6 +1155,15 @@ impl SettingsWindow {
                     &next.to_string(),
                 )
             }
+            EditableField::AgentSidebarWidth => {
+                let next = (self.config.agent_sidebar_width + (delta as f32 * step.delta))
+                    .clamp(step.min, step.max);
+                self.config.agent_sidebar_width = next;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::AgentSidebarWidth,
+                    &next.to_string(),
+                )
+            }
             _ => Err(format!("Unsupported numeric field: {:?}", field)),
         };
 
@@ -1277,6 +1303,7 @@ mod tests {
             EditableField::WorkingDirFallback,
             EditableField::WindowWidth,
             EditableField::WindowHeight,
+            EditableField::AgentSidebarWidth,
             EditableField::AiProvider,
             EditableField::OpenaiApiKey,
             EditableField::GeminiApiKey,
@@ -1329,6 +1356,7 @@ mod tests {
             EditableField::PaneFocusStrength,
             EditableField::WindowWidth,
             EditableField::WindowHeight,
+            EditableField::AgentSidebarWidth,
         ];
 
         for field in numeric_fields {

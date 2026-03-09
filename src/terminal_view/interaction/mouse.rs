@@ -3,6 +3,37 @@ use super::*;
 const SELECTION_DRAG_AUTOSCROLL_MAX_LINES: i32 = 3;
 
 impl TerminalView {
+    fn apply_agent_sidebar_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
+        if self.agent_sidebar_resize_drag.is_none() {
+            return false;
+        }
+
+        let viewport_width = self.last_viewport_size_px.map(|(width, _)| width as f32);
+        let Some(viewport_width) = viewport_width else {
+            return false;
+        };
+
+        let pointer_x: f32 = position.x.into();
+        let next_width =
+            (viewport_width - pointer_x).clamp(AGENT_SIDEBAR_MIN_WIDTH, AGENT_SIDEBAR_MAX_WIDTH);
+        if (self.agent_sidebar_width - next_width).abs() < f32::EPSILON {
+            return false;
+        }
+
+        self.agent_sidebar_width = next_width;
+        self.clear_pane_render_caches();
+        self.clear_terminal_scrollbar_marker_cache();
+        self.cell_size = None;
+        true
+    }
+
+    fn persist_agent_sidebar_width(&self) -> Result<(), String> {
+        config::set_root_setting(
+            termy_config_core::RootSettingId::AgentSidebarWidth,
+            &self.agent_sidebar_width.to_string(),
+        )
+    }
+
     fn native_resize_overlap_cells(a_start: u16, a_end: u16, b_start: u16, b_end: u16) -> u16 {
         let start = a_start.max(b_start);
         let end = a_end.min(b_end);
@@ -524,6 +555,13 @@ impl TerminalView {
         event: &MouseMoveEvent,
         cx: &mut Context<Self>,
     ) {
+        if self.agent_sidebar_resize_drag.is_some() && event.dragging() {
+            if self.apply_agent_sidebar_resize_drag(event.position) {
+                cx.notify();
+            }
+            return;
+        }
+
         if self.try_forward_mouse_move(event, cx) {
             return;
         }
@@ -540,6 +578,14 @@ impl TerminalView {
         event: &MouseUpEvent,
         cx: &mut Context<Self>,
     ) -> bool {
+        if event.button == MouseButton::Left && self.agent_sidebar_resize_drag.take().is_some() {
+            if let Err(error) = self.persist_agent_sidebar_width() {
+                termy_toast::error(error);
+            }
+            cx.notify();
+            return true;
+        }
+
         if self.try_forward_mouse_up(event, cx) {
             return true;
         }
@@ -672,6 +718,20 @@ impl TerminalView {
             cx.stop_propagation();
             return;
         }
+        if self.agent_sidebar_resize_drag.is_some() {
+            if event.dragging() {
+                if self.apply_agent_sidebar_resize_drag(event.position) {
+                    cx.notify();
+                }
+            } else if self.agent_sidebar_resize_drag.take().is_some() {
+                if let Err(error) = self.persist_agent_sidebar_width() {
+                    termy_toast::error(error);
+                }
+                cx.notify();
+            }
+            cx.stop_propagation();
+            return;
+        }
         if event.dragging()
             && self.terminal_scrollbar_track_hold_local_y.is_some()
             && let Some(hit) = self.terminal_scrollbar_hit_test(event.position, window)
@@ -735,6 +795,14 @@ impl TerminalView {
             return;
         }
         if event.button == MouseButton::Left && self.finish_terminal_scrollbar_drag(cx) {
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
+        if event.button == MouseButton::Left && self.agent_sidebar_resize_drag.take().is_some() {
+            if let Err(error) = self.persist_agent_sidebar_width() {
+                termy_toast::error(error);
+            }
             cx.stop_propagation();
             cx.notify();
             return;

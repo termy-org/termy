@@ -102,6 +102,20 @@ impl TerminalView {
             CommandAction::Quit => {
                 self.execute_quit_command_action(action, window, cx);
             }
+            CommandAction::ToggleAgentSidebar => {
+                if !self.agent_sidebar_enabled {
+                    termy_toast::info(
+                        "Enable Agent Sidebar in Settings > Experimental before toggling it",
+                    );
+                    self.notify_overlay(cx);
+                    return;
+                }
+                self.agent_sidebar_open = !self.agent_sidebar_open;
+                if !self.agent_sidebar_open {
+                    self.agent_sidebar_input_active = false;
+                }
+                cx.notify();
+            }
             _ if shortcuts_suspended => {}
             CommandAction::OpenConfig
             | CommandAction::ImportThemeStoreAuth
@@ -238,6 +252,15 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::CheckForUpdates, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_toggle_agent_sidebar_action(
+        &mut self,
+        _: &commands::ToggleAgentSidebar,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ToggleAgentSidebar, true, window, cx);
     }
 
     pub(in super::super) fn handle_new_tab_action(

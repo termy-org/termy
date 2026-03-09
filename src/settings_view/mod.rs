@@ -61,10 +61,11 @@ const SETTINGS_OPACITY_STEP_RATIO: f32 = 0.05;
 const SETTINGS_CONTROL_INNER_PADDING: f32 = 8.0;
 const SETTINGS_OPACITY_CONTROL_GAP: f32 = 6.0;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum SettingsSection {
+pub(crate) enum SettingsSection {
     Appearance,
     Terminal,
     Tabs,
+    Experimental,
     ThemeStore,
     Plugins,
     Advanced,
@@ -131,12 +132,18 @@ impl SettingsWindow {
         available_font_families.sort_unstable_by_key(|font| font.to_ascii_lowercase());
         available_font_families.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
         let colors = TerminalColors::from_theme(&config.theme, &config.colors);
-        let searchable_settings = Self::build_searchable_settings(config.show_plugins_tab);
+        let searchable_settings = Self::build_searchable_settings(
+            config.show_plugins_tab,
+            crate::experimental::has_entries(),
+        );
         let searchable_setting_indices =
             Self::build_searchable_setting_indices(&searchable_settings);
         let content_scroll_handle = ScrollHandle::new();
-        let setting_scroll_anchors =
-            Self::build_setting_scroll_anchors(&content_scroll_handle, config.show_plugins_tab);
+        let setting_scroll_anchors = Self::build_setting_scroll_anchors(
+            &content_scroll_handle,
+            config.show_plugins_tab,
+            crate::experimental::has_entries(),
+        );
         let theme_store_auth_session = theme_store::load_auth_session();
         let (plugin_directory, plugin_inventory, plugin_inventory_error) =
             Self::load_plugin_inventory();
@@ -629,12 +636,16 @@ impl SettingsWindow {
         self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
         self.config = config;
         if previous_show_plugins_tab != next_show_plugins_tab {
-            self.searchable_settings = Self::build_searchable_settings(next_show_plugins_tab);
+            self.searchable_settings = Self::build_searchable_settings(
+                next_show_plugins_tab,
+                crate::experimental::has_entries(),
+            );
             self.searchable_setting_indices =
                 Self::build_searchable_setting_indices(&self.searchable_settings);
             self.setting_scroll_anchors = Self::build_setting_scroll_anchors(
                 &self.content_scroll_handle,
                 next_show_plugins_tab,
+                crate::experimental::has_entries(),
             );
             if self.active_section == SettingsSection::Plugins && !next_show_plugins_tab {
                 self.active_section = SettingsSection::Appearance;

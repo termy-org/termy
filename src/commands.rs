@@ -935,6 +935,22 @@ define_commands!(
         )),
         None
     ),
+    (
+        ToggleAgentSidebar,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Toggle Agent Sidebar",
+            "agent sidebar assistant panel right",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::View,
+            0,
+            "Agent Sidebar",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
+    ),
 );
 
 termy_command_core::termy_command_catalog!(impl_command_action_id_mapping);
