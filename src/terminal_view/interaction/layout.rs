@@ -332,6 +332,18 @@ impl TerminalView {
                 {
                     pane.terminal.resize(next_size);
                 }
+
+                // Detect alternate-screen transitions.  When a TUI app (re-)enters
+                // the alternate screen, send SIGWINCH so it refreshes its display
+                // even though the PTY dimensions are stable.
+                let alt_screen = pane.terminal.alternate_screen_mode();
+                let prev_alt_screen = pane.last_alternate_screen.get();
+                if alt_screen != prev_alt_screen {
+                    pane.last_alternate_screen.set(alt_screen);
+                    if alt_screen {
+                        pane.terminal.nudge_resize();
+                    }
+                }
             }
         }
     }
