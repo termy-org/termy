@@ -2,6 +2,7 @@ use super::*;
 
 mod actions;
 mod app;
+mod context_menu;
 mod input;
 mod install_cli;
 mod layout;

@@ -296,6 +296,7 @@ impl TerminalView {
         mode: CommandPaletteMode,
         cx: &mut Context<Self>,
     ) {
+        let _ = self.close_terminal_context_menu(cx);
         let was_open = self.command_palette.is_open();
         self.command_palette.open(mode);
         let notify_event = if was_open {

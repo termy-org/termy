@@ -1476,6 +1476,229 @@ impl TerminalView {
         )
     }
 
+    #[cfg(target_os = "linux")]
+    fn clamped_terminal_context_menu_origin(
+        &self,
+        anchor: gpui::Point<Pixels>,
+        menu_width: f32,
+        menu_height: f32,
+    ) -> (f32, f32) {
+        let mut x: f32 = anchor.x.into();
+        let mut y: f32 = anchor.y.into();
+
+        if let Some((viewport_width, viewport_height)) = self.last_viewport_size_px {
+            let max_x = (viewport_width as f32 - menu_width).max(0.0);
+            let max_y = (viewport_height as f32 - menu_height).max(0.0);
+            x = x.clamp(0.0, max_x);
+            y = y.clamp(0.0, max_y);
+        }
+
+        (x, y)
+    }
+
+    fn render_terminal_context_menu_overlay(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = cx;
+            return None;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let state = self.terminal_context_menu?;
+            let overlay_style = self.overlay_style();
+            let menu_width = 170.0;
+            let row_height = 30.0;
+            let menu_height = row_height * 5.0 + 8.0;
+            let (menu_x, menu_y) = self.clamped_terminal_context_menu_origin(
+                state.anchor_position,
+                menu_width,
+                menu_height,
+            );
+            let panel_bg = overlay_style.panel_background(0.98);
+            let panel_border = overlay_style.panel_foreground(0.22);
+            let text_active = overlay_style.panel_foreground(0.95);
+            let text_disabled = overlay_style.panel_foreground(0.42);
+            let hover_bg = overlay_style.panel_cursor(0.22);
+
+            let command_item =
+                |id: &'static str, label: &'static str, enabled: bool, action: CommandAction| {
+                    let text_color = if enabled { text_active } else { text_disabled };
+                    div()
+                        .id(id)
+                        .h(px(row_height))
+                        .px(px(10.0))
+                        .flex()
+                        .items_center()
+                        .text_size(px(13.0))
+                        .text_color(text_color)
+                        .when(enabled, |s| s.cursor_pointer())
+                        .when(enabled, |s| s.hover(|style| style.bg(hover_bg)))
+                        .when(enabled, |s| {
+                            s.on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                                    view.execute_terminal_context_menu_command(action, cx);
+                                    cx.stop_propagation();
+                                }),
+                            )
+                        })
+                        .child(label)
+                        .into_any_element()
+                };
+            let ask_ai_item = |enabled: bool| {
+                let text_color = if enabled { text_active } else { text_disabled };
+                div()
+                    .id("terminal-context-menu-ask-ai")
+                    .h(px(row_height))
+                    .px(px(10.0))
+                    .flex()
+                    .items_center()
+                    .text_size(px(13.0))
+                    .text_color(text_color)
+                    .when(enabled, |s| s.cursor_pointer())
+                    .when(enabled, |s| s.hover(|style| style.bg(hover_bg)))
+                    .when(enabled, |s| {
+                        s.on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                                view.execute_terminal_context_menu_ask_ai(cx);
+                                cx.stop_propagation();
+                            }),
+                        )
+                    })
+                    .child("Ask AI")
+                    .into_any_element()
+            };
+            let open_search_item = || {
+                div()
+                    .id("terminal-context-menu-open-search")
+                    .h(px(row_height))
+                    .px(px(10.0))
+                    .flex()
+                    .items_center()
+                    .text_size(px(13.0))
+                    .text_color(text_active)
+                    .cursor_pointer()
+                    .hover(|style| style.bg(hover_bg))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                            let _ = view.close_terminal_context_menu(cx);
+                            view.open_search(cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .child("Open Search")
+                    .into_any_element()
+            };
+            let search_google_item = |enabled: bool| {
+                let text_color = if enabled { text_active } else { text_disabled };
+                div()
+                    .id("terminal-context-menu-search-google")
+                    .h(px(row_height))
+                    .px(px(10.0))
+                    .flex()
+                    .items_center()
+                    .text_size(px(13.0))
+                    .text_color(text_color)
+                    .when(enabled, |s| s.cursor_pointer())
+                    .when(enabled, |s| s.hover(|style| style.bg(hover_bg)))
+                    .when(enabled, |s| {
+                        s.on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                                view.execute_terminal_context_menu_search_google(cx);
+                                cx.stop_propagation();
+                            }),
+                        )
+                    })
+                    .child("Search Google")
+                    .into_any_element()
+            };
+
+            Some(
+                div()
+                    .id("terminal-context-menu-overlay")
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                            let _ = view.close_terminal_context_menu(cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Middle,
+                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                            let _ = view.close_terminal_context_menu(cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|view, event: &MouseDownEvent, _window, cx| {
+                            view.open_terminal_context_menu(event.position, cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .child(
+                        div()
+                            .id("terminal-context-menu-panel")
+                            .absolute()
+                            .left(px(menu_x))
+                            .top(px(menu_y))
+                            .w(px(menu_width))
+                            .py(px(4.0))
+                            .bg(panel_bg)
+                            .border_1()
+                            .border_color(panel_border)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Middle,
+                                cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .child(command_item(
+                                "terminal-context-menu-copy",
+                                "Copy",
+                                state.can_copy,
+                                CommandAction::Copy,
+                            ))
+                            .child(command_item(
+                                "terminal-context-menu-paste",
+                                "Paste",
+                                state.can_paste,
+                                CommandAction::Paste,
+                            ))
+                            .child(open_search_item())
+                            .child(ask_ai_item(state.can_ask_ai))
+                            .child(search_google_item(state.can_search_google)),
+                    )
+                    .into_any_element(),
+            )
+        }
+    }
+
     pub(super) fn render_overlay_layer(
         &mut self,
         _window: &mut Window,
@@ -1558,6 +1781,7 @@ impl TerminalView {
                 .children(ai_input_overlay)
                 .into_any_element()
         });
+        let context_menu_overlay = self.render_terminal_context_menu_overlay(cx);
         let toast_overlay = self.render_toast_overlay(&colors, cx);
         let resize_overlay = self
             .resize_indicator_visible_until
@@ -1653,6 +1877,7 @@ impl TerminalView {
             .size_full()
             .children(banner_overlay)
             .children(terminal_overlay)
+            .children(context_menu_overlay)
             .children(resize_overlay)
             .children(debug_overlay)
             .children(toast_overlay)

@@ -550,6 +550,10 @@ impl TerminalView {
         button == MouseButton::Left && selection_dragging
     }
 
+    fn is_terminal_context_menu_passthrough(modifiers: gpui::Modifiers) -> bool {
+        modifiers.shift
+    }
+
     pub(in super::super) fn handle_global_mouse_move_event(
         &mut self,
         event: &MouseMoveEvent,
@@ -578,6 +582,12 @@ impl TerminalView {
         event: &MouseUpEvent,
         cx: &mut Context<Self>,
     ) -> bool {
+        if event.button == MouseButton::Right
+            && Self::is_terminal_context_menu_passthrough(event.modifiers)
+        {
+            return self.force_forward_right_mouse_up(event, cx);
+        }
+
         if event.button == MouseButton::Left && self.agent_sidebar_resize_drag.take().is_some() {
             if let Err(error) = self.persist_agent_sidebar_width() {
                 termy_toast::error(error);
@@ -606,6 +616,9 @@ impl TerminalView {
         // Focus the terminal on click
         self.focus_handle.focus(window, cx);
         self.reset_cursor_blink_phase();
+        if event.button != MouseButton::Right {
+            let _ = self.close_terminal_context_menu(cx);
+        }
         let mut changed = false;
         if event.button == MouseButton::Left && self.tab_strip.drag.is_some() {
             self.commit_tab_drag(cx);
@@ -617,6 +630,23 @@ impl TerminalView {
         }
         if changed {
             cx.notify();
+        }
+
+        if event.button == MouseButton::Right {
+            if Self::is_terminal_context_menu_passthrough(event.modifiers) {
+                let _ = self.close_terminal_context_menu(cx);
+                let _ = self.force_forward_right_mouse_down(event, cx);
+                return;
+            }
+
+            if let Some((pane_id, _)) = self.position_to_pane_cell(event.position, false)
+                && !self.is_active_pane_id(pane_id.as_str())
+            {
+                let _ = self.focus_pane_target(pane_id.as_str(), cx);
+            }
+            self.open_terminal_context_menu(event.position, cx);
+            cx.stop_propagation();
+            return;
         }
 
         if self.try_forward_mouse_down(event, cx) {
@@ -789,6 +819,13 @@ impl TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if event.button == MouseButton::Right
+            && Self::is_terminal_context_menu_passthrough(event.modifiers)
+        {
+            let _ = self.force_forward_right_mouse_up(event, cx);
+            return;
+        }
+
         if event.button == MouseButton::Left && self.stop_terminal_scrollbar_track_hold() {
             cx.stop_propagation();
             cx.notify();
@@ -875,5 +912,17 @@ mod tests {
             MouseButton::Right,
             true
         ));
+    }
+
+    #[test]
+    fn terminal_context_menu_passthrough_requires_shift_modifier() {
+        let shifted = gpui::Modifiers {
+            shift: true,
+            ..gpui::Modifiers::default()
+        };
+        let plain = gpui::Modifiers::default();
+
+        assert!(TerminalView::is_terminal_context_menu_passthrough(shifted));
+        assert!(!TerminalView::is_terminal_context_menu_passthrough(plain));
     }
 }

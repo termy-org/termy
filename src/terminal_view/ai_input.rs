@@ -27,6 +27,8 @@ impl TerminalView {
             return;
         }
 
+        let _ = self.close_terminal_context_menu(cx);
+
         // Close other overlays
         if self.is_command_palette_open() {
             self.close_command_palette(cx);

@@ -219,6 +219,15 @@ struct TerminalScrollbarHit {
     thumb_top: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TerminalContextMenuState {
+    anchor_position: gpui::Point<Pixels>,
+    can_copy: bool,
+    can_paste: bool,
+    can_ask_ai: bool,
+    can_search_google: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TerminalScrollbarMarkerCacheKey {
     results_revision: u64,
@@ -1094,6 +1103,7 @@ pub struct TerminalView {
     selection_head: Option<SelectionPos>,
     selection_dragging: bool,
     selection_moved: bool,
+    terminal_context_menu: Option<TerminalContextMenuState>,
     hovered_link: Option<HoveredLink>,
     hovered_toast: Option<u64>,
     copied_toast_feedback: Option<(u64, Instant)>,
@@ -2237,6 +2247,7 @@ impl TerminalView {
             selection_head: None,
             selection_dragging: false,
             selection_moved: false,
+            terminal_context_menu: None,
             hovered_link: None,
             hovered_toast: None,
             copied_toast_feedback: None,
@@ -2333,7 +2344,8 @@ impl TerminalView {
         cx.on_blur(&blur_focus_handle, window, |view, _window, cx| {
             let released_mouse_presses = view.release_all_forwarded_mouse_presses();
             let cleared_tab_switch_hint_state = view.tab_strip.switch_hints.reset_hold_state();
-            if released_mouse_presses || cleared_tab_switch_hint_state {
+            let dismissed_context_menu = view.close_terminal_context_menu(cx);
+            if released_mouse_presses || cleared_tab_switch_hint_state || dismissed_context_menu {
                 cx.notify();
             }
         })

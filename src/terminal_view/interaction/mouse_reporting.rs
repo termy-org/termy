@@ -358,6 +358,46 @@ impl TerminalView {
         true
     }
 
+    pub(in super::super) fn force_forward_right_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if event.button != MouseButton::Right {
+            return false;
+        }
+
+        let Some((pane_id, cell)) = self.position_to_pane_cell(event.position, false) else {
+            return false;
+        };
+
+        let outcome = self.try_send_mouse_event_to_pane(
+            pane_id.as_str(),
+            TerminalMouseEventKind::Press(TerminalMouseButton::Right),
+            cell,
+            event.modifiers,
+        );
+        if !outcome.is_handled() {
+            return false;
+        }
+
+        self.set_pressed_mouse_target(
+            MouseTrackedButton::Right,
+            MouseReportTargetCell {
+                pane_id: pane_id.clone(),
+                col: cell.col,
+                row: cell.row,
+            },
+        );
+        self.mouse_reporting.hover_target = None;
+        if should_focus_target_after_mouse_press(outcome, self.is_active_pane_id(pane_id.as_str()))
+        {
+            let _ = self.focus_pane_target(pane_id.as_str(), cx);
+        }
+        cx.stop_propagation();
+        true
+    }
+
     pub(in super::super) fn try_forward_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
@@ -491,6 +531,42 @@ impl TerminalView {
         let outcome = self.try_send_mouse_event_to_pane(
             tracked.pane_id.as_str(),
             TerminalMouseEventKind::Release(button.terminal_button()),
+            cell,
+            event.modifiers,
+        );
+        if outcome.is_handled() {
+            cx.stop_propagation();
+            return true;
+        }
+        false
+    }
+
+    pub(in super::super) fn force_forward_right_mouse_up(
+        &mut self,
+        event: &MouseUpEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if event.button != MouseButton::Right {
+            return false;
+        }
+
+        let Some(tracked) = self.take_pressed_mouse_target(MouseTrackedButton::Right) else {
+            return false;
+        };
+        self.mouse_reporting.hover_target = None;
+        if self.pane_terminal_by_id(tracked.pane_id.as_str()).is_none() {
+            return false;
+        }
+        let cell = self
+            .position_to_cell_in_pane(tracked.pane_id.as_str(), event.position, true)
+            .unwrap_or(CellPos {
+                col: tracked.col,
+                row: tracked.row,
+            });
+
+        let outcome = self.try_send_mouse_event_to_pane(
+            tracked.pane_id.as_str(),
+            TerminalMouseEventKind::Release(TerminalMouseButton::Right),
             cell,
             event.modifiers,
         );

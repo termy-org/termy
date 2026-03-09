@@ -404,6 +404,8 @@ impl TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let _ = self.close_terminal_context_menu(cx);
+
         if self.consume_suppressed_scroll_event(event.touch_phase, cx) {
             return;
         }

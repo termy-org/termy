@@ -197,6 +197,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.reset_cursor_blink_phase();
+        let _ = self.close_terminal_context_menu(cx);
         let key = event.keystroke.key.as_str();
         self.maybe_suppress_tab_switch_hint_for_key_down(key, event.keystroke.modifiers, cx);
 
@@ -251,6 +252,7 @@ impl TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let _ = self.close_terminal_context_menu(cx);
         let paths_list = paths.paths();
         if paths_list.is_empty() {
             return;
