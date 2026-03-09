@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
+import { motion } from "framer-motion";
 import {
   Download,
   ExternalLink,
+  Heart,
   Menu,
   Moon,
   Palette,
@@ -38,6 +40,11 @@ const navLinks: NavLink[] = [
   {
     label: "GitHub",
     href: "https://github.com/lassejlv/termy",
+    external: true,
+  },
+  {
+    label: "Sponsor",
+    href: "https://github.com/sponsors/lassejlv",
     external: true,
   },
 ];
@@ -236,6 +243,73 @@ export function Header(): JSX.Element {
                   </NavigationMenuLink>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
+                  <motion.a
+                    href="https://github.com/sponsors/lassejlv"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border bg-background px-3 text-sm font-medium shadow-xs outline-none transition-[box-shadow,_color,_background-color,_border-color,_outline-color,_text-decoration-color,_fill,_stroke] hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+                    initial="rest"
+                    whileHover="hover"
+                    whileTap="hover"
+                  >
+                    <span className="relative inline-flex items-center justify-center">
+                      <motion.span
+                        animate={{ scale: [1, 1.16, 1], opacity: [1, 0.82, 1] }}
+                        transition={{
+                          duration: 1.4,
+                          repeat: Number.POSITIVE_INFINITY,
+                          ease: "easeInOut",
+                        }}
+                        className="inline-flex"
+                      >
+                        <Heart className="size-4 text-[#db61a2]" />
+                      </motion.span>
+                      <motion.span
+                        variants={{
+                          rest: { opacity: 0, scale: 0.7, x: 0, y: 0 },
+                          hover: {
+                            x: [0, 8, 12],
+                            y: [0, -7, -10],
+                            opacity: [0, 1, 0],
+                            scale: [0.7, 1, 0.8],
+                            transition: {
+                              duration: 0.9,
+                              ease: "easeOut",
+                              repeat: Number.POSITIVE_INFINITY,
+                              repeatDelay: 0.15,
+                            },
+                          },
+                        }}
+                        className="absolute -right-1 -top-1 pointer-events-none"
+                      >
+                        <Sparkles className="size-2.5 text-[#db61a2]" />
+                      </motion.span>
+                      <motion.span
+                        variants={{
+                          rest: { opacity: 0, scale: 0.7, x: 0, y: 0 },
+                          hover: {
+                            x: [0, -7, -10],
+                            y: [0, -6, -9],
+                            opacity: [0, 1, 0],
+                            scale: [0.7, 1, 0.8],
+                            transition: {
+                              duration: 0.85,
+                              ease: "easeOut",
+                              repeat: Number.POSITIVE_INFINITY,
+                              repeatDelay: 0.2,
+                              delay: 0.08,
+                            },
+                          },
+                        }}
+                        className="absolute -left-1 -top-1 pointer-events-none"
+                      >
+                        <Sparkles className="size-2 text-[#db61a2]" />
+                      </motion.span>
+                    </span>
+                    Sponsor
+                  </motion.a>
+                </NavigationMenuItem>
+                <NavigationMenuItem className="ml-1">
                   <GitHubStarsButton
                     variant="outline"
                     size="sm"

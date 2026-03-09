@@ -61,49 +61,49 @@
   --color-ring: var(--ring);
 }
 
-/* Dark theme — clean minimal */
+/* Dark theme — mint minimal */
 :root {
   --radius: 0.75rem;
-  --background: #0a0a0a;
-  --foreground: #fafafa;
-  --card: #111111;
-  --card-foreground: #fafafa;
-  --popover: #111111;
-  --popover-foreground: #fafafa;
-  --primary: #22c55e;
-  --primary-foreground: #052e16;
-  --secondary: #171717;
-  --secondary-foreground: #fafafa;
-  --muted: #171717;
-  --muted-foreground: #737373;
-  --accent: #171717;
-  --accent-foreground: #fafafa;
+  --background: #0a120c;
+  --foreground: #edf9ec;
+  --card: #111b14;
+  --card-foreground: #edf9ec;
+  --popover: #111b14;
+  --popover-foreground: #edf9ec;
+  --primary: #abe6a5;
+  --primary-foreground: #0f2a10;
+  --secondary: #17261b;
+  --secondary-foreground: #edf9ec;
+  --muted: #142016;
+  --muted-foreground: #95b594;
+  --accent: #203124;
+  --accent-foreground: #edf9ec;
   --destructive: #ef4444;
-  --border: #1a1a1a;
-  --input: #1a1a1a;
-  --ring: #22c55e;
+  --border: #2d4532;
+  --input: #2d4532;
+  --ring: #c7f0c2;
 }
 
-/* Light theme — clean minimal */
+/* Light theme — mint minimal */
 .light {
-  --background: #fafafa;
-  --foreground: #0a0a0a;
+  --background: #f7fcf5;
+  --foreground: #102114;
   --card: #ffffff;
-  --card-foreground: #0a0a0a;
+  --card-foreground: #102114;
   --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --primary: #16a34a;
-  --primary-foreground: #f0fdf4;
-  --secondary: #f5f5f5;
-  --secondary-foreground: #0a0a0a;
-  --muted: #f5f5f5;
-  --muted-foreground: #525252;
-  --accent: #f5f5f5;
-  --accent-foreground: #0a0a0a;
+  --popover-foreground: #102114;
+  --primary: #8fd08a;
+  --primary-foreground: #0f2a10;
+  --secondary: #ecf8ea;
+  --secondary-foreground: #102114;
+  --muted: #ecf8ea;
+  --muted-foreground: #4e6f51;
+  --accent: #e3f8e1;
+  --accent-foreground: #102114;
   --destructive: #dc2626;
-  --border: #e5e5e5;
-  --input: #e5e5e5;
-  --ring: #16a34a;
+  --border: #cfeacc;
+  --input: #cfeacc;
+  --ring: #abe6a5;
 }
 
 @layer base {
@@ -117,14 +117,14 @@
   }
 }
 
-/* Gradient text — green only */
+/* Gradient text — mint */
 .gradient-text {
   @apply bg-clip-text text-transparent;
-  background-image: linear-gradient(135deg, #4ade80 0%, #86efac 100%);
+  background-image: linear-gradient(135deg, #abe6a5 0%, #c7f0c2 100%);
 }
 
 .light .gradient-text {
-  background-image: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
+  background-image: linear-gradient(135deg, #8fd08a 0%, #abe6a5 100%);
 }
 
 /* Blur fade-in animation */
