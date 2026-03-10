@@ -8,6 +8,34 @@ use std::ops::Range;
 
 const INLINE_INPUT_LINE_HEIGHT_MULTIPLIER: f32 = 1.35;
 
+fn ime_marked_text_range_utf16(marked_text: Option<&str>) -> Option<Range<usize>> {
+    marked_text.map(|marked| 0..marked.encode_utf16().count())
+}
+
+fn terminal_ime_selected_text_range(ime_selected_range: Option<Range<usize>>) -> UTF16Selection {
+    UTF16Selection {
+        range: ime_selected_range.unwrap_or(0..0),
+        reversed: false,
+    }
+}
+
+fn ime_candidate_bounds(
+    cursor: Bounds<Pixels>,
+    element_bounds: Bounds<Pixels>,
+    range_start_utf16: usize,
+    cell_width: f32,
+) -> Bounds<Pixels> {
+    let mut bounds = Bounds::new(
+        point(
+            element_bounds.origin.x + cursor.origin.x,
+            element_bounds.origin.y + cursor.origin.y,
+        ),
+        cursor.size,
+    );
+    bounds.origin.x += px(range_start_utf16 as f32 * cell_width);
+    bounds
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum InlineInputCharClass {
     Word,
@@ -1249,6 +1277,25 @@ impl TerminalView {
     }
 }
 
+impl TerminalView {
+    pub(super) fn ime_cursor_bounds(&self) -> Option<Bounds<Pixels>> {
+        let geometry = self.terminal_viewport_geometry()?;
+        let pane = self.active_pane_ref()?;
+        let size = pane.terminal.size();
+        let cell_width: f32 = size.cell_width.into();
+        let cell_height: f32 = size.cell_height.into();
+        // Use cursor_position() instead of cursor_state() so that IME
+        // preedit is shown even when the TUI app hides the cursor.
+        let (cursor_col, cursor_row) = pane.terminal.cursor_position();
+        let x = geometry.origin_x + (cursor_col as f32) * cell_width;
+        let y = geometry.origin_y + (cursor_row as f32) * cell_height;
+        Some(Bounds::new(
+            point(px(x), px(y)),
+            gpui::size(px(cell_width), px(cell_height)),
+        ))
+    }
+}
+
 impl EntityInputHandler for TerminalView {
     fn text_for_range(
         &mut self,
@@ -1257,8 +1304,10 @@ impl EntityInputHandler for TerminalView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<String> {
-        let state = self.active_inline_input_state()?;
-        Some(state.text_for_range(range, adjusted_range))
+        if let Some(state) = self.active_inline_input_state() {
+            return Some(state.text_for_range(range, adjusted_range));
+        }
+        None
     }
 
     fn selected_text_range(
@@ -1267,8 +1316,12 @@ impl EntityInputHandler for TerminalView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
-        let state = self.active_inline_input_state()?;
-        Some(state.selected_text_range())
+        if let Some(state) = self.active_inline_input_state() {
+            return Some(state.selected_text_range());
+        }
+        Some(terminal_ime_selected_text_range(
+            self.ime_selected_range.clone(),
+        ))
     }
 
     fn marked_text_range(
@@ -1276,12 +1329,22 @@ impl EntityInputHandler for TerminalView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Range<usize>> {
-        let state = self.active_inline_input_state()?;
-        state.marked_text_range()
+        if let Some(state) = self.active_inline_input_state() {
+            return state.marked_text_range();
+        }
+        ime_marked_text_range_utf16(self.ime_marked_text.as_deref())
     }
 
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.apply_inline_input_mutation(InlineInputState::unmark_text, cx);
+        if self.has_active_inline_input() {
+            self.apply_inline_input_mutation(InlineInputState::unmark_text, cx);
+            return;
+        }
+        // Only clear marked text; do NOT commit to PTY.
+        // Commit only happens in replace_text_in_range.
+        self.ime_marked_text = None;
+        self.ime_selected_range = None;
+        cx.notify();
     }
 
     fn replace_text_in_range(
@@ -1291,7 +1354,21 @@ impl EntityInputHandler for TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.apply_inline_input_mutation(move |state| state.replace_text_in_range(range, text), cx);
+        if self.has_active_inline_input() {
+            self.apply_inline_input_mutation(
+                move |state| state.replace_text_in_range(range, text),
+                cx,
+            );
+            return;
+        }
+        // Terminal IME mode: confirmed text → send to PTY
+        self.ime_marked_text = None;
+        self.ime_selected_range = None;
+        if !text.is_empty() {
+            self.write_terminal_input(text.as_bytes(), cx);
+        }
+        self.clear_selection();
+        cx.notify();
     }
 
     fn replace_and_mark_text_in_range(
@@ -1302,10 +1379,23 @@ impl EntityInputHandler for TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.apply_inline_input_mutation(
-            move |state| state.replace_and_mark_text_in_range(range, new_text, new_selected_range),
-            cx,
-        );
+        if self.has_active_inline_input() {
+            self.apply_inline_input_mutation(
+                move |state| {
+                    state.replace_and_mark_text_in_range(range, new_text, new_selected_range)
+                },
+                cx,
+            );
+            return;
+        }
+        // Terminal IME mode: store composing text, do NOT send to PTY
+        self.ime_marked_text = if new_text.is_empty() {
+            None
+        } else {
+            Some(new_text.to_string())
+        };
+        self.ime_selected_range = new_selected_range;
+        cx.notify();
     }
 
     fn bounds_for_range(
@@ -1315,8 +1405,23 @@ impl EntityInputHandler for TerminalView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let state = self.active_inline_input_state()?;
-        Some(state.bounds_for_range(range_utf16, element_bounds))
+        if let Some(state) = self.active_inline_input_state() {
+            return Some(state.bounds_for_range(range_utf16, element_bounds));
+        }
+        // ime_cursor_bounds returns coordinates relative to the terminal
+        // content area.  Offset by element_bounds.origin to convert to
+        // window coordinates so macOS positions the candidate window correctly.
+        let cursor = self.ime_cursor_bounds()?;
+        let cell_width: f32 = self
+            .active_pane_ref()
+            .map(|pane| pane.terminal.size().cell_width.into())
+            .unwrap_or_default();
+        Some(ime_candidate_bounds(
+            cursor,
+            element_bounds,
+            range_utf16.start,
+            cell_width,
+        ))
     }
 
     fn character_index_for_point(
@@ -1325,12 +1430,14 @@ impl EntityInputHandler for TerminalView {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
-        let state = self.active_inline_input_state()?;
-        Some(state.character_index_for_point(point))
+        if let Some(state) = self.active_inline_input_state() {
+            return Some(state.character_index_for_point(point));
+        }
+        None
     }
 
     fn accepts_text_input(&self, _window: &mut Window, _cx: &mut Context<Self>) -> bool {
-        self.has_active_inline_input()
+        true
     }
 }
 
@@ -1454,5 +1561,33 @@ mod tests {
             filter_inline_paste_text("line-1\r\nline-2\nline-3\rline-4"),
             "line-1line-2line-3line-4"
         );
+    }
+
+    #[test]
+    fn terminal_ime_marked_text_range_counts_utf16_units() {
+        assert_eq!(ime_marked_text_range_utf16(None), None);
+        assert_eq!(ime_marked_text_range_utf16(Some("a😄")), Some(0..3));
+    }
+
+    #[test]
+    fn terminal_ime_selected_text_range_defaults_to_caret() {
+        let empty = terminal_ime_selected_text_range(None);
+        assert_eq!(empty.range, 0..0);
+        assert!(!empty.reversed);
+
+        let selected = terminal_ime_selected_text_range(Some(1..4));
+        assert_eq!(selected.range, 1..4);
+        assert!(!selected.reversed);
+    }
+
+    #[test]
+    fn ime_candidate_bounds_offsets_cursor_into_window_space() {
+        let cursor = Bounds::new(point(px(10.0), px(20.0)), size(px(8.0), px(16.0)));
+        let element_bounds = Bounds::new(point(px(100.0), px(200.0)), size(px(320.0), px(240.0)));
+
+        let bounds = ime_candidate_bounds(cursor, element_bounds, 2, 8.0);
+
+        assert_eq!(bounds.origin, point(px(126.0), px(220.0)));
+        assert_eq!(bounds.size, cursor.size);
     }
 }

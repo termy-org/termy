@@ -160,6 +160,12 @@ pub(crate) fn cursor_state_from_term<T: EventListener>(
     })
 }
 
+pub(crate) fn cursor_position_from_term<T: EventListener>(term: &Term<T>) -> (usize, usize) {
+    let cursor = term.renderable_content().cursor;
+    let row = usize::try_from(cursor.point.line.0).ok().unwrap_or(0);
+    (cursor.point.column.0, row)
+}
+
 pub(crate) fn termmode_to_terminal_mouse_mode(mode: TermMode) -> TerminalMouseMode {
     TerminalMouseMode {
         enabled: mode.intersects(TermMode::MOUSE_MODE) && !mode.contains(TermMode::VI),
@@ -837,6 +843,12 @@ impl Terminal {
         cursor_state_from_term(&term)
     }
 
+    /// Returns the cursor position regardless of visibility (for IME positioning).
+    pub fn cursor_position(&self) -> (usize, usize) {
+        let term = self.term.lock();
+        cursor_position_from_term(&term)
+    }
+
     /// Check if there are pending events
     #[allow(dead_code)]
     pub fn has_pending_events(&self) -> bool {
@@ -1034,8 +1046,9 @@ mod tests {
     use super::quote_shell_program_if_needed;
     use super::{
         DEFAULT_TERM, TerminalCursorState, TerminalDamageSnapshot, TerminalRuntimeConfig,
-        TerminalSize, cursor_state_from_term, keystroke_to_input, pty_env_overrides,
-        resolve_shell_path, take_term_damage_snapshot, termmode_to_terminal_mouse_mode,
+        TerminalSize, cursor_position_from_term, cursor_state_from_term, keystroke_to_input,
+        pty_env_overrides, resolve_shell_path, take_term_damage_snapshot,
+        termmode_to_terminal_mouse_mode,
     };
     use crate::grid::TerminalCursorStyle;
     use alacritty_terminal::{
@@ -1077,6 +1090,14 @@ mod tests {
         let mut parser: ansi::Processor = ansi::Processor::new();
         parser.advance(&mut term, input);
         cursor_state_from_term(&term)
+    }
+
+    fn cursor_position_after_bytes(input: &[u8]) -> (usize, usize) {
+        let size = test_terminal_size();
+        let mut term: Term<VoidListener> = Term::new(TermConfig::default(), &size, VoidListener);
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, input);
+        cursor_position_from_term(&term)
     }
 
     fn mouse_mode_after_bytes(input: &[u8]) -> crate::mouse_protocol::TerminalMouseMode {
@@ -1522,6 +1543,11 @@ mod tests {
                 style: TerminalCursorStyle::Block,
             })
         );
+    }
+
+    #[test]
+    fn cursor_position_remains_available_when_terminal_hides_cursor() {
+        assert_eq!(cursor_position_after_bytes(b"prompt\x1b[?25l"), (6, 0));
     }
 
     #[test]

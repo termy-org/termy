@@ -10,7 +10,8 @@ use std::sync::Arc;
 use crate::mouse_protocol::TerminalMouseMode;
 use crate::runtime::{
     TerminalCursorState, TerminalDamageSnapshot, TerminalOptions, TerminalSize,
-    cursor_state_from_term, take_term_damage_snapshot, termmode_to_terminal_mouse_mode,
+    cursor_position_from_term, cursor_state_from_term, take_term_damage_snapshot,
+    termmode_to_terminal_mouse_mode,
 };
 
 struct PaneTerminalInner {
@@ -138,6 +139,13 @@ impl PaneTerminal {
         let term = self.cloned_term_arc();
         let term = term.lock();
         cursor_state_from_term(&term)
+    }
+
+    /// Returns the cursor position regardless of visibility (for IME positioning).
+    pub fn cursor_position(&self) -> (usize, usize) {
+        let term = self.cloned_term_arc();
+        let term = term.lock();
+        cursor_position_from_term(&term)
     }
 
     pub fn set_term_options(&self, options: TerminalOptions) {

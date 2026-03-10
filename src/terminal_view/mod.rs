@@ -22,6 +22,7 @@ use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     env,
+    ops::Range,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Arc, Mutex, atomic::AtomicU64},
@@ -428,6 +429,16 @@ impl Terminal {
                 .lock()
                 .map(|terminal| terminal.cursor_state())
                 .unwrap_or(None),
+        }
+    }
+
+    fn cursor_position(&self) -> (usize, usize) {
+        match self {
+            Self::Tmux(terminal) => terminal.cursor_position(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.cursor_position())
+                .unwrap_or((0, 0)),
         }
     }
 
@@ -1158,6 +1169,9 @@ pub struct TerminalView {
     // AI input state
     ai_input_open: bool,
     ai_input: InlineInputState,
+    // IME composing state for terminal mode
+    ime_marked_text: Option<String>,
+    ime_selected_range: Option<Range<usize>>,
     // Pending clipboard write from OSC 52
     pending_clipboard: Option<String>,
     #[cfg(debug_assertions)]
@@ -2301,6 +2315,8 @@ impl TerminalView {
             search_debounce_token: 0,
             ai_input_open: false,
             ai_input: InlineInputState::new(String::new()),
+            ime_marked_text: None,
+            ime_selected_range: None,
             pending_clipboard: None,
             #[cfg(debug_assertions)]
             render_metrics: TerminalRenderMetricsState::from_env(),

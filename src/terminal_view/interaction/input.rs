@@ -1,5 +1,18 @@
 use super::*;
 
+fn should_defer_key_down_to_ime(keystroke: &gpui::Keystroke) -> bool {
+    let key = keystroke.key.as_str();
+    keystroke.key_char.is_some()
+        && !keystroke.modifiers.control
+        && !keystroke.modifiers.alt
+        && !keystroke.modifiers.platform
+        && !keystroke.modifiers.function
+        && !matches!(
+            key,
+            "enter" | "tab" | "space" | "backspace" | "escape" | "delete"
+        )
+}
+
 impl TerminalView {
     fn maybe_suppress_tab_switch_hint_for_key_down(
         &mut self,
@@ -235,13 +248,24 @@ impl TerminalView {
             }
         }
 
+        // Printable character input without modifiers is delegated to the
+        // platform IME / input handler so that CJK input methods work.
+        // Named special keys (enter, tab, space, etc.) and modifier
+        // combinations are still handled here via keystroke_to_input.
+        if should_defer_key_down_to_ime(&event.keystroke) {
+            // Let the event propagate to the platform IME handler which
+            // will call `replace_text_in_range` on our EntityInputHandler.
+            return;
+        }
+
         let prompt_shortcuts_enabled = !self
             .active_terminal()
             .is_some_and(|terminal| terminal.alternate_screen_mode());
         if let Some(input) = keystroke_to_input(&event.keystroke, prompt_shortcuts_enabled) {
             self.write_terminal_input(&input, cx);
             self.clear_selection();
-            // Request a redraw to show the typed character
+            // Stop propagation so the event does not bubble up to the IME input handler.
+            cx.stop_propagation();
             cx.notify();
         }
     }
@@ -271,5 +295,70 @@ impl TerminalView {
 
         self.write_terminal_paste_input(text.as_bytes(), cx);
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_defer_key_down_to_ime;
+    use gpui::{Keystroke, Modifiers};
+
+    fn keystroke(key: &str, key_char: Option<&str>, modifiers: Modifiers) -> Keystroke {
+        Keystroke {
+            modifiers,
+            key: key.to_string(),
+            key_char: key_char.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn ime_defers_plain_printable_text() {
+        assert!(should_defer_key_down_to_ime(&keystroke(
+            "a",
+            Some("a"),
+            Modifiers::default(),
+        )));
+    }
+
+    #[test]
+    fn ime_keeps_shifted_printable_text_on_ime_path() {
+        let modifiers = Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        };
+        assert!(should_defer_key_down_to_ime(&keystroke(
+            "A",
+            Some("A"),
+            modifiers
+        )));
+    }
+
+    #[test]
+    fn ime_does_not_defer_special_keys_or_modified_shortcuts() {
+        for key in &["enter", "tab", "space", "backspace", "escape", "delete"] {
+            assert!(
+                !should_defer_key_down_to_ime(&keystroke(key, Some(key), Modifiers::default())),
+                "{key} should not be deferred to IME"
+            );
+        }
+
+        let control = Modifiers {
+            control: true,
+            ..Modifiers::default()
+        };
+        assert!(!should_defer_key_down_to_ime(&keystroke(
+            "c",
+            Some("c"),
+            control
+        )));
+    }
+
+    #[test]
+    fn ime_does_not_defer_keys_without_key_char() {
+        assert!(!should_defer_key_down_to_ime(&keystroke(
+            "f1",
+            None,
+            Modifiers::default(),
+        )));
     }
 }

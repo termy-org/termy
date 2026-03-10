@@ -4,6 +4,7 @@ use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line};
 use gpui::prelude::FluentBuilder;
+use gpui::{ElementInputHandler, canvas};
 use std::sync::Arc;
 
 fn cell_ranges_overlap(start_a: u32, end_a: u32, start_b: u32, end_b: u32) -> bool {
@@ -2355,6 +2356,48 @@ impl Render for TerminalView {
             .children(pane_resize_handles)
             .children(pane_focus_accents)
             .into_any_element();
+        let has_active_inline = self.has_active_inline_input();
+        let ime_focus_handle = self.focus_handle.clone();
+        let ime_view = cx.entity().clone();
+        let ime_input_layer = canvas(
+            move |_bounds, _window, _cx| {},
+            move |bounds, _, window, cx| {
+                if !has_active_inline {
+                    window.handle_input(
+                        &ime_focus_handle,
+                        ElementInputHandler::new(bounds, ime_view.clone()),
+                        cx,
+                    );
+                }
+            },
+        )
+        .absolute()
+        .size_full()
+        .into_any_element();
+        let ime_preedit_overlay = self.ime_marked_text.as_ref().and_then(|text| {
+            if text.is_empty() {
+                return None;
+            }
+            let bounds = self.ime_cursor_bounds()?;
+            let fg_color: gpui::Hsla = self.colors.foreground.into();
+            let bg_color: gpui::Hsla = self.colors.background.into();
+            Some(
+                div()
+                    .absolute()
+                    .left(bounds.origin.x)
+                    .top(bounds.origin.y)
+                    .h(bounds.size.height)
+                    .bg(bg_color)
+                    .border_b_1()
+                    .border_color(fg_color)
+                    .text_color(fg_color)
+                    .font_family(font_family.clone())
+                    .text_size(font_size)
+                    .line_height(bounds.size.height)
+                    .child(text.clone())
+                    .into_any_element(),
+            )
+        });
         let mut agent_sidebar_muted: gpui::Hsla = self.colors.foreground.into();
         agent_sidebar_muted.a = 0.72;
         let agent_sidebar = self.agent_sidebar_visible().then(|| {
@@ -2644,7 +2687,9 @@ impl Render for TerminalView {
                                     })
                                     .font_family(font_family.clone())
                                     .text_size(font_size)
+                                    .child(ime_input_layer)
                                     .child(terminal_grid_layer)
+                                    .children(ime_preedit_overlay)
                                     .children(terminal_scrollbar_overlay),
                             )
                             .children(agent_sidebar),
