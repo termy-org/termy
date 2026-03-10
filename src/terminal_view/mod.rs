@@ -1123,6 +1123,8 @@ pub struct TerminalView {
     pane_focus_transition: Option<PaneFocusTransition>,
     pane_focus_animation_scheduled: bool,
     line_height: f32,
+    copy_on_select: bool,
+    copy_on_select_toast: bool,
     selection_anchor: Option<SelectionPos>,
     selection_head: Option<SelectionPos>,
     selection_dragging: bool,
@@ -2272,6 +2274,8 @@ impl TerminalView {
             pane_focus_transition: None,
             pane_focus_animation_scheduled: false,
             line_height: 1.4,
+            copy_on_select: config.copy_on_select,
+            copy_on_select_toast: config.copy_on_select_toast,
             selection_anchor: None,
             selection_head: None,
             selection_dragging: false,
@@ -2535,6 +2539,8 @@ impl TerminalView {
         self.background_blur = config.background_blur;
         self.padding_x = config.padding_x.max(0.0);
         self.padding_y = config.padding_y.max(0.0);
+        self.copy_on_select = config.copy_on_select;
+        self.copy_on_select_toast = config.copy_on_select_toast;
         self.mouse_scroll_multiplier = config.mouse_scroll_multiplier;
         if self.pane_focus_effect != config.pane_focus_effect
             || (self.pane_focus_strength - config.pane_focus_strength).abs() > f32::EPSILON

@@ -354,6 +354,8 @@ define_root_settings! {
     (InactiveTabScrollback, "inactive_tab_scrollback", [], Terminal, "SCROLLING", "Inactive Tab Scrollback", "Scrollback limit for inactive tabs", ["scrollback", "inactive", "tabs"], RootSettingValueKind::Numeric, false),
     (PaneFocusEffect, "pane_focus_effect", [], Terminal, "UI", "Pane Focus Effect", "How inactive panes are visually dimmed when a pane is active", ["pane", "focus", "dimming", "effect"], RootSettingValueKind::Enum, false),
     (PaneFocusStrength, "pane_focus_strength", [], Terminal, "UI", "Pane Focus Strength", "Strength of active pane emphasis (0.0 to 2.0)", ["pane", "focus", "strength", "dimming"], RootSettingValueKind::Numeric, false),
+    (CopyOnSelect, "copy_on_select", [], Terminal, "CLIPBOARD", "Copy On Select", "Automatically copy selected text to clipboard", ["copy", "select", "clipboard", "selection"], RootSettingValueKind::Boolean, false),
+    (CopyOnSelectToast, "copy_on_select_toast", [], Terminal, "CLIPBOARD", "Copy On Select Toast", "Show a toast notification when text is copied on select", ["copy", "select", "toast", "notification"], RootSettingValueKind::Boolean, false),
     (CommandPaletteShowKeybinds, "command_palette_show_keybinds", [], Terminal, "UI", "Show Keybindings In Palette", "Show shortcut badges in command palette rows", ["palette", "keybinds", "shortcuts"], RootSettingValueKind::Boolean, false),
     (AiProvider, "ai_provider", [], Advanced, "AI", "AI Provider", "Provider used for AI input and model listing", ["ai", "provider", "openai", "gemini"], RootSettingValueKind::Enum, false),
     (OpenaiApiKey, "openai_api_key", ["openai_key"], Advanced, "AI", "OpenAI API Key", "API key for OpenAI integration", ["openai", "api", "key", "ai", "gpt"], RootSettingValueKind::Text, false),
@@ -515,6 +517,8 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
             PaneFocusEffect::Minimal => "minimal".to_string(),
         }),
         RootSettingId::PaneFocusStrength => Some(config.pane_focus_strength.to_string()),
+        RootSettingId::CopyOnSelect => Some(config.copy_on_select.to_string()),
+        RootSettingId::CopyOnSelectToast => Some(config.copy_on_select_toast.to_string()),
         RootSettingId::CommandPaletteShowKeybinds => {
             Some(config.command_palette_show_keybinds.to_string())
         }

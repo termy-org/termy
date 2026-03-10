@@ -540,10 +540,27 @@ impl TerminalView {
         self.selection_dragging = false;
         if !self.selection_moved {
             self.clear_selection();
+        } else {
+            self.copy_selection_to_clipboard_if_enabled(cx);
         }
         self.clear_hovered_link();
         cx.notify();
         true
+    }
+
+    fn copy_selection_to_clipboard_if_enabled(&mut self, cx: &mut Context<Self>) {
+        if self.copy_on_select {
+            if let Some(text) = self.selected_text() {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                if self.copy_on_select_toast {
+                    termy_toast::enqueue_toast(
+                        termy_toast::ToastKind::Success,
+                        "Copied",
+                        Some(std::time::Duration::from_millis(1500)),
+                    );
+                }
+            }
+        }
     }
 
     fn should_finish_selection_drag(button: MouseButton, selection_dragging: bool) -> bool {
@@ -699,12 +716,14 @@ impl TerminalView {
         };
 
         if event.click_count >= 3 && self.select_line_at_row(cell.row) {
+            self.copy_selection_to_clipboard_if_enabled(cx);
             self.clear_hovered_link();
             cx.notify();
             return;
         }
 
         if event.click_count == 2 && self.select_token_at_cell(cell) {
+            self.copy_selection_to_clipboard_if_enabled(cx);
             self.clear_hovered_link();
             cx.notify();
             return;

@@ -569,6 +569,20 @@ impl AppConfig {
                         }
                     }
                 }
+                RootSettingId::CopyOnSelect => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.copy_on_select = parsed;
+                    }
+                }
+                RootSettingId::CopyOnSelectToast => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.copy_on_select_toast = parsed;
+                    }
+                }
                 RootSettingId::CommandPaletteShowKeybinds => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)

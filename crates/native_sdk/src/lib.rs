@@ -6,10 +6,10 @@ use objc2::{
 };
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
-    NSAlert, NSAlertSecondButtonReturn, NSApplication, NSEvent, NSMenu, NSMenuItem,
+    NSAlert, NSAlertSecondButtonReturn, NSApplication, NSEvent, NSImage, NSMenu, NSMenuItem,
 };
 #[cfg(target_os = "macos")]
-use objc2_foundation::{MainThreadMarker, NSPoint, NSString};
+use objc2_foundation::{MainThreadMarker, NSData, NSPoint, NSString};
 #[cfg(target_os = "macos")]
 use std::cell::Cell;
 #[cfg(target_os = "macos")]
@@ -101,6 +101,31 @@ fn has_command(cmd: &str) -> bool {
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok_and(|s| s.success())
+}
+
+/// Set the macOS dock icon from PNG data. No-op on other platforms.
+/// Set the macOS dock icon from PNG data. No-op on other platforms.
+///
+/// # Safety
+/// Must be called from the main thread (e.g. inside `application.run()`).
+pub fn set_dock_icon_from_png(png_data: &[u8]) {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::AnyThread;
+
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+        let data = NSData::with_bytes(png_data);
+        if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+            let app = NSApplication::sharedApplication(mtm);
+            unsafe {
+                app.setApplicationIconImage(Some(&image));
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = png_data;
+    }
 }
 
 pub fn show_alert(title: &str, message: &str) {

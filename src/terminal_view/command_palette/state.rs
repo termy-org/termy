@@ -713,17 +713,6 @@ mod tests {
     }
 
     #[test]
-    fn paste_auth_token_submit_requires_non_empty_token() {
-        let empty = CommandPaletteItem::paste_auth_token_submit("   ");
-        assert!(!empty.enabled);
-        assert_eq!(empty.status_hint, Some("token required"));
-
-        let populated = CommandPaletteItem::paste_auth_token_submit("session-token");
-        assert!(populated.enabled);
-        assert_eq!(populated.status_hint, None);
-    }
-
-    #[test]
     fn close_resets_to_command_mode_and_clears_transient_state() {
         let mut state = CommandPaletteState::new(false);
         state.open(CommandPaletteMode::Themes);

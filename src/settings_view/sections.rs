@@ -218,6 +218,7 @@ impl SettingsWindow {
 
         section
             .child(self.render_terminal_scrolling_group(cx))
+            .child(self.render_terminal_clipboard_group(cx))
             .child(self.render_terminal_ui_group(cx))
     }
 
@@ -392,6 +393,34 @@ impl SettingsWindow {
             ),
         ];
         self.render_settings_group("SCROLLING", rows)
+    }
+
+    pub(super) fn render_terminal_clipboard_group(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let copy_on_select = self.config.copy_on_select;
+        let copy_on_select_toast = self.config.copy_on_select_toast;
+
+        let rows = vec![
+            self.render_root_bool_setting_row(
+                "copy_on_select",
+                "copy_on_select-toggle",
+                RootSettingId::CopyOnSelect,
+                copy_on_select,
+                "Saved",
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "copy_on_select_toast",
+                "copy_on_select_toast-toggle",
+                RootSettingId::CopyOnSelectToast,
+                copy_on_select_toast,
+                "Saved",
+                cx,
+            ),
+        ];
+        self.render_settings_group("CLIPBOARD", rows)
     }
 
     pub(super) fn render_terminal_ui_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
