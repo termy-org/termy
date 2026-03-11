@@ -2316,7 +2316,11 @@ impl Render for TerminalView {
         let titlebar_height = Self::titlebar_height();
         let titlebar_bg = terminal_surface_bg;
         let tabbar_bg = terminal_surface_bg;
-        let tabs_row = self.render_tab_strip(window, &colors, &font_family, tabbar_bg, cx);
+        let tabs_row = (!self.vertical_tabs)
+            .then(|| self.render_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
+        let vertical_tab_strip = self
+            .vertical_tabs
+            .then(|| self.render_vertical_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
 
         #[cfg(target_os = "macos")]
         let banner_spacer: Option<AnyElement> = self.show_update_banner.then(|| {
@@ -2517,7 +2521,7 @@ impl Render for TerminalView {
                         .flex()
                         .items_end()
                         .mt(px(TOP_STRIP_CONTENT_OFFSET_Y))
-                        .child(tabs_row),
+                        .children(tabs_row),
                 )
                 .into_any()
         });
@@ -2617,6 +2621,7 @@ impl Render for TerminalView {
                     })
                     .on_action(cx.listener(Self::handle_toggle_ai_input_action))
                     .on_action(cx.listener(Self::handle_toggle_agent_sidebar_action))
+                    .on_action(cx.listener(Self::handle_toggle_vertical_tab_sidebar_action))
                     .on_action(cx.listener(Self::handle_inline_backspace_action))
                     .on_action(cx.listener(Self::handle_inline_delete_action))
                     .on_action(cx.listener(Self::handle_inline_move_left_action))
@@ -2642,6 +2647,7 @@ impl Render for TerminalView {
                             .flex()
                             .w_full()
                             .h_full()
+                            .children(vertical_tab_strip)
                             .child(
                                 div()
                                     .id("terminal-surface")

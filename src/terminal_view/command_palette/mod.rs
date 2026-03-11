@@ -975,7 +975,8 @@ impl TerminalView {
             | CommandAction::MinimizeWindow
             | CommandAction::InstallCli
             | CommandAction::ToggleAiInput
-            | CommandAction::ToggleAgentSidebar => {}
+            | CommandAction::ToggleAgentSidebar
+            | CommandAction::ToggleVerticalTabSidebar => {}
         }
     }
 

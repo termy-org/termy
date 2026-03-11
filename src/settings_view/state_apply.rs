@@ -33,7 +33,8 @@ impl SettingsWindow {
             | EditableField::TabTitlePromptFormat
             | EditableField::TabTitleCommandFormat
             | EditableField::TabCloseVisibility
-            | EditableField::TabWidthMode => self.apply_tabs_field(field, value),
+            | EditableField::TabWidthMode
+            | EditableField::VerticalTabsWidth => self.apply_tabs_field(field, value),
             EditableField::WorkingDirectory
             | EditableField::WorkingDirFallback
             | EditableField::WindowWidth
@@ -445,6 +446,19 @@ impl SettingsWindow {
                     termy_config_core::TabWidthMode::ActiveGrowSticky => "active_grow_sticky",
                 };
                 config::set_root_setting(termy_config_core::RootSettingId::TabWidthMode, canonical)
+            }
+            EditableField::VerticalTabsWidth => {
+                let parsed = value
+                    .parse::<f32>()
+                    .map_err(|_| "Vertical tabs width must be a positive number".to_string())?;
+                if !(56.0..=480.0).contains(&parsed) {
+                    return Err("Vertical tabs width must be between 56 and 480".to_string());
+                }
+                self.config.vertical_tabs_width = parsed;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::VerticalTabsWidth,
+                    &parsed.to_string(),
+                )
             }
             _ => unreachable!("invalid tabs field"),
         }

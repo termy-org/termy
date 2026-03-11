@@ -183,6 +183,21 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - Show secondary+1..9 number badges on the first nine tabs while the secondary modifier is held
 - Group: `TAB STRIP`
 
+`vertical_tabs`
+- Default: `false`
+- Move the tab strip into a left sidebar like cmux
+- Group: `TAB STRIP`
+
+`vertical_tabs_width`
+- Default: `220`
+- Saved width for the vertical tab sidebar in pixels
+- Group: `TAB STRIP`
+
+`vertical_tabs_minimized`
+- Default: `false`
+- Start vertical tabs in the collapsed state
+- Group: `TAB STRIP`
+
 `show_termy_in_titlebar`
 - Default: `true`
 - Show or hide the termy branding in the titlebar
@@ -329,4 +344,3 @@ Use `[colors]` to override theme colors with `#RRGGBB` values.
 `bright_white`
 - Aliases: `brightwhite`, `color15`
 - ANSI bright white
-

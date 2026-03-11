@@ -1026,6 +1026,366 @@ impl TerminalView {
             .into_any_element()
     }
 
+    pub(crate) fn render_vertical_tab_strip(
+        &mut self,
+        window: &Window,
+        colors: &TerminalColors,
+        font_family: &SharedString,
+        tabbar_bg: gpui::Rgba,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let font_family_key = font_family.to_string();
+        let measured_title_widths =
+            self.measure_tab_title_widths(window, font_family, font_family_key.as_str());
+        self.sync_tab_title_text_widths(&measured_title_widths);
+
+        let palette = self.resolve_tab_strip_palette(colors, tabbar_bg);
+        let now = Instant::now();
+        let compact = self.vertical_tabs_minimized;
+        let strip_width = self.effective_vertical_tab_strip_width();
+        let content_padding = if compact {
+            6.0
+        } else {
+            VERTICAL_TAB_STRIP_PADDING
+        };
+        let inner_width = (strip_width - (content_padding * 2.0)).max(0.0);
+
+        let new_tab_button = self.render_tabbar_new_tab_button(
+            palette.tabbar_new_tab_bg,
+            palette.tabbar_new_tab_hover_bg,
+            palette.tabbar_new_tab_border,
+            palette.tabbar_new_tab_hover_border,
+            palette.tabbar_new_tab_text,
+            palette.tabbar_new_tab_hover_text,
+            TABBAR_NEW_TAB_BUTTON_SIZE,
+            cx,
+        );
+        let collapse_icon = if compact { "›" } else { "‹" };
+        let collapse_button = div()
+            .id("vertical-tabs-collapse")
+            .w(px(TABBAR_NEW_TAB_BUTTON_SIZE))
+            .h(px(TABBAR_NEW_TAB_BUTTON_SIZE))
+            .rounded(px(TABBAR_NEW_TAB_BUTTON_RADIUS))
+            .bg(palette.tabbar_new_tab_bg)
+            .border_1()
+            .border_color(palette.tabbar_new_tab_border)
+            .text_color(palette.tabbar_new_tab_text)
+            .text_size(px(14.0))
+            .cursor_pointer()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                    if let Err(error) =
+                        this.set_vertical_tabs_minimized(!this.vertical_tabs_minimized)
+                    {
+                        termy_toast::error(error);
+                    } else {
+                        cx.notify();
+                    }
+                    cx.stop_propagation();
+                }),
+            )
+            .hover(move |style| {
+                style
+                    .bg(palette.tabbar_new_tab_hover_bg)
+                    .border_color(palette.tabbar_new_tab_hover_border)
+                    .text_color(palette.tabbar_new_tab_hover_text)
+            })
+            .child(
+                div()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(collapse_icon),
+            );
+
+        let mut list = div()
+            .id("vertical-tabs-list")
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .p(px(content_padding))
+            .on_mouse_move(cx.listener(|this, _event: &MouseMoveEvent, _window, cx| {
+                if this.clear_tab_hover_state() {
+                    cx.notify();
+                }
+            }));
+
+        for index in 0..self.tabs.len() {
+            let tab_title = self.tabs[index].title.clone();
+            let is_active = index == self.active_tab;
+            let is_hovered = self.tab_strip.hovered_tab == Some(index);
+            let is_renaming = self.renaming_tab == Some(index);
+            let show_switch_hint = self.tab_strip.switch_hints.should_render(
+                index,
+                is_renaming,
+                self.tab_switch_hints_blocked(),
+                now,
+            );
+            let switch_hint_label = show_switch_hint
+                .then(|| TabSwitchHintState::label_for_index(index))
+                .flatten();
+            let show_close_button = Self::tab_shows_close(
+                self.tab_close_visibility,
+                is_active,
+                self.tab_strip.hovered_tab,
+                self.tab_strip.hovered_tab_close,
+                index,
+            );
+            let show_tab_close = !compact && show_close_button && switch_hint_label.is_none();
+            let accessory_width = if !compact && (show_tab_close || switch_hint_label.is_some()) {
+                TAB_CLOSE_SLOT_WIDTH
+            } else {
+                0.0
+            };
+            let label = if compact {
+                if index < 9 {
+                    (index + 1).to_string()
+                } else {
+                    tab_title.chars().next().unwrap_or('•').to_string()
+                }
+            } else {
+                let available_text_px =
+                    Self::tab_title_text_area_width(inner_width, accessory_width);
+                Self::format_tab_label_for_render_measured(
+                    &tab_title,
+                    available_text_px,
+                    |candidate| {
+                        self.measure_tab_title_width(
+                            window,
+                            font_family,
+                            font_family_key.as_str(),
+                            candidate,
+                        )
+                    },
+                )
+            };
+            let tab_bg = if is_active {
+                palette.active_tab_bg
+            } else if is_hovered {
+                palette.hovered_tab_bg
+            } else {
+                palette.inactive_tab_bg
+            };
+            let text_color = if is_active {
+                palette.active_tab_text
+            } else {
+                palette.inactive_tab_text
+            };
+            let mut border_color = palette.tab_stroke_color;
+            border_color.a = if is_active { 0.8 } else { 0.18 };
+            let mut rename_selection_color = colors.cursor;
+            rename_selection_color.a = if is_active { 0.34 } else { 0.24 };
+            let hover_tab_index = index;
+            let switch_tab_index = index;
+            let close_tab_index = index;
+
+            let accessory = if compact {
+                div().into_any_element()
+            } else if let Some(label) = switch_hint_label {
+                div()
+                    .flex_none()
+                    .w(px(TAB_CLOSE_SLOT_WIDTH))
+                    .h(px(TAB_CLOSE_HITBOX))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(5.0))
+                    .border_1()
+                    .border_color(palette.switch_hint_border)
+                    .bg(palette.switch_hint_bg)
+                    .text_color(palette.switch_hint_text)
+                    .text_size(px(TAB_SWITCH_HINT_TEXT_SIZE))
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(label)
+                    .into_any_element()
+            } else {
+                let mut close_text_color = text_color;
+                if !show_tab_close {
+                    close_text_color.a = 0.0;
+                }
+                div()
+                    .flex_none()
+                    .w(px(accessory_width))
+                    .h(px(TAB_CLOSE_HITBOX))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(5.0))
+                    .text_color(close_text_color)
+                    .text_size(px(12.0))
+                    .child("×")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
+                            let is_active = close_tab_index == this.active_tab;
+                            if Self::tab_shows_close(
+                                this.tab_close_visibility,
+                                is_active,
+                                this.tab_strip.hovered_tab,
+                                this.tab_strip.hovered_tab_close,
+                                close_tab_index,
+                            ) {
+                                this.request_tab_close_by_index(close_tab_index, window, cx);
+                                cx.stop_propagation();
+                            }
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(
+                        move |this, _event: &MouseMoveEvent, _window, cx| {
+                            this.on_tab_close_mouse_move(hover_tab_index, cx);
+                            cx.stop_propagation();
+                        },
+                    ))
+                    .hover(move |style| {
+                        style
+                            .bg(palette.close_button_hover_bg)
+                            .text_color(palette.close_button_hover_text)
+                    })
+                    .cursor_pointer()
+                    .into_any_element()
+            };
+
+            list = list.child(
+                div()
+                    .id(SharedString::from(format!("vertical-tab-{index}")))
+                    .w_full()
+                    .h(px(TAB_ITEM_HEIGHT))
+                    .px(px(if compact { 0.0 } else { TAB_TEXT_PADDING_X }))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .gap(px(if compact { 0.0 } else { 8.0 }))
+                    .rounded(px(6.0))
+                    .border_1()
+                    .border_color(border_color)
+                    .bg(tab_bg)
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
+                            this.switch_tab(switch_tab_index, cx);
+                            if event.click_count == 2 && !this.vertical_tabs_minimized {
+                                this.begin_rename_tab(switch_tab_index, cx);
+                            }
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(
+                        move |this, _event: &MouseMoveEvent, _window, cx| {
+                            let mut changed = false;
+                            if this.tab_strip.hovered_tab != Some(hover_tab_index) {
+                                this.tab_strip.hovered_tab = Some(hover_tab_index);
+                                changed = true;
+                            }
+                            if this.tab_strip.hovered_tab_close.take().is_some() {
+                                changed = true;
+                            }
+                            if changed {
+                                cx.notify();
+                            }
+                            cx.stop_propagation();
+                        },
+                    ))
+                    .child(div().flex_1().min_w(px(0.0)).h_full().relative().child(
+                        if is_renaming {
+                            self.render_inline_input_layer(
+                                Font {
+                                    family: font_family.clone(),
+                                    weight: FontWeight::NORMAL,
+                                    ..Default::default()
+                                },
+                                px(12.0),
+                                text_color.into(),
+                                rename_selection_color.into(),
+                                InlineInputAlignment::Left,
+                                cx,
+                            )
+                        } else {
+                            div()
+                                .size_full()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .overflow_x_hidden()
+                                .whitespace_nowrap()
+                                .font_family(font_family.clone())
+                                .text_color(text_color)
+                                .text_size(px(12.0))
+                                .text_ellipsis()
+                                .child(label)
+                                .into_any_element()
+                        },
+                    ))
+                    .child(accessory),
+            );
+        }
+
+        let footer_controls = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(px(6.0))
+            .child(collapse_button)
+            .child(new_tab_button);
+
+        let mut footer = div().flex_none().w_full().p(px(content_padding)).flex();
+        if compact {
+            footer = footer.items_center().justify_center();
+        } else {
+            footer = footer.items_center().justify_end();
+        }
+        let footer = footer.child(footer_controls);
+
+        div()
+            .id("vertical-tab-strip")
+            .relative()
+            .flex_none()
+            .w(px(strip_width))
+            .h_full()
+            .border_r_1()
+            .border_color(palette.tab_stroke_color)
+            .bg(tabbar_bg)
+            .children((!compact).then(|| {
+                div()
+                    .id("vertical-tabs-resize-handle")
+                    .absolute()
+                    .right(px(-4.0))
+                    .top_0()
+                    .bottom_0()
+                    .w(px(8.0))
+                    .cursor_col_resize()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                            view.vertical_tab_strip_resize_drag =
+                                Some(VerticalTabStripResizeDragState);
+                            cx.stop_propagation();
+                        }),
+                    )
+            }))
+            .child(
+                div()
+                    .w_full()
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .id("vertical-tabs-scroll-viewport")
+                            .flex_1()
+                            .min_h(px(0.0))
+                            .overflow_y_scroll()
+                            .track_scroll(&self.tab_strip.scroll_handle)
+                            .child(list),
+                    )
+                    .child(footer),
+            )
+            .into_any_element()
+    }
+
     pub(crate) fn render_tab_strip(
         &mut self,
         window: &Window,

@@ -215,6 +215,9 @@ struct PaneResizeDragState {
 struct AgentSidebarResizeDragState;
 
 #[derive(Clone, Copy, Debug)]
+struct VerticalTabStripResizeDragState;
+
+#[derive(Clone, Copy, Debug)]
 struct TerminalScrollbarHit {
     local_y: f32,
     thumb_hit: bool,
@@ -1080,6 +1083,9 @@ pub struct TerminalView {
     tab_title: TabTitleConfig,
     tab_close_visibility: TabCloseVisibility,
     tab_width_mode: TabWidthMode,
+    vertical_tabs: bool,
+    vertical_tabs_width: f32,
+    vertical_tabs_minimized: bool,
     show_termy_in_titlebar: bool,
     tab_shell_integration: TabTitleShellIntegration,
     configured_working_dir: Option<String>,
@@ -1161,6 +1167,7 @@ pub struct TerminalView {
     terminal_scrollbar_track_hold_active: bool,
     pane_resize_drag: Option<PaneResizeDragState>,
     agent_sidebar_resize_drag: Option<AgentSidebarResizeDragState>,
+    vertical_tab_strip_resize_drag: Option<VerticalTabStripResizeDragState>,
     terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache,
     /// Cached cell dimensions
     cell_size: Option<Size<Pixels>>,
@@ -2237,6 +2244,11 @@ impl TerminalView {
             tab_title,
             tab_close_visibility: config.tab_close_visibility,
             tab_width_mode: config.tab_width_mode,
+            vertical_tabs: config.vertical_tabs,
+            vertical_tabs_width: config
+                .vertical_tabs_width
+                .clamp(VERTICAL_TAB_STRIP_MIN_WIDTH, VERTICAL_TAB_STRIP_MAX_WIDTH),
+            vertical_tabs_minimized: config.vertical_tabs_minimized,
             show_termy_in_titlebar: config.show_termy_in_titlebar,
             tab_shell_integration,
             configured_working_dir,
@@ -2323,6 +2335,7 @@ impl TerminalView {
             terminal_scrollbar_track_hold_active: false,
             pane_resize_drag: None,
             agent_sidebar_resize_drag: None,
+            vertical_tab_strip_resize_drag: None,
             terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache::default(),
             cell_size: None,
             search_open: false,
@@ -2467,6 +2480,14 @@ impl TerminalView {
         self.tab_title = config.tab_title.clone();
         let tab_close_visibility_changed = self.tab_close_visibility != config.tab_close_visibility;
         let tab_width_mode_changed = self.tab_width_mode != config.tab_width_mode;
+        let vertical_tabs_changed = self.vertical_tabs != config.vertical_tabs;
+        let vertical_tabs_width = config
+            .vertical_tabs_width
+            .clamp(VERTICAL_TAB_STRIP_MIN_WIDTH, VERTICAL_TAB_STRIP_MAX_WIDTH);
+        let vertical_tabs_width_changed =
+            (self.vertical_tabs_width - vertical_tabs_width).abs() > f32::EPSILON;
+        let vertical_tabs_minimized_changed =
+            self.vertical_tabs_minimized != config.vertical_tabs_minimized;
         let tab_switch_modifier_hints_changed = self
             .tab_strip
             .switch_hints
@@ -2476,6 +2497,9 @@ impl TerminalView {
         let show_debug_overlay_changed = self.show_debug_overlay != config.show_debug_overlay;
         self.tab_close_visibility = config.tab_close_visibility;
         self.tab_width_mode = config.tab_width_mode;
+        self.vertical_tabs = config.vertical_tabs;
+        self.vertical_tabs_width = vertical_tabs_width;
+        self.vertical_tabs_minimized = config.vertical_tabs_minimized;
         self.show_termy_in_titlebar = config.show_termy_in_titlebar;
         self.show_debug_overlay = config.show_debug_overlay;
         self.tab_shell_integration = TabTitleShellIntegration {
@@ -2547,6 +2571,11 @@ impl TerminalView {
             }
         }
         if agent_sidebar_enabled_changed || agent_sidebar_width_changed {
+            self.clear_pane_render_caches();
+            self.clear_terminal_scrollbar_marker_cache();
+            self.cell_size = None;
+        }
+        if vertical_tabs_changed || vertical_tabs_width_changed || vertical_tabs_minimized_changed {
             self.clear_pane_render_caches();
             self.clear_terminal_scrollbar_marker_cache();
             self.cell_size = None;
@@ -2631,7 +2660,12 @@ impl TerminalView {
         for index in 0..self.tabs.len() {
             self.refresh_tab_title(index);
         }
-        if tab_close_visibility_changed || tab_width_mode_changed || show_termy_in_titlebar_changed
+        if tab_close_visibility_changed
+            || tab_width_mode_changed
+            || vertical_tabs_changed
+            || vertical_tabs_width_changed
+            || vertical_tabs_minimized_changed
+            || show_termy_in_titlebar_changed
         {
             self.mark_tab_strip_layout_dirty();
         }

@@ -951,6 +951,22 @@ define_commands!(
             MenuActionRole::Normal
         ))
     ),
+    (
+        ToggleVerticalTabSidebar,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Toggle Vertical Tab Sidebar",
+            "vertical tabs sidebar collapse minimize left",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::View,
+            0,
+            "Vertical Tab Sidebar",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
+    ),
 );
 
 termy_command_core::termy_command_catalog!(impl_command_action_id_mapping);
