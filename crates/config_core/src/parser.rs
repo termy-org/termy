@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::color_keys::{ColorEntryError, apply_color_entry};
 use crate::constants::{
@@ -9,9 +9,17 @@ use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseRepo
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
 use crate::types::{
     AiProvider, AppConfig, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility,
-    TabTitleMode, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
+    TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
     TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
 };
+
+#[derive(Default)]
+struct PendingTaskConfig {
+    first_line: usize,
+    command: Option<String>,
+    layout: Option<String>,
+    working_dir: Option<String>,
+}
 
 impl AppConfig {
     pub fn from_contents(contents: &str) -> Self {
@@ -25,6 +33,7 @@ impl AppConfig {
         let mut in_colors_section = false;
         let mut in_non_root_section = false;
         let mut seen_root_keys: HashMap<RootSettingId, usize> = HashMap::new();
+        let mut task_entries: BTreeMap<String, PendingTaskConfig> = BTreeMap::new();
 
         for (line_number, line) in contents.lines().enumerate() {
             let line_number = line_number + 1;
@@ -87,6 +96,41 @@ impl AppConfig {
                             value, key
                         ),
                     }),
+                }
+                continue;
+            }
+
+            if let Some((task_name, task_field)) = parse_task_key(key) {
+                let task = task_entries
+                    .entry(task_name.to_string())
+                    .or_insert_with(|| PendingTaskConfig {
+                        first_line: line_number,
+                        ..PendingTaskConfig::default()
+                    });
+
+                if task_field.eq_ignore_ascii_case("command") {
+                    if let Some(parsed) = parse_string_field(
+                        &mut diagnostics,
+                        line_number,
+                        key,
+                        value,
+                        "a non-empty task command",
+                    ) {
+                        task.command = Some(parsed);
+                    }
+                } else if task_field.eq_ignore_ascii_case("layout") {
+                    task.layout = parse_optional_string_value(value);
+                } else if task_field.eq_ignore_ascii_case("working_dir") {
+                    task.working_dir = parse_optional_string_value(value);
+                } else {
+                    diagnostics.push(ConfigDiagnostic {
+                        line_number,
+                        kind: ConfigDiagnosticKind::InvalidValue,
+                        message: format!(
+                            "Invalid task field '{}' for '{}': expected command, layout, or working_dir",
+                            task_field, key
+                        ),
+                    });
                 }
                 continue;
             }
@@ -661,6 +705,24 @@ impl AppConfig {
             config.tab_title.priority = config.tab_title.mode.default_priority();
         }
 
+        for (task_name, task) in task_entries {
+            let Some(command) = task.command else {
+                diagnostics.push(ConfigDiagnostic {
+                    line_number: task.first_line,
+                    kind: ConfigDiagnosticKind::InvalidValue,
+                    message: format!("Task '{}' is missing required field 'command'", task_name),
+                });
+                continue;
+            };
+
+            config.tasks.push(TaskConfig {
+                name: task_name,
+                command,
+                layout: task.layout,
+                working_dir: task.working_dir,
+            });
+        }
+
         ConfigParseReport::new(config, diagnostics)
     }
 }
@@ -684,6 +746,18 @@ pub fn parse_theme_id(value: &str) -> Option<ThemeId> {
     } else {
         Some(normalized)
     }
+}
+
+fn parse_task_key(key: &str) -> Option<(&str, &str)> {
+    let trimmed = key.trim();
+    let rest = trimmed.strip_prefix("task.")?;
+    let (task_name, field) = rest.split_once('.')?;
+    let task_name = task_name.trim();
+    let field = field.trim();
+    if task_name.is_empty() || field.is_empty() {
+        return None;
+    }
+    Some((task_name, field))
 }
 
 fn parse_bool(value: &str) -> Option<bool> {

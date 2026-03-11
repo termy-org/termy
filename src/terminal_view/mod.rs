@@ -2,7 +2,7 @@ use crate::colors::TerminalColors;
 use crate::commands::{self, CommandAction};
 use crate::config::{
     self, AppConfig, CursorStyle as AppCursorStyle, PaneFocusEffect, TabCloseVisibility,
-    TabTitleConfig, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
+    TabTitleConfig, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
     TerminalScrollbarVisibility,
 };
 use crate::keybindings;
@@ -750,6 +750,7 @@ struct TerminalTab {
     manual_title: Option<String>,
     explicit_title: Option<String>,
     shell_title: Option<String>,
+    current_command: Option<String>,
     pending_command_title: Option<String>,
     pending_command_token: u64,
     last_prompt_cwd: Option<String>,
@@ -789,7 +790,7 @@ impl TerminalTab {
 
 enum ExplicitTitlePayload {
     Prompt { title: String, cwd: String },
-    Command(String),
+    Command { title: String, command: String },
     Title(String),
 }
 
@@ -1079,6 +1080,7 @@ pub struct TerminalView {
     theme_id: String,
     colors: TerminalColors,
     inactive_tab_scrollback: Option<usize>,
+    tasks: Vec<TaskConfig>,
     warn_on_quit: bool,
     warn_on_quit_with_running_process: bool,
     tab_title: TabTitleConfig,
@@ -1535,6 +1537,7 @@ impl TerminalView {
             manual_title: None,
             explicit_title: predicted_prompt_title,
             shell_title: None,
+            current_command: None,
             pending_command_title: None,
             pending_command_token: 0,
             last_prompt_cwd: None,
@@ -2241,6 +2244,7 @@ impl TerminalView {
             theme_id,
             colors,
             inactive_tab_scrollback: config.inactive_tab_scrollback,
+            tasks: config.tasks.clone(),
             warn_on_quit: config.warn_on_quit,
             warn_on_quit_with_running_process: config.warn_on_quit_with_running_process,
             tab_title,
@@ -2478,6 +2482,7 @@ impl TerminalView {
         self.theme_id = config.theme.clone();
         self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
         self.inactive_tab_scrollback = config.inactive_tab_scrollback;
+        self.tasks = config.tasks.clone();
         self.warn_on_quit = config.warn_on_quit;
         self.warn_on_quit_with_running_process = config.warn_on_quit_with_running_process;
         self.tab_title = config.tab_title.clone();

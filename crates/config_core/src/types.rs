@@ -318,6 +318,7 @@ pub struct AppConfig {
     pub gemini_api_key: Option<String>,
     pub openai_model: Option<String>,
     pub keybind_lines: Vec<KeybindConfigLine>,
+    pub tasks: Vec<TaskConfig>,
     pub colors: CustomColors,
 }
 
@@ -325,6 +326,14 @@ pub struct AppConfig {
 pub struct KeybindConfigLine {
     pub line_number: usize,
     pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskConfig {
+    pub name: String,
+    pub command: String,
+    pub layout: Option<String>,
+    pub working_dir: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -383,6 +392,7 @@ impl Default for AppConfig {
             gemini_api_key: None,
             openai_model: None,
             keybind_lines: Vec::new(),
+            tasks: Vec::new(),
             colors: CustomColors::default(),
         }
     }

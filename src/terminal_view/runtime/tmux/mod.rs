@@ -120,6 +120,7 @@ impl TerminalTab {
             manual_title: None,
             explicit_title: None,
             shell_title: None,
+            current_command: None,
             pending_command_title: None,
             pending_command_token: 0,
             last_prompt_cwd: None,

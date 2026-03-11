@@ -17,6 +17,10 @@ native_buffer_persistence = false
 agent_sidebar_enabled = false
 # Saved width for the experimental agent sidebar in pixels
 agent_sidebar_width = 320
+# Show the Plugins section in Settings
+show_plugins_tab = false
+# Show FPS, CPU, and memory in the terminal corner
+show_debug_overlay = false
 # tmux executable path or binary name
 tmux_binary = tmux
 # Show active tmux pane border highlight in managed sessions
@@ -97,6 +101,10 @@ scrollback_history = 2000
 pane_focus_effect = soft_spotlight
 # Strength of active pane emphasis (0.0 to 2.0)
 pane_focus_strength = 0.6
+# Automatically copy selected text to clipboard
+copy_on_select = false
+# Show a toast notification when text is copied on select
+copy_on_select_toast = true
 # Show shortcut badges in command palette rows
 command_palette_show_keybinds = true
 # Provider used for AI input and model listing
@@ -109,12 +117,17 @@ gemini_api_key = none
 openai_model = none
 
 # Keybindings (repeatable)
-# tmux-only keybind actions require an active tmux session
 # keybind = cmd-p=toggle_command_palette
 # keybind = cmd-c=copy
 # keybind = cmd-c=unbind
 # keybind = clear
 # keybind = secondary-alt-shift-left=resize_pane_left
+
+# Tasks (repeatable)
+# task.build.command = cargo build
+# task.build.working_dir = crates/cli
+# task.dev_server.layout = dashboard
+# task.dev_server.command = cargo run
 
 # Color overrides
 [colors]

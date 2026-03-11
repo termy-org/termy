@@ -190,11 +190,10 @@ impl TerminalView {
             if command.is_empty() {
                 return None;
             }
-            return Some(ExplicitTitlePayload::Command(Self::resolve_template(
-                &self.tab_title.command_format,
-                None,
-                Some(command),
-            )));
+            return Some(ExplicitTitlePayload::Command {
+                title: Self::resolve_template(&self.tab_title.command_format, None, Some(command)),
+                command: command.to_string(),
+            });
         }
 
         let explicit = payload.strip_prefix("title:").unwrap_or(payload).trim();
@@ -266,22 +265,20 @@ impl TerminalView {
                 ExplicitTitlePayload::Prompt { title, cwd } => {
                     self.tabs[index].last_prompt_cwd = Some(cwd);
                     self.tabs[index].running_process = false;
+                    self.tabs[index].current_command = None;
                     self.cancel_pending_command_title(index);
                     self.set_explicit_title(index, title)
                 }
                 ExplicitTitlePayload::Title(prompt_title) => {
+                    self.tabs[index].current_command = None;
                     self.cancel_pending_command_title(index);
                     self.set_explicit_title(index, prompt_title)
                 }
-                ExplicitTitlePayload::Command(command_title) => {
+                ExplicitTitlePayload::Command { title, command } => {
                     self.tabs[index].running_process = true;
+                    self.tabs[index].current_command = Some(command);
                     let tab_id = self.tabs[index].id;
-                    self.schedule_delayed_command_title(
-                        tab_id,
-                        command_title,
-                        COMMAND_TITLE_DELAY_MS,
-                        cx,
-                    );
+                    self.schedule_delayed_command_title(tab_id, title, COMMAND_TITLE_DELAY_MS, cx);
                     false
                 }
             };
@@ -304,6 +301,7 @@ impl TerminalView {
         self.cancel_pending_command_title(index);
         let tab = &mut self.tabs[index];
         tab.running_process = false;
+        tab.current_command = None;
         let had_shell = tab.shell_title.take().is_some();
         let had_explicit = tab.explicit_title.take().is_some();
         if !had_shell && !had_explicit {

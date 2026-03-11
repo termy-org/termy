@@ -8,7 +8,7 @@ use std::{
 
 use fs4::fs_std::FileExt;
 use termy_config_core::{
-    ColorSettingId, ColorSettingUpdate, Rgb8, RootSettingId, apply_color_updates,
+    ColorSettingId, ColorSettingUpdate, Rgb8, RootSettingId, TaskConfig, apply_color_updates,
     color_setting_from_key, color_setting_spec, parse_theme_id, prettify_config_contents,
     remove_root_setting as remove_root_setting_entry, replace_keybind_lines, upsert_root_setting,
 };
@@ -136,6 +136,19 @@ pub fn prettify_config_file() -> Result<String, String> {
     })
 }
 
+pub fn upsert_task(task: TaskConfig) -> Result<(), String> {
+    let task_name = task.name.trim().to_string();
+    let command = task.command.trim().to_string();
+    if task_name.is_empty() {
+        return Err("Task name is required".to_string());
+    }
+    if command.is_empty() {
+        return Err("Task command is required".to_string());
+    }
+
+    update_config_contents(|existing| Ok((upsert_task_lines(existing, &task), ())))
+}
+
 pub fn import_colors_from_json(json_path: &Path) -> Result<String, String> {
     let contents =
         fs::read_to_string(json_path).map_err(|e| format!("Failed to read file: {}", e))?;
@@ -191,13 +204,81 @@ pub fn import_colors_from_json(json_path: &Path) -> Result<String, String> {
     Ok(format!("Imported {} colors", color_count))
 }
 
+fn upsert_task_lines(contents: &str, task: &TaskConfig) -> String {
+    let task_name = task.name.trim();
+    let prefix = format!("task.{task_name}.");
+    let mut out = Vec::new();
+    let mut in_root = true;
+    let mut first_task_index = None;
+    let mut first_section_index = None;
+
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        let is_section_header = trimmed.starts_with('[') && trimmed.ends_with(']');
+        if is_section_header {
+            if first_section_index.is_none() {
+                first_section_index = Some(out.len());
+            }
+            in_root = false;
+            out.push(line.to_string());
+            continue;
+        }
+
+        if in_root
+            && let Some((raw_key, _)) = line.split_once('=')
+            && raw_key.trim().starts_with(prefix.as_str())
+        {
+            if first_task_index.is_none() {
+                first_task_index = Some(out.len());
+            }
+            continue;
+        }
+
+        out.push(line.to_string());
+    }
+
+    let insert_index = first_task_index
+        .or(first_section_index)
+        .unwrap_or(out.len());
+    let mut insertion = vec![format!(
+        "task.{task_name}.command = {}",
+        task.command.trim()
+    )];
+    if let Some(layout) = task
+        .layout
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        insertion.push(format!("task.{task_name}.layout = {layout}"));
+    }
+    if let Some(working_dir) = task
+        .working_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        insertion.push(format!("task.{task_name}.working_dir = {working_dir}"));
+    }
+    out.splice(insert_index..insert_index, insertion);
+
+    if out.is_empty() {
+        String::new()
+    } else {
+        let mut result = out.join("\n");
+        result.push('\n');
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
     use std::path::Path;
     use std::sync::{LazyLock, Mutex};
 
-    use super::import_colors_from_json;
+    use super::{import_colors_from_json, upsert_task_lines};
+    use crate::config::TaskConfig;
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -261,5 +342,24 @@ mod tests {
             let result = import_colors_from_json(&json_path).expect("import colors");
             assert!(result.contains("Imported"));
         });
+    }
+
+    #[test]
+    fn upsert_task_lines_replaces_existing_task_block() {
+        let input = "theme = termy\ntask.build.command = cargo test\ntask.build.layout = app\n[colors]\nforeground = #fff\n";
+        let output = upsert_task_lines(
+            input,
+            &TaskConfig {
+                name: "build".to_string(),
+                command: "cargo build".to_string(),
+                layout: Some("dashboard".to_string()),
+                working_dir: None,
+            },
+        );
+
+        assert!(output.contains("task.build.command = cargo build\n"));
+        assert!(output.contains("task.build.layout = dashboard\n"));
+        assert!(!output.contains("cargo test"));
+        assert!(output.contains("[colors]\nforeground = #fff\n"));
     }
 }

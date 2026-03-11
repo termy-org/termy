@@ -433,7 +433,7 @@ mod tests {
         handle_open_urls_with_main_window, reopen_if_no_windows,
     };
     use crate::app_actions;
-    use crate::deeplink::{AuthCallbackDeepLink, NewTabDeepLink};
+    use crate::deeplink::NewTabDeepLink;
     use gpui::{
         App, AppContext, Context, IntoElement, Render, TestAppContext, Window, WindowOptions, div,
     };

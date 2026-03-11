@@ -205,6 +205,26 @@ fn render_configuration_doc() -> String {
         }
     }
 
+    output.push_str("## Tasks\n\n");
+    output.push_str(
+        "Tasks are configured with repeatable root keys using the pattern `task.<name>.<field>`.\n\n",
+    );
+    output.push_str("Supported fields:\n\n");
+    output.push_str("- `task.<name>.command` (required): shell command to run in a new tab\n");
+    output.push_str(
+        "- `task.<name>.layout` (optional): only show the task when that saved layout is active\n",
+    );
+    output.push_str(
+        "- `task.<name>.working_dir` (optional): working directory for the launched tab\n\n",
+    );
+    output.push_str("Example:\n\n");
+    output.push_str("```txt\n");
+    output.push_str("task.build.command = cargo build\n");
+    output.push_str("task.build.working_dir = crates/cli\n");
+    output.push_str("task.dev_server.layout = dashboard\n");
+    output.push_str("task.dev_server.command = cargo run\n");
+    output.push_str("```\n\n");
+
     output.push_str("## Colors\n\n");
     output.push_str("Use `[colors]` to override theme colors with `#RRGGBB` values.\n\n");
     for spec in color_setting_specs() {
@@ -268,6 +288,11 @@ fn render_default_config_template() -> String {
     output.push_str("# keybind = cmd-c=unbind\n");
     output.push_str("# keybind = clear\n");
     output.push_str("# keybind = secondary-alt-shift-left=resize_pane_left\n");
+    output.push_str("\n# Tasks (repeatable)\n");
+    output.push_str("# task.build.command = cargo build\n");
+    output.push_str("# task.build.working_dir = crates/cli\n");
+    output.push_str("# task.dev_server.layout = dashboard\n");
+    output.push_str("# task.dev_server.command = cargo run\n");
 
     output.push_str("\n# Color overrides\n");
     output.push_str("[colors]\n");

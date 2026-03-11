@@ -11,6 +11,7 @@ impl TerminalView {
             CommandAction::SwitchTheme => Some(CommandPaletteMode::Themes),
             CommandAction::ManageTmuxSessions => Some(CommandPaletteMode::TmuxSessions),
             CommandAction::ManageSavedLayouts => Some(CommandPaletteMode::Layouts),
+            CommandAction::RunTask => Some(CommandPaletteMode::Tasks),
             _ => None,
         }
     }
@@ -104,6 +105,9 @@ impl TerminalView {
             }
             CommandAction::ManageSavedLayouts => {
                 self.open_saved_layouts_palette(cx);
+            }
+            CommandAction::RunTask => {
+                self.open_tasks_palette(cx);
             }
             CommandAction::Quit => {
                 self.execute_quit_command_action(action, window, cx);
@@ -307,6 +311,15 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::NewTab, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_run_task_action(
+        &mut self,
+        _: &commands::RunTask,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::RunTask, true, window, cx);
     }
 
     pub(crate) fn open_new_tab_from_deeplink(
@@ -770,6 +783,10 @@ mod tests {
         assert_eq!(
             TerminalView::command_palette_mode_for_action(CommandAction::ManageTmuxSessions),
             Some(CommandPaletteMode::TmuxSessions)
+        );
+        assert_eq!(
+            TerminalView::command_palette_mode_for_action(CommandAction::RunTask),
+            Some(CommandPaletteMode::Tasks)
         );
         assert_eq!(
             TerminalView::command_palette_mode_for_action(CommandAction::OpenConfig),

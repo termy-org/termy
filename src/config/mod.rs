@@ -16,7 +16,7 @@ pub use error::ConfigIoError;
 pub use io::{ensure_config_file, open_config_file, subscribe_config_changes};
 pub use mutate::{
     import_colors_from_json, prettify_config_file, remove_root_setting, set_color_setting,
-    set_keybind_lines, set_root_setting, set_theme_in_config,
+    set_keybind_lines, set_root_setting, set_theme_in_config, upsert_task,
 };
 pub use preview::{
     BackgroundOpacityPreview, current_background_opacity_preview, effective_background_opacity,
@@ -26,7 +26,8 @@ pub use preview::{
 pub use termy_config_core::{
     AiProvider, AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors,
     PaneFocusEffect, SHELL_DECIDE_THEME_ID, TabCloseVisibility, TabTitleConfig, TabTitleSource,
-    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
+    TabWidthMode, TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility,
+    WorkingDirFallback,
 };
 
 pub struct LoadedConfig {

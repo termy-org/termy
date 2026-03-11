@@ -12,6 +12,14 @@ pub(in super::super) enum CommandPaletteMode {
     Themes,
     TmuxSessions,
     Layouts,
+    Tasks,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in super::super) enum TaskIntent {
+    Browse,
+    CreateGlobalInput,
+    CreateLayoutInput,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,6 +62,9 @@ pub(super) enum CommandPaletteItemKind {
     SavedLayoutOpen {
         layout_name: String,
     },
+    SavedLayoutOpenTasksMode {
+        layout_name: String,
+    },
     SavedLayoutOpenSaveMode,
     SavedLayoutSaveAs {
         layout_name: String,
@@ -69,6 +80,25 @@ pub(super) enum CommandPaletteItemKind {
     SavedLayoutOpenDeleteMode,
     SavedLayoutDelete {
         layout_name: String,
+    },
+    TaskOpenCreateGlobalMode,
+    TaskOpenCreateLayoutMode {
+        layout_name: String,
+    },
+    TaskOpenSaveCurrentCommandGlobalMode,
+    TaskOpenSaveCurrentCommandLayoutMode {
+        layout_name: String,
+    },
+    TaskCreate {
+        task_name: String,
+        command: String,
+        layout_name: Option<String>,
+    },
+    Task {
+        task_name: String,
+        command: String,
+        working_dir: Option<String>,
+        layout_name: Option<String>,
     },
 }
 
@@ -138,6 +168,46 @@ impl CommandPaletteItem {
             },
         }
     }
+
+    pub(super) fn task(
+        task_name: &str,
+        command: &str,
+        working_dir: Option<&str>,
+        layout_name: Option<&str>,
+    ) -> Self {
+        let mut keywords = format!(
+            "task run command {} {}",
+            task_name.replace(['-', '_'], " "),
+            command
+        );
+        if let Some(layout_name) = layout_name {
+            keywords.push(' ');
+            keywords.push_str(&layout_name.replace(['-', '_'], " "));
+        }
+        if let Some(working_dir) = working_dir {
+            keywords.push(' ');
+            keywords.push_str(working_dir);
+        }
+
+        let title = match layout_name {
+            Some(layout_name) => format!("{task_name} [{layout_name}]"),
+            None => task_name.to_string(),
+        };
+
+        Self {
+            title,
+            keywords,
+            enabled: true,
+            status_hint: None,
+            tmux_status_hint: None,
+            kind: CommandPaletteItemKind::Task {
+                task_name: task_name.to_string(),
+                command: command.to_string(),
+                working_dir: working_dir.map(ToOwned::to_owned),
+                layout_name: layout_name.map(ToOwned::to_owned),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -147,6 +217,7 @@ pub(in super::super) struct CommandPaletteState {
     pub(super) command_intent: CommandPaletteCommandIntent,
     pub(super) tmux_session_intent: TmuxSessionIntent,
     pub(super) saved_layout_intent: SavedLayoutIntent,
+    pub(super) task_intent: TaskIntent,
     pub(super) tmux_rename_source_session: Option<String>,
     pub(super) tmux_rename_source_socket: Option<TmuxSocketTarget>,
     pub(super) saved_layout_rename_source: Option<String>,
@@ -176,6 +247,7 @@ impl CommandPaletteState {
             command_intent: CommandPaletteCommandIntent::Browse,
             tmux_session_intent: TmuxSessionIntent::AttachOrSwitch,
             saved_layout_intent: SavedLayoutIntent::Browse,
+            task_intent: TaskIntent::Browse,
             tmux_rename_source_session: None,
             tmux_rename_source_socket: None,
             saved_layout_rename_source: None,
@@ -245,6 +317,14 @@ impl CommandPaletteState {
 
     pub(super) fn command_intent(&self) -> CommandPaletteCommandIntent {
         self.command_intent
+    }
+
+    pub(super) fn task_intent(&self) -> TaskIntent {
+        self.task_intent
+    }
+
+    pub(super) fn set_task_intent(&mut self, intent: TaskIntent) {
+        self.task_intent = intent;
     }
 
     pub(super) fn cached_shortcut(&self, action: CommandAction) -> Option<Option<String>> {
@@ -403,6 +483,9 @@ impl CommandPaletteState {
         if self.mode != CommandPaletteMode::Layouts {
             self.saved_layout_intent = SavedLayoutIntent::Browse;
             self.saved_layout_rename_source = None;
+        }
+        if self.mode != CommandPaletteMode::Tasks {
+            self.task_intent = TaskIntent::Browse;
         }
     }
 }

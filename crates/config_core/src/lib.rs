@@ -28,7 +28,7 @@ pub use schema::{
 };
 pub use types::{
     AiProvider, AppConfig, CursorStyle, CustomColors, KeybindConfigLine, PaneFocusEffect, Rgb8,
-    TabCloseVisibility, TabTitleConfig, TabTitleMode, TabTitleSource, TabWidthMode,
+    TabCloseVisibility, TabTitleConfig, TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig,
     TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
 };
 

@@ -65,13 +65,20 @@ impl TerminalView {
                 | CommandPaletteItemKind::TmuxSessionRenameApply { .. }
                 | CommandPaletteItemKind::TmuxSessionKill { .. }
                 | CommandPaletteItemKind::SavedLayoutOpen { .. }
+                | CommandPaletteItemKind::SavedLayoutOpenTasksMode { .. }
                 | CommandPaletteItemKind::SavedLayoutOpenSaveMode
                 | CommandPaletteItemKind::SavedLayoutSaveAs { .. }
                 | CommandPaletteItemKind::SavedLayoutOpenRenameMode
                 | CommandPaletteItemKind::SavedLayoutRenameSelect { .. }
                 | CommandPaletteItemKind::SavedLayoutRenameApply { .. }
                 | CommandPaletteItemKind::SavedLayoutOpenDeleteMode
-                | CommandPaletteItemKind::SavedLayoutDelete { .. } => None,
+                | CommandPaletteItemKind::SavedLayoutDelete { .. }
+                | CommandPaletteItemKind::TaskOpenCreateGlobalMode
+                | CommandPaletteItemKind::TaskOpenCreateLayoutMode { .. }
+                | CommandPaletteItemKind::TaskOpenSaveCurrentCommandGlobalMode
+                | CommandPaletteItemKind::TaskOpenSaveCurrentCommandLayoutMode { .. }
+                | CommandPaletteItemKind::TaskCreate { .. }
+                | CommandPaletteItemKind::Task { .. } => None,
             };
             let title = item.title.clone();
             let status_hint = item.status_hint;
@@ -194,6 +201,19 @@ impl TerminalView {
                 SavedLayoutIntent::RenameInput => "Saved Layouts: Rename".to_string(),
                 SavedLayoutIntent::Delete => "Saved Layouts: Delete".to_string(),
             },
+            CommandPaletteMode::Tasks => match self.current_named_layout.as_deref() {
+                Some(layout_name) if self.command_palette.task_intent() == TaskIntent::Browse => {
+                    format!("Tasks: {}", layout_name)
+                }
+                _ => match self.command_palette.task_intent() {
+                    TaskIntent::Browse => "Tasks".to_string(),
+                    TaskIntent::CreateGlobalInput => "Tasks: New".to_string(),
+                    TaskIntent::CreateLayoutInput => match self.current_named_layout.as_deref() {
+                        Some(layout_name) => format!("Tasks: New for {}", layout_name),
+                        None => "Tasks: New".to_string(),
+                    },
+                },
+            },
         };
         let footer_hint = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Enter: Run  Esc: Close  Up/Down: Navigate",
@@ -223,6 +243,12 @@ impl TerminalView {
                 }
                 SavedLayoutIntent::Delete => "Enter: Delete Layout  Esc: Back  Up/Down: Navigate",
             },
+            CommandPaletteMode::Tasks => match self.command_palette.task_intent() {
+                TaskIntent::Browse => "Enter: Run Task  Esc: Back  Up/Down: Navigate",
+                TaskIntent::CreateGlobalInput | TaskIntent::CreateLayoutInput => {
+                    "Format: name: command  Enter: Save Task  Esc: Back"
+                }
+            },
         };
         let style = CommandPaletteStyle::resolve(self);
         let input_font = Font {
@@ -243,6 +269,15 @@ impl TerminalView {
             {
                 "No saved layouts yet. Save the current split setup from here."
             }
+            CommandPaletteMode::Tasks => match self.command_palette.task_intent() {
+                TaskIntent::Browse if self.command_palette.input().text().trim().is_empty() => {
+                    "No tasks configured. Create one here or add task.<name>.command entries to config.txt."
+                }
+                TaskIntent::CreateGlobalInput | TaskIntent::CreateLayoutInput => {
+                    "Enter a task as name: command"
+                }
+                _ => "No matching items",
+            },
             _ => "No matching items",
         };
 

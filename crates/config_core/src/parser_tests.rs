@@ -289,6 +289,8 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar),
         RootSettingId::CursorBlink => Some(config.cursor_blink),
         RootSettingId::BackgroundBlur => Some(config.background_blur),
+        RootSettingId::CopyOnSelect => Some(config.copy_on_select),
+        RootSettingId::CopyOnSelectToast => Some(config.copy_on_select_toast),
         RootSettingId::CommandPaletteShowKeybinds => Some(config.command_palette_show_keybinds),
         _ => None,
     }
@@ -554,6 +556,42 @@ fn removed_hide_titlebar_buttons_key_is_ignored_as_unknown() {
     );
     assert!(configured.warn_on_quit);
     assert!(!configured.warn_on_quit_with_running_process);
+}
+
+#[test]
+fn task_entries_parse_into_named_tasks() {
+    let config = parse(
+        "task.build.command = cargo build\n\
+         task.build.working_dir = crates/cli\n\
+         task.dev_server.layout = dashboard\n\
+         task.dev_server.command = cargo run\n",
+    );
+
+    assert_eq!(config.tasks.len(), 2);
+    assert_eq!(config.tasks[0].name, "build");
+    assert_eq!(config.tasks[0].command, "cargo build");
+    assert_eq!(config.tasks[0].working_dir.as_deref(), Some("crates/cli"));
+    assert_eq!(config.tasks[0].layout, None);
+
+    assert_eq!(config.tasks[1].name, "dev_server");
+    assert_eq!(config.tasks[1].layout.as_deref(), Some("dashboard"));
+    assert_eq!(config.tasks[1].command, "cargo run");
+}
+
+#[test]
+fn task_without_command_reports_invalid_value() {
+    let report = parse_report("task.build.layout = dev\n");
+    assert!(report.config.tasks.is_empty());
+    assert_eq!(report.diagnostics.len(), 1);
+    assert_eq!(
+        report.diagnostics[0].kind,
+        ConfigDiagnosticKind::InvalidValue
+    );
+    assert!(
+        report.diagnostics[0]
+            .message
+            .contains("missing required field 'command'")
+    );
 }
 
 #[test]

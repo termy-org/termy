@@ -181,10 +181,15 @@ impl TerminalView {
                 .and_then(|pane| Self::derive_tmux_shell_title(&self.tab_title, pane));
             let running_process = active_pane_state
                 .is_some_and(|pane| !Self::is_shell_command(pane.current_command.as_str()));
+            let current_command = active_pane_state
+                .map(|pane| pane.current_command.trim())
+                .filter(|command| !command.is_empty() && !Self::is_shell_command(command))
+                .map(ToOwned::to_owned);
 
             let mut tab = TerminalTab::from_tmux_window(tab_id, window, panes);
             tab.manual_title = manual_title;
             tab.shell_title = shell_title;
+            tab.current_command = current_command;
             tab.running_process = running_process;
             new_tabs.push(tab);
         }

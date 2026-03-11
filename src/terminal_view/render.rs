@@ -2590,6 +2590,7 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_switch_to_tab_9_action))
                     .on_action(cx.listener(Self::handle_manage_tmux_sessions_action))
                     .on_action(cx.listener(Self::handle_manage_saved_layouts_action))
+                    .on_action(cx.listener(Self::handle_run_task_action))
                     .on_action(cx.listener(Self::handle_split_pane_vertical_action))
                     .on_action(cx.listener(Self::handle_split_pane_horizontal_action))
                     .on_action(cx.listener(Self::handle_close_pane_action))

@@ -468,6 +468,16 @@ define_commands!(
         None
     ),
     (
+        RunTask,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Run Task",
+            "task run command layout session",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
+    (
         SplitPaneVertical,
         TERMINAL_CONTEXT,
         Some(palette(
@@ -1038,7 +1048,7 @@ mod tests {
         inline_input_keybindings,
     };
     use std::collections::HashSet;
-    use termy_command_core::{CommandCapabilities, CommandId, CommandUnavailableReason};
+    use termy_command_core::{CommandCapabilities, CommandId};
 
     #[test]
     fn command_catalog_contains_unique_actions() {

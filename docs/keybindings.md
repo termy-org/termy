@@ -29,11 +29,11 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-alt-right` -> `focus_pane_right`
 - `secondary-alt-up` -> `focus_pane_up`
 - `secondary-alt-down` -> `focus_pane_down`
-- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required)
-- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required)
-- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required)
-- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required)
-- `secondary-enter` -> `toggle_pane_zoom` (tmux required)
+- `secondary-alt-shift-left` -> `resize_pane_left`
+- `secondary-alt-shift-right` -> `resize_pane_right`
+- `secondary-alt-shift-up` -> `resize_pane_up`
+- `secondary-alt-shift-down` -> `resize_pane_down`
+- `secondary-enter` -> `toggle_pane_zoom`
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -42,6 +42,8 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
 - `secondary-k` -> `toggle_ai_input`
+- `secondary-shift-b` -> `toggle_agent_sidebar`
+- `secondary-b` -> `toggle_vertical_tab_sidebar`
 - `secondary-m` -> `minimize_window`
 - `secondary-c` -> `copy`
 - `secondary-v` -> `paste`
@@ -69,11 +71,11 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-alt-right` -> `focus_pane_right`
 - `secondary-alt-up` -> `focus_pane_up`
 - `secondary-alt-down` -> `focus_pane_down`
-- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required)
-- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required)
-- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required)
-- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required)
-- `secondary-enter` -> `toggle_pane_zoom` (tmux required)
+- `secondary-alt-shift-left` -> `resize_pane_left`
+- `secondary-alt-shift-right` -> `resize_pane_right`
+- `secondary-alt-shift-up` -> `resize_pane_up`
+- `secondary-alt-shift-down` -> `resize_pane_down`
+- `secondary-enter` -> `toggle_pane_zoom`
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -82,6 +84,8 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
 - `secondary-k` -> `toggle_ai_input`
+- `secondary-shift-b` -> `toggle_agent_sidebar`
+- `secondary-b` -> `toggle_vertical_tab_sidebar`
 - `secondary-c` -> `copy`
 - `secondary-v` -> `paste`
 
@@ -108,11 +112,11 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-alt-right` -> `focus_pane_right`
 - `secondary-alt-up` -> `focus_pane_up`
 - `secondary-alt-down` -> `focus_pane_down`
-- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required)
-- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required)
-- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required)
-- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required)
-- `secondary-enter` -> `toggle_pane_zoom` (tmux required)
+- `secondary-alt-shift-left` -> `resize_pane_left`
+- `secondary-alt-shift-right` -> `resize_pane_right`
+- `secondary-alt-shift-up` -> `resize_pane_up`
+- `secondary-alt-shift-down` -> `resize_pane_down`
+- `secondary-enter` -> `toggle_pane_zoom`
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -121,6 +125,8 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
 - `secondary-k` -> `toggle_ai_input`
+- `secondary-shift-b` -> `toggle_agent_sidebar`
+- `secondary-b` -> `toggle_vertical_tab_sidebar`
 - `ctrl-shift-c` -> `copy`
 - `ctrl-shift-v` -> `paste`
 
@@ -147,11 +153,11 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-alt-right` -> `focus_pane_right`
 - `secondary-alt-up` -> `focus_pane_up`
 - `secondary-alt-down` -> `focus_pane_down`
-- `secondary-alt-shift-left` -> `resize_pane_left` (tmux required)
-- `secondary-alt-shift-right` -> `resize_pane_right` (tmux required)
-- `secondary-alt-shift-up` -> `resize_pane_up` (tmux required)
-- `secondary-alt-shift-down` -> `resize_pane_down` (tmux required)
-- `secondary-enter` -> `toggle_pane_zoom` (tmux required)
+- `secondary-alt-shift-left` -> `resize_pane_left`
+- `secondary-alt-shift-right` -> `resize_pane_right`
+- `secondary-alt-shift-up` -> `resize_pane_up`
+- `secondary-alt-shift-down` -> `resize_pane_down`
+- `secondary-enter` -> `toggle_pane_zoom`
 - `secondary-=` -> `zoom_in`
 - `secondary-+` -> `zoom_in`
 - `secondary--` -> `zoom_out`
@@ -160,6 +166,8 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
 - `secondary-k` -> `toggle_ai_input`
+- `secondary-shift-b` -> `toggle_agent_sidebar`
+- `secondary-b` -> `toggle_vertical_tab_sidebar`
 - `ctrl-shift-c` -> `copy`
 - `ctrl-shift-v` -> `paste`
 
@@ -204,6 +212,8 @@ Related UI option:
 - `switch_to_tab_8`
 - `switch_to_tab_9`
 - `manage_tmux_sessions`
+- `manage_saved_layouts`
+- `run_task`
 - `split_pane_vertical`
 - `split_pane_horizontal`
 - `close_pane`
@@ -213,17 +223,19 @@ Related UI option:
 - `focus_pane_down`
 - `focus_pane_next`
 - `focus_pane_previous`
-- `resize_pane_left` (tmux required)
-- `resize_pane_right` (tmux required)
-- `resize_pane_up` (tmux required)
-- `resize_pane_down` (tmux required)
-- `toggle_pane_zoom` (tmux required)
+- `resize_pane_left`
+- `resize_pane_right`
+- `resize_pane_up`
+- `resize_pane_down`
+- `toggle_pane_zoom`
 - `minimize_window`
 - `rename_tab`
 - `app_info`
 - `restart_app`
 - `open_config`
+- `prettify_config`
 - `open_settings`
+- `import_theme_store_auth`
 - `import_colors`
 - `switch_theme`
 - `zoom_in`
@@ -242,6 +254,8 @@ Related UI option:
 - `toggle_search_regex`
 - `install_cli`
 - `toggle_ai_input`
+- `toggle_agent_sidebar`
+- `toggle_vertical_tab_sidebar`
 
 ## Customization Examples
 
