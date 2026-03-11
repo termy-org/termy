@@ -11,6 +11,10 @@ impl TerminalView {
                 self.open_config_action(cx);
                 true
             }
+            CommandAction::PrettifyConfig => {
+                self.prettify_config_action(cx);
+                true
+            }
             CommandAction::ImportThemeStoreAuth => {
                 self.import_theme_store_auth_action_from_clipboard(cx);
                 true
@@ -40,6 +44,23 @@ impl TerminalView {
             log::error!("Failed to open config file from command action: {}", error);
             termy_toast::error(error);
             self.notify_overlay(cx);
+        }
+    }
+
+    fn prettify_config_action(&mut self, cx: &mut Context<Self>) {
+        match config::prettify_config_file() {
+            Ok(_) => {
+                self.reload_config(cx);
+                cx.notify();
+            }
+            Err(error) => {
+                log::error!(
+                    "Failed to prettify config file from command action: {}",
+                    error
+                );
+                termy_toast::error(error);
+                self.notify_overlay(cx);
+            }
         }
     }
 

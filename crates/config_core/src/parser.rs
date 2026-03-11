@@ -245,6 +245,13 @@ impl AppConfig {
                         );
                     }
                 }
+                RootSettingId::WarnOnQuit => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.warn_on_quit = parsed;
+                    }
+                }
                 RootSettingId::WarnOnQuitWithRunningProcess => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)

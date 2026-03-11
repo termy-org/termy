@@ -9,7 +9,7 @@ use std::{
 use fs4::fs_std::FileExt;
 use termy_config_core::{
     ColorSettingId, ColorSettingUpdate, Rgb8, RootSettingId, apply_color_updates,
-    color_setting_from_key, color_setting_spec, parse_theme_id,
+    color_setting_from_key, color_setting_spec, parse_theme_id, prettify_config_contents,
     remove_root_setting as remove_root_setting_entry, replace_keybind_lines, upsert_root_setting,
 };
 
@@ -127,6 +127,13 @@ pub fn set_color_setting(color: ColorSettingId, value: Option<&str>) -> Result<(
 
 pub fn set_keybind_lines(lines: &[String]) -> Result<(), String> {
     update_config_contents(|existing| Ok((replace_keybind_lines(existing, lines), ())))
+}
+
+pub fn prettify_config_file() -> Result<String, String> {
+    update_config_contents(|existing| {
+        let prettified = prettify_config_contents(existing);
+        Ok((prettified.clone(), prettified))
+    })
 }
 
 pub fn import_colors_from_json(json_path: &Path) -> Result<String, String> {

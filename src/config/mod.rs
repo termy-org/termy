@@ -15,8 +15,8 @@ use std::{
 pub use error::ConfigIoError;
 pub use io::{ensure_config_file, open_config_file, subscribe_config_changes};
 pub use mutate::{
-    import_colors_from_json, remove_root_setting, set_color_setting, set_keybind_lines,
-    set_root_setting, set_theme_in_config,
+    import_colors_from_json, prettify_config_file, remove_root_setting, set_color_setting,
+    set_keybind_lines, set_root_setting, set_theme_in_config,
 };
 pub use preview::{
     BackgroundOpacityPreview, current_background_opacity_preview, effective_background_opacity,

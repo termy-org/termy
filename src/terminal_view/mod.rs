@@ -1079,6 +1079,7 @@ pub struct TerminalView {
     theme_id: String,
     colors: TerminalColors,
     inactive_tab_scrollback: Option<usize>,
+    warn_on_quit: bool,
     warn_on_quit_with_running_process: bool,
     tab_title: TabTitleConfig,
     tab_close_visibility: TabCloseVisibility,
@@ -2240,6 +2241,7 @@ impl TerminalView {
             theme_id,
             colors,
             inactive_tab_scrollback: config.inactive_tab_scrollback,
+            warn_on_quit: config.warn_on_quit,
             warn_on_quit_with_running_process: config.warn_on_quit_with_running_process,
             tab_title,
             tab_close_visibility: config.tab_close_visibility,
@@ -2476,6 +2478,7 @@ impl TerminalView {
         self.theme_id = config.theme.clone();
         self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
         self.inactive_tab_scrollback = config.inactive_tab_scrollback;
+        self.warn_on_quit = config.warn_on_quit;
         self.warn_on_quit_with_running_process = config.warn_on_quit_with_running_process;
         self.tab_title = config.tab_title.clone();
         let tab_close_visibility_changed = self.tab_close_visibility != config.tab_close_visibility;

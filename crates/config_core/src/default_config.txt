@@ -25,6 +25,8 @@ tmux_show_active_pane_border = false
 # working_dir = none
 # Directory used when working_dir is unset
 # working_dir_fallback = home
+# Warn every time you try to quit the app
+warn_on_quit = false
 # Warn before quitting when a tab has an active process
 warn_on_quit_with_running_process = true
 # Exact source priority for tab titles

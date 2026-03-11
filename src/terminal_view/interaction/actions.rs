@@ -136,6 +136,7 @@ impl TerminalView {
             }
             _ if shortcuts_suspended => {}
             CommandAction::OpenConfig
+            | CommandAction::PrettifyConfig
             | CommandAction::ImportThemeStoreAuth
             | CommandAction::ImportColors
             | CommandAction::AppInfo
@@ -225,6 +226,15 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::ImportColors, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_prettify_config_action(
+        &mut self,
+        _: &commands::PrettifyConfig,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::PrettifyConfig, true, window, cx);
     }
 
     pub(in super::super) fn handle_switch_theme_action(
@@ -763,6 +773,10 @@ mod tests {
         );
         assert_eq!(
             TerminalView::command_palette_mode_for_action(CommandAction::OpenConfig),
+            None
+        );
+        assert_eq!(
+            TerminalView::command_palette_mode_for_action(CommandAction::PrettifyConfig),
             None
         );
     }

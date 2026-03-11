@@ -169,6 +169,11 @@ Termy reads configuration from `~/.config/termy/config.txt`.
 - Directory used when working_dir is unset
 - Group: `STARTUP`
 
+`warn_on_quit`
+- Default: `false`
+- Warn every time you try to quit the app
+- Group: `SAFETY`
+
 `warn_on_quit_with_running_process`
 - Default: `true`
 - Warn before quitting when a tab has an active process

@@ -20,6 +20,7 @@ pub(crate) const MAX_PANE_FOCUS_STRENGTH: f32 = 2.0;
 pub(crate) const MIN_MOUSE_SCROLL_MULTIPLIER: f32 = 0.1;
 pub(crate) const MAX_MOUSE_SCROLL_MULTIPLIER: f32 = 1_000.0;
 pub(crate) const DEFAULT_CURSOR_BLINK: bool = true;
+pub(crate) const DEFAULT_WARN_ON_QUIT: bool = false;
 pub(crate) const DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS: bool = true;
 
 pub const VALID_ROOT_KEYS: &[&str] = ROOT_SETTING_ALL_KEYS;

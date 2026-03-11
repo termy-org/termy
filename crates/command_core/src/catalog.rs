@@ -39,6 +39,7 @@ macro_rules! termy_command_catalog {
             (AppInfo, "app_info"),
             (RestartApp, "restart_app"),
             (OpenConfig, "open_config"),
+            (PrettifyConfig, "prettify_config"),
             (OpenSettings, "open_settings"),
             (ImportThemeStoreAuth, "import_theme_store_auth"),
             (ImportColors, "import_colors"),

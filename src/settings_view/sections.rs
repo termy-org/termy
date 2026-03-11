@@ -1908,7 +1908,8 @@ impl SettingsWindow {
             .clone()
             .unwrap_or_else(|| "Not set".to_string());
         let working_dir_fallback = self.editable_field_value(EditableField::WorkingDirFallback);
-        let warn_on_quit = self.config.warn_on_quit_with_running_process;
+        let always_warn_on_quit = self.config.warn_on_quit;
+        let warn_on_quit_with_running_process = self.config.warn_on_quit_with_running_process;
         let native_tab_persistence = self.config.native_tab_persistence;
         let native_layout_autosave = self.config.native_layout_autosave;
         let native_buffer_persistence = self.config.native_buffer_persistence;
@@ -1982,14 +1983,24 @@ impl SettingsWindow {
         ];
         let startup_group = self.render_settings_group("STARTUP", startup_rows);
 
-        let safety_rows = vec![self.render_root_bool_setting_row(
-            "warn_on_quit_with_running_process",
-            "warn_on_quit-toggle",
-            RootSettingId::WarnOnQuitWithRunningProcess,
-            warn_on_quit,
-            "Saved",
-            cx,
-        )];
+        let safety_rows = vec![
+            self.render_root_bool_setting_row(
+                "warn_on_quit",
+                "warn_on_quit-toggle",
+                RootSettingId::WarnOnQuit,
+                always_warn_on_quit,
+                "Saved",
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "warn_on_quit_with_running_process",
+                "warn_on_quit_with_running_process-toggle",
+                RootSettingId::WarnOnQuitWithRunningProcess,
+                warn_on_quit_with_running_process,
+                "Saved",
+                cx,
+            ),
+        ];
         let safety_group = self.render_settings_group("SAFETY", safety_rows);
 
         let window_rows = vec![

@@ -717,6 +717,16 @@ define_commands!(
             MenuActionRole::Normal
         ))
     ),
+    (
+        PrettifyConfig,
+        GLOBAL_CONTEXT,
+        Some(palette(
+            "Prettify Settings File",
+            "prettify format config settings file tidy sort",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
     (ImportThemeStoreAuth, GLOBAL_CONTEXT, None, None),
     (
         ImportColors,

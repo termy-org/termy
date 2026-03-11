@@ -920,6 +920,10 @@ impl TerminalView {
                 termy_toast::info("Opened settings file");
                 self.notify_overlay(cx);
             }
+            CommandAction::PrettifyConfig => {
+                termy_toast::success("Prettified settings file");
+                self.notify_overlay(cx);
+            }
             CommandAction::NewTab => termy_toast::success("Opened new tab"),
             CommandAction::CloseTab => termy_toast::info("Closed active tab"),
             CommandAction::ClosePaneOrTab => termy_toast::info("Closed active pane or tab"),

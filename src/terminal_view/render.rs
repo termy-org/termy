@@ -2566,6 +2566,7 @@ impl Render for TerminalView {
                     .key_context(key_context)
                     .on_action(cx.listener(Self::handle_toggle_command_palette_action))
                     .on_action(cx.listener(Self::handle_import_colors_action))
+                    .on_action(cx.listener(Self::handle_prettify_config_action))
                     .on_action(cx.listener(Self::handle_switch_theme_action))
                     .on_action(cx.listener(Self::handle_app_info_action))
                     .on_action(cx.listener(Self::handle_restart_app_action))

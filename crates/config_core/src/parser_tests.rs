@@ -278,6 +278,7 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::ShowPluginsTab => Some(config.show_plugins_tab),
         RootSettingId::ShowDebugOverlay => Some(config.show_debug_overlay),
         RootSettingId::TmuxShowActivePaneBorder => Some(config.tmux_show_active_pane_border),
+        RootSettingId::WarnOnQuit => Some(config.warn_on_quit),
         RootSettingId::WarnOnQuitWithRunningProcess => {
             Some(config.warn_on_quit_with_running_process)
         }
@@ -548,8 +549,10 @@ fn keybind_lines_are_collected_in_order_with_line_numbers() {
 fn removed_hide_titlebar_buttons_key_is_ignored_as_unknown() {
     let configured = parse(
         "hide_titlebar_buttons = true\n\
+         warn_on_quit = true\n\
          warn_on_quit_with_running_process = false\n",
     );
+    assert!(configured.warn_on_quit);
     assert!(!configured.warn_on_quit_with_running_process);
 }
 

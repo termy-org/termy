@@ -9,6 +9,22 @@ enum CloseRequestTarget {
 }
 
 impl TerminalView {
+    fn should_prompt_for_close_target(
+        target: CloseRequestTarget,
+        warn_on_quit: bool,
+        warn_on_quit_with_running_process: bool,
+        busy_tab_count: usize,
+    ) -> bool {
+        if busy_tab_count > 0 {
+            return warn_on_quit_with_running_process;
+        }
+
+        matches!(
+            target,
+            CloseRequestTarget::Application | CloseRequestTarget::WindowClose
+        ) && warn_on_quit
+    }
+
     fn should_force_quit_when_prompt_in_flight(target: CloseRequestTarget) -> bool {
         matches!(target, CloseRequestTarget::Application)
     }
@@ -145,7 +161,16 @@ impl TerminalView {
         }
     }
 
-    fn close_warning_detail(&self, target: CloseRequestTarget, busy_titles: &[String]) -> String {
+    fn close_warning_detail(target: CloseRequestTarget, busy_titles: &[String]) -> Option<String> {
+        if busy_titles.is_empty() {
+            return match target {
+                CloseRequestTarget::Application | CloseRequestTarget::WindowClose => {
+                    Some("This will close all your current Termy sessions.".to_string())
+                }
+                CloseRequestTarget::TabClose { .. } => None,
+            };
+        }
+
         if matches!(target, CloseRequestTarget::TabClose { .. }) {
             let mut detail =
                 "This tab is running a command or fullscreen terminal app:\n".to_string();
@@ -157,7 +182,7 @@ impl TerminalView {
             }
 
             detail.push_str("\nClose this tab anyway?");
-            return detail;
+            return Some(detail);
         }
 
         let count = busy_titles.len();
@@ -176,7 +201,7 @@ impl TerminalView {
 
         detail.push('\n');
         detail.push_str(Self::close_warning_final_prompt(target));
-        detail
+        Some(detail)
     }
 
     fn close_tab_by_id(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
@@ -225,16 +250,21 @@ impl TerminalView {
         }
 
         let busy_titles = self.busy_tab_titles_for_close_target(target);
-        if !self.warn_on_quit_with_running_process || busy_titles.is_empty() {
+        if !Self::should_prompt_for_close_target(
+            target,
+            self.warn_on_quit,
+            self.warn_on_quit_with_running_process,
+            busy_titles.len(),
+        ) {
             return self.follow_through_close_request(target, cx);
         }
 
         self.quit_prompt_in_flight = true;
-        let detail = self.close_warning_detail(target, &busy_titles);
+        let detail = Self::close_warning_detail(target, &busy_titles);
         let prompt = window.prompt(
             PromptLevel::Warning,
             Self::close_warning_title(target),
-            Some(&detail),
+            detail.as_deref(),
             Self::close_warning_buttons(target),
             cx,
         );
@@ -342,5 +372,51 @@ mod tests {
         assert!(!TerminalView::should_force_quit_when_prompt_in_flight(
             CloseRequestTarget::TabClose { tab_id: 1 }
         ));
+    }
+
+    #[test]
+    fn always_warn_on_quit_only_prompts_for_app_or_window_close_when_not_busy() {
+        assert!(TerminalView::should_prompt_for_close_target(
+            CloseRequestTarget::Application,
+            true,
+            false,
+            0,
+        ));
+        assert!(TerminalView::should_prompt_for_close_target(
+            CloseRequestTarget::WindowClose,
+            true,
+            false,
+            0,
+        ));
+        assert!(!TerminalView::should_prompt_for_close_target(
+            CloseRequestTarget::TabClose { tab_id: 1 },
+            true,
+            false,
+            0,
+        ));
+    }
+
+    #[test]
+    fn running_process_warning_only_prompts_when_busy() {
+        assert!(TerminalView::should_prompt_for_close_target(
+            CloseRequestTarget::Application,
+            false,
+            true,
+            1,
+        ));
+        assert!(!TerminalView::should_prompt_for_close_target(
+            CloseRequestTarget::Application,
+            false,
+            true,
+            0,
+        ));
+    }
+
+    #[test]
+    fn close_warning_detail_is_absent_for_always_warn_without_busy_tabs() {
+        assert_eq!(
+            TerminalView::close_warning_detail(CloseRequestTarget::Application, &[]),
+            None
+        );
     }
 }
