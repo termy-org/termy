@@ -3,4 +3,4 @@ AGENTS.md
 .ds_store
 .env
 ./docs/examples/plugins/hello-rust/target
-./examples/plugin-full/target
+/examples/plugin-full/target/
