@@ -101,14 +101,13 @@ impl AppConfig {
             }
 
             if let Some((task_name, task_field)) = parse_task_key(key) {
-                let task = task_entries
-                    .entry(task_name.to_string())
-                    .or_insert_with(|| PendingTaskConfig {
-                        first_line: line_number,
-                        ..PendingTaskConfig::default()
-                    });
-
                 if task_field.eq_ignore_ascii_case("command") {
+                    let task = task_entries
+                        .entry(task_name.to_string())
+                        .or_insert_with(|| PendingTaskConfig {
+                            first_line: line_number,
+                            ..PendingTaskConfig::default()
+                        });
                     if let Some(parsed) = parse_string_field(
                         &mut diagnostics,
                         line_number,
@@ -119,8 +118,20 @@ impl AppConfig {
                         task.command = Some(parsed);
                     }
                 } else if task_field.eq_ignore_ascii_case("layout") {
+                    let task = task_entries
+                        .entry(task_name.to_string())
+                        .or_insert_with(|| PendingTaskConfig {
+                            first_line: line_number,
+                            ..PendingTaskConfig::default()
+                        });
                     task.layout = parse_optional_string_value(value);
                 } else if task_field.eq_ignore_ascii_case("working_dir") {
+                    let task = task_entries
+                        .entry(task_name.to_string())
+                        .or_insert_with(|| PendingTaskConfig {
+                            first_line: line_number,
+                            ..PendingTaskConfig::default()
+                        });
                     task.working_dir = parse_optional_string_value(value);
                 } else {
                     diagnostics.push(ConfigDiagnostic {

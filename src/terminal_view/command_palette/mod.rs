@@ -224,32 +224,55 @@ impl TerminalView {
                 let mut items = self
                     .command_palette
                     .saved_layout_items_for_query(self.command_palette.input().text());
-                if self.command_palette.saved_layout_intent() == SavedLayoutIntent::Browse
-                    && self.command_palette.input().text().trim().is_empty()
-                    && let Some(layout_name) = self.current_named_layout.as_deref()
-                    && self.layout_has_tasks(layout_name)
-                {
-                    items.insert(
-                        1.min(items.len()),
-                        CommandPaletteItem {
-                            title: format!("Run Tasks for \"{}\"", layout_name),
-                            keywords: format!(
-                                "saved layout tasks run {}",
-                                layout_name.replace('-', " ")
-                            ),
-                            enabled: true,
-                            status_hint: None,
-                            tmux_status_hint: None,
-                            kind: CommandPaletteItemKind::SavedLayoutOpenTasksMode {
-                                layout_name: layout_name.to_string(),
-                            },
-                        },
-                    );
-                }
+                self.insert_saved_layout_tasks_item(&mut items);
                 items
             }
             CommandPaletteMode::Tasks => self.command_palette_task_items(),
         }
+    }
+
+    fn saved_layout_tasks_item_for_state(
+        saved_layout_intent: SavedLayoutIntent,
+        query_text: &str,
+        current_named_layout: Option<&str>,
+        layout_has_tasks: bool,
+    ) -> Option<CommandPaletteItem> {
+        if saved_layout_intent != SavedLayoutIntent::Browse
+            || !query_text.trim().is_empty()
+            || !layout_has_tasks
+        {
+            return None;
+        }
+
+        let layout_name = current_named_layout?;
+        Some(CommandPaletteItem {
+            title: format!("Run Tasks for \"{}\"", layout_name),
+            keywords: format!("saved layout tasks run {}", layout_name.replace('-', " ")),
+            enabled: true,
+            status_hint: None,
+            tmux_status_hint: None,
+            kind: CommandPaletteItemKind::SavedLayoutOpenTasksMode {
+                layout_name: layout_name.to_string(),
+            },
+        })
+    }
+
+    fn insert_saved_layout_tasks_item(&self, items: &mut Vec<CommandPaletteItem>) {
+        let current_named_layout = self.current_named_layout.as_deref();
+        let layout_has_tasks =
+            current_named_layout.is_some_and(|layout_name| self.layout_has_tasks(layout_name));
+        if let Some(item) = Self::saved_layout_tasks_item_for_state(
+            self.command_palette.saved_layout_intent(),
+            self.command_palette.input().text(),
+            current_named_layout,
+            layout_has_tasks,
+        ) {
+            items.insert(1.min(items.len()), item);
+        }
+    }
+
+    fn palette_task_name_is_valid(task_name: &str) -> bool {
+        !task_name.trim().contains('.')
     }
 
     fn layout_has_tasks(&self, layout_name: &str) -> bool {
@@ -578,9 +601,10 @@ impl TerminalView {
             );
             self.command_palette.set_items(items);
         } else if self.command_palette.mode() == CommandPaletteMode::Layouts {
-            let items = self
+            let mut items = self
                 .command_palette
                 .saved_layout_items_for_query(self.command_palette.input().text());
+            self.insert_saved_layout_tasks_item(&mut items);
             self.command_palette.set_items(items);
         } else if self.command_palette.mode() == CommandPaletteMode::Tasks {
             let items = self.command_palette_task_items();
@@ -1105,9 +1129,18 @@ impl TerminalView {
             return;
         }
 
+        let task_name = task_name.trim();
+        if !Self::palette_task_name_is_valid(task_name) {
+            termy_toast::error("Task names cannot contain '.'");
+            self.notify_overlay(cx);
+            return;
+        }
+
+        let command = command.trim();
+
         let task = config::TaskConfig {
-            name: task_name.trim().to_string(),
-            command: command.trim().to_string(),
+            name: task_name.to_string(),
+            command: command.to_string(),
             layout: layout_name.map(|value| value.trim().to_string()),
             working_dir: None,
         };
@@ -1652,5 +1685,58 @@ mod tests {
             ),
             "Command is currently unavailable"
         );
+    }
+
+    #[test]
+    fn saved_layout_tasks_item_requires_browse_mode_empty_query_and_matching_tasks() {
+        let item = TerminalView::saved_layout_tasks_item_for_state(
+            SavedLayoutIntent::Browse,
+            "",
+            Some("dashboard"),
+            true,
+        )
+        .expect("saved layout tasks item");
+        assert_eq!(item.title, "Run Tasks for \"dashboard\"");
+        assert_eq!(
+            item.kind,
+            CommandPaletteItemKind::SavedLayoutOpenTasksMode {
+                layout_name: "dashboard".to_string(),
+            }
+        );
+
+        assert_eq!(
+            TerminalView::saved_layout_tasks_item_for_state(
+                SavedLayoutIntent::Browse,
+                "dash",
+                Some("dashboard"),
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            TerminalView::saved_layout_tasks_item_for_state(
+                SavedLayoutIntent::SaveInput,
+                "",
+                Some("dashboard"),
+                true,
+            ),
+            None
+        );
+        assert_eq!(
+            TerminalView::saved_layout_tasks_item_for_state(
+                SavedLayoutIntent::Browse,
+                "",
+                Some("dashboard"),
+                false,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn palette_task_name_validation_rejects_dot_names() {
+        assert!(TerminalView::palette_task_name_is_valid("build"));
+        assert!(TerminalView::palette_task_name_is_valid(" build "));
+        assert!(!TerminalView::palette_task_name_is_valid("build.web"));
     }
 }

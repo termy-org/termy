@@ -133,6 +133,9 @@ fn render_keybindings_doc() -> String {
     }
 
     output.push_str("`secondary` maps to `cmd` on macOS and `ctrl` on non-macOS platforms.\n\n");
+    output.push_str("Notes:\n\n");
+    output.push_str("- `toggle_agent_sidebar` is bound by default, but it only works when `agent_sidebar_enabled = true` in `~/.config/termy/config.txt`.\n");
+    output.push_str("- `toggle_vertical_tab_sidebar` only works when `vertical_tabs = true`; enable it in Settings > Tabs or in `~/.config/termy/config.txt`.\n\n");
 
     output.push_str("## Config Syntax\n\n");
     output.push_str("Supported forms:\n\n");
@@ -205,25 +208,7 @@ fn render_configuration_doc() -> String {
         }
     }
 
-    output.push_str("## Tasks\n\n");
-    output.push_str(
-        "Tasks are configured with repeatable root keys using the pattern `task.<name>.<field>`.\n\n",
-    );
-    output.push_str("Supported fields:\n\n");
-    output.push_str("- `task.<name>.command` (required): shell command to run in a new tab\n");
-    output.push_str(
-        "- `task.<name>.layout` (optional): only show the task when that saved layout is active\n",
-    );
-    output.push_str(
-        "- `task.<name>.working_dir` (optional): working directory for the launched tab\n\n",
-    );
-    output.push_str("Example:\n\n");
-    output.push_str("```txt\n");
-    output.push_str("task.build.command = cargo build\n");
-    output.push_str("task.build.working_dir = crates/cli\n");
-    output.push_str("task.dev_server.layout = dashboard\n");
-    output.push_str("task.dev_server.command = cargo run\n");
-    output.push_str("```\n\n");
+    output.push_str(&render_task_docs(TaskDocsFormat::Markdown));
 
     output.push_str("## Colors\n\n");
     output.push_str("Use `[colors]` to override theme colors with `#RRGGBB` values.\n\n");
@@ -288,11 +273,7 @@ fn render_default_config_template() -> String {
     output.push_str("# keybind = cmd-c=unbind\n");
     output.push_str("# keybind = clear\n");
     output.push_str("# keybind = secondary-alt-shift-left=resize_pane_left\n");
-    output.push_str("\n# Tasks (repeatable)\n");
-    output.push_str("# task.build.command = cargo build\n");
-    output.push_str("# task.build.working_dir = crates/cli\n");
-    output.push_str("# task.dev_server.layout = dashboard\n");
-    output.push_str("# task.dev_server.command = cargo run\n");
+    output.push_str(&render_task_docs(TaskDocsFormat::Template));
 
     output.push_str("\n# Color overrides\n");
     output.push_str("[colors]\n");
@@ -306,6 +287,66 @@ fn render_default_config_template() -> String {
         output.push_str(&format!("# {} = {}\n", spec.key, placeholder));
     }
 
+    output
+}
+
+const TASK_FIELD_DOCS: &[(&str, &str)] = &[
+    ("command", "(required): shell command to run in a new tab"),
+    (
+        "layout",
+        "(optional): only show the task when that saved layout is active",
+    ),
+    (
+        "working_dir",
+        "(optional): working directory for the launched tab",
+    ),
+];
+
+const TASK_EXAMPLE_LINES: &[&str] = &[
+    "task.build.command = cargo build",
+    "task.build.working_dir = crates/cli",
+    "task.dev_server.layout = dashboard",
+    "task.dev_server.command = cargo run",
+];
+
+#[derive(Clone, Copy)]
+enum TaskDocsFormat {
+    Markdown,
+    Template,
+}
+
+fn render_task_docs(format: TaskDocsFormat) -> String {
+    let mut output = String::new();
+    match format {
+        TaskDocsFormat::Markdown => {
+            output.push_str("## Tasks\n\n");
+            output.push_str(
+                "Tasks are configured with repeatable root keys using the pattern `task.<name>.<field>`.\n\n",
+            );
+            output.push_str("Supported fields:\n\n");
+            for (field, description) in TASK_FIELD_DOCS {
+                output.push_str(&format!("- `task.<name>.{field}` {description}\n"));
+            }
+            output.push_str("\nExample:\n\n```txt\n");
+            for line in TASK_EXAMPLE_LINES {
+                output.push_str(line);
+                output.push('\n');
+            }
+            output.push_str("```\n\n");
+        }
+        TaskDocsFormat::Template => {
+            output.push_str("\n# Tasks (repeatable)\n");
+            output.push_str("# Tasks use the pattern task.<name>.<field>\n");
+            output.push_str("# Supported fields:\n");
+            for (field, description) in TASK_FIELD_DOCS {
+                output.push_str(&format!("# - task.<name>.{field} {description}\n"));
+            }
+            output.push_str("# Example:\n");
+            for line in TASK_EXAMPLE_LINES {
+                output.push_str(&format!("# {line}\n"));
+            }
+        }
+    }
     output
 }
 
@@ -339,9 +380,26 @@ mod tests {
     }
 
     #[test]
+    fn keybindings_doc_notes_disabled_sidebar_shortcuts() {
+        let out = render_keybindings_doc();
+        assert!(out.contains("agent_sidebar_enabled = true"));
+        assert!(out.contains("vertical_tabs = true"));
+    }
+
+    #[test]
     fn configuration_doc_mentions_runtime_tmux_session_hub() {
         let out = render_configuration_doc();
         assert!(out.contains("Tmux integration is an add-on"));
         assert!(out.contains("attach, switch, create, and manage sessions at runtime"));
+    }
+
+    #[test]
+    fn default_config_template_includes_task_field_reference() {
+        let out = render_default_config_template();
+        assert!(out.contains("# Supported fields:"));
+        assert!(
+            out.contains("# - task.<name>.command (required): shell command to run in a new tab")
+        );
+        assert!(out.contains("# task.dev_server.command = cargo run"));
     }
 }

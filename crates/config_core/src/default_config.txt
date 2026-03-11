@@ -124,6 +124,12 @@ openai_model = none
 # keybind = secondary-alt-shift-left=resize_pane_left
 
 # Tasks (repeatable)
+# Tasks use the pattern task.<name>.<field>
+# Supported fields:
+# - task.<name>.command (required): shell command to run in a new tab
+# - task.<name>.layout (optional): only show the task when that saved layout is active
+# - task.<name>.working_dir (optional): working directory for the launched tab
+# Example:
 # task.build.command = cargo build
 # task.build.working_dir = crates/cli
 # task.dev_server.layout = dashboard

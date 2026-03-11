@@ -173,6 +173,11 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 
 `secondary` maps to `cmd` on macOS and `ctrl` on non-macOS platforms.
 
+Notes:
+
+- `toggle_agent_sidebar` is bound by default, but it only works when `agent_sidebar_enabled = true` in `~/.config/termy/config.txt`.
+- `toggle_vertical_tab_sidebar` only works when `vertical_tabs = true`; enable it in Settings > Tabs or in `~/.config/termy/config.txt`.
+
 ## Config Syntax
 
 Supported forms:

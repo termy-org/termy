@@ -595,6 +595,19 @@ fn task_without_command_reports_invalid_value() {
 }
 
 #[test]
+fn invalid_task_field_does_not_create_missing_command_diagnostic() {
+    let report = parse_report("task.build.invalid = nope\n");
+
+    assert!(report.config.tasks.is_empty());
+    assert_eq!(report.diagnostics.len(), 1);
+    assert_eq!(
+        report.diagnostics[0].kind,
+        ConfigDiagnosticKind::InvalidValue
+    );
+    assert!(report.diagnostics[0].message.contains("Invalid task field"));
+}
+
+#[test]
 fn custom_colors_parse() {
     let config = parse(
         "theme = termy\n\
