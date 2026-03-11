@@ -1,7 +1,7 @@
 use super::*;
 
 impl TerminalView {
-    fn format_terminal_buffer_position(position: SelectionPos) -> String {
+    pub(in super::super) fn format_terminal_buffer_position(position: SelectionPos) -> String {
         format!(
             "Buffer Position: Line {}, Column {}",
             position.line, position.col
@@ -198,7 +198,6 @@ impl TerminalView {
         let (can_copy, can_paste, can_ask_ai, can_search_google) =
             self.terminal_context_menu_capabilities(cx);
         let buffer_position = self.terminal_context_menu_buffer_position(position);
-        let buffer_position_label = buffer_position.map(Self::format_terminal_buffer_position);
         let state = TerminalContextMenuState {
             anchor_position: position,
             buffer_position,
@@ -221,6 +220,7 @@ impl TerminalView {
         #[cfg(not(target_os = "linux"))]
         {
             let _ = position;
+            let buffer_position_label = buffer_position.map(Self::format_terminal_buffer_position);
             self.schedule_native_terminal_context_menu(
                 buffer_position_label,
                 can_copy,
