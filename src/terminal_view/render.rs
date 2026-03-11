@@ -1540,7 +1540,7 @@ impl TerminalView {
 
         #[cfg(target_os = "linux")]
         {
-            let state = self.terminal_context_menu?;
+            let state = self.terminal_context_menu.clone()?;
             let overlay_style = self.overlay_style();
             let menu_width = 220.0;
             let row_height = 30.0;

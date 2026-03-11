@@ -5,7 +5,7 @@ use std::sync::{Mutex, OnceLock};
 use termy_plugin_core::{
     PluginCapability, PluginCommandContribution, PluginManifest, PluginPermission,
 };
-use termy_plugin_host::{PluginHost, default_plugins_dir, discover_plugins};
+use termy_plugin_host::{default_plugins_dir, discover_plugins, PluginHost};
 
 static PLUGIN_HOST: OnceLock<Mutex<PluginHost>> = OnceLock::new();
 
@@ -287,12 +287,16 @@ pub(crate) fn command_palette_entries() -> Result<Vec<PluginCommandPaletteEntry>
             )
             .trim()
             .to_string();
+            let enabled = plugin.is_running
+                && plugin
+                    .capabilities
+                    .contains(&PluginCapability::CommandProvider);
             entries.push(PluginCommandPaletteEntry {
                 plugin_id: plugin.id.clone(),
                 command_id: command.id,
                 title: format!("{}: {}", plugin.name, command.title),
                 keywords,
-                enabled: plugin.is_running,
+                enabled,
             });
         }
     }

@@ -4,17 +4,17 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{Arc, Mutex, mpsc},
+    sync::{mpsc, Arc, Mutex},
     thread::{self, JoinHandle},
     time::Duration,
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use termy_config_core::config_path;
 use termy_plugin_core::{
-    DiscoveredPlugin, HostCommandInvocation, HostHello, HostRpcMessage, PLUGIN_MANIFEST_FILE_NAME,
-    PLUGIN_PROTOCOL_VERSION, PluginCapability, PluginHello, PluginManifest, PluginPermission,
-    PluginRpcMessage, PluginRuntime, PluginToastLevel, PluginToastMessage,
+    DiscoveredPlugin, HostCommandInvocation, HostHello, HostRpcMessage, PluginCapability,
+    PluginHello, PluginManifest, PluginPermission, PluginRpcMessage, PluginRuntime,
+    PluginToastLevel, PluginToastMessage, PLUGIN_MANIFEST_FILE_NAME, PLUGIN_PROTOCOL_VERSION,
 };
 use thiserror::Error;
 
@@ -126,6 +126,18 @@ impl PluginHost {
         else {
             return Err(format!("Plugin `{plugin_id}` is not running"));
         };
+
+        if !plugin.has_capability(PluginCapability::CommandProvider) {
+            return Err(format!(
+                "Plugin `{plugin_id}` does not advertise the `command_provider` capability"
+            ));
+        }
+
+        if !plugin.contributes_command(command_id) {
+            return Err(format!(
+                "Plugin `{plugin_id}` does not contribute command `{command_id}`"
+            ));
+        }
 
         plugin
             .invoke_command(command_id)
@@ -277,6 +289,35 @@ impl RunningPlugin {
             ));
         }
 
+        if !discovered.manifest.contributes.commands.is_empty()
+            && !plugin_hello
+                .capabilities
+                .contains(&PluginCapability::CommandProvider)
+        {
+            let _ = child.kill();
+            return Err(PluginLoadFailure::new(
+                discovered.manifest.id.clone(),
+                anyhow!("plugin contributes commands but does not advertise `command_provider`"),
+            ));
+        }
+
+        if plugin_hello
+            .capabilities
+            .contains(&PluginCapability::UiPanel)
+            && !discovered
+                .manifest
+                .permissions
+                .contains(&PluginPermission::UiPanels)
+        {
+            let _ = child.kill();
+            return Err(PluginLoadFailure::new(
+                discovered.manifest.id.clone(),
+                anyhow!(
+                    "plugin advertises `ui_panel` but manifest is missing `ui_panels` permission"
+                ),
+            ));
+        }
+
         Ok(Self {
             manifest: discovered.manifest,
             root_dir: discovered.root_dir,
@@ -309,6 +350,18 @@ impl RunningPlugin {
 
     pub fn capabilities(&self) -> &[PluginCapability] {
         &self.hello.capabilities
+    }
+
+    fn has_capability(&self, capability: PluginCapability) -> bool {
+        self.hello.capabilities.contains(&capability)
+    }
+
+    fn contributes_command(&self, command_id: &str) -> bool {
+        self.manifest
+            .contributes
+            .commands
+            .iter()
+            .any(|command| command.id == command_id)
     }
 
     pub fn shutdown(&mut self) -> Result<()> {
@@ -719,11 +772,10 @@ done
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].kind, termy_toast::ToastKind::Success);
         assert_eq!(pending[0].message, "example.toast: toast from plugin");
-        assert!(
-            host.recent_logs("example.toast")
-                .iter()
-                .any(|line| line.contains("toast"))
-        );
+        assert!(host
+            .recent_logs("example.toast")
+            .iter()
+            .any(|line| line.contains("toast")));
 
         drop(host);
         let _ = fs::remove_dir_all(root);
@@ -780,11 +832,10 @@ done
 
         host.start_plugin("example.toggle").expect("restart plugin");
         assert_eq!(host.running_plugins().len(), 1);
-        assert!(
-            host.recent_logs("example.toggle")
-                .iter()
-                .any(|line| line.contains("started"))
-        );
+        assert!(host
+            .recent_logs("example.toggle")
+            .iter()
+            .any(|line| line.contains("started")));
 
         drop(host);
         let _ = fs::remove_dir_all(root);
@@ -831,7 +882,12 @@ done
                 "name": "Invoke Plugin",
                 "version": "0.1.0",
                 "entrypoint": "./plugin.sh",
-                "permissions": ["notifications"]
+                "permissions": ["notifications"],
+                "contributes": {
+                    "commands": [
+                        { "id": "example.invoke.run", "title": "Run" }
+                    ]
+                }
             }"#,
         )
         .expect("write manifest");
@@ -843,16 +899,176 @@ done
         thread::sleep(Duration::from_millis(50));
         let pending = termy_toast::drain_pending();
 
-        assert!(
-            pending
-                .iter()
-                .any(|toast| toast.message.contains("invoke worked"))
-        );
-        assert!(
-            host.recent_logs("example.invoke")
-                .iter()
-                .any(|line| line.contains("invoke"))
-        );
+        assert!(pending
+            .iter()
+            .any(|toast| toast.message.contains("invoke worked")));
+        assert!(host
+            .recent_logs("example.invoke")
+            .iter()
+            .any(|line| line.contains("invoke")));
+
+        drop(host);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_command_invocation_for_plugins_without_command_provider_capability() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = unique_temp_dir("invoke-no-capability");
+        let plugin_dir = root.join("invoke-plugin");
+        fs::create_dir_all(&plugin_dir).expect("create plugin dir");
+        let script_path = plugin_dir.join("plugin.sh");
+        fs::write(
+            &script_path,
+            r#"#!/bin/sh
+read line
+printf '%s\n' '{"type":"hello","payload":{"protocol_version":1,"plugin_id":"example.invoke","name":"Invoke Plugin","version":"0.1.0","capabilities":[]}}'
+while read line; do
+  if [ "$line" = '{"type":"shutdown"}' ]; then
+    exit 0
+  fi
+done
+"#,
+        )
+        .expect("write plugin script");
+        let mut permissions = fs::metadata(&script_path)
+            .expect("script metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("set script mode");
+        fs::write(
+            plugin_dir.join(PLUGIN_MANIFEST_FILE_NAME),
+            r#"{
+                "schema_version": 1,
+                "id": "example.invoke",
+                "name": "Invoke Plugin",
+                "version": "0.1.0",
+                "entrypoint": "./plugin.sh"
+            }"#,
+        )
+        .expect("write manifest");
+
+        let mut host = PluginHost::load_from_dir(root.clone(), "0.1.0").expect("load host");
+        host.start_plugin("example.invoke").expect("start plugin");
+        let error = host
+            .invoke_command("example.invoke", "example.invoke.run")
+            .expect_err("command invocation should fail");
+
+        assert!(error.contains("does not advertise the `command_provider` capability"));
+
+        drop(host);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_command_invocation_for_commands_not_declared_in_manifest() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = unique_temp_dir("invoke-missing-command");
+        let plugin_dir = root.join("invoke-plugin");
+        fs::create_dir_all(&plugin_dir).expect("create plugin dir");
+        let script_path = plugin_dir.join("plugin.sh");
+        fs::write(
+            &script_path,
+            r#"#!/bin/sh
+read line
+printf '%s\n' '{"type":"hello","payload":{"protocol_version":1,"plugin_id":"example.invoke","name":"Invoke Plugin","version":"0.1.0","capabilities":["command_provider"]}}'
+while read line; do
+  if [ "$line" = '{"type":"shutdown"}' ]; then
+    exit 0
+  fi
+done
+"#,
+        )
+        .expect("write plugin script");
+        let mut permissions = fs::metadata(&script_path)
+            .expect("script metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("set script mode");
+        fs::write(
+            plugin_dir.join(PLUGIN_MANIFEST_FILE_NAME),
+            r#"{
+                "schema_version": 1,
+                "id": "example.invoke",
+                "name": "Invoke Plugin",
+                "version": "0.1.0",
+                "entrypoint": "./plugin.sh",
+                "contributes": {
+                    "commands": [
+                        { "id": "example.invoke.run", "title": "Run" }
+                    ]
+                }
+            }"#,
+        )
+        .expect("write manifest");
+
+        let mut host = PluginHost::load_from_dir(root.clone(), "0.1.0").expect("load host");
+        host.start_plugin("example.invoke").expect("start plugin");
+        let error = host
+            .invoke_command("example.invoke", "example.invoke.other")
+            .expect_err("command invocation should fail");
+
+        assert!(error.contains("does not contribute command `example.invoke.other`"));
+
+        drop(host);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_plugins_that_contribute_commands_without_command_provider_capability() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = unique_temp_dir("invalid-command-provider");
+        let plugin_dir = root.join("invalid-plugin");
+        fs::create_dir_all(&plugin_dir).expect("create plugin dir");
+        let script_path = plugin_dir.join("plugin.sh");
+        fs::write(
+            &script_path,
+            r#"#!/bin/sh
+read line
+printf '%s\n' '{"type":"hello","payload":{"protocol_version":1,"plugin_id":"example.invalid","name":"Invalid Plugin","version":"0.1.0","capabilities":[]}}'
+while read line; do
+  if [ "$line" = '{"type":"shutdown"}' ]; then
+    exit 0
+  fi
+done
+"#,
+        )
+        .expect("write plugin script");
+        let mut permissions = fs::metadata(&script_path)
+            .expect("script metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("set script mode");
+        fs::write(
+            plugin_dir.join(PLUGIN_MANIFEST_FILE_NAME),
+            r#"{
+                "schema_version": 1,
+                "id": "example.invalid",
+                "name": "Invalid Plugin",
+                "version": "0.1.0",
+                "entrypoint": "./plugin.sh",
+                "contributes": {
+                    "commands": [
+                        { "id": "example.invalid.run", "title": "Run" }
+                    ]
+                }
+            }"#,
+        )
+        .expect("write manifest");
+
+        let host = PluginHost::load_from_dir(root.clone(), "0.1.0").expect("load host");
+
+        assert!(host.running_plugins().is_empty());
+        assert_eq!(host.failures().len(), 1);
+        assert!(host.failures()[0]
+            .message()
+            .contains("does not advertise `command_provider`"));
 
         drop(host);
         let _ = fs::remove_dir_all(root);

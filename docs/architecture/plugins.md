@@ -98,6 +98,7 @@ session.send_toast(PluginToastLevel::Info, "hello from plugin", Some(2500))?;
 - manifest validation
 - stdio process launch
 - protocol version check
+- command dispatch into plugins
 - runtime plugin log consumption
 - startup failure isolation
 - plugin shutdown on host drop
@@ -124,15 +125,9 @@ The Settings `Plugins` tab currently supports:
 - live `Start` / `Stop` for currently discovered plugins
 - viewing recent runtime log lines captured by the host
 
-Example install target:
-
-- [docs/examples/plugins/test-drive/termy-plugin.json](/Users/lassevestergaard/Documents/dev/termy/docs/examples/plugins/test-drive/termy-plugin.json)
-
 ## Not implemented yet
 
-- command dispatch into plugins
 - UI panels
 - event subscriptions
-- permission enforcement beyond manifest declaration
-- plugin installation UX
+- broader permission enforcement beyond current toast and capability gating
 - registry/marketplace
