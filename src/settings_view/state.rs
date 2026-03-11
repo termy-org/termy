@@ -898,7 +898,7 @@ impl SettingsWindow {
             EditableField::Theme => self.config.theme.clone(),
             EditableField::BackgroundOpacity => format!(
                 "{}",
-                (self.config.background_opacity * 100.0).round() as i32
+                (self.effective_background_opacity() * 100.0).round() as i32
             ),
             EditableField::FontFamily => self.config.font_family.clone(),
             EditableField::FontSize => format!("{}", self.config.font_size.round() as i32),
@@ -1063,13 +1063,10 @@ impl SettingsWindow {
         };
         let result = match field {
             EditableField::BackgroundOpacity => {
-                let next = (self.config.background_opacity + (delta as f32 * step.delta))
-                    .clamp(step.min, step.max);
-                self.config.background_opacity = next;
-                config::set_root_setting(
-                    termy_config_core::RootSettingId::BackgroundOpacity,
-                    &format!("{:.3}", next),
-                )
+                let next =
+                    (self.config.background_opacity + (delta as f32 * step.delta)).clamp(step.min, step.max);
+                self.clear_background_opacity_preview();
+                self.persist_background_opacity(next)
             }
             EditableField::FontSize => {
                 let next =

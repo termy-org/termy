@@ -5,16 +5,16 @@ use crate::text_input::{TextInputAlignment, TextInputElement, TextInputProvider,
 use crate::theme_store::{self, ThemeStoreAuthSession, ThemeStoreAuthUser, ThemeStoreTheme};
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle, ScrollbarRange};
 use gpui::{
-    AnyElement, AsyncApp, Context, FocusHandle, Font, InteractiveElement, IntoElement,
+    AnyElement, AsyncApp, Bounds, Context, FocusHandle, Font, InteractiveElement, IntoElement,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit,
-    ParentElement, Render, Rgba, ScrollAnchor, ScrollHandle, ScrollWheelEvent, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, TextAlign, WeakEntity, Window,
-    WindowBackgroundAppearance, deferred, div, img, point, prelude::FluentBuilder, px,
+    ParentElement, Pixels, Render, Rgba, ScrollAnchor, ScrollHandle, ScrollWheelEvent,
+    SharedString, StatefulInteractiveElement, Styled, StyledImage, TextAlign, WeakEntity, Window,
+    WindowBackgroundAppearance, canvas, deferred, div, img, point, prelude::FluentBuilder, px,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, atomic::{AtomicU64, Ordering}};
 use std::time::{Duration, Instant};
 use termy_command_core::CommandId;
 use termy_config_core::{
@@ -60,6 +60,7 @@ const SETTINGS_SLIDER_VALUE_WIDTH: f32 = 60.0;
 const SETTINGS_OPACITY_STEP_RATIO: f32 = 0.05;
 const SETTINGS_CONTROL_INNER_PADDING: f32 = 8.0;
 const SETTINGS_OPACITY_CONTROL_GAP: f32 = 6.0;
+static NEXT_BACKGROUND_OPACITY_PREVIEW_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum SettingsSection {
     Appearance,
@@ -71,6 +72,12 @@ pub(crate) enum SettingsSection {
     Advanced,
     Colors,
     Keybindings,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BackgroundOpacityDragState {
+    start_local_x: f32,
+    start_ratio: f32,
 }
 
 pub struct SettingsWindow {
@@ -95,7 +102,10 @@ pub struct SettingsWindow {
     search_navigation_last_target: Option<&'static str>,
     search_navigation_last_jump_at: Option<Instant>,
     capturing_action: Option<CommandId>,
-    background_opacity_drag_anchor: Option<(f32, f32)>,
+    background_opacity_preview_owner_id: u64,
+    preview_background_opacity: Option<config::BackgroundOpacityPreview>,
+    background_opacity_drag_state: Option<BackgroundOpacityDragState>,
+    background_opacity_slider_bounds: Option<Bounds<Pixels>>,
     scroll_animation_token: u64,
     colors: TerminalColors,
     last_window_background_appearance: Option<WindowBackgroundAppearance>,
@@ -126,8 +136,11 @@ impl SettingsWindow {
         let config_path = loaded.path;
         let config_fingerprint = loaded.fingerprint;
         let config_change_rx = config::subscribe_config_changes();
+        let background_opacity_preview_rx = config::subscribe_background_opacity_preview();
         #[cfg(test)]
         let _ = &config_change_rx;
+        #[cfg(test)]
+        let _ = &background_opacity_preview_rx;
         let mut available_font_families = window.text_system().all_font_names();
         available_font_families.sort_unstable_by_key(|font| font.to_ascii_lowercase());
         available_font_families.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
@@ -169,7 +182,11 @@ impl SettingsWindow {
             search_navigation_last_target: None,
             search_navigation_last_jump_at: None,
             capturing_action: None,
-            background_opacity_drag_anchor: None,
+            background_opacity_preview_owner_id: NEXT_BACKGROUND_OPACITY_PREVIEW_OWNER_ID
+                .fetch_add(1, Ordering::Relaxed),
+            preview_background_opacity: config::current_background_opacity_preview(),
+            background_opacity_drag_state: None,
+            background_opacity_slider_bounds: None,
             scroll_animation_token: 0,
             colors,
             last_window_background_appearance: None,
@@ -205,6 +222,32 @@ impl SettingsWindow {
                     let result = cx.update(|cx| {
                         this.update(cx, |view, cx| {
                             if view.reload_config_if_changed(cx) {
+                                cx.notify();
+                            }
+                        })
+                    });
+                    if result.is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
+
+        #[cfg(not(test))]
+        {
+            cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                loop {
+                    let wait_rx = background_opacity_preview_rx.clone();
+                    let Ok(mut opacity) = smol::unblock(move || wait_rx.recv()).await else {
+                        break;
+                    };
+                    while let Ok(next_opacity) = background_opacity_preview_rx.try_recv() {
+                        opacity = next_opacity;
+                    }
+                    let result = cx.update(|cx| {
+                        this.update(cx, |view, cx| {
+                            if view.sync_background_opacity_preview(opacity) {
                                 cx.notify();
                             }
                         })
@@ -635,6 +678,20 @@ impl SettingsWindow {
         }
         self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
         self.config = config;
+        let previous_preview = self.preview_background_opacity;
+        let synced_preview = config::synced_background_opacity_preview(
+            self.config.background_opacity,
+            previous_preview,
+        );
+        if synced_preview != previous_preview {
+            self.preview_background_opacity = synced_preview;
+            if previous_preview.is_some_and(|preview| {
+                preview.owner_id == self.background_opacity_preview_owner_id
+            }) && self.background_opacity_drag_state.is_none()
+            {
+                config::publish_background_opacity_preview(None);
+            }
+        }
         if previous_show_plugins_tab != next_show_plugins_tab {
             self.searchable_settings = Self::build_searchable_settings(
                 next_show_plugins_tab,
@@ -651,6 +708,36 @@ impl SettingsWindow {
                 self.active_section = SettingsSection::Appearance;
             }
         }
+        true
+    }
+
+    fn effective_background_opacity(&self) -> f32 {
+        config::effective_background_opacity(
+            self.config.background_opacity,
+            self.preview_background_opacity,
+        )
+    }
+
+    fn sync_background_opacity_preview(
+        &mut self,
+        preview: Option<config::BackgroundOpacityPreview>,
+    ) -> bool {
+        let preview = preview.map(|preview| config::BackgroundOpacityPreview {
+            opacity: preview.opacity.clamp(0.0, 1.0),
+            ..preview
+        });
+        if self.preview_background_opacity == preview {
+            return false;
+        }
+        self.preview_background_opacity = preview;
+        true
+    }
+
+    fn clear_background_opacity_preview(&mut self) -> bool {
+        if !self.sync_background_opacity_preview(None) {
+            return false;
+        }
+        config::publish_background_opacity_preview(None);
         true
     }
 
@@ -1267,7 +1354,7 @@ impl Render for SettingsWindow {
                     cx.notify();
                 }
             }))
-            .when(self.background_opacity_drag_anchor.is_some(), |s| {
+            .when(self.background_opacity_drag_state.is_some(), |s| {
                 s.on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _window, cx| {
                     if !event.dragging() {
                         return;
@@ -1327,5 +1414,69 @@ impl Render for SettingsWindow {
                     )
                     .child(settings_scrollbar_lane),
             )
+    }
+}
+
+impl Drop for SettingsWindow {
+    fn drop(&mut self) {
+        if config::synced_background_opacity_preview(
+            self.config.background_opacity,
+            self.preview_background_opacity,
+        )
+        .is_some_and(|preview| preview.owner_id == self.background_opacity_preview_owner_id)
+        {
+            config::publish_background_opacity_preview(None);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_effective_background_opacity_prefers_preview() {
+        assert_eq!(
+            config::effective_background_opacity(
+                0.9,
+                Some(config::BackgroundOpacityPreview {
+                    owner_id: 1,
+                    opacity: 0.35,
+                }),
+            ),
+            0.35
+        );
+        assert_eq!(config::effective_background_opacity(0.9, None), 0.9);
+    }
+
+    #[test]
+    fn settings_preview_clears_when_saved_matches_preview() {
+        assert_eq!(
+            config::synced_background_opacity_preview(
+                0.4,
+                Some(config::BackgroundOpacityPreview {
+                    owner_id: 1,
+                    opacity: 0.4,
+                }),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn settings_preview_keeps_unrelated_value() {
+        assert_eq!(
+            config::synced_background_opacity_preview(
+                0.4,
+                Some(config::BackgroundOpacityPreview {
+                    owner_id: 1,
+                    opacity: 0.6,
+                }),
+            ),
+            Some(config::BackgroundOpacityPreview {
+                owner_id: 1,
+                opacity: 0.6,
+            })
+        );
     }
 }

@@ -2,7 +2,7 @@ use super::*;
 
 impl SettingsWindow {
     pub(super) fn background_opacity_factor(&self) -> f32 {
-        self.config.background_opacity.clamp(0.0, 1.0)
+        self.effective_background_opacity()
     }
 
     pub(super) fn scaled_background_alpha(&self, base_alpha: f32) -> f32 {
@@ -17,7 +17,9 @@ impl SettingsWindow {
     }
 
     pub(super) fn sync_window_background_appearance(&mut self, window: &mut Window) {
-        let appearance = crate::terminal_view::initial_window_background_appearance(&self.config);
+        let mut preview_config = self.config.clone();
+        preview_config.background_opacity = self.effective_background_opacity();
+        let appearance = crate::terminal_view::initial_window_background_appearance(&preview_config);
         if self.last_window_background_appearance != Some(appearance) {
             window.set_background_appearance(appearance);
             self.last_window_background_appearance = Some(appearance);

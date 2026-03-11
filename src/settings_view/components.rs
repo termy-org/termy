@@ -809,69 +809,116 @@ impl SettingsWindow {
         ((ratio.clamp(0.0, 1.0) / step).round() * step).clamp(0.0, 1.0)
     }
 
+    pub(super) fn background_opacity_ratio_from_local_x(local_x: f32, slider_width: f32) -> f32 {
+        (local_x / slider_width.max(1.0)).clamp(0.0, 1.0)
+    }
+
+    pub(super) fn background_opacity_local_x_from_window_x(
+        window_x: f32,
+        slider_left: f32,
+        slider_width: f32,
+    ) -> f32 {
+        (window_x - slider_left).clamp(0.0, slider_width.max(1.0))
+    }
+
     pub(super) fn set_background_opacity_preview(&mut self, ratio: f32) -> bool {
         let ratio = Self::quantize_background_opacity_ratio(ratio);
-        if (self.config.background_opacity - ratio).abs() < f32::EPSILON {
+        if (self.effective_background_opacity() - ratio).abs() < f32::EPSILON {
             return false;
         }
-        self.config.background_opacity = ratio;
+        let preview = config::BackgroundOpacityPreview {
+            owner_id: self.background_opacity_preview_owner_id,
+            opacity: ratio,
+        };
+        self.preview_background_opacity = Some(preview);
+        config::publish_background_opacity_preview(Some(preview));
         true
     }
 
-    pub(super) fn commit_background_opacity(&mut self) -> Result<(), String> {
-        config::set_root_setting(
-            RootSettingId::BackgroundOpacity,
-            &format!("{:.3}", self.config.background_opacity),
-        )
+    pub(super) fn persist_background_opacity(&mut self, ratio: f32) -> Result<(), String> {
+        let ratio = Self::quantize_background_opacity_ratio(ratio);
+        let previous = self.config.background_opacity;
+        self.config.background_opacity = ratio;
+        if let Err(error) =
+            config::set_root_setting(RootSettingId::BackgroundOpacity, &format!("{ratio:.3}"))
+        {
+            self.config.background_opacity = previous;
+            return Err(error);
+        }
+        Ok(())
     }
 
-    pub(super) fn begin_background_opacity_drag(&mut self, pointer_x: f32) {
-        self.background_opacity_drag_anchor =
-            Some((pointer_x, self.config.background_opacity.clamp(0.0, 1.0)));
+    fn background_opacity_slider_local_x(&self, window_x: f32) -> Option<f32> {
+        let bounds = self.background_opacity_slider_bounds?;
+        let slider_left: f32 = bounds.left().into();
+        let slider_width: f32 = bounds.size.width.into();
+        Some(Self::background_opacity_local_x_from_window_x(
+            window_x,
+            slider_left,
+            slider_width,
+        ))
+    }
+
+    pub(super) fn begin_background_opacity_drag(&mut self, local_x: f32) {
+        self.background_opacity_drag_state = Some(BackgroundOpacityDragState {
+            start_local_x: local_x,
+            start_ratio: self.effective_background_opacity(),
+        });
     }
 
     pub(super) fn update_background_opacity_drag(
         &mut self,
-        pointer_x: f32,
+        window_x: f32,
         slider_width: f32,
     ) -> bool {
-        let Some((drag_start_x, drag_start_ratio)) = self.background_opacity_drag_anchor else {
+        let Some(drag_state) = self.background_opacity_drag_state else {
             return false;
         };
-        let delta_ratio = (pointer_x - drag_start_x) / slider_width.max(1.0);
-        self.set_background_opacity_preview(drag_start_ratio + delta_ratio)
+        let Some(local_x) = self.background_opacity_slider_local_x(window_x) else {
+            return false;
+        };
+        let delta_ratio = (local_x - drag_state.start_local_x) / slider_width.max(1.0);
+        self.set_background_opacity_preview(drag_state.start_ratio + delta_ratio)
     }
 
     pub(super) fn set_background_opacity_from_slider_position(
         &mut self,
-        pointer_x: f32,
+        window_x: f32,
         slider_width: f32,
-    ) -> Result<bool, String> {
-        let ratio = (pointer_x / slider_width.max(1.0)).clamp(0.0, 1.0);
-        if !self.set_background_opacity_preview(ratio) {
-            return Ok(false);
-        }
-        self.commit_background_opacity()?;
-        Ok(true)
+    ) -> bool {
+        let Some(local_x) = self.background_opacity_slider_local_x(window_x) else {
+            return false;
+        };
+        let ratio = Self::background_opacity_ratio_from_local_x(local_x, slider_width);
+        self.set_background_opacity_preview(ratio)
     }
 
     pub(super) fn finish_background_opacity_drag(&mut self) -> Result<bool, String> {
-        let Some((_, start_ratio)) = self.background_opacity_drag_anchor.take() else {
+        let Some(_drag_state) = self.background_opacity_drag_state.take() else {
             return Ok(false);
         };
-        if (self.config.background_opacity - start_ratio).abs() < f32::EPSILON {
+        let saved_ratio = self.config.background_opacity;
+        let ratio = self.effective_background_opacity();
+        if (ratio - saved_ratio).abs() < f32::EPSILON {
+            self.clear_background_opacity_preview();
             return Ok(false);
         }
-        self.commit_background_opacity()?;
-        Ok(true)
+        if let Err(error) = self.persist_background_opacity(ratio) {
+            self.clear_background_opacity_preview();
+            return Err(error);
+        }
+        self.clear_background_opacity_preview();
+        Ok((ratio - saved_ratio).abs() >= f32::EPSILON)
     }
 
     pub(super) fn step_background_opacity(&mut self, delta: i32) -> Result<bool, String> {
         let next = self.config.background_opacity + (delta as f32 * SETTINGS_OPACITY_STEP_RATIO);
-        if !self.set_background_opacity_preview(next) {
+        let next = Self::quantize_background_opacity_ratio(next);
+        if (self.config.background_opacity - next).abs() < f32::EPSILON {
             return Ok(false);
         }
-        self.commit_background_opacity()?;
+        self.clear_background_opacity_preview();
+        self.persist_background_opacity(next)?;
         Ok(true)
     }
 
@@ -930,13 +977,12 @@ impl SettingsWindow {
                 MouseButton::Left,
                 cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
                     cx.stop_propagation();
-                    let x: f32 = event.position.x.into();
-                    match view.set_background_opacity_from_slider_position(x, slider_width) {
-                        Ok(_) => {}
-                        Err(error) => termy_toast::error(error),
+                    let window_x: f32 = event.position.x.into();
+                    if let Some(local_x) = view.background_opacity_slider_local_x(window_x) {
+                        view.set_background_opacity_from_slider_position(window_x, slider_width);
+                        view.begin_background_opacity_drag(local_x);
+                        cx.notify();
                     }
-                    view.begin_background_opacity_drag(x);
-                    cx.notify();
                 }),
             )
             .on_mouse_move(
@@ -945,8 +991,8 @@ impl SettingsWindow {
                         return;
                     }
                     cx.stop_propagation();
-                    let x: f32 = event.position.x.into();
-                    view.update_background_opacity_drag(x, slider_width);
+                    let window_x: f32 = event.position.x.into();
+                    view.update_background_opacity_drag(window_x, slider_width);
                     cx.notify();
                 }),
             )
@@ -973,6 +1019,21 @@ impl SettingsWindow {
                     }
                     cx.notify();
                 }),
+            )
+            .child(
+                canvas(
+                    {
+                        let this = cx.entity().clone();
+                        move |bounds, _, cx| {
+                            this.update(cx, |view, _| {
+                                view.background_opacity_slider_bounds = Some(bounds);
+                            });
+                        }
+                    },
+                    move |_bounds, _, _window, _cx| {},
+                )
+                .absolute()
+                .size_full(),
             )
             .child(
                 div()
@@ -1084,7 +1145,7 @@ impl SettingsWindow {
         let slider_track = self.bg_hover();
         let slider_fill = self.accent_with_alpha(0.9);
         let slider_width = Self::background_opacity_slider_width();
-        let slider_ratio = self.config.background_opacity.clamp(0.0, 1.0);
+        let slider_ratio = self.effective_background_opacity();
         let slider_fill_width = slider_ratio * slider_width;
         let slider_thumb_left = (slider_fill_width - 7.0).clamp(0.0, slider_width - 14.0);
         let percentage = format!("{}%", (slider_ratio * 100.0).round() as i32);
@@ -1157,5 +1218,63 @@ impl SettingsWindow {
             );
 
         self.wrap_setting_with_scroll_anchor(search_key, row.into_any_element())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SettingsWindow;
+
+    #[test]
+    fn background_opacity_ratio_from_local_x_clamps() {
+        assert_eq!(
+            SettingsWindow::background_opacity_ratio_from_local_x(-10.0, 120.0),
+            0.0
+        );
+        assert_eq!(
+            SettingsWindow::background_opacity_ratio_from_local_x(60.0, 120.0),
+            0.5
+        );
+        assert_eq!(
+            SettingsWindow::background_opacity_ratio_from_local_x(200.0, 120.0),
+            1.0
+        );
+    }
+
+    #[test]
+    fn background_opacity_local_x_from_window_x_accounts_for_slider_offset() {
+        assert_eq!(
+            SettingsWindow::background_opacity_local_x_from_window_x(260.0, 200.0, 120.0),
+            60.0
+        );
+        assert_eq!(
+            SettingsWindow::background_opacity_local_x_from_window_x(500.0, 200.0, 120.0),
+            120.0
+        );
+    }
+
+    #[test]
+    fn drag_delta_uses_slider_local_coordinates() {
+        let slider_width = 120.0;
+        let slider_left = 200.0;
+        let start_window_x = 260.0;
+        let current_window_x = 296.0;
+        let start_local_x = SettingsWindow::background_opacity_local_x_from_window_x(
+            start_window_x,
+            slider_left,
+            slider_width,
+        );
+        let current_local_x = SettingsWindow::background_opacity_local_x_from_window_x(
+            current_window_x,
+            slider_left,
+            slider_width,
+        );
+
+        let delta_ratio = (current_local_x - start_local_x) / slider_width;
+        let next_ratio = SettingsWindow::quantize_background_opacity_ratio(0.5 + delta_ratio);
+
+        assert_eq!(start_local_x, 60.0);
+        assert_eq!(current_local_x, 96.0);
+        assert_eq!(next_ratio, 0.8);
     }
 }
