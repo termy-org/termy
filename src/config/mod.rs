@@ -1,6 +1,7 @@
 mod error;
 mod io;
 mod mutate;
+mod preview;
 
 use crate::theme_store;
 use std::time::Duration;
@@ -16,6 +17,11 @@ pub use io::{ensure_config_file, open_config_file, subscribe_config_changes};
 pub use mutate::{
     import_colors_from_json, remove_root_setting, set_color_setting, set_keybind_lines,
     set_root_setting, set_theme_in_config,
+};
+pub use preview::{
+    current_background_opacity_preview, effective_background_opacity,
+    publish_background_opacity_preview, subscribe_background_opacity_preview,
+    synced_background_opacity_preview,
 };
 pub use termy_config_core::{
     AiProvider, AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors,

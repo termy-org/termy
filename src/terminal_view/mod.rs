@@ -1110,6 +1110,7 @@ pub struct TerminalView {
     cursor_blink: bool,
     cursor_blink_visible: bool,
     background_opacity: f32,
+    preview_background_opacity: Option<f32>,
     background_blur: bool,
     background_support_context: BackgroundSupportContext,
     last_window_background_appearance: Option<WindowBackgroundAppearance>,
@@ -1569,15 +1570,22 @@ impl TerminalView {
     }
 
     fn background_opacity_factor(&self) -> f32 {
-        background_opacity_factor(self.background_opacity)
+        background_opacity_factor(self.effective_background_opacity())
     }
 
     fn scaled_background_alpha(&self, base_alpha: f32) -> f32 {
-        scaled_background_alpha_for_opacity(base_alpha, self.background_opacity)
+        scaled_background_alpha_for_opacity(base_alpha, self.effective_background_opacity())
     }
 
     fn scaled_chrome_alpha(&self, base_alpha: f32) -> f32 {
-        scaled_chrome_alpha_for_opacity(base_alpha, self.background_opacity)
+        scaled_chrome_alpha_for_opacity(base_alpha, self.effective_background_opacity())
+    }
+
+    fn effective_background_opacity(&self) -> f32 {
+        config::effective_background_opacity(
+            self.background_opacity,
+            self.preview_background_opacity,
+        )
     }
 
     fn tab_switch_hints_blocked(&self) -> bool {
@@ -1753,7 +1761,7 @@ impl TerminalView {
     }
 
     fn overlay_style(&self) -> OverlayStyleBuilder<'_> {
-        OverlayStyleBuilder::new(&self.colors, self.background_opacity)
+        OverlayStyleBuilder::new(&self.colors, self.effective_background_opacity())
     }
 
     fn ensure_overlay_view(&mut self, cx: &mut Context<Self>) -> Entity<TerminalOverlayView> {
@@ -2043,7 +2051,7 @@ impl TerminalView {
 
     fn sync_window_background_appearance(&mut self, window: &mut Window) {
         let resolved = resolve_background_appearance(
-            self.background_opacity,
+            self.effective_background_opacity(),
             self.background_blur,
             self.background_support_context,
         );
@@ -2069,8 +2077,11 @@ impl TerminalView {
         let blur_focus_handle = focus_handle.clone();
         let (event_wakeup_tx, event_wakeup_rx) = bounded(1);
         let config_change_rx = config::subscribe_config_changes();
+        let background_opacity_preview_rx = config::subscribe_background_opacity_preview();
         #[cfg(test)]
         let _ = &config_change_rx;
+        #[cfg(test)]
+        let _ = &background_opacity_preview_rx;
 
         // Focus the terminal immediately
         focus_handle.focus(window, cx);
@@ -2261,6 +2272,7 @@ impl TerminalView {
             cursor_blink: config.cursor_blink,
             cursor_blink_visible: true,
             background_opacity: config.background_opacity,
+            preview_background_opacity: config::current_background_opacity_preview(),
             background_blur: config.background_blur,
             background_support_context,
             last_window_background_appearance: None,
@@ -2386,6 +2398,33 @@ impl TerminalView {
             }
         })
         .detach();
+
+        #[cfg(not(test))]
+        {
+            cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                loop {
+                    let wait_rx = background_opacity_preview_rx.clone();
+                    let Ok(mut opacity) = smol::unblock(move || wait_rx.recv()).await else {
+                        break;
+                    };
+                    while let Ok(next_opacity) = background_opacity_preview_rx.try_recv() {
+                        opacity = next_opacity;
+                    }
+                    let result = cx.update(|cx| {
+                        this.update(cx, |view, cx| {
+                            if view.preview_background_opacity != opacity {
+                                view.preview_background_opacity = opacity;
+                                cx.notify();
+                            }
+                        })
+                    });
+                    if result.is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
 
         #[cfg(target_os = "macos")]
         if config.auto_update {
@@ -2536,6 +2575,10 @@ impl TerminalView {
             self.mark_tab_strip_layout_dirty();
         }
         self.background_opacity = config.background_opacity;
+        self.preview_background_opacity = config::synced_background_opacity_preview(
+            self.background_opacity,
+            self.preview_background_opacity,
+        );
         self.background_blur = config.background_blur;
         self.padding_x = config.padding_x.max(0.0);
         self.padding_y = config.padding_y.max(0.0);
@@ -3136,5 +3179,35 @@ mod tests {
         assert_eq!(pane.top, 0);
         assert_eq!(pane.width, 120);
         assert_eq!(pane.height, 42);
+    }
+
+    #[test]
+    fn terminal_effective_background_opacity_prefers_preview() {
+        assert_eq!(config::effective_background_opacity(0.9, Some(0.35)), 0.35);
+        assert_eq!(config::effective_background_opacity(0.9, None), 0.9);
+    }
+
+    #[test]
+    fn terminal_preview_clears_when_saved_matches() {
+        assert_eq!(config::synced_background_opacity_preview(0.35, Some(0.35)), None);
+        assert_eq!(
+            config::synced_background_opacity_preview(0.35, Some(0.5)),
+            Some(0.5)
+        );
+    }
+
+    #[test]
+    fn resolve_background_appearance_uses_preview_opacity_during_drag() {
+        let effective_opacity = config::effective_background_opacity(1.0, Some(0.4));
+        let resolved = resolve_background_appearance(
+            effective_opacity,
+            false,
+            BackgroundSupportContext {
+                platform: BackgroundPlatform::MacOs,
+                linux_wayland_session: false,
+            },
+        );
+
+        assert_eq!(resolved.appearance, WindowBackgroundAppearance::Transparent);
     }
 }
