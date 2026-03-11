@@ -301,8 +301,7 @@ impl TerminalView {
         }
 
         for tab in &self.tabs {
-            let tab_uses_native_split_padding =
-                !self.runtime_uses_tmux() && tab.panes.len() > 1;
+            let tab_uses_native_split_padding = !self.runtime_uses_tmux() && tab.panes.len() > 1;
             let (content_padding_x, content_padding_y) = if tab_uses_native_split_padding {
                 (self.padding_x, self.padding_y)
             } else {

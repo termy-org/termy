@@ -1063,8 +1063,8 @@ impl SettingsWindow {
         };
         let result = match field {
             EditableField::BackgroundOpacity => {
-                let next =
-                    (self.config.background_opacity + (delta as f32 * step.delta)).clamp(step.min, step.max);
+                let next = (self.config.background_opacity + (delta as f32 * step.delta))
+                    .clamp(step.min, step.max);
                 self.clear_background_opacity_preview();
                 self.persist_background_opacity(next)
             }

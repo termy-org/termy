@@ -19,7 +19,8 @@ impl SettingsWindow {
     pub(super) fn sync_window_background_appearance(&mut self, window: &mut Window) {
         let mut preview_config = self.config.clone();
         preview_config.background_opacity = self.effective_background_opacity();
-        let appearance = crate::terminal_view::initial_window_background_appearance(&preview_config);
+        let appearance =
+            crate::terminal_view::initial_window_background_appearance(&preview_config);
         if self.last_window_background_appearance != Some(appearance) {
             window.set_background_appearance(appearance);
             self.last_window_background_appearance = Some(appearance);

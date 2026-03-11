@@ -37,9 +37,11 @@ pub fn publish_background_opacity_preview(preview: Option<BackgroundOpacityPrevi
 fn test_subscriber_is_alive(tx: &flume::Sender<Option<BackgroundOpacityPreview>>) -> bool {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    catch_unwind(AssertUnwindSafe(|| tx.send(current_background_opacity_preview())))
-        .ok()
-        .is_some_and(|result| result.is_ok())
+    catch_unwind(AssertUnwindSafe(|| {
+        tx.send(current_background_opacity_preview())
+    }))
+    .ok()
+    .is_some_and(|result| result.is_ok())
 }
 
 pub fn subscribe_background_opacity_preview() -> flume::Receiver<Option<BackgroundOpacityPreview>> {
@@ -101,7 +103,10 @@ mod tests {
 
         publish_background_opacity_preview(Some(preview(7, 0.45)));
 
-        assert_eq!(rx.recv().expect("preview notification"), Some(preview(7, 0.45)));
+        assert_eq!(
+            rx.recv().expect("preview notification"),
+            Some(preview(7, 0.45))
+        );
     }
 
     #[test]
@@ -138,7 +143,10 @@ mod tests {
         let _guard = TEST_LOCK
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        assert_eq!(synced_background_opacity_preview(0.4, Some(preview(7, 0.4))), None);
+        assert_eq!(
+            synced_background_opacity_preview(0.4, Some(preview(7, 0.4))),
+            None
+        );
         assert_eq!(
             synced_background_opacity_preview(0.4, Some(preview(7, 0.6))),
             Some(preview(7, 0.6))

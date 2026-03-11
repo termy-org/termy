@@ -14,7 +14,10 @@ use gpui::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::{LazyLock, atomic::{AtomicU64, Ordering}};
+use std::sync::{
+    LazyLock,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::{Duration, Instant};
 use termy_command_core::CommandId;
 use termy_config_core::{
@@ -685,9 +688,9 @@ impl SettingsWindow {
         );
         if synced_preview != previous_preview {
             self.preview_background_opacity = synced_preview;
-            if previous_preview.is_some_and(|preview| {
-                preview.owner_id == self.background_opacity_preview_owner_id
-            }) && self.background_opacity_drag_state.is_none()
+            if previous_preview
+                .is_some_and(|preview| preview.owner_id == self.background_opacity_preview_owner_id)
+                && self.background_opacity_drag_state.is_none()
             {
                 config::publish_background_opacity_preview(None);
             }

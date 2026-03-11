@@ -395,10 +395,7 @@ impl SettingsWindow {
         self.render_settings_group("SCROLLING", rows)
     }
 
-    pub(super) fn render_terminal_clipboard_group(
-        &mut self,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    pub(super) fn render_terminal_clipboard_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let copy_on_select = self.config.copy_on_select;
         let copy_on_select_toast = self.config.copy_on_select_toast;
 

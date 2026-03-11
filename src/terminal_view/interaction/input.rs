@@ -13,6 +13,84 @@ fn should_defer_key_down_to_ime(keystroke: &gpui::Keystroke) -> bool {
         )
 }
 
+fn shell_quote_path(path: &Path) -> String {
+    let path_str = path.to_string_lossy();
+    let mut quoted = String::with_capacity(path_str.len() + 2);
+    quoted.push('\'');
+    quoted.push_str(&path_str.replace('\'', "'\\''"));
+    quoted.push('\'');
+    quoted
+}
+
+fn shell_quote_paths(paths: &[PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|path| shell_quote_path(path))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn image_extension(format: gpui::ImageFormat) -> &'static str {
+    match format {
+        gpui::ImageFormat::Gif => "gif",
+        gpui::ImageFormat::Png => "png",
+        gpui::ImageFormat::Jpeg => "jpg",
+        gpui::ImageFormat::Webp => "webp",
+        gpui::ImageFormat::Bmp => "bmp",
+        gpui::ImageFormat::Tiff => "tiff",
+        gpui::ImageFormat::Svg => "svg",
+        gpui::ImageFormat::Ico => "ico",
+    }
+}
+
+fn clipboard_image_cache_dir() -> PathBuf {
+    env::temp_dir().join("termy-clipboard-images")
+}
+
+fn write_clipboard_image_to_temp_file(image: &gpui::Image) -> std::io::Result<PathBuf> {
+    let dir = clipboard_image_cache_dir();
+    std::fs::create_dir_all(&dir)?;
+
+    let path = dir.join(format!(
+        "clipboard-image-{}.{}",
+        image.id(),
+        image_extension(image.format())
+    ));
+    if !path.exists() {
+        std::fs::write(&path, image.bytes())?;
+    }
+
+    Ok(path)
+}
+
+fn clipboard_item_to_terminal_paste_input(
+    item: &ClipboardItem,
+) -> std::io::Result<Option<Vec<u8>>> {
+    if let Some(text) = item.text() {
+        return Ok(Some(text.into_bytes()));
+    }
+
+    let Some(entry) = item.entries().iter().find(|entry| {
+        matches!(
+            entry,
+            gpui::ClipboardEntry::ExternalPaths(_) | gpui::ClipboardEntry::Image(_)
+        )
+    }) else {
+        return Ok(None);
+    };
+
+    match entry {
+        gpui::ClipboardEntry::ExternalPaths(paths) => {
+            Ok(Some(shell_quote_paths(paths.paths()).into_bytes()))
+        }
+        gpui::ClipboardEntry::Image(image) => {
+            let path = write_clipboard_image_to_temp_file(image)?;
+            Ok(Some(shell_quote_path(&path).into_bytes()))
+        }
+        gpui::ClipboardEntry::String(_) => Ok(None),
+    }
+}
+
 impl TerminalView {
     fn maybe_suppress_tab_switch_hint_for_key_down(
         &mut self,
@@ -190,10 +268,20 @@ impl TerminalView {
                 if self.paste_clipboard_into_active_inline_input(cx) {
                     return true;
                 }
-                if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                    self.write_terminal_paste_input(text.as_bytes(), cx);
-                    self.clear_selection();
-                    cx.notify();
+                if let Some(item) = cx.read_from_clipboard() {
+                    match clipboard_item_to_terminal_paste_input(&item) {
+                        Ok(Some(input)) => {
+                            self.write_terminal_paste_input(&input, cx);
+                            self.clear_selection();
+                            cx.notify();
+                        }
+                        Ok(None) => self.write_paste_fallback_input(cx),
+                        Err(error) => {
+                            termy_toast::error(format!(
+                                "Failed to prepare clipboard image for paste: {error}"
+                            ));
+                        }
+                    }
                 } else {
                     self.write_paste_fallback_input(cx);
                 }
@@ -282,17 +370,7 @@ impl TerminalView {
             return;
         }
 
-        let mut text = String::new();
-        for (i, path) in paths_list.iter().enumerate() {
-            if i > 0 {
-                text.push(' ');
-            }
-            let path_str = path.to_string_lossy();
-            text.push('\'');
-            text.push_str(&path_str.replace('\'', "'\\''"));
-            text.push('\'');
-        }
-
+        let text = shell_quote_paths(paths_list);
         self.write_terminal_paste_input(text.as_bytes(), cx);
         cx.notify();
     }
@@ -300,8 +378,12 @@ impl TerminalView {
 
 #[cfg(test)]
 mod tests {
-    use super::should_defer_key_down_to_ime;
+    use super::{
+        clipboard_item_to_terminal_paste_input, image_extension, shell_quote_paths,
+        should_defer_key_down_to_ime,
+    };
     use gpui::{Keystroke, Modifiers};
+    use std::path::PathBuf;
 
     fn keystroke(key: &str, key_char: Option<&str>, modifiers: Modifiers) -> Keystroke {
         Keystroke {
@@ -360,5 +442,47 @@ mod tests {
             None,
             Modifiers::default(),
         )));
+    }
+
+    #[test]
+    fn shell_quote_paths_escapes_single_quotes() {
+        let paths = vec![
+            PathBuf::from("/tmp/normal.png"),
+            PathBuf::from("/tmp/quote's test.png"),
+        ];
+
+        assert_eq!(
+            shell_quote_paths(&paths),
+            "'/tmp/normal.png' '/tmp/quote'\\''s test.png'"
+        );
+    }
+
+    #[test]
+    fn clipboard_image_paste_materializes_a_quoted_temp_path() {
+        let item = gpui::ClipboardItem::new_image(&gpui::Image::from_bytes(
+            gpui::ImageFormat::Png,
+            vec![1, 2, 3, 4],
+        ));
+
+        let input = clipboard_item_to_terminal_paste_input(&item)
+            .expect("clipboard image should serialize")
+            .expect("clipboard image should produce paste input");
+        let text = String::from_utf8(input).expect("path should be utf8");
+
+        assert!(text.starts_with('\''));
+        assert!(text.ends_with(".png'"));
+        assert!(text.contains("termy-clipboard-images"));
+    }
+
+    #[test]
+    fn image_extension_matches_expected_file_suffixes() {
+        assert_eq!(image_extension(gpui::ImageFormat::Gif), "gif");
+        assert_eq!(image_extension(gpui::ImageFormat::Png), "png");
+        assert_eq!(image_extension(gpui::ImageFormat::Jpeg), "jpg");
+        assert_eq!(image_extension(gpui::ImageFormat::Webp), "webp");
+        assert_eq!(image_extension(gpui::ImageFormat::Bmp), "bmp");
+        assert_eq!(image_extension(gpui::ImageFormat::Tiff), "tiff");
+        assert_eq!(image_extension(gpui::ImageFormat::Svg), "svg");
+        assert_eq!(image_extension(gpui::ImageFormat::Ico), "ico");
     }
 }
