@@ -1,6 +1,25 @@
 use super::*;
 
 impl TerminalView {
+    fn format_terminal_buffer_position(position: SelectionPos) -> String {
+        format!(
+            "Buffer Position: Line {}, Column {}",
+            position.line, position.col
+        )
+    }
+
+    fn copyable_terminal_buffer_position(position: SelectionPos) -> String {
+        format!("line={},col={}", position.line, position.col)
+    }
+
+    fn terminal_context_menu_buffer_position(
+        &self,
+        position: gpui::Point<Pixels>,
+    ) -> Option<SelectionPos> {
+        let (_, buffer_position) = self.position_to_pane_selection_pos(position, false)?;
+        Some(buffer_position)
+    }
+
     fn terminal_context_menu_capabilities(
         &self,
         cx: &mut Context<Self>,
@@ -23,6 +42,7 @@ impl TerminalView {
             termy_native_sdk::ContextMenuAction::Copy => Some(CommandAction::Copy),
             termy_native_sdk::ContextMenuAction::Paste => Some(CommandAction::Paste),
             termy_native_sdk::ContextMenuAction::OpenSearch => Some(CommandAction::OpenSearch),
+            termy_native_sdk::ContextMenuAction::CopyBufferPosition => None,
             termy_native_sdk::ContextMenuAction::AskAi
             | termy_native_sdk::ContextMenuAction::SearchGoogle => None,
         }
@@ -49,6 +69,27 @@ impl TerminalView {
         let _ = self.execute_input_command_action(action, cx);
     }
 
+    pub(in super::super) fn execute_terminal_context_menu_copy_buffer_position(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(position) = self
+            .terminal_context_menu
+            .as_ref()
+            .and_then(|state| state.buffer_position)
+        else {
+            let _ = self.close_terminal_context_menu(cx);
+            return;
+        };
+
+        let _ = self.close_terminal_context_menu(cx);
+        cx.write_to_clipboard(ClipboardItem::new_string(
+            Self::copyable_terminal_buffer_position(position),
+        ));
+        termy_toast::success("Copied buffer position");
+        self.notify_overlay(cx);
+    }
+
     fn execute_terminal_context_menu_action(
         &mut self,
         action: termy_native_sdk::ContextMenuAction,
@@ -61,6 +102,11 @@ impl TerminalView {
             } else {
                 self.execute_terminal_context_menu_command(command_action, cx);
             }
+            return;
+        }
+
+        if action == termy_native_sdk::ContextMenuAction::CopyBufferPosition {
+            self.execute_terminal_context_menu_copy_buffer_position(cx);
             return;
         }
 
@@ -112,6 +158,7 @@ impl TerminalView {
     #[cfg(not(target_os = "linux"))]
     fn schedule_native_terminal_context_menu(
         &mut self,
+        buffer_position_label: Option<String>,
         can_copy: bool,
         can_paste: bool,
         can_ask_ai: bool,
@@ -121,6 +168,7 @@ impl TerminalView {
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let action = smol::unblock(move || {
                 termy_native_sdk::show_copy_paste_context_menu(
+                    buffer_position_label,
                     can_copy,
                     can_paste,
                     can_ask_ai,
@@ -128,12 +176,13 @@ impl TerminalView {
                 )
             })
             .await;
-            let Some(action) = action else {
-                return;
-            };
 
             let _ = cx.update(|cx| {
                 this.update(cx, |view, cx| {
+                    let Some(action) = action else {
+                        let _ = view.close_terminal_context_menu(cx);
+                        return;
+                    };
                     view.execute_terminal_context_menu_action(action, cx);
                 })
             });
@@ -148,18 +197,23 @@ impl TerminalView {
     ) {
         let (can_copy, can_paste, can_ask_ai, can_search_google) =
             self.terminal_context_menu_capabilities(cx);
+        let buffer_position = self.terminal_context_menu_buffer_position(position);
+        let buffer_position_label = buffer_position.map(Self::format_terminal_buffer_position);
+        let state = TerminalContextMenuState {
+            anchor_position: position,
+            buffer_position,
+            can_copy,
+            can_paste,
+            can_ask_ai,
+            can_search_google,
+        };
+        #[cfg(target_os = "linux")]
+        let state_changed = self.terminal_context_menu.as_ref() != Some(&state);
+        self.terminal_context_menu = Some(state);
 
         #[cfg(target_os = "linux")]
         {
-            let state = TerminalContextMenuState {
-                anchor_position: position,
-                can_copy,
-                can_paste,
-                can_ask_ai,
-                can_search_google,
-            };
-            if self.terminal_context_menu != Some(state) {
-                self.terminal_context_menu = Some(state);
+            if state_changed {
                 self.notify_overlay(cx);
             }
         }
@@ -168,6 +222,7 @@ impl TerminalView {
         {
             let _ = position;
             self.schedule_native_terminal_context_menu(
+                buffer_position_label,
                 can_copy,
                 can_paste,
                 can_ask_ai,
@@ -204,6 +259,12 @@ mod tests {
         );
         assert_eq!(
             TerminalView::command_action_for_context_menu_action(
+                termy_native_sdk::ContextMenuAction::CopyBufferPosition
+            ),
+            None
+        );
+        assert_eq!(
+            TerminalView::command_action_for_context_menu_action(
                 termy_native_sdk::ContextMenuAction::AskAi
             ),
             None
@@ -213,6 +274,18 @@ mod tests {
                 termy_native_sdk::ContextMenuAction::SearchGoogle
             ),
             None
+        );
+    }
+
+    #[test]
+    fn buffer_position_label_uses_terminal_coordinates() {
+        assert_eq!(
+            TerminalView::format_terminal_buffer_position(SelectionPos { col: 12, line: -3 }),
+            "Buffer Position: Line -3, Column 12"
+        );
+        assert_eq!(
+            TerminalView::copyable_terminal_buffer_position(SelectionPos { col: 12, line: -3 }),
+            "line=-3,col=12"
         );
     }
 }

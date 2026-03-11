@@ -306,6 +306,16 @@ fn resolve_pane_cell_for_position(
 }
 
 impl TerminalView {
+    fn selection_pos_for_cell_with_display_offset(
+        cell: CellPos,
+        display_offset: usize,
+    ) -> Option<SelectionPos> {
+        Some(SelectionPos {
+            col: cell.col,
+            line: Self::term_line_from_viewport_row(cell.row, display_offset)?,
+        })
+    }
+
     pub(in super::super) fn position_to_pane_cell(
         &self,
         position: gpui::Point<Pixels>,
@@ -384,13 +394,21 @@ impl TerminalView {
         i32::try_from(row - display_offset).ok()
     }
 
+    pub(in super::super) fn selection_pos_for_pane_cell(
+        &self,
+        pane_id: &str,
+        cell: CellPos,
+    ) -> Option<SelectionPos> {
+        let tab = self.tabs.get(self.active_tab)?;
+        let pane = tab.panes.iter().find(|pane| pane.id == pane_id)?;
+        let (display_offset, _) = pane.terminal.scroll_state();
+        Self::selection_pos_for_cell_with_display_offset(cell, display_offset)
+    }
+
     pub(in super::super) fn selection_pos_for_cell(&self, cell: CellPos) -> Option<SelectionPos> {
         let terminal = self.active_terminal()?;
         let (display_offset, _) = terminal.scroll_state();
-        Some(SelectionPos {
-            col: cell.col,
-            line: Self::term_line_from_viewport_row(cell.row, display_offset)?,
-        })
+        Self::selection_pos_for_cell_with_display_offset(cell, display_offset)
     }
 
     pub(in super::super) fn position_to_cell(
@@ -409,6 +427,16 @@ impl TerminalView {
     ) -> Option<SelectionPos> {
         let cell = self.position_to_cell(position, clamp)?;
         self.selection_pos_for_cell(cell)
+    }
+
+    pub(in super::super) fn position_to_pane_selection_pos(
+        &self,
+        position: gpui::Point<Pixels>,
+        clamp: bool,
+    ) -> Option<(String, SelectionPos)> {
+        let (pane_id, cell) = self.position_to_pane_cell(position, clamp)?;
+        let selection_pos = self.selection_pos_for_pane_cell(&pane_id, cell)?;
+        Some((pane_id, selection_pos))
     }
 
     pub(in super::super) fn selected_text(&self) -> Option<String> {
@@ -626,6 +654,14 @@ mod tests {
         assert_eq!(
             TerminalView::viewport_row_from_term_line(line.unwrap(), 4),
             Some(0)
+        );
+    }
+
+    #[test]
+    fn selection_pos_for_cell_with_display_offset_keeps_col_and_maps_line() {
+        assert_eq!(
+            TerminalView::selection_pos_for_cell_with_display_offset(CellPos { col: 7, row: 2 }, 4,),
+            Some(SelectionPos { col: 7, line: -2 })
         );
     }
 

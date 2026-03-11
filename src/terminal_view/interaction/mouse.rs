@@ -1,8 +1,195 @@
 use super::*;
 
 const SELECTION_DRAG_AUTOSCROLL_MAX_LINES: i32 = 3;
+const CURSOR_MOVE_PREVIEW_MS: u64 = 75;
 
 impl TerminalView {
+    fn is_plain_click_cursor_move_gesture(modifiers: gpui::Modifiers, click_count: usize) -> bool {
+        click_count == 1
+            && !modifiers.control
+            && !modifiers.alt
+            && !modifiers.shift
+            && !modifiers.platform
+            && !modifiers.function
+    }
+
+    fn click_cursor_move_allowed_for_state(
+        runtime_kind: RuntimeKind,
+        running_process: bool,
+        has_current_command: bool,
+        alternate_screen_mode: bool,
+    ) -> bool {
+        if running_process || alternate_screen_mode {
+            return false;
+        }
+
+        match runtime_kind {
+            RuntimeKind::Tmux => true,
+            RuntimeKind::Native => !has_current_command,
+        }
+    }
+
+    fn cursor_move_input_for_click_target(cursor: CellPos, target: CellPos) -> Option<Vec<u8>> {
+        if cursor.row != target.row || cursor.col == target.col {
+            return None;
+        }
+
+        let (sequence, repeats) = if target.col > cursor.col {
+            (b"\x1b[C".as_slice(), target.col - cursor.col)
+        } else {
+            (b"\x1b[D".as_slice(), cursor.col - target.col)
+        };
+
+        let mut input = Vec::with_capacity(sequence.len() * repeats);
+        for _ in 0..repeats {
+            input.extend_from_slice(sequence);
+        }
+        Some(input)
+    }
+
+    fn pending_cursor_move_click_for_mouse_down(
+        &self,
+        event: &MouseDownEvent,
+    ) -> Option<PendingCursorMoveClick> {
+        if event.button != MouseButton::Left
+            || !Self::is_plain_click_cursor_move_gesture(event.modifiers, event.click_count)
+        {
+            return None;
+        }
+
+        let (pane_id, target) = self.position_to_pane_cell(event.position, false)?;
+        let selection_start = self.selection_pos_for_pane_cell(pane_id.as_str(), target)?;
+        let terminal = self.pane_terminal_by_id(pane_id.as_str())?;
+        let tab = self.tabs.get(self.active_tab)?;
+        let runtime_kind = self.runtime_kind();
+        if !Self::click_cursor_move_allowed_for_state(
+            runtime_kind,
+            tab.running_process,
+            tab.current_command.is_some(),
+            terminal.alternate_screen_mode(),
+        ) {
+            return None;
+        }
+
+        Some(PendingCursorMoveClick {
+            pane_id,
+            selection_start,
+            start_cell: target,
+            target,
+        })
+    }
+
+    fn begin_selection_drag_from_pending_cursor_move(
+        &mut self,
+        position: gpui::Point<Pixels>,
+    ) -> bool {
+        let Some(pending) = self.pending_cursor_move_click.as_ref() else {
+            return false;
+        };
+        let Some((pane_id, cell)) = self.position_to_pane_cell(position, true) else {
+            return false;
+        };
+        if !Self::pending_cursor_move_starts_selection(pending, pane_id.as_str(), cell) {
+            return false;
+        }
+
+        let Some(selection_head) = self.selection_pos_for_pane_cell(pane_id.as_str(), cell) else {
+            return false;
+        };
+        let selection_start = pending.selection_start;
+        self.pending_cursor_move_click = None;
+        self.selection_anchor = Some(selection_start);
+        self.selection_head = Some(selection_head);
+        self.selection_dragging = true;
+        self.selection_moved = selection_start != selection_head;
+        true
+    }
+
+    fn pending_cursor_move_starts_selection(
+        pending: &PendingCursorMoveClick,
+        pane_id: &str,
+        cell: CellPos,
+    ) -> bool {
+        pending.pane_id == pane_id && cell != pending.start_cell
+    }
+
+    fn maybe_move_cursor_to_click_target(&mut self, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_cursor_move_click.take() else {
+            return;
+        };
+        if !self.is_active_pane_id(pending.pane_id.as_str()) {
+            return;
+        }
+
+        let Some(terminal) = self.pane_terminal_by_id(pending.pane_id.as_str()) else {
+            return;
+        };
+        let (cursor_col, cursor_row) = terminal.cursor_position();
+        let Some(input) = Self::cursor_move_input_for_click_target(
+            CellPos {
+                col: cursor_col,
+                row: cursor_row,
+            },
+            pending.target,
+        ) else {
+            return;
+        };
+
+        let cursor_style = terminal
+            .cursor_state()
+            .map(|cursor_state| cursor_state.style)
+            .unwrap_or(TerminalCursorStyle::Block);
+        self.start_cursor_move_preview(
+            PendingCursorMovePreview {
+                pane_id: pending.pane_id,
+                target: pending.target,
+                style: cursor_style,
+            },
+            cx,
+        );
+        self.write_terminal_input(&input, cx);
+    }
+
+    fn start_cursor_move_preview(
+        &mut self,
+        preview: PendingCursorMovePreview,
+        cx: &mut Context<Self>,
+    ) {
+        self.pending_cursor_move_preview = Some(preview.clone());
+        cx.notify();
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            smol::Timer::after(Duration::from_millis(CURSOR_MOVE_PREVIEW_MS)).await;
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    if view.pending_cursor_move_preview.as_ref() == Some(&preview) {
+                        view.pending_cursor_move_preview = None;
+                        cx.notify();
+                    }
+                })
+            });
+        })
+        .detach();
+    }
+
+    fn finish_pending_cursor_move_click(
+        &mut self,
+        button: MouseButton,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if button != MouseButton::Left || self.pending_cursor_move_click.is_none() {
+            return false;
+        }
+
+        let selection_changed = self.clear_selection();
+        let hovered_link_changed = self.clear_hovered_link();
+        self.maybe_move_cursor_to_click_target(cx);
+        if selection_changed || hovered_link_changed {
+            cx.notify();
+        }
+        true
+    }
+
     fn apply_vertical_tab_strip_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
         if self.vertical_tab_strip_resize_drag.is_none() || self.vertical_tabs_minimized {
             return false;
@@ -585,7 +772,9 @@ impl TerminalView {
         self.selection_dragging = false;
         if !self.selection_moved {
             self.clear_selection();
+            self.maybe_move_cursor_to_click_target(cx);
         } else {
+            self.pending_cursor_move_click = None;
             self.copy_selection_to_clipboard_if_enabled(cx);
         }
         self.clear_hovered_link();
@@ -639,6 +828,14 @@ impl TerminalView {
             return;
         }
 
+        if event.pressed_button == Some(MouseButton::Left)
+            && self.begin_selection_drag_from_pending_cursor_move(event.position)
+        {
+            self.clear_hovered_link();
+            cx.notify();
+            return;
+        }
+
         if event.pressed_button != Some(MouseButton::Left) || !self.selection_dragging {
             return;
         }
@@ -678,6 +875,10 @@ impl TerminalView {
             return true;
         }
 
+        if self.finish_pending_cursor_move_click(event.button, cx) {
+            return true;
+        }
+
         if !Self::should_finish_selection_drag(event.button, self.selection_dragging) {
             return false;
         }
@@ -691,6 +892,9 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.pending_cursor_move_click = None;
+        self.pending_cursor_move_preview = None;
+
         // Focus the terminal on click
         self.focus_handle.focus(window, cx);
         self.reset_cursor_blink_phase();
@@ -796,6 +1000,14 @@ impl TerminalView {
             cx.notify();
             return;
         };
+
+        self.pending_cursor_move_click = self.pending_cursor_move_click_for_mouse_down(event);
+        if self.pending_cursor_move_click.is_some() {
+            if self.clear_hovered_link() {
+                cx.notify();
+            }
+            return;
+        }
 
         self.selection_anchor = Some(selection_pos);
         self.selection_head = Some(selection_pos);
@@ -956,6 +1168,10 @@ impl TerminalView {
             return;
         }
 
+        if self.finish_pending_cursor_move_click(event.button, cx) {
+            return;
+        }
+
         if !Self::should_finish_selection_drag(event.button, self.selection_dragging) {
             return;
         }
@@ -1027,5 +1243,89 @@ mod tests {
 
         assert!(TerminalView::is_terminal_context_menu_passthrough(shifted));
         assert!(!TerminalView::is_terminal_context_menu_passthrough(plain));
+    }
+
+    #[test]
+    fn cursor_move_input_for_click_target_moves_horizontally_only() {
+        assert_eq!(
+            TerminalView::cursor_move_input_for_click_target(
+                CellPos { col: 2, row: 4 },
+                CellPos { col: 5, row: 4 },
+            ),
+            Some(b"\x1b[C\x1b[C\x1b[C".to_vec())
+        );
+        assert_eq!(
+            TerminalView::cursor_move_input_for_click_target(
+                CellPos { col: 5, row: 4 },
+                CellPos { col: 2, row: 4 },
+            ),
+            Some(b"\x1b[D\x1b[D\x1b[D".to_vec())
+        );
+        assert_eq!(
+            TerminalView::cursor_move_input_for_click_target(
+                CellPos { col: 5, row: 4 },
+                CellPos { col: 2, row: 3 },
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn pending_cursor_move_only_turns_into_selection_after_cell_change() {
+        let pending = PendingCursorMoveClick {
+            pane_id: "%pane".to_string(),
+            selection_start: SelectionPos { col: 2, line: 4 },
+            start_cell: CellPos { col: 2, row: 4 },
+            target: CellPos { col: 8, row: 4 },
+        };
+
+        assert!(!TerminalView::pending_cursor_move_starts_selection(
+            &pending,
+            "%pane",
+            CellPos { col: 2, row: 4 },
+        ));
+        assert!(TerminalView::pending_cursor_move_starts_selection(
+            &pending,
+            "%pane",
+            CellPos { col: 3, row: 4 },
+        ));
+        assert!(!TerminalView::pending_cursor_move_starts_selection(
+            &pending,
+            "%other",
+            CellPos { col: 3, row: 4 },
+        ));
+    }
+
+    #[test]
+    fn cursor_move_preview_timer_matches_expected_budget() {
+        assert_eq!(CURSOR_MOVE_PREVIEW_MS, 75);
+    }
+
+    #[test]
+    fn click_cursor_move_allowed_state_works_without_prompt_markers() {
+        assert!(TerminalView::click_cursor_move_allowed_for_state(
+            RuntimeKind::Native,
+            false,
+            false,
+            false,
+        ));
+        assert!(!TerminalView::click_cursor_move_allowed_for_state(
+            RuntimeKind::Native,
+            false,
+            true,
+            false,
+        ));
+        assert!(!TerminalView::click_cursor_move_allowed_for_state(
+            RuntimeKind::Native,
+            true,
+            false,
+            false,
+        ));
+        assert!(TerminalView::click_cursor_move_allowed_for_state(
+            RuntimeKind::Tmux,
+            false,
+            true,
+            false,
+        ));
     }
 }

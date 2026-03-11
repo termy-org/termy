@@ -163,12 +163,7 @@ impl TerminalView {
 
     fn close_warning_detail(target: CloseRequestTarget, busy_titles: &[String]) -> Option<String> {
         if busy_titles.is_empty() {
-            return match target {
-                CloseRequestTarget::Application | CloseRequestTarget::WindowClose => {
-                    Some("This will close all your current Termy sessions.".to_string())
-                }
-                CloseRequestTarget::TabClose { .. } => None,
-            };
+            return None;
         }
 
         if matches!(target, CloseRequestTarget::TabClose { .. }) {
