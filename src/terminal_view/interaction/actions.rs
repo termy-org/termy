@@ -2,6 +2,10 @@ use super::*;
 use termy_command_core::{CommandCapabilities, CommandUnavailableReason};
 
 impl TerminalView {
+    fn shortcut_action_allowed_with_active_inline_input(action: CommandAction) -> bool {
+        matches!(action, CommandAction::Copy | CommandAction::Paste)
+    }
+
     fn command_palette_mode_for_action(action: CommandAction) -> Option<CommandPaletteMode> {
         match action {
             CommandAction::SwitchTheme => Some(CommandPaletteMode::Themes),
@@ -78,7 +82,9 @@ impl TerminalView {
             }
         }
 
-        let shortcuts_suspended = respect_shortcut_suspend && self.command_shortcuts_suspended();
+        let shortcuts_suspended = respect_shortcut_suspend
+            && self.command_shortcuts_suspended()
+            && !Self::shortcut_action_allowed_with_active_inline_input(action);
 
         match action {
             CommandAction::ToggleCommandPalette => {
@@ -708,6 +714,21 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inline_input_shortcuts_allow_copy_and_paste() {
+        assert!(
+            TerminalView::shortcut_action_allowed_with_active_inline_input(CommandAction::Copy)
+        );
+        assert!(
+            TerminalView::shortcut_action_allowed_with_active_inline_input(CommandAction::Paste)
+        );
+        assert!(
+            !TerminalView::shortcut_action_allowed_with_active_inline_input(
+                CommandAction::OpenSearch
+            )
+        );
+    }
 
     #[test]
     fn switch_theme_action_maps_to_theme_palette_mode() {

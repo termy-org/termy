@@ -976,6 +976,7 @@ actions!(
 
 pub fn inline_input_keybindings() -> Vec<KeyBinding> {
     vec![
+        KeyBinding::new("secondary-c", Copy, INLINE_INPUT_CONTEXT),
         KeyBinding::new("secondary-v", Paste, INLINE_INPUT_CONTEXT),
         KeyBinding::new("backspace", InlineBackspace, INLINE_INPUT_CONTEXT),
         KeyBinding::new("delete", InlineDelete, INLINE_INPUT_CONTEXT),
@@ -1254,6 +1255,11 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn inline_input_keybindings_include_copy_binding() {
+        assert_eq!(inline_input_keybindings().len(), 18);
     }
 
     #[test]

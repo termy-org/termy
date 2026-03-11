@@ -257,6 +257,9 @@ impl TerminalView {
     ) -> bool {
         match action {
             CommandAction::Copy => {
+                if self.copy_active_inline_input_selection(cx) {
+                    return true;
+                }
                 if let Some(selected) = self.selected_text() {
                     cx.write_to_clipboard(ClipboardItem::new_string(selected));
                 } else {

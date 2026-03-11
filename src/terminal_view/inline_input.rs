@@ -127,6 +127,11 @@ impl InlineInputState {
         self.selected_range.clone()
     }
 
+    pub(super) fn selected_text(&self) -> Option<String> {
+        (!self.selected_range.is_empty())
+            .then(|| self.text[self.selected_range.clone()].to_string())
+    }
+
     pub(super) fn select_all(&mut self) {
         self.selection_reversed = false;
         self.selected_range = 0..self.text.len();
@@ -1093,6 +1098,18 @@ impl TerminalView {
         true
     }
 
+    pub(super) fn copy_active_inline_input_selection(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(selected_text) = self
+            .active_inline_input_state()
+            .and_then(InlineInputState::selected_text)
+        else {
+            return self.has_active_inline_input();
+        };
+
+        cx.write_to_clipboard(ClipboardItem::new_string(selected_text));
+        true
+    }
+
     pub(super) fn handle_inline_input_mouse_down(
         &mut self,
         event: &MouseDownEvent,
@@ -1467,6 +1484,21 @@ mod tests {
         state.replace_text_in_range(None, "i");
         assert_eq!(state.text(), "hio");
         assert_eq!(state.selected_range(), 2..2);
+    }
+
+    #[test]
+    fn selected_text_returns_none_without_selection() {
+        let state = InlineInputState::new("hello".to_string());
+
+        assert_eq!(state.selected_text(), None);
+    }
+
+    #[test]
+    fn selected_text_returns_selected_inline_text() {
+        let mut state = InlineInputState::new("hello world".to_string());
+        state.selected_range = 0..5;
+
+        assert_eq!(state.selected_text().as_deref(), Some("hello"));
     }
 
     #[test]
