@@ -213,6 +213,37 @@ fn cursor_state_for_pane(
     )
 }
 
+fn cursor_state_with_preview(
+    preview: Option<&PendingCursorMovePreview>,
+    pane_id: &str,
+    actual: Option<TerminalCursorState>,
+    is_active_pane: bool,
+    cols: usize,
+    rows: usize,
+) -> Option<TerminalCursorState> {
+    let Some(preview) = preview else {
+        return actual;
+    };
+    if !is_active_pane
+        || preview.pane_id != pane_id
+        || preview.target.col >= cols
+        || preview.target.row >= rows
+    {
+        return actual;
+    }
+
+    match actual {
+        Some(cursor) if cursor.col == preview.target.col && cursor.row == preview.target.row => {
+            Some(cursor)
+        }
+        _ => Some(TerminalCursorState {
+            col: preview.target.col,
+            row: preview.target.row,
+            style: preview.style,
+        }),
+    }
+}
+
 type PaneRenderRow = Arc<Vec<CellRenderInfo>>;
 type PaneRenderCells = Arc<Vec<PaneRenderRow>>;
 
@@ -2149,9 +2180,16 @@ impl Render for TerminalView {
                 };
                 // Keep cursor state out of cached cells so blink/overlay redraws don't force
                 // full cell-buffer rebuilds.
-                let pane_cursor_state = cursor_state_for_pane(
-                    terminal,
-                    pane_display_offset,
+                let pane_cursor_state = cursor_state_with_preview(
+                    self.pending_cursor_move_preview.as_ref(),
+                    pane.id.as_str(),
+                    cursor_state_for_pane(
+                        terminal,
+                        pane_display_offset,
+                        is_active_pane,
+                        cols,
+                        rows,
+                    ),
                     is_active_pane,
                     cols,
                     rows,
@@ -2855,6 +2893,48 @@ mod tests {
         assert_eq!(
             filtered_cursor_state(Some(cursor), 0, true, 10, 4),
             Some(cursor)
+        );
+    }
+
+    #[test]
+    fn cursor_state_preview_overrides_until_terminal_catches_up() {
+        let preview = PendingCursorMovePreview {
+            pane_id: "%pane".to_string(),
+            target: CellPos { col: 8, row: 1 },
+            style: TerminalCursorStyle::Line,
+        };
+        let actual = Some(TerminalCursorState {
+            col: 3,
+            row: 1,
+            style: TerminalCursorStyle::Block,
+        });
+
+        assert_eq!(
+            cursor_state_with_preview(Some(&preview), "%pane", actual, true, 10, 4),
+            Some(TerminalCursorState {
+                col: 8,
+                row: 1,
+                style: TerminalCursorStyle::Line,
+            })
+        );
+        assert_eq!(
+            cursor_state_with_preview(
+                Some(&preview),
+                "%pane",
+                Some(TerminalCursorState {
+                    col: 8,
+                    row: 1,
+                    style: TerminalCursorStyle::Block,
+                }),
+                true,
+                10,
+                4,
+            ),
+            Some(TerminalCursorState {
+                col: 8,
+                row: 1,
+                style: TerminalCursorStyle::Block,
+            })
         );
     }
 

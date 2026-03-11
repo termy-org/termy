@@ -225,6 +225,13 @@ struct PendingCursorMoveClick {
     target: CellPos,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PendingCursorMovePreview {
+    pane_id: String,
+    target: CellPos,
+    style: TerminalCursorStyle,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct TerminalScrollbarHit {
     local_y: f32,
@@ -1149,7 +1156,7 @@ pub struct TerminalView {
     selection_dragging: bool,
     selection_moved: bool,
     pending_cursor_move_click: Option<PendingCursorMoveClick>,
-    last_terminal_context_menu_buffer_position: Option<SelectionPos>,
+    pending_cursor_move_preview: Option<PendingCursorMovePreview>,
     terminal_context_menu: Option<TerminalContextMenuState>,
     hovered_link: Option<HoveredLink>,
     hovered_toast: Option<u64>,
@@ -2322,7 +2329,7 @@ impl TerminalView {
             selection_dragging: false,
             selection_moved: false,
             pending_cursor_move_click: None,
-            last_terminal_context_menu_buffer_position: None,
+            pending_cursor_move_preview: None,
             terminal_context_menu: None,
             hovered_link: None,
             hovered_toast: None,

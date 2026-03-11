@@ -304,8 +304,9 @@ pub fn show_copy_paste_context_menu(
         }
         let _menu_guard = MenuGuard(menu);
 
-        if let Some(buffer_position_label) = buffer_position_label {
-            let buffer_position_title = wide_string(&buffer_position_label);
+        let has_buffer_position = buffer_position_label.is_some();
+        if let Some(buffer_position_label) = buffer_position_label.as_ref() {
+            let buffer_position_title = wide_string(buffer_position_label);
             unsafe {
                 AppendMenuW(
                     menu,
@@ -338,7 +339,7 @@ pub fn show_copy_paste_context_menu(
         } else {
             MF_STRING | MF_GRAYED
         };
-        let copy_buffer_position_flags = if buffer_position_label.is_some() {
+        let copy_buffer_position_flags = if has_buffer_position {
             MF_STRING
         } else {
             MF_STRING | MF_GRAYED

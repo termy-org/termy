@@ -73,7 +73,11 @@ impl TerminalView {
         &mut self,
         cx: &mut Context<Self>,
     ) {
-        let Some(position) = self.last_terminal_context_menu_buffer_position else {
+        let Some(position) = self
+            .terminal_context_menu
+            .as_ref()
+            .and_then(|state| state.buffer_position)
+        else {
             let _ = self.close_terminal_context_menu(cx);
             return;
         };
@@ -172,12 +176,13 @@ impl TerminalView {
                 )
             })
             .await;
-            let Some(action) = action else {
-                return;
-            };
 
             let _ = cx.update(|cx| {
                 this.update(cx, |view, cx| {
+                    let Some(action) = action else {
+                        let _ = view.close_terminal_context_menu(cx);
+                        return;
+                    };
                     view.execute_terminal_context_menu_action(action, cx);
                 })
             });
@@ -194,20 +199,21 @@ impl TerminalView {
             self.terminal_context_menu_capabilities(cx);
         let buffer_position = self.terminal_context_menu_buffer_position(position);
         let buffer_position_label = buffer_position.map(Self::format_terminal_buffer_position);
-        self.last_terminal_context_menu_buffer_position = buffer_position;
+        let state = TerminalContextMenuState {
+            anchor_position: position,
+            buffer_position,
+            can_copy,
+            can_paste,
+            can_ask_ai,
+            can_search_google,
+        };
+        #[cfg(target_os = "linux")]
+        let state_changed = self.terminal_context_menu.as_ref() != Some(&state);
+        self.terminal_context_menu = Some(state);
 
         #[cfg(target_os = "linux")]
         {
-            let state = TerminalContextMenuState {
-                anchor_position: position,
-                buffer_position,
-                can_copy,
-                can_paste,
-                can_ask_ai,
-                can_search_google,
-            };
-            if self.terminal_context_menu != Some(state) {
-                self.terminal_context_menu = Some(state);
+            if state_changed {
                 self.notify_overlay(cx);
             }
         }

@@ -1,6 +1,7 @@
 use super::*;
 
 const SELECTION_DRAG_AUTOSCROLL_MAX_LINES: i32 = 3;
+const CURSOR_MOVE_PREVIEW_MS: u64 = 75;
 
 impl TerminalView {
     fn is_plain_click_cursor_move_gesture(modifiers: gpui::Modifiers, click_count: usize) -> bool {
@@ -134,7 +135,41 @@ impl TerminalView {
             return;
         };
 
+        let cursor_style = terminal
+            .cursor_state()
+            .map(|cursor_state| cursor_state.style)
+            .unwrap_or(TerminalCursorStyle::Block);
+        self.start_cursor_move_preview(
+            PendingCursorMovePreview {
+                pane_id: pending.pane_id,
+                target: pending.target,
+                style: cursor_style,
+            },
+            cx,
+        );
         self.write_terminal_input(&input, cx);
+    }
+
+    fn start_cursor_move_preview(
+        &mut self,
+        preview: PendingCursorMovePreview,
+        cx: &mut Context<Self>,
+    ) {
+        self.pending_cursor_move_preview = Some(preview.clone());
+        cx.notify();
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            smol::Timer::after(Duration::from_millis(CURSOR_MOVE_PREVIEW_MS)).await;
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    if view.pending_cursor_move_preview.as_ref() == Some(&preview) {
+                        view.pending_cursor_move_preview = None;
+                        cx.notify();
+                    }
+                })
+            });
+        })
+        .detach();
     }
 
     fn finish_pending_cursor_move_click(
@@ -858,6 +893,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.pending_cursor_move_click = None;
+        self.pending_cursor_move_preview = None;
 
         // Focus the terminal on click
         self.focus_handle.focus(window, cx);
@@ -1258,6 +1294,11 @@ mod tests {
             "%other",
             CellPos { col: 3, row: 4 },
         ));
+    }
+
+    #[test]
+    fn cursor_move_preview_timer_matches_expected_budget() {
+        assert_eq!(CURSOR_MOVE_PREVIEW_MS, 75);
     }
 
     #[test]
