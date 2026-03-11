@@ -826,8 +826,12 @@ impl SettingsWindow {
         if (self.effective_background_opacity() - ratio).abs() < f32::EPSILON {
             return false;
         }
-        self.preview_background_opacity = Some(ratio);
-        config::publish_background_opacity_preview(Some(ratio));
+        let preview = config::BackgroundOpacityPreview {
+            owner_id: self.background_opacity_preview_owner_id,
+            opacity: ratio,
+        };
+        self.preview_background_opacity = Some(preview);
+        config::publish_background_opacity_preview(Some(preview));
         true
     }
 
@@ -890,21 +894,21 @@ impl SettingsWindow {
     }
 
     pub(super) fn finish_background_opacity_drag(&mut self) -> Result<bool, String> {
-        let Some(drag_state) = self.background_opacity_drag_state.take() else {
+        let Some(_drag_state) = self.background_opacity_drag_state.take() else {
             return Ok(false);
         };
+        let saved_ratio = self.config.background_opacity;
         let ratio = self.effective_background_opacity();
-        if (ratio - self.config.background_opacity).abs() < f32::EPSILON {
+        if (ratio - saved_ratio).abs() < f32::EPSILON {
+            self.clear_background_opacity_preview();
             return Ok(false);
         }
         if let Err(error) = self.persist_background_opacity(ratio) {
             self.clear_background_opacity_preview();
             return Err(error);
         }
-        if (ratio - drag_state.start_ratio).abs() < f32::EPSILON {
-            return Ok(false);
-        }
-        Ok(true)
+        self.clear_background_opacity_preview();
+        Ok((ratio - saved_ratio).abs() >= f32::EPSILON)
     }
 
     pub(super) fn step_background_opacity(&mut self, delta: i32) -> Result<bool, String> {

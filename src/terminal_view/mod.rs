@@ -1110,7 +1110,7 @@ pub struct TerminalView {
     cursor_blink: bool,
     cursor_blink_visible: bool,
     background_opacity: f32,
-    preview_background_opacity: Option<f32>,
+    preview_background_opacity: Option<config::BackgroundOpacityPreview>,
     background_blur: bool,
     background_support_context: BackgroundSupportContext,
     last_window_background_appearance: Option<WindowBackgroundAppearance>,
@@ -3183,22 +3183,55 @@ mod tests {
 
     #[test]
     fn terminal_effective_background_opacity_prefers_preview() {
-        assert_eq!(config::effective_background_opacity(0.9, Some(0.35)), 0.35);
+        assert_eq!(
+            config::effective_background_opacity(
+                0.9,
+                Some(config::BackgroundOpacityPreview {
+                    owner_id: 1,
+                    opacity: 0.35,
+                }),
+            ),
+            0.35
+        );
         assert_eq!(config::effective_background_opacity(0.9, None), 0.9);
     }
 
     #[test]
     fn terminal_preview_clears_when_saved_matches() {
-        assert_eq!(config::synced_background_opacity_preview(0.35, Some(0.35)), None);
         assert_eq!(
-            config::synced_background_opacity_preview(0.35, Some(0.5)),
-            Some(0.5)
+            config::synced_background_opacity_preview(
+                0.35,
+                Some(config::BackgroundOpacityPreview {
+                    owner_id: 1,
+                    opacity: 0.35,
+                }),
+            ),
+            None
+        );
+        assert_eq!(
+            config::synced_background_opacity_preview(
+                0.35,
+                Some(config::BackgroundOpacityPreview {
+                    owner_id: 1,
+                    opacity: 0.5,
+                }),
+            ),
+            Some(config::BackgroundOpacityPreview {
+                owner_id: 1,
+                opacity: 0.5,
+            })
         );
     }
 
     #[test]
     fn resolve_background_appearance_uses_preview_opacity_during_drag() {
-        let effective_opacity = config::effective_background_opacity(1.0, Some(0.4));
+        let effective_opacity = config::effective_background_opacity(
+            1.0,
+            Some(config::BackgroundOpacityPreview {
+                owner_id: 1,
+                opacity: 0.4,
+            }),
+        );
         let resolved = resolve_background_appearance(
             effective_opacity,
             false,

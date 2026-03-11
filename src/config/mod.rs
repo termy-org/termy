@@ -19,7 +19,7 @@ pub use mutate::{
     set_root_setting, set_theme_in_config,
 };
 pub use preview::{
-    current_background_opacity_preview, effective_background_opacity,
+    BackgroundOpacityPreview, current_background_opacity_preview, effective_background_opacity,
     publish_background_opacity_preview, subscribe_background_opacity_preview,
     synced_background_opacity_preview,
 };
