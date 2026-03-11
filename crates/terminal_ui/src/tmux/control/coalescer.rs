@@ -1,4 +1,4 @@
-use super::super::types::{TmuxControlError, TmuxNotification};
+use super::super::types::{TmuxControlError, TmuxControlErrorKind, TmuxNotification};
 use flume::{Sender, TrySendError};
 use std::collections::VecDeque;
 
@@ -70,6 +70,17 @@ impl NotificationCoalescer {
     fn handle_output_backpressure(&mut self, dropped_bytes: usize) {
         self.queue_refresh_if_missing();
         self.queue_backpressure_warning_if_missing(dropped_bytes);
+    }
+
+    fn collapse_for_notification_backpressure(&mut self) {
+        // The app-side notification channel overflowed, which means the UI
+        // consumer is behind. Drop stale pending notifications and force one
+        // refresh so the next successful delivery can resynchronize state.
+        self.queued.clear();
+        self.has_refresh_queued = false;
+        self.has_warning_queued = false;
+        self.queued_output_bytes = 0;
+        self.queue_refresh_if_missing();
     }
 
     pub(crate) fn push(
@@ -199,6 +210,15 @@ pub(crate) fn try_send_notification(
     }
 }
 
+fn send_notification_blocking(
+    notifications_tx: &Sender<TmuxNotification>,
+    notification: TmuxNotification,
+) -> std::result::Result<(), TmuxControlError> {
+    notifications_tx
+        .send(notification)
+        .map_err(|_| TmuxControlError::channel("tmux notification channel is closed"))
+}
+
 pub(crate) fn signal_event_wakeup(event_wakeup_tx: Option<&Sender<()>>) {
     let Some(event_wakeup_tx) = event_wakeup_tx else {
         return;
@@ -216,8 +236,26 @@ pub(crate) fn flush_notification_coalescer(
 ) -> std::result::Result<(), TmuxControlError> {
     let mut sent_notifications = false;
     while let Some(notification) = coalescer.pop_next() {
-        try_send_notification(notifications_tx, notification)?;
-        sent_notifications = true;
+        match try_send_notification(notifications_tx, notification) {
+            Ok(()) => {
+                sent_notifications = true;
+            }
+            Err(error)
+                if error.kind == TmuxControlErrorKind::Channel
+                    && error.message.contains("notification queue is full") =>
+            {
+                coalescer.collapse_for_notification_backpressure();
+                signal_event_wakeup(event_wakeup_tx);
+                if let Some(recovery_notification) = coalescer.pop_next() {
+                    // Once the UI drains one stale queued notification, force one refresh
+                    // through immediately so the worker cannot strand recovery state locally.
+                    send_notification_blocking(notifications_tx, recovery_notification)?;
+                    sent_notifications = true;
+                }
+                break;
+            }
+            Err(error) => return Err(error),
+        }
     }
     if sent_notifications {
         signal_event_wakeup(event_wakeup_tx);
@@ -378,5 +416,36 @@ mod tests {
             .expect("flush should succeed");
 
         assert!(event_wakeup_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn notification_flush_queue_overflow_collapses_to_refresh_instead_of_failing() {
+        let mut c = NotificationCoalescer::default();
+        c.push(TmuxNotification::Output {
+            pane_id: "%1".to_string(),
+            bytes: b"bench".to_vec(),
+        })
+        .expect("output");
+
+        let (notifications_tx, notifications_rx) = flume::bounded(1);
+        notifications_tx
+            .send(TmuxNotification::NeedsRefresh)
+            .expect("seed full queue");
+
+        let drain_thread = std::thread::spawn(move || {
+            assert!(matches!(
+                notifications_rx.recv(),
+                Ok(TmuxNotification::NeedsRefresh)
+            ));
+            assert!(matches!(
+                notifications_rx.recv(),
+                Ok(TmuxNotification::NeedsRefresh)
+            ));
+        });
+
+        flush_notification_coalescer(&mut c, &notifications_tx, None)
+            .expect("queue overflow should degrade instead of failing");
+        drain_thread.join().expect("receiver thread should complete");
+        assert!(c.drain().is_empty(), "recovery path should collapse to one refresh");
     }
 }
