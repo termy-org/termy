@@ -32,6 +32,7 @@ pub(super) enum EditableField {
     TabTitleCommandFormat,
     TabCloseVisibility,
     TabWidthMode,
+    VerticalTabsWidth,
     WorkingDirectory,
     WorkingDirFallback,
     WindowWidth,
@@ -439,7 +440,8 @@ impl SettingsWindow {
             | EditableField::TabTitlePromptFormat
             | EditableField::TabTitleCommandFormat
             | EditableField::TabCloseVisibility
-            | EditableField::TabWidthMode => Self::tabs_field_spec(field),
+            | EditableField::TabWidthMode
+            | EditableField::VerticalTabsWidth => Self::tabs_field_spec(field),
             EditableField::WorkingDirectory
             | EditableField::WorkingDirFallback
             | EditableField::WindowWidth
@@ -586,6 +588,14 @@ impl SettingsWindow {
                 Self::enum_field_spec(RootSettingId::TabCloseVisibility)
             }
             EditableField::TabWidthMode => Self::enum_field_spec(RootSettingId::TabWidthMode),
+            EditableField::VerticalTabsWidth => Self::numeric_field_spec(
+                RootSettingId::VerticalTabsWidth,
+                NumericStepSpec {
+                    delta: 10.0,
+                    min: 56.0,
+                    max: 480.0,
+                },
+            ),
             _ => unreachable!("invalid tabs field"),
         }
     }
@@ -980,6 +990,9 @@ impl SettingsWindow {
                 termy_config_core::TabWidthMode::ActiveGrowSticky => "active_grow_sticky",
             }
             .to_string(),
+            EditableField::VerticalTabsWidth => {
+                format!("{}", self.config.vertical_tabs_width.round() as i32)
+            }
             EditableField::WorkingDirectory => self.config.working_dir.clone().unwrap_or_default(),
             EditableField::WorkingDirFallback => match self.config.working_dir_fallback {
                 termy_config_core::WorkingDirFallback::Home => "home",
@@ -1161,6 +1174,15 @@ impl SettingsWindow {
                     &next.to_string(),
                 )
             }
+            EditableField::VerticalTabsWidth => {
+                let next = (self.config.vertical_tabs_width + (delta as f32 * step.delta))
+                    .clamp(step.min, step.max);
+                self.config.vertical_tabs_width = next;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::VerticalTabsWidth,
+                    &next.to_string(),
+                )
+            }
             _ => Err(format!("Unsupported numeric field: {:?}", field)),
         };
 
@@ -1296,6 +1318,7 @@ mod tests {
             EditableField::TabTitleCommandFormat,
             EditableField::TabCloseVisibility,
             EditableField::TabWidthMode,
+            EditableField::VerticalTabsWidth,
             EditableField::WorkingDirectory,
             EditableField::WorkingDirFallback,
             EditableField::WindowWidth,
@@ -1354,6 +1377,7 @@ mod tests {
             EditableField::WindowWidth,
             EditableField::WindowHeight,
             EditableField::AgentSidebarWidth,
+            EditableField::VerticalTabsWidth,
         ];
 
         for field in numeric_fields {

@@ -1,6 +1,23 @@
 use super::*;
 
 impl TerminalView {
+    pub(in super::super) fn effective_vertical_tab_strip_width(&self) -> f32 {
+        if !self.vertical_tabs {
+            return 0.0;
+        }
+
+        if self.vertical_tabs_minimized {
+            VERTICAL_TAB_STRIP_COLLAPSED_WIDTH
+        } else {
+            self.vertical_tabs_width
+                .clamp(VERTICAL_TAB_STRIP_MIN_WIDTH, VERTICAL_TAB_STRIP_MAX_WIDTH)
+        }
+    }
+
+    fn tab_strip_sidebar_width(&self) -> f32 {
+        self.effective_vertical_tab_strip_width()
+    }
+
     fn agent_sidebar_width(&self) -> f32 {
         if self.agent_sidebar_visible() {
             self.agent_sidebar_width
@@ -161,7 +178,7 @@ impl TerminalView {
         // Mouse coordinates arrive in window space; subtract chrome so terminal hit-testing
         // stays aligned with rendered rows in both native and tmux runtimes.
         (
-            x,
+            x - self.tab_strip_sidebar_width(),
             Self::window_y_to_terminal_content_y(y, self.chrome_height()),
         )
     }
@@ -272,8 +289,11 @@ impl TerminalView {
             return;
         }
 
-        let terminal_width =
-            (viewport_width - self.agent_sidebar_width() - (padding_x * 2.0)).max(cell_width * 2.0);
+        let terminal_width = (viewport_width
+            - self.tab_strip_sidebar_width()
+            - self.agent_sidebar_width()
+            - (padding_x * 2.0))
+            .max(cell_width * 2.0);
         let terminal_height =
             (viewport_height - self.chrome_height() - (padding_y * 2.0)).max(cell_height);
         let backend_mode = self.runtime_kind();

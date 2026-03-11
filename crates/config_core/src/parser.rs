@@ -363,6 +363,27 @@ impl AppConfig {
                         config.tab_switch_modifier_hints = parsed;
                     }
                 }
+                RootSettingId::VerticalTabs => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.vertical_tabs = parsed;
+                    }
+                }
+                RootSettingId::VerticalTabsWidth => {
+                    if let Some(parsed) =
+                        parse_positive_f32_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.vertical_tabs_width = parsed;
+                    }
+                }
+                RootSettingId::VerticalTabsMinimized => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.vertical_tabs_minimized = parsed;
+                    }
+                }
                 RootSettingId::ShowTermyInTitlebar => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)

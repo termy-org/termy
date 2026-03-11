@@ -110,15 +110,27 @@ impl TerminalView {
             }
             CommandAction::ToggleAgentSidebar => {
                 if !self.agent_sidebar_enabled {
-                    termy_toast::info(
-                        "Enable Agent Sidebar in Settings > Experimental before toggling it",
-                    );
                     self.notify_overlay(cx);
                     return;
                 }
                 self.agent_sidebar_open = !self.agent_sidebar_open;
                 if !self.agent_sidebar_open {
                     self.agent_sidebar_input_active = false;
+                }
+                cx.notify();
+            }
+            CommandAction::ToggleVerticalTabSidebar => {
+                if !self.vertical_tabs {
+                    termy_toast::info(
+                        "Enable Vertical Tabs in Settings > Tabs before toggling the sidebar",
+                    );
+                    self.notify_overlay(cx);
+                    return;
+                }
+                if let Err(error) = self.set_vertical_tabs_minimized(!self.vertical_tabs_minimized)
+                {
+                    termy_toast::error(error);
+                    return;
                 }
                 cx.notify();
             }
@@ -267,6 +279,15 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::ToggleAgentSidebar, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_toggle_vertical_tab_sidebar_action(
+        &mut self,
+        _: &commands::ToggleVerticalTabSidebar,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::ToggleVerticalTabSidebar, true, window, cx);
     }
 
     pub(in super::super) fn handle_new_tab_action(

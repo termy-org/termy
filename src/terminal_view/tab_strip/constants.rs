@@ -1,4 +1,8 @@
 pub(crate) const TABBAR_HEIGHT: f32 = 34.0;
+pub(crate) const VERTICAL_TAB_STRIP_MIN_WIDTH: f32 = 56.0;
+pub(crate) const VERTICAL_TAB_STRIP_MAX_WIDTH: f32 = 480.0;
+pub(crate) const VERTICAL_TAB_STRIP_COLLAPSED_WIDTH: f32 = 56.0;
+pub(crate) const VERTICAL_TAB_STRIP_PADDING: f32 = 8.0;
 pub(crate) const TOP_STRIP_SIDE_PADDING: f32 = 8.0;
 #[cfg(macos_sdk_26)]
 pub(crate) const TOP_STRIP_MACOS_TRAFFIC_LIGHT_PADDING: f32 = 78.0;

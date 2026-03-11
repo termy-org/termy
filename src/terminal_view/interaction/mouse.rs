@@ -3,6 +3,51 @@ use super::*;
 const SELECTION_DRAG_AUTOSCROLL_MAX_LINES: i32 = 3;
 
 impl TerminalView {
+    fn apply_vertical_tab_strip_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
+        if self.vertical_tab_strip_resize_drag.is_none() || self.vertical_tabs_minimized {
+            return false;
+        }
+
+        let pointer_x: f32 = position.x.into();
+        let next_width =
+            pointer_x.clamp(VERTICAL_TAB_STRIP_MIN_WIDTH, VERTICAL_TAB_STRIP_MAX_WIDTH);
+        if (self.vertical_tabs_width - next_width).abs() < f32::EPSILON {
+            return false;
+        }
+
+        self.vertical_tabs_width = next_width;
+        self.clear_pane_render_caches();
+        self.clear_terminal_scrollbar_marker_cache();
+        self.cell_size = None;
+        true
+    }
+
+    fn persist_vertical_tab_strip_width(&self) -> Result<(), String> {
+        config::set_root_setting(
+            termy_config_core::RootSettingId::VerticalTabsWidth,
+            &self.vertical_tabs_width.to_string(),
+        )
+    }
+
+    pub(in super::super) fn set_vertical_tabs_minimized(
+        &mut self,
+        minimized: bool,
+    ) -> Result<(), String> {
+        if self.vertical_tabs_minimized == minimized {
+            return Ok(());
+        }
+
+        self.vertical_tabs_minimized = minimized;
+        self.clear_pane_render_caches();
+        self.clear_terminal_scrollbar_marker_cache();
+        self.cell_size = None;
+        self.mark_tab_strip_layout_dirty();
+        config::set_root_setting(
+            termy_config_core::RootSettingId::VerticalTabsMinimized,
+            &minimized.to_string(),
+        )
+    }
+
     fn apply_agent_sidebar_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
         if self.agent_sidebar_resize_drag.is_none() {
             return false;
@@ -576,6 +621,13 @@ impl TerminalView {
         event: &MouseMoveEvent,
         cx: &mut Context<Self>,
     ) {
+        if self.vertical_tab_strip_resize_drag.is_some() && event.dragging() {
+            if self.apply_vertical_tab_strip_resize_drag(event.position) {
+                cx.notify();
+            }
+            return;
+        }
+
         if self.agent_sidebar_resize_drag.is_some() && event.dragging() {
             if self.apply_agent_sidebar_resize_drag(event.position) {
                 cx.notify();
@@ -607,6 +659,15 @@ impl TerminalView {
 
         if event.button == MouseButton::Left && self.agent_sidebar_resize_drag.take().is_some() {
             if let Err(error) = self.persist_agent_sidebar_width() {
+                termy_toast::error(error);
+            }
+            cx.notify();
+            return true;
+        }
+
+        if event.button == MouseButton::Left && self.vertical_tab_strip_resize_drag.take().is_some()
+        {
+            if let Err(error) = self.persist_vertical_tab_strip_width() {
                 termy_toast::error(error);
             }
             cx.notify();
@@ -781,6 +842,20 @@ impl TerminalView {
             cx.stop_propagation();
             return;
         }
+        if self.vertical_tab_strip_resize_drag.is_some() {
+            if event.dragging() {
+                if self.apply_vertical_tab_strip_resize_drag(event.position) {
+                    cx.notify();
+                }
+            } else if self.vertical_tab_strip_resize_drag.take().is_some() {
+                if let Err(error) = self.persist_vertical_tab_strip_width() {
+                    termy_toast::error(error);
+                }
+                cx.notify();
+            }
+            cx.stop_propagation();
+            return;
+        }
         if event.dragging()
             && self.terminal_scrollbar_track_hold_local_y.is_some()
             && let Some(hit) = self.terminal_scrollbar_hit_test(event.position, window)
@@ -857,6 +932,15 @@ impl TerminalView {
         }
         if event.button == MouseButton::Left && self.agent_sidebar_resize_drag.take().is_some() {
             if let Err(error) = self.persist_agent_sidebar_width() {
+                termy_toast::error(error);
+            }
+            cx.stop_propagation();
+            cx.notify();
+            return;
+        }
+        if event.button == MouseButton::Left && self.vertical_tab_strip_resize_drag.take().is_some()
+        {
+            if let Err(error) = self.persist_vertical_tab_strip_width() {
                 termy_toast::error(error);
             }
             cx.stop_propagation();

@@ -1053,9 +1053,13 @@ impl SettingsWindow {
     pub(super) fn render_tabs_strip_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let close_visibility = self.editable_field_value(EditableField::TabCloseVisibility);
         let width_mode = self.editable_field_value(EditableField::TabWidthMode);
+        let vertical_tabs_width = self.editable_field_value(EditableField::VerticalTabsWidth);
         let show_switch_hints = self.config.tab_switch_modifier_hints;
+        let vertical_tabs = self.config.vertical_tabs;
+        let vertical_tabs_minimized = self.config.vertical_tabs_minimized;
         let close_visibility_meta = Self::setting_metadata_or_fallback("tab_close_visibility");
         let width_mode_meta = Self::setting_metadata_or_fallback("tab_width_mode");
+        let vertical_width_meta = Self::setting_metadata_or_fallback("vertical_tabs_width");
         let rows = vec![
             self.render_editable_row(
                 "tab_close_visibility",
@@ -1073,11 +1077,35 @@ impl SettingsWindow {
                 width_mode,
                 cx,
             ),
+            self.render_editable_row(
+                "vertical_tabs_width",
+                EditableField::VerticalTabsWidth,
+                vertical_width_meta.title,
+                vertical_width_meta.description,
+                format!("{}px", vertical_tabs_width),
+                cx,
+            ),
             self.render_root_bool_setting_row(
                 "tab_switch_modifier_hints",
                 "tab_switch_modifier_hints-toggle",
                 RootSettingId::TabSwitchModifierHints,
                 show_switch_hints,
+                "Saved",
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "vertical_tabs",
+                "vertical_tabs-toggle",
+                RootSettingId::VerticalTabs,
+                vertical_tabs,
+                "Saved",
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "vertical_tabs_minimized",
+                "vertical_tabs_minimized-toggle",
+                RootSettingId::VerticalTabsMinimized,
+                vertical_tabs_minimized,
                 "Saved",
                 cx,
             ),

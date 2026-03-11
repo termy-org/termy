@@ -188,6 +188,10 @@ pub fn default_keybinds_for_platform(platform: KeybindPlatform) -> Vec<DefaultKe
             trigger: "secondary-shift-b",
             action: CommandId::ToggleAgentSidebar,
         },
+        DefaultKeybind {
+            trigger: "secondary-b",
+            action: CommandId::ToggleVerticalTabSidebar,
+        },
     ];
 
     if matches!(platform, KeybindPlatform::MacOs) {
@@ -511,6 +515,14 @@ mod tests {
                     binding.trigger == "secondary-o" && binding.action == CommandId::FocusPaneNext
                 }),
                 "missing secondary-o -> focus_pane_next on {}",
+                platform.as_str()
+            );
+            assert!(
+                defaults.iter().any(|binding| {
+                    binding.trigger == "secondary-b"
+                        && binding.action == CommandId::ToggleVerticalTabSidebar
+                }),
+                "missing secondary-b -> toggle_vertical_tab_sidebar on {}",
                 platform.as_str()
             );
         }

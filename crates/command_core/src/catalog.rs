@@ -60,6 +60,7 @@ macro_rules! termy_command_catalog {
             (InstallCli, "install_cli"),
             (ToggleAiInput, "toggle_ai_input"),
             (ToggleAgentSidebar, "toggle_agent_sidebar"),
+            (ToggleVerticalTabSidebar, "toggle_vertical_tab_sidebar"),
         }
     };
 }
