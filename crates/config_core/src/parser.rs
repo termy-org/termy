@@ -21,6 +21,10 @@ struct PendingTaskConfig {
     working_dir: Option<String>,
 }
 
+enum TaskKeyParseError {
+    InvalidTaskName,
+}
+
 impl AppConfig {
     pub fn from_contents(contents: &str) -> Self {
         Self::from_contents_with_report(contents).config
@@ -100,50 +104,64 @@ impl AppConfig {
                 continue;
             }
 
-            if let Some((task_name, task_field)) = parse_task_key(key) {
-                if task_field.eq_ignore_ascii_case("command") {
-                    let task = task_entries
-                        .entry(task_name.to_string())
-                        .or_insert_with(|| PendingTaskConfig {
-                            first_line: line_number,
-                            ..PendingTaskConfig::default()
+            match parse_task_key(key) {
+                Ok(Some((task_name, task_field))) => {
+                    if task_field.eq_ignore_ascii_case("command") {
+                        let task = task_entries
+                            .entry(task_name.to_string())
+                            .or_insert_with(|| PendingTaskConfig {
+                                first_line: line_number,
+                                ..PendingTaskConfig::default()
+                            });
+                        if let Some(parsed) = parse_string_field(
+                            &mut diagnostics,
+                            line_number,
+                            key,
+                            value,
+                            "a non-empty task command",
+                        ) {
+                            task.command = Some(parsed);
+                        }
+                    } else if task_field.eq_ignore_ascii_case("layout") {
+                        let task = task_entries
+                            .entry(task_name.to_string())
+                            .or_insert_with(|| PendingTaskConfig {
+                                first_line: line_number,
+                                ..PendingTaskConfig::default()
+                            });
+                        task.layout = parse_optional_string_value(value);
+                    } else if task_field.eq_ignore_ascii_case("working_dir") {
+                        let task = task_entries
+                            .entry(task_name.to_string())
+                            .or_insert_with(|| PendingTaskConfig {
+                                first_line: line_number,
+                                ..PendingTaskConfig::default()
+                            });
+                        task.working_dir = parse_optional_string_value(value);
+                    } else {
+                        diagnostics.push(ConfigDiagnostic {
+                            line_number,
+                            kind: ConfigDiagnosticKind::InvalidValue,
+                            message: format!(
+                                "Invalid task field '{}' for '{}': expected command, layout, or working_dir",
+                                task_field, key
+                            ),
                         });
-                    if let Some(parsed) = parse_string_field(
-                        &mut diagnostics,
-                        line_number,
-                        key,
-                        value,
-                        "a non-empty task command",
-                    ) {
-                        task.command = Some(parsed);
                     }
-                } else if task_field.eq_ignore_ascii_case("layout") {
-                    let task = task_entries
-                        .entry(task_name.to_string())
-                        .or_insert_with(|| PendingTaskConfig {
-                            first_line: line_number,
-                            ..PendingTaskConfig::default()
-                        });
-                    task.layout = parse_optional_string_value(value);
-                } else if task_field.eq_ignore_ascii_case("working_dir") {
-                    let task = task_entries
-                        .entry(task_name.to_string())
-                        .or_insert_with(|| PendingTaskConfig {
-                            first_line: line_number,
-                            ..PendingTaskConfig::default()
-                        });
-                    task.working_dir = parse_optional_string_value(value);
-                } else {
+                    continue;
+                }
+                Err(TaskKeyParseError::InvalidTaskName) => {
                     diagnostics.push(ConfigDiagnostic {
                         line_number,
                         kind: ConfigDiagnosticKind::InvalidValue,
                         message: format!(
-                            "Invalid task field '{}' for '{}': expected command, layout, or working_dir",
-                            task_field, key
+                            "Invalid task key '{}': task names must not contain '.'",
+                            key
                         ),
                     });
+                    continue;
                 }
-                continue;
+                Ok(None) => {}
             }
 
             let Some(root_key) = root_setting_from_key(key) else {
@@ -759,16 +777,23 @@ pub fn parse_theme_id(value: &str) -> Option<ThemeId> {
     }
 }
 
-fn parse_task_key(key: &str) -> Option<(&str, &str)> {
+fn parse_task_key(key: &str) -> Result<Option<(&str, &str)>, TaskKeyParseError> {
     let trimmed = key.trim();
-    let rest = trimmed.strip_prefix("task.")?;
-    let (task_name, field) = rest.split_once('.')?;
+    let Some(rest) = trimmed.strip_prefix("task.") else {
+        return Ok(None);
+    };
+    let Some((task_name, field)) = rest.rsplit_once('.') else {
+        return Ok(None);
+    };
     let task_name = task_name.trim();
     let field = field.trim();
     if task_name.is_empty() || field.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some((task_name, field))
+    if task_name.contains('.') {
+        return Err(TaskKeyParseError::InvalidTaskName);
+    }
+    Ok(Some((task_name, field)))
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
