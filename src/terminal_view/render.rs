@@ -195,11 +195,20 @@ fn resolved_default_cell_colors(context: PaneCellBuildContext<'_>) -> (gpui::Rgb
     )
 }
 
-fn pane_requires_default_background_fill(
-    pane_default_bg: gpui::Rgba,
-    terminal_surface_bg: gpui::Rgba,
-) -> bool {
-    pane_default_bg != terminal_surface_bg
+fn pane_wrapper_backdrop_fill(
+    backdrop_transform: Option<CellColorTransform>,
+    context: PaneCellBuildContext<'_>,
+) -> Option<gpui::Rgba> {
+    let backdrop_transform = backdrop_transform?;
+    let (_, pane_default_bg) = resolved_default_cell_colors(PaneCellBuildContext {
+        cell_color_transform: backdrop_transform,
+        ..context
+    });
+    // Pane focus should only dim rendered content and border chrome. A full-pane
+    // default-background fill flashes during focus transitions because it updates
+    // before the grid's cached cell content catches up. The command palette is
+    // the only caller that still needs a wrapper backdrop to dim empty space.
+    (pane_default_bg != context.terminal_surface_bg).then_some(pane_default_bg)
 }
 
 fn resolve_cell_colors(
@@ -2118,7 +2127,10 @@ impl Render for TerminalView {
                     selection_range: pane_cache_key.selection_range,
                     pane_search_results,
                 };
-                let (_, pane_default_bg) = resolved_default_cell_colors(pane_build_context);
+                let pane_wrapper_bg = pane_wrapper_backdrop_fill(
+                    palette_backdrop_transform,
+                    pane_build_context,
+                );
                 #[cfg_attr(not(debug_assertions), allow(unused_variables))]
                 let (pane_cells, cache_strategy, paint_damage, paint_cache) = {
                     let mut pane_render_cache = pane.render_cache.borrow_mut();
@@ -2195,7 +2207,6 @@ impl Render for TerminalView {
                 if pane_width <= f32::EPSILON || pane_height <= f32::EPSILON {
                     continue;
                 }
-                let pane_default_bg_hsla: gpui::Hsla = pane_default_bg.into();
 
                 let pane_right_cells = u32::from(pane.left).saturating_add(u32::from(pane.width));
                 let pane_bottom_cells = u32::from(pane.top).saturating_add(u32::from(pane.height));
@@ -2301,13 +2312,9 @@ impl Render for TerminalView {
                         .top(px(pane_top))
                         .w(px(pane_width))
                         .h(px(pane_height))
-                        .when(
-                            pane_requires_default_background_fill(
-                                pane_default_bg,
-                                terminal_surface_bg,
-                            ),
-                            |pane_layer| pane_layer.bg(pane_default_bg_hsla),
-                        )
+                        .when_some(pane_wrapper_bg, |pane_layer, pane_default_bg| {
+                            pane_layer.bg(Into::<gpui::Hsla>::into(pane_default_bg))
+                        })
                         .child(terminal_grid)
                         .into_any_element(),
                 );
@@ -3208,28 +3215,68 @@ mod tests {
     }
 
     #[test]
-    fn pane_default_background_fill_is_only_needed_for_transformed_panes() {
+    fn pane_wrapper_backdrop_fill_skips_pane_focus_transforms() {
         let shared_surface = gpui::Rgba {
             r: 0.1,
             g: 0.2,
             b: 0.3,
             a: 0.2,
         };
-        assert!(!pane_requires_default_background_fill(
+        let context = test_build_context_with_transform(
+            0.2,
+            CellColorTransform {
+                fg_blend: 0.0,
+                bg_blend: 0.5,
+                desaturate: 0.0,
+            },
             shared_surface,
-            shared_surface
-        ));
+            shared_surface,
+        );
 
-        let transformed_pane = gpui::Rgba {
-            r: 0.16,
-            g: 0.24,
-            b: 0.32,
+        assert_eq!(pane_wrapper_backdrop_fill(None, context), None);
+    }
+
+    #[test]
+    fn pane_wrapper_backdrop_fill_uses_command_palette_transform() {
+        let shared_surface = gpui::Rgba {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
             a: 0.2,
         };
-        assert!(pane_requires_default_background_fill(
-            transformed_pane,
-            shared_surface
-        ));
+        let transform = CellColorTransform {
+            fg_blend: 0.0,
+            bg_blend: 0.5,
+            desaturate: 0.0,
+        };
+        let context = test_build_context_with_transform(
+            0.2,
+            CellColorTransform::default(),
+            shared_surface,
+            shared_surface,
+        );
+        let (_, expected_bg) = resolved_default_cell_colors(PaneCellBuildContext {
+            cell_color_transform: transform,
+            ..context
+        });
+
+        assert_ne!(expected_bg, shared_surface);
+        assert_eq!(pane_wrapper_backdrop_fill(Some(transform), context), Some(expected_bg));
+    }
+
+    #[test]
+    fn pane_wrapper_backdrop_fill_skips_matching_surface_color() {
+        let base_context = test_build_context(0.2);
+        let (_, default_bg) = resolved_default_cell_colors(base_context);
+        let context = PaneCellBuildContext {
+            terminal_surface_bg: default_bg,
+            ..base_context
+        };
+
+        assert_eq!(
+            pane_wrapper_backdrop_fill(Some(CellColorTransform::default()), context),
+            None
+        );
     }
 
     #[test]
