@@ -88,6 +88,8 @@ const KNOWN_COMMANDS: Record<string, string[]> = {
     "  echo       - Echo a message",
     "  neofetch   - Alias for fastfetch",
     "  ls         - List files",
+    "  termy      - Show termy info",
+    "  cargo      - Simulate cargo commands",
     "",
     "This is a demo terminal. Commands are simulated.",
   ],
@@ -100,6 +102,43 @@ const KNOWN_COMMANDS: Record<string, string[]> = {
   pwd: ["/home/dev"],
   date: [],
   uname: ["Darwin"],
+  "termy --version": ["termy 0.3.0"],
+  termy: [
+    "termy - A terminal that gets out of your way",
+    "",
+    "USAGE:",
+    "    termy [OPTIONS]",
+    "",
+    "OPTIONS:",
+    "    --version    Print version info",
+    "    --config     Path to config file",
+    "    --help       Print help information",
+  ],
+  "cargo build": [
+    "   Compiling termy v0.3.0",
+    "    Finished dev [unoptimized + debuginfo] target(s) in 0.42s",
+  ],
+  "cargo test": [
+    "   Compiling termy v0.3.0",
+    "    Finished test [unoptimized + debuginfo] target(s) in 0.38s",
+    "     Running unittests src/main.rs",
+    "",
+    "running 42 tests",
+    "test config::tests::parse_config ... ok",
+    "test renderer::tests::gpu_init ... ok",
+    "test terminal::tests::pty_spawn ... ok",
+    "...",
+    "",
+    "test result: ok. 42 passed; 0 failed; 0 ignored",
+  ],
+  cargo: [
+    "Rust's package manager",
+    "",
+    "USAGE:",
+    "    cargo [COMMAND]",
+    "",
+    "Try: cargo build, cargo test",
+  ],
 };
 
 function getNextLineId(): number {
@@ -412,7 +451,7 @@ export function InteractiveTerminal(): JSX.Element {
             spellCheck={false}
             autoComplete="off"
             autoCapitalize="off"
-            autoFocus={false}
+            autoFocus
           />
 
           <span

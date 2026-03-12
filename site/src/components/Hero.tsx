@@ -1,23 +1,34 @@
-import { type JSX } from "react";
+import { type JSX, useState } from "react";
 import { InteractiveTerminal } from "@/components/InteractiveTerminal";
 import { Button } from "@/components/ui/button";
 import { getPreferredDownload, type Release } from "@/hooks/useGitHubRelease";
 import { CopyButton } from "./animate-ui/components/buttons/copy";
 
-const installCommand =
-  "brew tap lassejlv/termy https://github.com/lassejlv/termy && brew install --cask termy";
+type PackageManager = "brew" | "arch";
+
+const installCommands: Record<PackageManager, string> = {
+  brew: "brew tap lassejlv/termy https://github.com/lassejlv/termy && brew install --cask termy",
+  arch: "paru -S termy-bin",
+};
 
 interface HeroProps {
   release: Release | null;
 }
 
 export function Hero({ release }: HeroProps): JSX.Element {
+  const [packageManager, setPackageManager] = useState<PackageManager>("brew");
   const preferredDownload = release?.assets
     ? getPreferredDownload(release.assets)
     : null;
 
+  const currentCommand = installCommands[packageManager];
+
   return (
     <section className="relative pt-20 sm:pt-28 pb-20">
+      {/* Background grid pattern */}
+      <div className="absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#8882_1px,transparent_1px),linear-gradient(to_bottom,#8882_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_110%)]" />
+      </div>
       <div className="relative">
         <div className="text-center max-w-4xl mx-auto px-6">
           <h1
@@ -75,18 +86,43 @@ export function Hero({ release }: HeroProps): JSX.Element {
 
           {/* Install command */}
           <div
-            className="mt-6 mx-auto w-full max-w-xl animate-blur-in"
+            className="mt-6 mx-auto w-full max-w-2xl animate-blur-in"
             style={{ animationDelay: "350ms" }}
           >
+            {/* Package manager tabs */}
+            <div className="flex justify-center gap-1 mb-2">
+              <button
+                type="button"
+                onClick={() => setPackageManager("brew")}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  packageManager === "brew"
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Homebrew
+              </button>
+              <button
+                type="button"
+                onClick={() => setPackageManager("arch")}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  packageManager === "arch"
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Arch Linux
+              </button>
+            </div>
             <div className="rounded-lg border border-border/50 bg-secondary/50 overflow-hidden">
               <div className="flex items-center h-10">
                 <code className="flex-1 px-3 font-mono text-xs text-primary truncate text-left">
-                  {installCommand}
+                  {currentCommand}
                 </code>
                 <CopyButton
                   className="px-3 h-full text-muted-foreground hover:text-foreground transition-colors shrink-0 border-l border-border/50"
                   variant="ghost"
-                  content={installCommand}
+                  content={currentCommand}
                 />
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { ChevronDown, ExternalLink, Info } from "lucide-react";
 import type { JSX } from "react";
 import { AppleIcon, LinuxIcon, WindowsIcon } from "@/components/platform-icons";
 import { Spinner } from "@/components/ui/spinner";
@@ -104,11 +104,11 @@ export function Download({ release, loading, error }: DownloadProps): JSX.Elemen
 
       {!loading && !error && release && (
         <div
-          className="max-w-xl mx-auto animate-blur-in"
+          className="max-w-3xl mx-auto animate-blur-in"
           style={{ animationDelay: "100ms" }}
         >
-          {/* Platform download list */}
-          <div className="rounded-xl border border-border/50 bg-card/30 overflow-hidden divide-y divide-border/30">
+          {/* Platform download cards - horizontal on desktop */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {platforms.map((platform) => {
               const assets = classified?.[platform.key] ?? [];
               const primary = getPrimaryAsset(assets);
@@ -120,30 +120,33 @@ export function Download({ release, loading, error }: DownloadProps): JSX.Elemen
                   href={primary.browser_download_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-4 px-5 py-4 hover:bg-primary/5 transition-colors group"
+                  className="flex flex-col items-center gap-3 p-6 rounded-xl border border-border/50 bg-card/30 hover:border-primary/30 hover:bg-card/60 transition-all group"
                 >
-                  <span className="text-muted-foreground group-hover:text-primary transition-colors">
+                  <span className="text-muted-foreground group-hover:text-primary transition-colors [&_svg]:w-8 [&_svg]:h-8 [&_img]:w-8 [&_img]:h-8">
                     {platform.icon}
                   </span>
-                  <span className="font-medium text-foreground text-sm">
+                  <span className="font-medium text-foreground">
                     {platform.label}
                   </span>
-                  <span className="ml-auto font-mono text-xs text-muted-foreground truncate max-w-[200px] hidden sm:inline">
+                  <span className="font-mono text-[10px] text-muted-foreground/60 truncate max-w-full">
                     {primary.name}
                   </span>
-                  <svg
-                    className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary shrink-0 transition-colors"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
-                    />
-                  </svg>
+                  <div className="flex items-center gap-1.5 text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth={2}
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+                      />
+                    </svg>
+                    Download
+                  </div>
                 </a>
               );
             })}
@@ -159,14 +162,21 @@ export function Download({ release, loading, error }: DownloadProps): JSX.Elemen
             )}
           </div>
 
-          {/* Code signing note */}
-          <p className="mt-4 text-center text-xs text-muted-foreground/60 leading-relaxed max-w-md mx-auto">
-            Termy is not code signed yet. On macOS, run{" "}
-            <code className="rounded bg-secondary px-1 py-0.5 text-[10px] font-mono text-primary/80">
-              sudo xattr -d com.apple.quarantine /Applications/Termy.app
-            </code>{" "}
-            if blocked. On Windows, click "More info" then "Run anyway".
-          </p>
+          {/* Code signing note - collapsible */}
+          <details className="mt-4 text-center max-w-md mx-auto group">
+            <summary className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground/50 cursor-pointer hover:text-muted-foreground transition-colors">
+              <Info className="w-3 h-3" />
+              <span>Installation notes</span>
+              <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+            </summary>
+            <p className="mt-3 text-xs text-muted-foreground/60 leading-relaxed">
+              Termy is not code signed yet. On macOS, run{" "}
+              <code className="rounded bg-secondary px-1 py-0.5 text-[10px] font-mono text-primary/80">
+                sudo xattr -d com.apple.quarantine /Applications/Termy.app
+              </code>{" "}
+              if blocked. On Windows, click "More info" then "Run anyway".
+            </p>
+          </details>
 
           {/* Links */}
           <div className="mt-6 flex items-center justify-center gap-6">

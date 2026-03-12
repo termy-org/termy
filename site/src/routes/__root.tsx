@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { createRootRoute, Link, Outlet } from "@tanstack/react-router";
 import type { JSX } from "react";
 import { Header } from "@/components/Header";
 
@@ -31,6 +31,20 @@ function RootLayout(): JSX.Element {
               <span>Open source terminal emulator</span>
             </div>
             <div className="flex items-center gap-5 text-xs text-muted-foreground/40">
+              <Link
+                to="/docs"
+                className="hover:text-foreground transition-colors"
+              >
+                Docs
+              </Link>
+              <a
+                href="https://discord.gg/4VDBFD7vAp"
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-foreground transition-colors"
+              >
+                Discord
+              </a>
               <a
                 href="https://github.com/lassejlv/termy"
                 target="_blank"
