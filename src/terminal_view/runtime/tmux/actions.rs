@@ -8,6 +8,22 @@ fn reorder_active_window_id<'a>(
     previous_active_window_id.unwrap_or(moved_window_id)
 }
 
+fn apply_local_tmux_pane_focus(tab: &mut TerminalTab, pane_id: &str) -> bool {
+    if tab.active_pane_id == pane_id {
+        return false;
+    }
+    if !tab.panes.iter().any(|pane| pane.id == pane_id) {
+        return false;
+    }
+
+    tab.active_pane_id = pane_id.to_string();
+    true
+}
+
+fn should_refresh_search_after_tmux_pane_focus(search_open: bool) -> bool {
+    search_open
+}
+
 impl TerminalView {
     fn warn_stale_tmux_tab_index(action: &str, index: usize, tab_count: usize) {
         log::warn!(
@@ -329,13 +345,37 @@ impl TerminalView {
         pane_id: &str,
         cx: &mut Context<Self>,
     ) -> bool {
-        self.run_tmux_action_with_refresh(
-            "Failed to focus pane",
-            TmuxPostActionRefresh::EventDriven,
-            true,
-            cx,
-            |tmux_client| tmux_client.select_pane(pane_id),
-        )
+        let Some(tab) = self.tabs.get(self.active_tab) else {
+            return false;
+        };
+        if tab.active_pane_id == pane_id || !tab.panes.iter().any(|pane| pane.id == pane_id) {
+            return false;
+        }
+
+        if !self.run_tmux_action("Failed to focus pane", |tmux_client| {
+            tmux_client.select_pane(pane_id)
+        }) {
+            return false;
+        }
+
+        let Some(tab) = self.tabs.get_mut(self.active_tab) else {
+            return false;
+        };
+        if !apply_local_tmux_pane_focus(tab, pane_id) {
+            return false;
+        }
+
+        // Search highlights are keyed to the active pane's buffer. Refresh them
+        // before the optimistic repaint so we do not briefly draw stale matches
+        // from the previously focused pane.
+        if should_refresh_search_after_tmux_pane_focus(self.search_open) {
+            self.perform_search();
+        }
+        self.clear_selection();
+        self.clear_hovered_link();
+        let _ = self.event_wakeup_tx.try_send(());
+        cx.notify();
+        true
     }
 
     fn with_active_pane_action<F>(
@@ -515,11 +555,75 @@ impl TerminalView {
 
 #[cfg(test)]
 mod tests {
-    use super::reorder_active_window_id;
+    use super::{
+        apply_local_tmux_pane_focus, reorder_active_window_id,
+        should_refresh_search_after_tmux_pane_focus,
+    };
+    use crate::terminal_view::{
+        Terminal, TerminalOptions, TerminalPane, TerminalPaneRenderCache, TerminalSize,
+        TerminalTab,
+    };
+    use std::cell::{Cell, RefCell};
 
     #[test]
     fn reorder_active_window_id_preserves_previously_active_window() {
         assert_eq!(reorder_active_window_id(Some("@2"), "@3"), "@2");
         assert_eq!(reorder_active_window_id(None, "@3"), "@3");
+    }
+
+    #[test]
+    fn apply_local_tmux_pane_focus_updates_active_pane_when_target_exists() {
+        let pane_one = TerminalPane {
+            id: "%1".to_string(),
+            left: 0,
+            top: 0,
+            width: 10,
+            height: 10,
+            degraded: false,
+            terminal: Terminal::new_tmux(TerminalSize::default(), TerminalOptions::default()),
+            render_cache: RefCell::new(TerminalPaneRenderCache::default()),
+            last_alternate_screen: Cell::new(false),
+        };
+        let pane_two = TerminalPane {
+            id: "%2".to_string(),
+            left: 10,
+            top: 0,
+            width: 10,
+            height: 10,
+            degraded: false,
+            terminal: Terminal::new_tmux(TerminalSize::default(), TerminalOptions::default()),
+            render_cache: RefCell::new(TerminalPaneRenderCache::default()),
+            last_alternate_screen: Cell::new(false),
+        };
+        let mut tab = TerminalTab {
+            id: 1,
+            window_id: "@1".to_string(),
+            window_index: 0,
+            panes: vec![pane_one, pane_two],
+            active_pane_id: "%1".to_string(),
+            manual_title: None,
+            explicit_title: None,
+            shell_title: None,
+            current_command: None,
+            pending_command_title: None,
+            pending_command_token: 0,
+            last_prompt_cwd: None,
+            title: "tab".to_string(),
+            title_text_width: 0.0,
+            sticky_title_width: 0.0,
+            display_width: 0.0,
+            running_process: false,
+        };
+
+        assert!(apply_local_tmux_pane_focus(&mut tab, "%2"));
+        assert_eq!(tab.active_pane_id, "%2");
+        assert!(!apply_local_tmux_pane_focus(&mut tab, "%2"));
+        assert!(!apply_local_tmux_pane_focus(&mut tab, "%9"));
+    }
+
+    #[test]
+    fn search_refresh_after_tmux_pane_focus_only_runs_when_search_is_open() {
+        assert!(should_refresh_search_after_tmux_pane_focus(true));
+        assert!(!should_refresh_search_after_tmux_pane_focus(false));
     }
 }

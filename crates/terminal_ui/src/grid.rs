@@ -13,6 +13,7 @@ pub struct CellRenderInfo {
     pub char: char,
     pub fg: Hsla,
     pub bg: Hsla,
+    pub uses_terminal_default_bg: bool,
     pub bold: bool,
     pub render_text: bool,
     pub selected: bool,
@@ -70,7 +71,7 @@ pub struct TerminalGrid {
     pub rows: usize,
     /// Clear color used to reset the grid surface every frame.
     pub clear_bg: Hsla,
-    pub default_bg: Hsla,
+    pub terminal_surface_bg: Hsla,
     pub cursor_color: Hsla,
     pub selection_bg: Hsla,
     pub selection_fg: Hsla,
@@ -89,19 +90,6 @@ impl IntoElement for TerminalGrid {
     fn into_element(self) -> Self::Element {
         self
     }
-}
-
-/// Check if two HSLA colors are approximately equal.
-/// This is used to avoid painting cell backgrounds that match the terminal's default background,
-/// which can cause visual artifacts due to slight color differences between ANSI colors.
-fn colors_approximately_equal(a: &Hsla, b: &Hsla) -> bool {
-    // Keep this tolerance tight: broad matching can skip legitimate near-default
-    // app backgrounds and create visible seams/strips at edges.
-    const EPSILON: f32 = 0.001;
-    (a.h - b.h).abs() < EPSILON
-        && (a.s - b.s).abs() < EPSILON
-        && (a.l - b.l).abs() < EPSILON
-        && (a.a - b.a).abs() < EPSILON
 }
 
 // NOTE: We intentionally render Unicode block elements (U+2580..U+259F) as
@@ -208,7 +196,7 @@ struct GridPaintStyleKey {
     cell_width_bits: u32,
     cell_height_bits: u32,
     clear_bg: [u32; 4],
-    default_bg: [u32; 4],
+    terminal_surface_bg: [u32; 4],
     selection_bg: [u32; 4],
     selection_fg: [u32; 4],
     search_match_bg: [u32; 4],
@@ -399,6 +387,36 @@ fn snapped_block_rect_bounds(
     })
 }
 
+fn snapped_quad_bounds(bounds: Bounds<Pixels>) -> Option<Bounds<Pixels>> {
+    let origin_x: f32 = bounds.origin.x.into();
+    let origin_y: f32 = bounds.origin.y.into();
+    let width: f32 = bounds.size.width.into();
+    let height: f32 = bounds.size.height.into();
+
+    let left = origin_x.round();
+    let right = (origin_x + width).round();
+    let top = origin_y.round();
+    let bottom = (origin_y + height).round();
+
+    let snapped_width = right - left;
+    let snapped_height = bottom - top;
+    if snapped_width <= 0.0 || snapped_height <= 0.0 {
+        return None;
+    }
+
+    Some(Bounds {
+        origin: point(px(left), px(top)),
+        size: Size {
+            width: px(snapped_width),
+            height: px(snapped_height),
+        },
+    })
+}
+
+fn should_paint_clear_bg(color: Hsla) -> bool {
+    color.a > f32::EPSILON
+}
+
 fn paint_block_element_quad(
     window: &mut Window,
     cell_bounds: Bounds<Pixels>,
@@ -519,7 +537,7 @@ impl TerminalGrid {
             cell_width_bits: Into::<f32>::into(self.cell_size.width).to_bits(),
             cell_height_bits: Into::<f32>::into(self.cell_size.height).to_bits(),
             clear_bg: hsla_bits(self.clear_bg),
-            default_bg: hsla_bits(self.default_bg),
+            terminal_surface_bg: hsla_bits(self.terminal_surface_bg),
             selection_bg: hsla_bits(self.selection_bg),
             selection_fg: hsla_bits(self.selection_fg),
             search_match_bg: hsla_bits(self.search_match_bg),
@@ -537,10 +555,12 @@ impl TerminalGrid {
             Some(self.search_current_bg)
         } else if cell.search_match {
             Some(self.search_match_bg)
-        } else if cell.bg.a > 0.01 && !colors_approximately_equal(&cell.bg, &self.default_bg) {
-            Some(cell.bg)
-        } else {
+        } else if cell.bg.a <= 0.01 {
             None
+        } else if cell.uses_terminal_default_bg {
+            (cell.bg != self.terminal_surface_bg).then_some(cell.bg)
+        } else {
+            Some(cell.bg)
         }
     }
 
@@ -656,6 +676,9 @@ impl TerminalGrid {
     }
 
     fn clear_bounds(&self, bounds: Bounds<Pixels>, window: &mut Window) {
+        if !should_paint_clear_bg(self.clear_bg) {
+            return;
+        }
         window.paint_quad(quad(
             bounds,
             px(0.0),
@@ -693,14 +716,16 @@ impl TerminalGrid {
                     height: self.cell_size.height,
                 },
             };
-            window.paint_quad(quad(
-                cell_bounds,
-                px(0.0),
-                span.color,
-                gpui::Edges::default(),
-                Hsla::transparent_black(),
-                gpui::BorderStyle::default(),
-            ));
+            if let Some(bounds) = snapped_quad_bounds(cell_bounds) {
+                window.paint_quad(quad(
+                    bounds,
+                    px(0.0),
+                    span.color,
+                    gpui::Edges::default(),
+                    Hsla::transparent_black(),
+                    gpui::BorderStyle::default(),
+                ));
+            }
         }
 
         // Keep block cursors beneath glyphs, but paint line cursors on top so text/block ops
@@ -1054,6 +1079,7 @@ mod tests {
             char: c,
             fg: test_color(0.4, 0.5, 0.6),
             bg: test_color(0.0, 0.0, 0.0),
+            uses_terminal_default_bg: false,
             bold: false,
             render_text: true,
             selected: false,
@@ -1077,7 +1103,7 @@ mod tests {
             cols: 120,
             rows: 40,
             clear_bg: Hsla::transparent_black(),
-            default_bg: Hsla::transparent_black(),
+            terminal_surface_bg: test_color(0.0, 0.0, 0.0),
             cursor_color: test_color(0.1, 0.1, 0.1),
             selection_bg: test_color(0.2, 0.2, 0.2),
             selection_fg: test_color(0.3, 0.3, 0.3),
@@ -1163,6 +1189,33 @@ mod tests {
         assert_eq!(y.fract(), 0.0);
         assert_eq!(width.fract(), 0.0);
         assert_eq!(height.fract(), 0.0);
+    }
+
+    #[test]
+    fn quad_bounds_are_pixel_snapped() {
+        let bounds = Bounds {
+            origin: point(px(3.4), px(7.6)),
+            size: Size {
+                width: px(9.2),
+                height: px(10.3),
+            },
+        };
+
+        let snapped = snapped_quad_bounds(bounds).expect("expected bounds");
+        let x: f32 = snapped.origin.x.into();
+        let y: f32 = snapped.origin.y.into();
+        let width: f32 = snapped.size.width.into();
+        let height: f32 = snapped.size.height.into();
+        assert_eq!(x.fract(), 0.0);
+        assert_eq!(y.fract(), 0.0);
+        assert_eq!(width.fract(), 0.0);
+        assert_eq!(height.fract(), 0.0);
+    }
+
+    #[test]
+    fn transparent_clear_background_skips_clear_quad() {
+        assert!(!should_paint_clear_bg(Hsla::transparent_black()));
+        assert!(should_paint_clear_bg(test_color(0.1, 0.2, 0.3)));
     }
 
     #[test]
@@ -1463,6 +1516,54 @@ mod tests {
         assert_eq!(spans[1].start_col, 2);
         assert_eq!(spans[1].end_col_exclusive, 4);
         assert_eq!(spans[1].color, grid.search_match_bg);
+    }
+
+    #[test]
+    fn row_background_spans_skip_default_background_that_matches_surface() {
+        let mut default_bg_cell = test_cell(0, 0, 'a');
+        let mut ansi_bg_cell = test_cell(1, 0, 'b');
+        default_bg_cell.uses_terminal_default_bg = true;
+        default_bg_cell.bg = test_color(0.2, 0.2, 0.2);
+        ansi_bg_cell.bg = test_color(0.2, 0.2, 0.2);
+
+        let mut grid = test_grid(vec![default_bg_cell, ansi_bg_cell], None);
+        grid.terminal_surface_bg = test_color(0.2, 0.2, 0.2);
+        let spans = grid.build_row_background_spans(grid.cells[0].as_slice());
+
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].start_col, 1);
+        assert_eq!(spans[0].end_col_exclusive, 2);
+        assert_eq!(spans[0].color, test_color(0.2, 0.2, 0.2));
+    }
+
+    #[test]
+    fn row_background_spans_include_transformed_default_background_cells() {
+        let mut default_bg_cell = test_cell(0, 0, 'a');
+        default_bg_cell.uses_terminal_default_bg = true;
+        default_bg_cell.bg = test_color(0.2, 0.2, 0.2);
+
+        let mut grid = test_grid(vec![default_bg_cell], None);
+        grid.terminal_surface_bg = test_color(0.1, 0.1, 0.1);
+        let spans = grid.build_row_background_spans(grid.cells[0].as_slice());
+
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].start_col, 0);
+        assert_eq!(spans[0].end_col_exclusive, 1);
+        assert_eq!(spans[0].color, test_color(0.2, 0.2, 0.2));
+    }
+
+    #[test]
+    fn upper_half_block_cells_keep_non_default_background_spans() {
+        let mut half_block = test_cell(0, 0, '\u{2580}');
+        half_block.bg = test_color(0.8, 0.4, 0.2);
+
+        let grid = test_grid(vec![half_block], None);
+        let spans = grid.build_row_background_spans(grid.cells[0].as_slice());
+
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].start_col, 0);
+        assert_eq!(spans[0].end_col_exclusive, 1);
+        assert_eq!(spans[0].color, test_color(0.8, 0.4, 0.2));
     }
 
     #[test]

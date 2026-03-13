@@ -150,9 +150,6 @@ const SEARCH_COUNTER_TEXT_ALPHA: f32 = 0.60;
 const SEARCH_BUTTON_TEXT_ALPHA: f32 = 0.70;
 const SEARCH_BUTTON_HOVER_BG_ALPHA: f32 = 0.20;
 const SEARCH_INPUT_SELECTION_ALPHA: f32 = 0.30;
-const PANE_FOCUS_ANIMATION_MS: u64 = 140;
-const PANE_FOCUS_ANIMATION_FRAME_MS: u64 = 16;
-const PANE_FOCUS_ANIMATION_DURATION: Duration = Duration::from_millis(PANE_FOCUS_ANIMATION_MS);
 const TAB_SWITCH_HINT_ANIMATION_FRAME_MS: u64 = 16;
 const MAX_PANE_FOCUS_STRENGTH: f32 = 2.0;
 const NATIVE_PANE_MIN_COLS: u16 = 24;
@@ -285,20 +282,6 @@ struct MouseReportingState {
     hover_target: Option<MouseReportTargetCell>,
     scroll_accumulator_x: f32,
     scroll_accumulator_y: f32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PaneFocusTarget {
-    tab_id: TabId,
-    pane_id: String,
-}
-
-#[derive(Clone, Debug)]
-struct PaneFocusTransition {
-    tab_id: TabId,
-    from_pane_id: String,
-    to_pane_id: String,
-    started_at: Instant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1014,12 +997,6 @@ fn pane_focus_preset(effect: PaneFocusEffect) -> Option<PaneFocusPreset> {
     }
 }
 
-fn pane_focus_ease_out(t: f32) -> f32 {
-    let clamped = t.clamp(0.0, 1.0);
-    let inv = 1.0 - clamped;
-    1.0 - (inv * inv * inv)
-}
-
 #[derive(Clone, Copy)]
 struct OverlayStyleBuilder<'a> {
     colors: &'a TerminalColors,
@@ -1145,9 +1122,6 @@ pub struct TerminalView {
     mouse_scroll_multiplier: f32,
     pane_focus_effect: PaneFocusEffect,
     pane_focus_strength: f32,
-    pane_focus_last_target: Option<PaneFocusTarget>,
-    pane_focus_transition: Option<PaneFocusTransition>,
-    pane_focus_animation_scheduled: bool,
     line_height: f32,
     copy_on_select: bool,
     copy_on_select_toast: bool,
@@ -1654,139 +1628,39 @@ impl TerminalView {
         (strength > f32::EPSILON).then_some((preset, strength))
     }
 
-    fn update_pane_focus_target(
-        &mut self,
-        tab_id: Option<TabId>,
-        pane_count: usize,
-        active_pane_id: Option<&str>,
-        now: Instant,
-    ) {
-        let Some(tab_id) = tab_id else {
-            self.pane_focus_last_target = None;
-            self.pane_focus_transition = None;
-            return;
-        };
-        let Some(active_pane_id) = active_pane_id else {
-            self.pane_focus_last_target = None;
-            self.pane_focus_transition = None;
-            return;
-        };
-
-        let next = PaneFocusTarget {
-            tab_id,
-            pane_id: active_pane_id.to_string(),
-        };
-
-        if pane_count <= 1 {
-            self.pane_focus_last_target = Some(next);
-            self.pane_focus_transition = None;
-            return;
-        }
-
-        match &self.pane_focus_last_target {
-            None => {
-                self.pane_focus_last_target = Some(next);
-                self.pane_focus_transition = None;
-            }
-            Some(previous) if previous == &next => {}
-            Some(previous) if previous.tab_id != next.tab_id => {
-                self.pane_focus_last_target = Some(next);
-                self.pane_focus_transition = None;
-            }
-            Some(previous) => {
-                self.pane_focus_transition = Some(PaneFocusTransition {
-                    tab_id: next.tab_id,
-                    from_pane_id: previous.pane_id.clone(),
-                    to_pane_id: next.pane_id.clone(),
-                    started_at: now,
-                });
-                self.pane_focus_last_target = Some(next);
-            }
-        }
-    }
-
-    fn pane_focus_transition_snapshot(
-        &mut self,
-        active_tab_id: Option<TabId>,
-        now: Instant,
-    ) -> Option<(String, String, f32)> {
-        let transition = self.pane_focus_transition.as_ref()?;
-        if active_tab_id != Some(transition.tab_id) {
-            self.pane_focus_transition = None;
-            return None;
-        }
-
-        let elapsed = now.saturating_duration_since(transition.started_at);
-        if elapsed >= PANE_FOCUS_ANIMATION_DURATION {
-            self.pane_focus_transition = None;
-            return None;
-        }
-        let progress = pane_focus_ease_out(
-            elapsed.as_secs_f32() / PANE_FOCUS_ANIMATION_DURATION.as_secs_f32(),
-        );
-        Some((
-            transition.from_pane_id.clone(),
-            transition.to_pane_id.clone(),
-            progress,
-        ))
-    }
-
-    fn schedule_pane_focus_animation(&mut self, cx: &mut Context<Self>) {
-        if self.pane_focus_animation_scheduled || self.pane_focus_transition.is_none() {
-            return;
-        }
-
-        self.pane_focus_animation_scheduled = true;
-        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
-            smol::Timer::after(Duration::from_millis(PANE_FOCUS_ANIMATION_FRAME_MS)).await;
-            let _ = cx.update(|cx| {
-                this.update(cx, |view, cx| {
-                    view.pane_focus_animation_scheduled = false;
-                    cx.notify();
-                })
-            });
-        })
-        .detach();
-    }
-
     fn effective_terminal_padding(&self) -> (f32, f32) {
-        if self
-            .active_terminal()
-            .is_some_and(|terminal| terminal.alternate_screen_mode())
-        {
-            (0.0, 0.0)
-        } else if self
-            .tabs
-            .get(self.active_tab)
-            .is_some_and(|tab| tab.panes.len() > 1)
-        {
+        if Self::uses_outer_terminal_padding(
+            self.tabs
+                .get(self.active_tab)
+                .map_or(0, |tab| tab.panes.len()),
+        ) {
+            (self.padding_x, self.padding_y)
+        } else {
             // Multi-pane layouts use per-pane content padding (native) or pane-managed
             // geometry (tmux), so disable global outer padding in that mode.
             (0.0, 0.0)
-        } else {
-            (self.padding_x, self.padding_y)
         }
     }
 
     fn native_split_content_padding(&self) -> (f32, f32) {
-        if self.runtime_uses_tmux() {
-            return (0.0, 0.0);
-        }
-        if self
-            .active_terminal()
-            .is_some_and(|terminal| terminal.alternate_screen_mode())
-        {
-            return (0.0, 0.0);
-        }
-        if self
-            .tabs
-            .get(self.active_tab)
-            .is_some_and(|tab| tab.panes.len() > 1)
-        {
+        if Self::uses_native_split_content_padding(
+            self.runtime_uses_tmux(),
+            self.tabs
+                .get(self.active_tab)
+                .map_or(0, |tab| tab.panes.len()),
+        ) {
             (self.padding_x, self.padding_y)
         } else {
             (0.0, 0.0)
         }
+    }
+
+    fn uses_outer_terminal_padding(pane_count: usize) -> bool {
+        pane_count <= 1
+    }
+
+    fn uses_native_split_content_padding(runtime_uses_tmux: bool, pane_count: usize) -> bool {
+        !runtime_uses_tmux && pane_count > 1
     }
 
     fn overlay_style(&self) -> OverlayStyleBuilder<'_> {
@@ -2318,9 +2192,6 @@ impl TerminalView {
             mouse_scroll_multiplier: config.mouse_scroll_multiplier,
             pane_focus_effect: config.pane_focus_effect,
             pane_focus_strength: config.pane_focus_strength,
-            pane_focus_last_target: None,
-            pane_focus_transition: None,
-            pane_focus_animation_scheduled: false,
             line_height: 1.4,
             copy_on_select: config.copy_on_select,
             copy_on_select_toast: config.copy_on_select_toast,
@@ -2648,13 +2519,6 @@ impl TerminalView {
         self.copy_on_select = config.copy_on_select;
         self.copy_on_select_toast = config.copy_on_select_toast;
         self.mouse_scroll_multiplier = config.mouse_scroll_multiplier;
-        if self.pane_focus_effect != config.pane_focus_effect
-            || (self.pane_focus_strength - config.pane_focus_strength).abs() > f32::EPSILON
-        {
-            self.pane_focus_last_target = None;
-            self.pane_focus_transition = None;
-            self.pane_focus_animation_scheduled = false;
-        }
         self.pane_focus_effect = config.pane_focus_effect;
         self.pane_focus_strength = config.pane_focus_strength;
         if self.terminal_scrollbar_visibility != config.terminal_scrollbar_visibility {
@@ -3179,13 +3043,6 @@ mod tests {
     }
 
     #[test]
-    fn pane_focus_ease_out_matches_endpoint_expectations() {
-        assert_eq!(pane_focus_ease_out(0.0), 0.0);
-        assert_eq!(pane_focus_ease_out(1.0), 1.0);
-        assert!(pane_focus_ease_out(0.5) > 0.5);
-    }
-
-    #[test]
     fn install_cli_availability_is_inverse_of_installed_probe() {
         assert!(TerminalView::install_cli_availability_from_probe(false));
         assert!(!TerminalView::install_cli_availability_from_probe(true));
@@ -3321,5 +3178,20 @@ mod tests {
         );
 
         assert_eq!(resolved.appearance, WindowBackgroundAppearance::Transparent);
+    }
+
+    #[test]
+    fn single_pane_layout_keeps_outer_terminal_padding() {
+        assert!(TerminalView::uses_outer_terminal_padding(0));
+        assert!(TerminalView::uses_outer_terminal_padding(1));
+        assert!(!TerminalView::uses_outer_terminal_padding(2));
+    }
+
+    #[test]
+    fn native_split_content_padding_is_only_used_for_native_multi_pane_tabs() {
+        assert!(!TerminalView::uses_native_split_content_padding(false, 0));
+        assert!(!TerminalView::uses_native_split_content_padding(false, 1));
+        assert!(TerminalView::uses_native_split_content_padding(false, 2));
+        assert!(!TerminalView::uses_native_split_content_padding(true, 2));
     }
 }
