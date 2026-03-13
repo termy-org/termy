@@ -20,6 +20,10 @@ fn apply_local_tmux_pane_focus(tab: &mut TerminalTab, pane_id: &str) -> bool {
     true
 }
 
+fn should_refresh_search_after_tmux_pane_focus(search_open: bool) -> bool {
+    search_open
+}
+
 impl TerminalView {
     fn warn_stale_tmux_tab_index(action: &str, index: usize, tab_count: usize) {
         log::warn!(
@@ -361,6 +365,12 @@ impl TerminalView {
             return false;
         }
 
+        // Search highlights are keyed to the active pane's buffer. Refresh them
+        // before the optimistic repaint so we do not briefly draw stale matches
+        // from the previously focused pane.
+        if should_refresh_search_after_tmux_pane_focus(self.search_open) {
+            self.perform_search();
+        }
         self.clear_selection();
         self.clear_hovered_link();
         let _ = self.event_wakeup_tx.try_send(());
@@ -545,7 +555,10 @@ impl TerminalView {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_local_tmux_pane_focus, reorder_active_window_id};
+    use super::{
+        apply_local_tmux_pane_focus, reorder_active_window_id,
+        should_refresh_search_after_tmux_pane_focus,
+    };
     use crate::terminal_view::{
         Terminal, TerminalOptions, TerminalPane, TerminalPaneRenderCache, TerminalSize,
         TerminalTab,
@@ -606,5 +619,11 @@ mod tests {
         assert_eq!(tab.active_pane_id, "%2");
         assert!(!apply_local_tmux_pane_focus(&mut tab, "%2"));
         assert!(!apply_local_tmux_pane_focus(&mut tab, "%9"));
+    }
+
+    #[test]
+    fn search_refresh_after_tmux_pane_focus_only_runs_when_search_is_open() {
+        assert!(should_refresh_search_after_tmux_pane_focus(true));
+        assert!(!should_refresh_search_after_tmux_pane_focus(false));
     }
 }
