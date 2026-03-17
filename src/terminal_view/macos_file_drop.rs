@@ -1,5 +1,3 @@
-#![allow(unexpected_cfgs)]
-
 use cocoa::{
     appkit::{
         NSFilenamesPboardType, NSPasteboard, NSPasteboardItem, NSView, NSViewHeightSizable,
