@@ -596,6 +596,7 @@ struct TerminalPaneRenderCacheKey {
     search_results_revision: Option<u64>,
     search_position: Option<(usize, usize)>,
     effective_background_opacity_bits: u32,
+    background_opacity_cells: bool,
     color_transform: TerminalPaneCellColorTransformKey,
 }
 
@@ -1134,6 +1135,7 @@ pub struct TerminalView {
     cursor_blink: bool,
     cursor_blink_visible: bool,
     background_opacity: f32,
+    background_opacity_cells: bool,
     preview_background_opacity: Option<config::BackgroundOpacityPreview>,
     background_blur: bool,
     background_support_context: BackgroundSupportContext,
@@ -2266,6 +2268,7 @@ impl TerminalView {
             cursor_blink: config.cursor_blink,
             cursor_blink_visible: true,
             background_opacity: config.background_opacity,
+            background_opacity_cells: config.background_opacity_cells,
             preview_background_opacity: config::current_background_opacity_preview(),
             background_blur: config.background_blur,
             background_support_context,
@@ -2568,6 +2571,7 @@ impl TerminalView {
             self.mark_tab_strip_layout_dirty();
         }
         self.background_opacity = config.background_opacity;
+        self.background_opacity_cells = config.background_opacity_cells;
         self.preview_background_opacity = config::synced_background_opacity_preview(
             self.background_opacity,
             self.preview_background_opacity,
@@ -2888,6 +2892,7 @@ mod tests {
                 search_results_revision: Some(7),
                 search_position: Some((1, 1)),
                 effective_background_opacity_bits: 0.92f32.to_bits(),
+                background_opacity_cells: false,
                 color_transform: TerminalPaneCellColorTransformKey {
                     fg_blend_bits: 0.1f32.to_bits(),
                     bg_blend_bits: 0.2f32.to_bits(),

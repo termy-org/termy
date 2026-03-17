@@ -161,6 +161,7 @@ fn paint_damage_from_dirty_spans(
 struct PaneCellBuildContext<'a> {
     colors: &'a TerminalColors,
     effective_background_opacity: f32,
+    background_opacity_cells: bool,
     cell_color_transform: CellColorTransform,
     pane_focus_target_bg: gpui::Rgba,
     terminal_surface_bg: gpui::Rgba,
@@ -217,7 +218,9 @@ fn resolve_cell_colors(
         fg.b *= DIM_TEXT_FACTOR;
     }
     let uses_terminal_default_bg = uses_terminal_default_background(bg_source);
-    if uses_terminal_default_bg || !uses_block_element_background(cell_content.c) {
+    let apply_background_opacity = uses_terminal_default_bg
+        || (context.background_opacity_cells && !uses_block_element_background(cell_content.c));
+    if apply_background_opacity {
         bg.a *= context.effective_background_opacity;
     }
     (fg, bg) = apply_cell_color_transform(
@@ -528,6 +531,7 @@ impl TerminalView {
             search_results_revision,
             search_position,
             effective_background_opacity_bits: effective_background_opacity.to_bits(),
+            background_opacity_cells: self.background_opacity_cells,
             color_transform: TerminalPaneCellColorTransformKey {
                 fg_blend_bits: cell_color_transform.fg_blend.to_bits(),
                 bg_blend_bits: cell_color_transform.bg_blend.to_bits(),
@@ -2164,6 +2168,7 @@ impl Render for TerminalView {
                 let pane_build_context = PaneCellBuildContext {
                     colors: &colors,
                     effective_background_opacity,
+                    background_opacity_cells: self.background_opacity_cells,
                     cell_color_transform,
                     pane_focus_target_bg,
                     terminal_surface_bg,
@@ -2757,11 +2762,19 @@ mod tests {
     }
 
     fn test_build_context(opacity: f32) -> PaneCellBuildContext<'static> {
+        test_build_context_with_background_cells(opacity, false)
+    }
+
+    fn test_build_context_with_background_cells(
+        opacity: f32,
+        background_opacity_cells: bool,
+    ) -> PaneCellBuildContext<'static> {
         static COLORS: std::sync::LazyLock<TerminalColors> =
             std::sync::LazyLock::new(TerminalColors::default);
         PaneCellBuildContext {
             colors: &COLORS,
             effective_background_opacity: opacity,
+            background_opacity_cells,
             cell_color_transform: CellColorTransform::default(),
             pane_focus_target_bg: COLORS.background,
             terminal_surface_bg: COLORS.background,
@@ -2781,6 +2794,7 @@ mod tests {
         PaneCellBuildContext {
             colors: &COLORS,
             effective_background_opacity: opacity,
+            background_opacity_cells: false,
             cell_color_transform,
             pane_focus_target_bg,
             terminal_surface_bg,
@@ -3115,7 +3129,49 @@ mod tests {
             context,
         );
         assert!(!ansi_black_background.uses_terminal_default_bg);
-        assert!((ansi_black_background.bg.a - 0.2).abs() <= f32::EPSILON);
+        assert!((ansi_black_background.bg.a - 1.0).abs() <= f32::EPSILON);
+
+        let indexed_background = resolve_cell_colors(
+            &test_term_cell(
+                AnsiColor::Named(NamedColor::Foreground),
+                AnsiColor::Indexed(232),
+                Flags::empty(),
+            ),
+            context,
+        );
+        assert!(!indexed_background.uses_terminal_default_bg);
+        assert!((indexed_background.bg.a - 1.0).abs() <= f32::EPSILON);
+
+        let rgb_background = resolve_cell_colors(
+            &test_term_cell(
+                AnsiColor::Named(NamedColor::Foreground),
+                AnsiColor::Spec(alacritty_terminal::vte::ansi::Rgb {
+                    r: 12,
+                    g: 34,
+                    b: 56,
+                }),
+                Flags::empty(),
+            ),
+            context,
+        );
+        assert!(!rgb_background.uses_terminal_default_bg);
+        assert!((rgb_background.bg.a - 1.0).abs() <= f32::EPSILON);
+    }
+
+    #[test]
+    fn resolve_cell_colors_scales_explicit_backgrounds_when_cell_opacity_is_enabled() {
+        let context = test_build_context_with_background_cells(0.2, true);
+
+        let ansi_background = resolve_cell_colors(
+            &test_term_cell(
+                AnsiColor::Named(NamedColor::Foreground),
+                AnsiColor::Named(NamedColor::Black),
+                Flags::empty(),
+            ),
+            context,
+        );
+        assert!(!ansi_background.uses_terminal_default_bg);
+        assert!((ansi_background.bg.a - 0.2).abs() <= f32::EPSILON);
 
         let indexed_background = resolve_cell_colors(
             &test_term_cell(
@@ -3146,7 +3202,7 @@ mod tests {
 
     #[test]
     fn resolve_cell_colors_keeps_block_element_backgrounds_opaque() {
-        let context = test_build_context(0.2);
+        let context = test_build_context_with_background_cells(0.2, true);
         let mut block_cell = test_term_cell(
             AnsiColor::Named(NamedColor::Foreground),
             AnsiColor::Indexed(232),
@@ -3217,6 +3273,22 @@ mod tests {
     #[test]
     fn resolve_cell_colors_scales_inverse_explicit_background_for_non_block_cells() {
         let context = test_build_context(0.2);
+        let inverse_explicit_background = resolve_cell_colors(
+            &test_term_cell(
+                AnsiColor::Named(NamedColor::Green),
+                AnsiColor::Named(NamedColor::Background),
+                Flags::INVERSE,
+            ),
+            context,
+        );
+
+        assert!(!inverse_explicit_background.uses_terminal_default_bg);
+        assert!((inverse_explicit_background.bg.a - 1.0).abs() <= f32::EPSILON);
+    }
+
+    #[test]
+    fn resolve_cell_colors_scales_inverse_explicit_background_when_cell_opacity_is_enabled() {
+        let context = test_build_context_with_background_cells(0.2, true);
         let inverse_explicit_background = resolve_cell_colors(
             &test_term_cell(
                 AnsiColor::Named(NamedColor::Green),

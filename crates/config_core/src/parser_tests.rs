@@ -18,6 +18,7 @@ fn defaults_enable_tmux_persistence_and_raise_pane_focus_strength() {
     let defaults = parse("");
     assert!(defaults.tmux_persistence);
     assert!(!defaults.native_tab_persistence);
+    assert!(!defaults.background_opacity_cells);
     assert!((defaults.pane_focus_strength - 0.6).abs() < f32::EPSILON);
 }
 
@@ -284,8 +285,10 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::TabSwitchModifierHints => Some(config.tab_switch_modifier_hints),
         RootSettingId::VerticalTabs => Some(config.vertical_tabs),
         RootSettingId::VerticalTabsMinimized => Some(config.vertical_tabs_minimized),
+        RootSettingId::AutoHideTabbar => Some(config.auto_hide_tabbar),
         RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar),
         RootSettingId::CursorBlink => Some(config.cursor_blink),
+        RootSettingId::BackgroundOpacityCells => Some(config.background_opacity_cells),
         RootSettingId::BackgroundBlur => Some(config.background_blur),
         RootSettingId::CopyOnSelect => Some(config.copy_on_select),
         RootSettingId::CopyOnSelectToast => Some(config.copy_on_select_toast),
@@ -394,6 +397,8 @@ fn numeric_keys_parse_table_driven() {
 
     assert_eq!(parse("background_opacity = -0.5\n").background_opacity, 0.0);
     assert_eq!(parse("background_opacity = 4\n").background_opacity, 1.0);
+    assert!(parse("background_opacity_cells = true\n").background_opacity_cells);
+    assert!(!parse("background_opacity_cells = false\n").background_opacity_cells);
     let nan_opacity = parse_report("background_opacity = NaN\n");
     assert_eq!(
         nan_opacity.config.background_opacity,

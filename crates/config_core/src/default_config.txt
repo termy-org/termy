@@ -77,6 +77,8 @@ cursor_style = block
 cursor_blink = true
 # Window background opacity (0.0 to 1.0)
 background_opacity = 1
+# Apply window transparency to explicit terminal cell backgrounds
+background_opacity_cells = false
 # Enable blur effect for transparent backgrounds
 background_blur = false
 # Left and right terminal padding

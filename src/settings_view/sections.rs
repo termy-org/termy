@@ -84,6 +84,7 @@ impl SettingsWindow {
 
     pub(super) fn render_appearance_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let background_blur = self.config.background_blur;
+        let background_opacity_cells = self.config.background_opacity_cells;
         let theme = self.config.theme.clone();
         let font_family = self.config.font_family.clone();
         let font_size = self.config.font_size;
@@ -119,6 +120,14 @@ impl SettingsWindow {
                 "background_opacity",
                 opacity_meta.title,
                 opacity_meta.description,
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "background_opacity_cells",
+                "background-opacity-cells-toggle",
+                RootSettingId::BackgroundOpacityCells,
+                background_opacity_cells,
+                "Saved",
                 cx,
             ),
         ];

@@ -547,6 +547,13 @@ impl AppConfig {
                         }
                     }
                 }
+                RootSettingId::BackgroundOpacityCells => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.background_opacity_cells = parsed;
+                    }
+                }
                 RootSettingId::BackgroundBlur => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)

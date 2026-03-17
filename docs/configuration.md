@@ -28,6 +28,11 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - Window background opacity (0.0 to 1.0)
 - Group: `WINDOW`
 
+`background_opacity_cells`
+- Default: `false`
+- Apply window transparency to explicit terminal cell backgrounds
+- Group: `WINDOW`
+
 `background_blur`
 - Default: `false`
 - Enable blur effect for transparent backgrounds
