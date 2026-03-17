@@ -2752,6 +2752,7 @@ impl TerminalView {
         let mut should_redraw = false;
         let mut should_quit = false;
         let active_tab = self.active_tab;
+        let mut reply_host = GpuiClipboardReplyHost::from_cx(cx);
 
         for index in 0..self.tabs.len() {
             let active_pane_id = self.tabs[index].active_pane_id.clone();
@@ -2759,7 +2760,6 @@ impl TerminalView {
             for pane_index in 0..self.tabs[index].panes.len() {
                 let pane_id = self.tabs[index].panes[pane_index].id.clone();
                 let pane_is_active = pane_id == active_pane_id;
-                let mut reply_host = GpuiClipboardReplyHost::from_cx(cx);
                 let events =
                     self.tabs[index].panes[pane_index].terminal.drain_events(&mut reply_host);
 
