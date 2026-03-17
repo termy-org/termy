@@ -101,6 +101,10 @@ fn run_compare(mut args: impl Iterator<Item = String>) -> Result<()> {
     let baseline_root = canonicalize_root(baseline_root.context("missing --baseline-root")?)?;
     let candidate_root = canonicalize_root(candidate_root.context("missing --candidate-root")?)?;
     let output_root = output_root.context("missing --output")?;
+    if output_root.exists() {
+        fs::remove_dir_all(&output_root)
+            .with_context(|| format!("failed to clear {}", output_root.display()))?;
+    }
     fs::create_dir_all(&output_root)
         .with_context(|| format!("failed to create {}", output_root.display()))?;
 
@@ -258,6 +262,7 @@ fn run_idle_burst(duration: Duration) -> Result<()> {
     marker_writer.record("burst_end", None)?;
 
     sleep_for_remaining(start, duration, IDLE_BURST_POST_IDLE);
+    marker_writer.flush()?;
     Ok(())
 }
 
@@ -291,6 +296,7 @@ fn run_echo_train(duration: Duration) -> Result<()> {
     out.flush()?;
 
     sleep_for_remaining(start, duration, ECHO_TRAIN_POST_IDLE);
+    marker_writer.flush()?;
     Ok(())
 }
 
@@ -348,8 +354,11 @@ impl BenchmarkMarkerWriter {
         self.writer
             .write_all(b"\n")
             .context("failed to write benchmark marker newline")?;
-        self.writer.flush().context("failed to flush benchmark marker")?;
         Ok(())
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        self.writer.flush().context("failed to flush benchmark marker")
     }
 }
 
@@ -494,6 +503,14 @@ fn run_single_benchmark(
     let config_root = raw_dir.join("config");
     let metrics_dir = raw_dir.join("app");
     let driver_dir = raw_dir.join("driver");
+    if raw_dir.exists() {
+        fs::remove_dir_all(&raw_dir)
+            .with_context(|| format!("failed to clear {}", raw_dir.display()))?;
+    }
+    if energy_dir.exists() {
+        fs::remove_dir_all(&energy_dir)
+            .with_context(|| format!("failed to clear {}", energy_dir.display()))?;
+    }
     fs::create_dir_all(config_root.join("termy"))
         .with_context(|| format!("failed to create {}", config_root.display()))?;
     fs::create_dir_all(&metrics_dir)

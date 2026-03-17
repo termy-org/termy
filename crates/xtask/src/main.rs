@@ -8,6 +8,9 @@ use termy_config_core::{
 
 mod benchmark;
 
+const XTASK_USAGE: &str =
+    "usage: cargo run -p xtask -- <generate-keybindings-doc|generate-config-doc|benchmark-driver|benchmark-compare> [options]";
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("{}", error);
@@ -18,9 +21,7 @@ fn main() {
 fn run() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let Some(command) = args.next() else {
-        bail!(
-            "usage: cargo run -p xtask -- <generate-keybindings-doc|generate-config-doc|benchmark-driver|benchmark-compare> [options]"
-        );
+        bail!(XTASK_USAGE);
     };
 
     if matches!(command.as_str(), "benchmark-driver" | "benchmark-compare") {
@@ -62,8 +63,7 @@ fn run() -> Result<()> {
             )
         }
         other => bail!(
-            "unknown xtask command `{}`; expected `generate-keybindings-doc` or `generate-config-doc`",
-            other
+            "unknown xtask command `{other}`; {XTASK_USAGE}"
         ),
     }
 }

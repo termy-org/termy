@@ -1848,6 +1848,13 @@ impl TerminalView {
             smol::Timer::after(BENCHMARK_EXIT_GRACE_DURATION).await;
             let _ = cx.update(|cx| {
                 this.update(cx, |view, cx| {
+                    if view
+                        .benchmark_session
+                        .as_ref()
+                        .is_none_or(BenchmarkSession::is_finished)
+                    {
+                        return;
+                    }
                     view.finish_benchmark_session();
                     cx.quit();
                 })

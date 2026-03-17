@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 use std::sync::OnceLock;
 
 #[cfg(target_os = "macos")]
@@ -40,11 +39,12 @@ pub fn terminal_ui_monotonic_now_ns() -> u64 {
 
     #[cfg(not(target_os = "macos"))]
     {
-        use std::time::{SystemTime, UNIX_EPOCH};
+        use std::time::Instant;
 
-        let duration = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system clock is before unix epoch");
+        static START_INSTANT: OnceLock<Instant> = OnceLock::new();
+        let start = START_INSTANT.get_or_init(Instant::now);
+
+        let duration = Instant::now().duration_since(*start);
         duration.as_nanos().min(u128::from(u64::MAX)) as u64
     }
 }

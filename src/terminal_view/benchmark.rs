@@ -190,6 +190,10 @@ impl BenchmarkSession {
         self.config.exit_on_complete
     }
 
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
     fn push_sample(&mut self, now: Instant) {
         let elapsed = now.saturating_duration_since(self.sample_started_at);
         let elapsed_secs = elapsed.as_secs_f32();
@@ -246,8 +250,9 @@ impl BenchmarkSession {
         })?;
 
         let timeline_path = self.config.metrics_path.join("timeline.ndjson");
-        let timeline_file = File::create(&timeline_path)
-            .map_err(|error| format!("failed to create {}: {error}", timeline_path.display()))?;
+        let timeline_tmp_path = temp_path(&timeline_path);
+        let timeline_file = File::create(&timeline_tmp_path)
+            .map_err(|error| format!("failed to create {}: {error}", timeline_tmp_path.display()))?;
         let mut timeline_writer = BufWriter::new(timeline_file);
         for sample in &self.samples {
             serde_json::to_writer(&mut timeline_writer, sample).map_err(|error| {
@@ -260,10 +265,19 @@ impl BenchmarkSession {
         timeline_writer
             .flush()
             .map_err(|error| format!("failed to flush {}: {error}", timeline_path.display()))?;
+        drop(timeline_writer);
+        fs::rename(&timeline_tmp_path, &timeline_path).map_err(|error| {
+            format!(
+                "failed to replace {} from {}: {error}",
+                timeline_path.display(),
+                timeline_tmp_path.display()
+            )
+        })?;
 
         let frames_path = self.config.metrics_path.join("frames.ndjson");
-        let frames_file = File::create(&frames_path)
-            .map_err(|error| format!("failed to create {}: {error}", frames_path.display()))?;
+        let frames_tmp_path = temp_path(&frames_path);
+        let frames_file = File::create(&frames_tmp_path)
+            .map_err(|error| format!("failed to create {}: {error}", frames_tmp_path.display()))?;
         let mut frames_writer = BufWriter::new(frames_file);
         for frame in &self.frame_events {
             serde_json::to_writer(&mut frames_writer, frame).map_err(|error| {
@@ -279,13 +293,34 @@ impl BenchmarkSession {
         frames_writer
             .flush()
             .map_err(|error| format!("failed to flush {}: {error}", frames_path.display()))?;
+        drop(frames_writer);
+        fs::rename(&frames_tmp_path, &frames_path).map_err(|error| {
+            format!(
+                "failed to replace {} from {}: {error}",
+                frames_path.display(),
+                frames_tmp_path.display()
+            )
+        })?;
 
         let summary = self.build_summary();
         let summary_path = self.config.metrics_path.join("summary.json");
-        let summary_file = File::create(&summary_path)
-            .map_err(|error| format!("failed to create {}: {error}", summary_path.display()))?;
-        serde_json::to_writer_pretty(BufWriter::new(summary_file), &summary)
+        let summary_tmp_path = temp_path(&summary_path);
+        let summary_file = File::create(&summary_tmp_path)
+            .map_err(|error| format!("failed to create {}: {error}", summary_tmp_path.display()))?;
+        let mut summary_writer = BufWriter::new(summary_file);
+        serde_json::to_writer_pretty(&mut summary_writer, &summary)
             .map_err(|error| format!("failed to serialize {}: {error}", summary_path.display()))?;
+        summary_writer
+            .flush()
+            .map_err(|error| format!("failed to flush {}: {error}", summary_path.display()))?;
+        drop(summary_writer);
+        fs::rename(&summary_tmp_path, &summary_path).map_err(|error| {
+            format!(
+                "failed to replace {} from {}: {error}",
+                summary_path.display(),
+                summary_tmp_path.display()
+            )
+        })?;
         Ok(())
     }
 
@@ -391,6 +426,17 @@ pub(super) struct BenchmarkSummary {
 fn duration_millis(duration: Duration) -> u64 {
     let millis = duration.as_millis();
     millis.min(u128::from(u64::MAX)) as u64
+}
+
+fn temp_path(path: &PathBuf) -> PathBuf {
+    let mut temp = path.clone();
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| format!("{extension}.tmp"))
+        .unwrap_or_else(|| "tmp".to_string());
+    temp.set_extension(extension);
+    temp
 }
 
 fn percentile_millis(samples_micros: &[u32], numerator: usize, denominator: usize) -> f32 {
