@@ -30,6 +30,16 @@ fn shell_quote_paths(paths: &[PathBuf]) -> String {
         .join(" ")
 }
 
+fn dropped_paths_to_terminal_paste_input(paths: &[PathBuf]) -> Option<Vec<u8>> {
+    if paths.is_empty() {
+        return None;
+    }
+
+    let mut text = shell_quote_paths(paths);
+    text.push(' ');
+    Some(text.into_bytes())
+}
+
 fn image_extension(format: gpui::ImageFormat) -> &'static str {
     match format {
         gpui::ImageFormat::Gif => "gif",
@@ -92,6 +102,12 @@ fn clipboard_item_to_terminal_paste_input(
 }
 
 impl TerminalView {
+    fn write_dropped_paths(&mut self, input: &[u8], cx: &mut Context<Self>) {
+        let _ = self.close_terminal_context_menu(cx);
+        self.write_terminal_paste_input(input, cx);
+        cx.notify();
+    }
+
     fn maybe_suppress_tab_switch_hint_for_key_down(
         &mut self,
         key: &str,
@@ -357,22 +373,38 @@ impl TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let _ = self.close_terminal_context_menu(cx);
         let paths_list = paths.paths();
-        if paths_list.is_empty() {
+        let Some(input) = dropped_paths_to_terminal_paste_input(paths_list) else {
             return;
-        }
+        };
+        self.write_dropped_paths(&input, cx);
+    }
 
-        let text = shell_quote_paths(paths_list);
-        self.write_terminal_paste_input(text.as_bytes(), cx);
-        cx.notify();
+    #[cfg(target_os = "macos")]
+    pub(crate) fn handle_native_file_drop_result(
+        &mut self,
+        result: super::NativeDropResult,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(paths) => {
+                let Some(input) = dropped_paths_to_terminal_paste_input(&paths) else {
+                    return;
+                };
+                self.write_dropped_paths(&input, cx);
+            }
+            Err(error) => {
+                termy_toast::error(error.to_string());
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        clipboard_item_to_terminal_paste_input, image_extension, shell_quote_paths,
+        clipboard_item_to_terminal_paste_input, dropped_paths_to_terminal_paste_input,
+        image_extension, shell_quote_paths,
         should_defer_key_down_to_ime,
     };
     use gpui::{Keystroke, Modifiers};
@@ -448,6 +480,21 @@ mod tests {
             shell_quote_paths(&paths),
             "'/tmp/normal.png' '/tmp/quote'\\''s test.png'"
         );
+    }
+
+    #[test]
+    fn dropped_paths_add_a_trailing_space() {
+        let paths = vec![PathBuf::from("/tmp/file with space.png")];
+        let input = dropped_paths_to_terminal_paste_input(&paths).expect("drop should serialize");
+        assert_eq!(
+            String::from_utf8(input).expect("drop input should be utf8"),
+            "'/tmp/file with space.png' "
+        );
+    }
+
+    #[test]
+    fn dropped_paths_rejects_empty_input() {
+        assert!(dropped_paths_to_terminal_paste_input(&[]).is_none());
     }
 
     #[test]

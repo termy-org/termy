@@ -11,8 +11,8 @@ use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
 use gpui::AppContext;
 use gpui::{
-    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths, FocusHandle,
-    Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths,
+    FocusHandle, Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
     ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     ParentElement, Pixels, Render, ScrollWheelEvent, SharedString, Size,
     StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window, WindowBackgroundAppearance,
@@ -50,6 +50,8 @@ use termy_toast::ToastManager;
 mod command_palette;
 mod inline_input;
 mod interaction;
+#[cfg(target_os = "macos")]
+mod macos_file_drop;
 mod overlay_view;
 mod persistence;
 mod render;
@@ -67,6 +69,8 @@ use inline_input::{InlineInputAlignment, InlineInputState};
 use overlay_view::TerminalOverlayView;
 use runtime::{RuntimeKind, RuntimeState, TmuxRuntime};
 pub(crate) use tab_strip::constants::*;
+#[cfg(target_os = "macos")]
+pub(crate) use macos_file_drop::{NativeDropResult, install_native_file_drop};
 use tab_strip::state::TabStripState;
 
 const MIN_FONT_SIZE: f32 = 8.0;
@@ -1211,6 +1215,8 @@ pub struct TerminalView {
     last_notified_update_state: Option<UpdateState>,
     #[cfg(target_os = "macos")]
     update_check_toast_id: Option<u64>,
+    #[cfg(target_os = "macos")]
+    native_file_drop_enabled: bool,
 }
 
 impl TerminalView {
@@ -1232,6 +1238,11 @@ impl TerminalView {
 
     pub(super) fn install_cli_available(&self) -> bool {
         self.install_cli_available
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn set_native_file_drop_enabled(&mut self, enabled: bool) {
+        self.native_file_drop_enabled = enabled;
     }
 
     pub(super) fn refresh_install_cli_availability(&mut self) -> bool {
@@ -2340,6 +2351,8 @@ impl TerminalView {
             last_notified_update_state: None,
             #[cfg(target_os = "macos")]
             update_check_toast_id: None,
+            #[cfg(target_os = "macos")]
+            native_file_drop_enabled: false,
         };
         #[cfg(target_os = "windows")]
         if config.tmux_enabled {

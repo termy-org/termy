@@ -2716,7 +2716,6 @@ impl Render for TerminalView {
                                         MouseButton::Right,
                                         cx.listener(Self::handle_mouse_up),
                                     )
-                                    .on_drop(cx.listener(Self::handle_file_drop))
                                     .when_some(self.pane_resize_drag.as_ref(), |s, drag| match drag
                                         .axis
                                     {
@@ -2733,6 +2732,16 @@ impl Render for TerminalView {
                     ),
             )
             .child(overlay_view);
+
+        #[cfg(target_os = "macos")]
+        let root = if self.native_file_drop_enabled {
+            root
+        } else {
+            root.on_drop(cx.listener(Self::handle_file_drop))
+        };
+
+        #[cfg(not(target_os = "macos"))]
+        let root = root.on_drop(cx.listener(Self::handle_file_drop));
 
         #[cfg(debug_assertions)]
         self.maybe_emit_render_metrics_log(Instant::now());

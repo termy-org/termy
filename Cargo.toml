@@ -31,8 +31,11 @@ short_description = "Minimal GPUI-powered terminal"
 category = "Developer Tool"
 icon = ["assets/termy.icns"]
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(macos_sdk_26)', 'cfg(feature, values("cargo-clippy"))'] }
+
 [dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "83de8a25e0ef71a8d762a148459bc863adaeb7e3", package = "gpui" }
 
 # Terminal emulation
 alacritty_terminal = { git = "https://github.com/alacritty/alacritty", rev = "4225cea231432fb23442b1da2463b4ec9dfd726c" }
@@ -79,11 +82,14 @@ termy_cli_install_core = { path = "crates/cli_install_core" }
 [target.'cfg(target_os = "macos")'.dependencies]
 # Pin core-text to 21.0.0 to avoid core-graphics version conflict on macOS.
 core-text = "=21.0.0"
+cocoa = "0.26"
+objc = "0.2"
+raw-window-handle = "0.6"
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1"
 
 [dev-dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", features = [
+gpui = { git = "https://github.com/zed-industries/zed", rev = "83de8a25e0ef71a8d762a148459bc863adaeb7e3", package = "gpui", features = [
   "test-support",
 ] }
