@@ -777,7 +777,7 @@ mod tests {
                 break;
             }
             thread::sleep(Duration::from_millis(25));
-            let _ = native.process_events();
+            let _ = native.drain_events(&mut |_| None);
             native_row = row_text_from_terminal(&native, 0, usize::from(size.cols));
         }
         assert_eq!(native_row.len(), usize::from(size.cols));

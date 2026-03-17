@@ -4,6 +4,7 @@ mod locale;
 mod mouse_protocol;
 mod pane_terminal;
 mod path_env;
+mod protocol;
 mod render_metrics;
 mod runtime;
 mod tmux;
@@ -27,9 +28,10 @@ pub use render_metrics::{
 };
 pub use runtime::{
     TabTitleShellIntegration, Terminal, TerminalCursorState, TerminalDamageSnapshot,
-    TerminalDirtySpan, TerminalEvent, TerminalOptions, TerminalQueryColors, TerminalRuntimeConfig,
-    TerminalSize, WorkingDirFallback, keystroke_to_input,
+    TerminalDirtySpan, TerminalEvent, TerminalOptions, TerminalRuntimeConfig, TerminalSize,
+    WorkingDirFallback, keystroke_to_input,
 };
+pub use protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
 pub use tmux::{
     TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,
     TmuxSessionSummary, TmuxShutdownMode, TmuxSnapshot, TmuxSocketTarget, TmuxWindowState,

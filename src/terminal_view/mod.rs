@@ -34,10 +34,10 @@ use termy_auto_update::{AutoUpdater, UpdateState};
 use termy_search::SearchState;
 use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
-    TerminalCursorState, TerminalCursorStyle, TerminalDamageSnapshot, TerminalDirtySpan,
-    TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle, TerminalGridPaintDamage,
-    TerminalGridRows, TerminalMouseMode, TerminalOptions, TerminalQueryColors,
-    TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
+    TerminalClipboardTarget, TerminalCursorState, TerminalCursorStyle, TerminalDamageSnapshot,
+    TerminalDirtySpan, TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle,
+    TerminalGridPaintDamage, TerminalGridRows, TerminalMouseMode, TerminalOptions,
+    TerminalQueryColors, TerminalReplyHost, TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
 #[cfg(debug_assertions)]
@@ -293,6 +293,26 @@ enum Terminal {
     Native(Mutex<NativeTerminal>),
 }
 
+struct GpuiClipboardReplyHost {
+    clipboard_text: Option<String>,
+}
+
+impl GpuiClipboardReplyHost {
+    fn from_cx(cx: &mut Context<TerminalView>) -> Self {
+        Self {
+            clipboard_text: cx.read_from_clipboard().and_then(|item| item.text()),
+        }
+    }
+}
+
+impl TerminalReplyHost for GpuiClipboardReplyHost {
+    fn load_clipboard(&mut self, _target: TerminalClipboardTarget) -> Option<String> {
+        // GPUI exposes a single host clipboard source here, so both OSC 52
+        // targets resolve through the same adapter.
+        self.clipboard_text.clone()
+    }
+}
+
 impl Terminal {
     fn new_tmux(size: TerminalSize, options: TerminalOptions) -> Self {
         Self::Tmux(PaneTerminal::new(size, options))
@@ -339,12 +359,12 @@ impl Terminal {
         }
     }
 
-    fn process_events(&self) -> Vec<TerminalEvent> {
+    fn drain_events(&self, host: &mut impl TerminalReplyHost) -> Vec<TerminalEvent> {
         match self {
             Self::Tmux(_) => Vec::new(),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.process_events())
+                .map(|terminal| terminal.drain_events(host))
                 .unwrap_or_default(),
         }
     }
@@ -2732,6 +2752,7 @@ impl TerminalView {
         let mut should_redraw = false;
         let mut should_quit = false;
         let active_tab = self.active_tab;
+        let mut reply_host = GpuiClipboardReplyHost::from_cx(cx);
 
         for index in 0..self.tabs.len() {
             let active_pane_id = self.tabs[index].active_pane_id.clone();
@@ -2739,7 +2760,8 @@ impl TerminalView {
             for pane_index in 0..self.tabs[index].panes.len() {
                 let pane_id = self.tabs[index].panes[pane_index].id.clone();
                 let pane_is_active = pane_id == active_pane_id;
-                let events = self.tabs[index].panes[pane_index].terminal.process_events();
+                let events =
+                    self.tabs[index].panes[pane_index].terminal.drain_events(&mut reply_host);
 
                 for event in events {
                     match event {
