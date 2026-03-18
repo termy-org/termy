@@ -27,15 +27,21 @@ impl TerminalView {
         self.effective_vertical_tab_strip_width()
     }
 
-    pub(in super::super) fn vertical_tab_strip_controls_height(&self) -> f32 {
+    pub(in super::super) fn vertical_tab_strip_header_height(&self) -> f32 {
+        0.0
+    }
+
+    pub(in super::super) fn vertical_tab_strip_utility_dock_height(&self) -> f32 {
         TABBAR_HEIGHT
     }
 
     pub(in super::super) fn effective_vertical_tabs_list_height(&self) -> f32 {
-        let control_rail_height = self.vertical_tab_strip_controls_height();
+        let header_height = self.vertical_tab_strip_header_height();
+        let utility_dock_height = self.vertical_tab_strip_utility_dock_height();
         let list_height = self.last_viewport_size_px.map_or(0.0, |(_, height)| height as f32)
             - self.chrome_height()
-            - control_rail_height;
+            - header_height
+            - utility_dock_height;
         list_height.max(0.0)
     }
 

@@ -63,7 +63,7 @@ impl TerminalView {
             TabStripOrientation::Vertical => {
                 let pointer_y = (Into::<f32>::into(position.y)
                     - self.chrome_height()
-                    - self.vertical_tab_strip_controls_height())
+                    - self.vertical_tab_strip_header_height())
                 .clamp(0.0, self.effective_vertical_tabs_list_height());
                 (pointer_y, self.effective_vertical_tabs_list_height())
             }

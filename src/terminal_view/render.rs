@@ -2423,11 +2423,17 @@ impl Render for TerminalView {
         let focus_handle = self.focus_handle.clone();
         let titlebar_height = Self::titlebar_height();
         let tabbar_bg = terminal_surface_bg;
-        let show_tabbar = !self.vertical_tabs && !(self.auto_hide_tabbar && self.tabs.len() <= 1);
-        let tabs_row = show_tabbar
+        let show_tab_strip_chrome = self.should_render_tab_strip_chrome();
+        let show_horizontal_tabbar = !self.vertical_tabs && show_tab_strip_chrome;
+        let tabs_row = show_horizontal_tabbar
             .then(|| self.render_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
-        let vertical_tab_strip = self
+        let vertical_titlebar_branding = self
             .vertical_tabs
+            .then(|| {
+                self.render_vertical_titlebar_branding(window, &colors, &font_family, tabbar_bg)
+            })
+            .flatten();
+        let vertical_tab_strip = (self.vertical_tabs && show_tab_strip_chrome)
             .then(|| self.render_vertical_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
 
         #[cfg(target_os = "macos")]
@@ -2549,7 +2555,8 @@ impl Render for TerminalView {
                         .flex()
                         .items_end()
                         .mt(px(TOP_STRIP_CONTENT_OFFSET_Y))
-                        .children(tabs_row),
+                        .children(tabs_row)
+                        .children(vertical_titlebar_branding),
                 )
                 .into_any()
         });

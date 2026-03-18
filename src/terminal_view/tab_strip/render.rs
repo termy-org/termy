@@ -185,6 +185,14 @@ mod tests {
         );
         assert_eq!(TerminalView::compact_vertical_tab_label(10, ""), "•");
     }
+
+    #[test]
+    fn tab_strip_chrome_visible_matches_auto_hide_policy() {
+        assert!(!TerminalView::tab_strip_chrome_visible(true, 1));
+        assert!(!TerminalView::tab_strip_chrome_visible(true, 0));
+        assert!(TerminalView::tab_strip_chrome_visible(false, 1));
+        assert!(TerminalView::tab_strip_chrome_visible(true, 2));
+    }
 }
 
 struct TabStripRenderState {
@@ -455,6 +463,14 @@ impl TerminalView {
         title.chars().next().unwrap_or('•').to_string()
     }
 
+    pub(crate) fn tab_strip_chrome_visible(auto_hide_tabbar: bool, tab_count: usize) -> bool {
+        !auto_hide_tabbar || tab_count > 1
+    }
+
+    pub(crate) fn should_render_tab_strip_chrome(&self) -> bool {
+        Self::tab_strip_chrome_visible(self.auto_hide_tabbar, self.tabs.len())
+    }
+
     fn build_tab_strip_render_state(
         &mut self,
         window: &Window,
@@ -539,36 +555,13 @@ impl TerminalView {
             .into_any_element()
     }
 
-    fn render_left_inset_lane(
-        width: f32,
-        tab_baseline_y: f32,
-        tab_stroke_color: gpui::Rgba,
+    fn render_termy_branding(
         font_family: &SharedString,
         termy_branding_slot_start_x: f32,
         termy_branding_slot_width: f32,
         termy_branding_text_color: gpui::Rgba,
-    ) -> AnyElement {
-        let lane = div()
-            .id("tabbar-left-inset")
-            .relative()
-            .flex_none()
-            .w(px(width))
-            .h_full()
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .top(px(tab_baseline_y))
-                    .h(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            );
-
-        if termy_branding_slot_width <= f32::EPSILON {
-            return lane.into_any_element();
-        }
-
-        lane.child(
+    ) -> Option<AnyElement> {
+        (termy_branding_slot_width > f32::EPSILON).then(|| {
             div()
                 .id("tabbar-termy-branding")
                 .absolute()
@@ -586,9 +579,83 @@ impl TerminalView {
                         .text_size(px(TOP_STRIP_TERMY_BRANDING_FONT_SIZE))
                         .text_color(termy_branding_text_color)
                         .child(TOP_STRIP_TERMY_BRANDING_TEXT),
-                ),
+                )
+                .into_any_element()
+        })
+    }
+
+    fn render_left_inset_lane(
+        width: f32,
+        tab_baseline_y: f32,
+        tab_stroke_color: gpui::Rgba,
+        font_family: &SharedString,
+        termy_branding_slot_start_x: f32,
+        termy_branding_slot_width: f32,
+        termy_branding_text_color: gpui::Rgba,
+    ) -> AnyElement {
+        div()
+            .id("tabbar-left-inset")
+            .relative()
+            .flex_none()
+            .w(px(width))
+            .h_full()
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(tab_baseline_y))
+                    .h(px(TAB_STROKE_THICKNESS))
+                    .bg(tab_stroke_color),
+            )
+            .children(Self::render_termy_branding(
+                font_family,
+                termy_branding_slot_start_x,
+                termy_branding_slot_width,
+                termy_branding_text_color,
+            ))
+            .into_any_element()
+    }
+
+    pub(crate) fn render_vertical_titlebar_branding(
+        &mut self,
+        window: &Window,
+        colors: &TerminalColors,
+        font_family: &SharedString,
+        tabbar_bg: gpui::Rgba,
+    ) -> Option<AnyElement> {
+        let font_family_key = font_family.to_string();
+        let reserved_width =
+            self.termy_branding_reserved_width(window, font_family, font_family_key.as_str());
+        if reserved_width <= f32::EPSILON {
+            return None;
+        }
+
+        let gap_width = TOP_STRIP_TERMY_BRANDING_TAB_GAP;
+        let leading_inset_width = Self::titlebar_left_padding_for_platform();
+        let lane_width = leading_inset_width + reserved_width + gap_width;
+        let palette = self.resolve_tab_strip_palette(colors, tabbar_bg);
+        let mut branding_text_color = palette.inactive_tab_text;
+        branding_text_color.a = branding_text_color.a.max(0.82);
+
+        // Vertical mode keeps the titlebar branding anchored in the same slot,
+        // but the sidebar chrome owns the titlebar/content seam. Reusing the
+        // horizontal inset lane here would double-draw a baseline.
+        Some(
+            div()
+                .id("vertical-titlebar-branding-slot")
+                .relative()
+                .flex_none()
+                .w(px(lane_width))
+                .h(px(TABBAR_HEIGHT))
+                .children(Self::render_termy_branding(
+                    font_family,
+                    leading_inset_width,
+                    reserved_width,
+                    branding_text_color,
+                ))
+                .into_any_element(),
         )
-        .into_any_element()
     }
 
     fn render_gutter_lane(
@@ -713,6 +780,48 @@ impl TerminalView {
         }
 
         tail.into_any_element()
+    }
+
+    fn render_vertical_utility_dock(
+        &self,
+        compact: bool,
+        dock_height: f32,
+        strip_width: f32,
+        divider_x: f32,
+        collapse_button: AnyElement,
+        new_tab_button: AnyElement,
+        palette: &TabStripPalette,
+    ) -> AnyElement {
+        let dock_seam = chrome::StrokeRect {
+            x: TAB_STROKE_THICKNESS,
+            y: 0.0,
+            w: divider_x,
+            h: TAB_STROKE_THICKNESS,
+        };
+
+        let controls = div()
+            .id("vertical-tabs-utility-controls")
+            .flex()
+            .items_center()
+            .gap(px(if compact { 4.0 } else { 6.0 }))
+            .child(collapse_button)
+            .child(new_tab_button);
+
+        let mut dock = div()
+            .id("vertical-tabs-utility-dock")
+            .relative()
+            .flex_none()
+            .w(px(strip_width))
+            .h(px(dock_height))
+            .px(px(VERTICAL_TAB_STRIP_PADDING))
+            .flex()
+            .items_center();
+
+        dock = dock.justify_center();
+
+        dock.child(Self::render_tab_stroke(dock_seam, palette.tab_stroke_color))
+            .child(controls)
+            .into_any_element()
     }
 
     fn render_tab_accessory(
@@ -1239,7 +1348,7 @@ impl TerminalView {
         let new_tab_anim = self.new_tab_animation_progress(now);
         let compact = self.vertical_tabs_minimized;
         let strip_width = self.effective_vertical_tab_strip_width();
-        let controls_height = self.vertical_tab_strip_controls_height();
+        let utility_dock_height = self.vertical_tab_strip_utility_dock_height();
         let active_tab_index = (self.active_tab < self.tabs.len()).then_some(self.active_tab);
         let tab_heights: Vec<f32> = (0..self.tabs.len())
             .map(|index| {
@@ -1255,7 +1364,7 @@ impl TerminalView {
             chrome::VerticalTabChromeInput {
                 active_index: active_tab_index,
                 strip_width,
-                control_rail_height: controls_height,
+                control_rail_height: self.vertical_tab_strip_header_height(),
                 tab_item_gap: TAB_ITEM_GAP,
             },
         );
@@ -1290,6 +1399,15 @@ impl TerminalView {
             control_button_size,
             if compact { 12.0 } else { 14.0 },
             cx,
+        );
+        let utility_dock = self.render_vertical_utility_dock(
+            compact,
+            utility_dock_height,
+            strip_width,
+            chrome_layout.divider_x,
+            collapse_button,
+            new_tab_button,
+            &palette,
         );
 
         let mut list = div()
@@ -1392,23 +1510,6 @@ impl TerminalView {
             list = list.child(element);
         }
 
-        let controls = div()
-            .id("vertical-tabs-control-rail")
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(if compact { 4.0 } else { 6.0 }))
-            .px(px(VERTICAL_TAB_STRIP_PADDING))
-            .h(px(controls_height))
-            .relative()
-            .child(collapse_button)
-            .child(new_tab_button);
-        let controls = if compact {
-            controls.justify_center()
-        } else {
-            controls.justify_between()
-        };
-
         div()
             .id("vertical-tab-strip")
             .relative()
@@ -1440,11 +1541,6 @@ impl TerminalView {
                     .flex()
                     .flex_col()
                     .child(
-                        controls.children(chrome_layout.control_seam.map(|stroke| {
-                            Self::render_tab_stroke(stroke, palette.tab_stroke_color)
-                        })),
-                    )
-                    .child(
                         div()
                             .id("vertical-tabs-scroll-viewport")
                             .flex_1()
@@ -1464,7 +1560,8 @@ impl TerminalView {
                                         palette.tab_stroke_color,
                                     )),
                             ),
-                    ),
+                    )
+                    .child(utility_dock),
             )
             .into_any_element()
     }
