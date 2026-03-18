@@ -585,7 +585,7 @@ impl SettingsWindow {
     fn apply_runtime_config(&mut self, config: AppConfig) -> bool {
         self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
         self.config = AppConfig {
-            vertical_tabs_width: crate::terminal_view::clamp_expanded_vertical_tab_strip_width(
+            vertical_tabs_width: crate::terminal_view::tab_strip::clamp_expanded_vertical_tab_strip_width(
                 config.vertical_tabs_width,
             ),
             ..config

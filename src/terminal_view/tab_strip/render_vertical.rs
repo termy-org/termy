@@ -2,9 +2,9 @@ use super::super::*;
 use super::chrome;
 use super::hints::TabSwitchHintState;
 use super::layout::{VerticalBottomShelfLayout, VerticalNewTabShelfLayout};
-use super::render_shared::{
-    TabItemRenderInput, TabItemStrokeRects, TabStripControlAction, TabStripPalette,
-};
+use super::render_controls::TabStripControlAction;
+use super::render_palette::TabStripPalette;
+use super::render_tab_item::{TabItemRenderInput, TabItemStrokeRects};
 use super::state::TabStripOrientation;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -16,7 +16,7 @@ struct VerticalTitlebarChromeLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::terminal_view::collapsed_vertical_tab_strip_width;
+    use crate::terminal_view::tab_strip::collapsed_vertical_tab_strip_width;
 
     #[test]
     fn compact_vertical_tab_label_prefers_shortcuts_then_initial() {
@@ -563,7 +563,7 @@ impl TerminalView {
 
         let palette = self.resolve_tab_strip_palette(colors, tabbar_bg);
         let now = Instant::now();
-        let vertical_layout = self.vertical_tab_strip_layout_snapshot(now);
+        let vertical_layout = self.vertical_tab_strip_layout_snapshot();
         let compact = vertical_layout.compact;
         let strip_width = vertical_layout.strip_width;
         let active_tab_index = (self.active_tab < self.tabs.len()).then_some(self.active_tab);

@@ -446,8 +446,9 @@ impl SettingsWindow {
                 let parsed = value
                     .parse::<f32>()
                     .map_err(|_| "Vertical tabs width must be a positive number".to_string())?;
-                let min = crate::terminal_view::min_expanded_vertical_tab_strip_width();
-                let clamped = crate::terminal_view::clamp_expanded_vertical_tab_strip_width(parsed);
+                let min = crate::terminal_view::tab_strip::min_expanded_vertical_tab_strip_width();
+                let clamped =
+                    crate::terminal_view::tab_strip::clamp_expanded_vertical_tab_strip_width(parsed);
                 if (clamped - parsed).abs() > f32::EPSILON {
                     return Err(format!(
                         "Vertical tabs width must be between {} and 480",

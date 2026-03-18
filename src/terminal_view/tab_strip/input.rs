@@ -74,7 +74,7 @@ impl TerminalView {
                 self.tab_strip_pointer_x_from_window_x(window, position.x)
             }
             TabStripOrientation::Vertical => {
-                let layout = self.vertical_tab_strip_layout_snapshot(Instant::now());
+                let layout = self.vertical_tab_strip_layout_snapshot();
                 let pointer_y = layout
                     .list_pointer_y_from_window_y(position.y.into(), self.chrome_height());
                 (pointer_y, layout.list_height)

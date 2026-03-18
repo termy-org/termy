@@ -571,7 +571,7 @@ impl SettingsWindow {
                 RootSettingId::VerticalTabsWidth,
                 NumericStepSpec {
                     delta: 10.0,
-                    min: crate::terminal_view::min_expanded_vertical_tab_strip_width(),
+                    min: crate::terminal_view::tab_strip::min_expanded_vertical_tab_strip_width(),
                     max: 480.0,
                 },
             ),

@@ -1,9 +1,9 @@
 use super::super::*;
 use super::hints::TabSwitchHintState;
-use super::render_shared::{
-    TabItemRenderInput, TabItemStrokeRects, TabStripControlAction, TabStripPalette,
-    TabStripRenderState,
-};
+use super::render_controls::TabStripControlAction;
+use super::render_palette::TabStripPalette;
+use super::render_shared::TabStripRenderState;
+use super::render_tab_item::{TabItemRenderInput, TabItemStrokeRects};
 use super::state::{TabStripOrientation, TabStripOverflowState};
 
 #[cfg(test)]

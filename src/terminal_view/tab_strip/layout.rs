@@ -526,7 +526,7 @@ impl TerminalView {
         }
     }
 
-    pub(crate) fn vertical_tab_strip_layout_snapshot(
+    fn compute_vertical_tab_strip_layout_snapshot(
         &self,
         now: Instant,
     ) -> VerticalTabStripLayoutSnapshot {
@@ -546,6 +546,12 @@ impl TerminalView {
             header_height: self.vertical_tab_strip_header_height(),
             list_height: self.effective_vertical_tabs_list_height(),
             tab_heights,
+        })
+    }
+
+    pub(crate) fn vertical_tab_strip_layout_snapshot(&self) -> VerticalTabStripLayoutSnapshot {
+        self.tab_strip.vertical_layout_cache.get_or_insert_with(|| {
+            self.compute_vertical_tab_strip_layout_snapshot(Instant::now())
         })
     }
 }

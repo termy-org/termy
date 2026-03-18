@@ -86,7 +86,7 @@ impl TerminalView {
                 }
             }
             TabStripOrientation::Vertical => {
-                let layout = self.vertical_tab_strip_layout_snapshot(Instant::now());
+                let layout = self.vertical_tab_strip_layout_snapshot();
                 let offset = self.tab_strip.vertical_scroll_handle.offset();
                 let (_, max_scroll) = layout.scroll_bounds();
                 let current_scroll = -Into::<f32>::into(offset.y);
@@ -338,6 +338,7 @@ impl TerminalView {
     pub(crate) fn mark_tab_strip_layout_dirty(&mut self) {
         self.tab_strip.horizontal_layout_revision =
             self.tab_strip.horizontal_layout_revision.wrapping_add(1);
+        self.tab_strip.vertical_layout_cache.clear();
     }
 
     pub(crate) fn sync_tab_display_widths_for_viewport_if_needed(

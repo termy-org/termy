@@ -71,7 +71,7 @@ impl TerminalView {
             return false;
         }
 
-        let layout = self.vertical_tab_strip_layout_snapshot(Instant::now());
+        let layout = self.vertical_tab_strip_layout_snapshot();
         let scroll_offset_y: f32 = self.tab_strip.vertical_scroll_handle.offset().y.into();
         Self::vertical_tab_strip_interactive_hit_test_for_layout(x, local_y, &layout, scroll_offset_y)
     }

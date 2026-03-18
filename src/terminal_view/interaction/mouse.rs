@@ -196,7 +196,8 @@ impl TerminalView {
         }
 
         let pointer_x: f32 = position.x.into();
-        let next_width = crate::terminal_view::clamp_expanded_vertical_tab_strip_width(pointer_x);
+        let next_width =
+            crate::terminal_view::tab_strip::clamp_expanded_vertical_tab_strip_width(pointer_x);
         if (self.vertical_tabs_width - next_width).abs() < f32::EPSILON {
             return false;
         }

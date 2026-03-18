@@ -131,7 +131,7 @@ impl TerminalView {
                 )
             }
             TabStripOrientation::Vertical => {
-                let layout = self.vertical_tab_strip_layout_snapshot(Instant::now());
+                let layout = self.vertical_tab_strip_layout_snapshot();
                 let scroll_offset_y: f32 =
                     self.tab_strip.vertical_scroll_handle.offset().y.into();
                 layout.drop_slot_for_pointer(pointer_primary_axis, scroll_offset_y)
@@ -204,7 +204,7 @@ impl TerminalView {
             return false;
         }
 
-        let layout = self.vertical_tab_strip_layout_snapshot(Instant::now());
+        let layout = self.vertical_tab_strip_layout_snapshot();
         if layout.list_height <= f32::EPSILON {
             return false;
         }
