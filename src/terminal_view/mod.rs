@@ -1888,22 +1888,16 @@ impl TerminalView {
     }
 
     fn visual_padding_for_orientation(
-        vertical_tabs: bool,
+        _vertical_tabs: bool,
         padding_x: f32,
         padding_y: f32,
     ) -> TerminalVisualPadding {
-        if vertical_tabs {
-            TerminalVisualPadding {
-                horizontal: padding_x,
-                top: 0.0,
-                bottom: padding_y,
-            }
-        } else {
-            TerminalVisualPadding {
-                horizontal: padding_x,
-                top: padding_y,
-                bottom: padding_y,
-            }
+        let top = padding_y;
+        let bottom = padding_y;
+        TerminalVisualPadding {
+            horizontal: padding_x,
+            top,
+            bottom,
         }
     }
 
@@ -3558,25 +3552,25 @@ mod tests {
     }
 
     #[test]
-    fn visual_padding_for_vertical_tabs_flushes_top_edge() {
+    fn visual_padding_for_vertical_tabs_stays_symmetric_after_top_band_removal() {
         assert_eq!(
             TerminalView::visual_padding_for_orientation(true, 12.0, 8.0),
             TerminalVisualPadding {
                 horizontal: 12.0,
-                top: 0.0,
+                top: 8.0,
                 bottom: 8.0,
             }
         );
     }
 
     #[test]
-    fn visual_padding_for_vertical_native_split_content_flushes_top_edge() {
+    fn visual_padding_for_vertical_native_split_content_stays_symmetric() {
         let padding = TerminalView::visual_padding_for_orientation(true, 6.0, 10.0);
         assert_eq!(
             padding,
             TerminalVisualPadding {
                 horizontal: 6.0,
-                top: 0.0,
+                top: 10.0,
                 bottom: 10.0,
             }
         );
