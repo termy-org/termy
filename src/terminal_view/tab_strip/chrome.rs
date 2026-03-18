@@ -457,6 +457,27 @@ pub(super) fn compute_vertical_tab_chrome_layout(
             first_tab.left.y = top_seam_offset_y;
             first_tab.left.h = (first_tab.left.h - top_seam_offset_y).max(0.0);
         }
+
+        if input.active_index == Some(0)
+            && let Some(first_span) = spans.first().copied()
+        {
+            // Keep the active first tab visually closed at the top. Relying on
+            // the external seam alone leaves the selected row looking open.
+            let top_boundary_y = first_span.top;
+            let top_boundary_rect = StrokeRect::new(
+                boundary_start_x,
+                top_boundary_y,
+                boundary_width_for_y(top_boundary_y),
+                TAB_STROKE_THICKNESS,
+            );
+            assign_boundary(
+                &mut tab_strokes,
+                &spans,
+                0,
+                HorizontalBoundaryOwnerSide::Top,
+                top_boundary_rect,
+            );
+        }
     } else if control_seam.is_none() {
         if let Some(first_span) = spans.first().copied() {
             let top_boundary_y = first_span.top;
@@ -1057,5 +1078,19 @@ mod tests {
         let coverage = vertical_coverage_map(&layout, &heights, 48.0);
 
         assert!(coverage.values().all(|count| *count == 1));
+    }
+
+    #[test]
+    fn vertical_external_top_seam_keeps_top_boundary_for_active_first_tab() {
+        let layout = vertical_layout_for_with_input(&[32.0, 32.0], Some(0), 180.0, 0.0, true);
+
+        assert_eq!(
+            layout.tab_strokes[0]
+                .top_boundary
+                .expect("active first tab should keep a top boundary")
+                .y,
+            0.0
+        );
+        assert_eq!(layout.tab_strokes[0].left.y, 1.0);
     }
 }
