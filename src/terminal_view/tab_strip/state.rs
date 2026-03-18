@@ -84,6 +84,101 @@ pub(crate) struct TabDragState {
     pub(crate) orientation: TabStripOrientation,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct TabDragPreviewState {
+    pointer_primary_axis: Option<f32>,
+    viewport_extent: f32,
+    autoscroll_animating: bool,
+}
+
+impl TabDragPreviewState {
+    pub(crate) fn clear(&mut self) {
+        self.pointer_primary_axis = None;
+        self.viewport_extent = 0.0;
+        self.autoscroll_animating = false;
+    }
+
+    pub(crate) fn set_pointer_preview(&mut self, pointer_primary_axis: f32, viewport_extent: f32) {
+        self.pointer_primary_axis = Some(pointer_primary_axis);
+        self.viewport_extent = viewport_extent.max(0.0);
+    }
+
+    pub(crate) fn pointer_primary_axis(self) -> Option<f32> {
+        self.pointer_primary_axis
+    }
+
+    pub(crate) fn viewport_extent(self) -> f32 {
+        self.viewport_extent
+    }
+
+    pub(crate) fn autoscroll_animating(self) -> bool {
+        self.autoscroll_animating
+    }
+
+    pub(crate) fn start_autoscroll_animation(&mut self) {
+        self.autoscroll_animating = true;
+    }
+
+    pub(crate) fn stop_autoscroll_animation(&mut self) {
+        self.autoscroll_animating = false;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TabStripTitlebarState {
+    move_armed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TitlebarMouseDownOutcome {
+    pub(crate) arm_move: bool,
+    pub(crate) trigger_window_action: bool,
+}
+
+impl TabStripTitlebarState {
+    pub(crate) fn on_mouse_down(
+        &mut self,
+        interactive_hit: bool,
+        click_count: usize,
+    ) -> TitlebarMouseDownOutcome {
+        let trigger_window_action = !interactive_hit && click_count == 2;
+        let arm_move = !interactive_hit && click_count != 2;
+        self.move_armed = arm_move;
+        TitlebarMouseDownOutcome {
+            arm_move,
+            trigger_window_action,
+        }
+    }
+
+    pub(crate) fn on_mouse_up(&mut self) {
+        self.move_armed = false;
+    }
+
+    pub(crate) fn arm(&mut self) {
+        self.move_armed = true;
+    }
+
+    pub(crate) fn disarm(&mut self) {
+        self.move_armed = false;
+    }
+
+    pub(crate) fn should_start_window_move(self, dragging: bool, tab_drag_active: bool) -> bool {
+        self.move_armed && dragging && !tab_drag_active
+    }
+
+    pub(crate) fn take_window_move_request(
+        &mut self,
+        dragging: bool,
+        tab_drag_active: bool,
+    ) -> bool {
+        if !self.should_start_window_move(dragging, tab_drag_active) {
+            return false;
+        }
+        self.disarm();
+        true
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct VerticalTabStripLayoutCache {
     snapshot: RefCell<Option<VerticalTabStripLayoutSnapshot>>,
@@ -115,16 +210,14 @@ pub(crate) struct TabStripState {
     pub(crate) hovered_tab: Option<usize>,
     pub(crate) hovered_tab_close: Option<usize>,
     pub(crate) drag: Option<TabDragState>,
-    pub(crate) drag_pointer_primary_axis: Option<f32>,
-    pub(crate) drag_viewport_extent: f32,
-    pub(crate) drag_autoscroll_animating: bool,
+    pub(crate) drag_preview: TabDragPreviewState,
     pub(crate) horizontal_layout_revision: u64,
     pub(crate) horizontal_layout_last_synced_revision: u64,
     pub(crate) horizontal_layout_last_synced_viewport_width: f32,
     pub(crate) horizontal_layout_snapshot: Option<TabStripLayoutSnapshot>,
     pub(crate) vertical_layout_cache: VerticalTabStripLayoutCache,
     pub(crate) title_width_cache: TabTitleWidthCache,
-    pub(crate) titlebar_move_armed: bool,
+    pub(crate) titlebar: TabStripTitlebarState,
 }
 
 impl TabStripState {
@@ -136,16 +229,14 @@ impl TabStripState {
             hovered_tab: None,
             hovered_tab_close: None,
             drag: None,
-            drag_pointer_primary_axis: None,
-            drag_viewport_extent: 0.0,
-            drag_autoscroll_animating: false,
+            drag_preview: TabDragPreviewState::default(),
             horizontal_layout_revision: 0,
             horizontal_layout_last_synced_revision: 0,
             horizontal_layout_last_synced_viewport_width: f32::NAN,
             horizontal_layout_snapshot: None,
             vertical_layout_cache: VerticalTabStripLayoutCache::default(),
             title_width_cache: TabTitleWidthCache::default(),
-            titlebar_move_armed: false,
+            titlebar: TabStripTitlebarState::default(),
         }
     }
 
@@ -330,5 +421,39 @@ mod tests {
             state.vertical_layout_cache.get_or_insert_with(|| second.clone()),
             second
         );
+    }
+
+    #[test]
+    fn titlebar_state_mouse_down_arms_only_noninteractive_single_clicks() {
+        let mut state = TabStripTitlebarState::default();
+        assert_eq!(
+            state.on_mouse_down(true, 1),
+            TitlebarMouseDownOutcome {
+                arm_move: false,
+                trigger_window_action: false,
+            }
+        );
+        assert_eq!(
+            state.on_mouse_down(false, 2),
+            TitlebarMouseDownOutcome {
+                arm_move: false,
+                trigger_window_action: true,
+            }
+        );
+        assert_eq!(
+            state.on_mouse_down(false, 1),
+            TitlebarMouseDownOutcome {
+                arm_move: true,
+                trigger_window_action: false,
+            }
+        );
+    }
+
+    #[test]
+    fn titlebar_state_window_move_request_disarms_after_take() {
+        let mut state = TabStripTitlebarState::default();
+        state.arm();
+        assert!(state.take_window_move_request(true, false));
+        assert!(!state.take_window_move_request(true, false));
     }
 }

@@ -93,6 +93,12 @@ pub(crate) struct TabStripLayoutSnapshot {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TabStripDragPreview {
+    pub(crate) pointer_primary_axis: f32,
+    pub(crate) viewport_extent: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct TabStripLayoutInput {
     pub(crate) viewport_width: f32,
     pub(crate) left_inset_width: f32,
@@ -433,6 +439,35 @@ impl TerminalView {
         let pointer_x =
             Self::tab_strip_pointer_x_from_window_x_for_geometry(window_x.into(), geometry);
         (pointer_x, geometry.tabs_viewport_width)
+    }
+
+    pub(crate) fn tab_strip_drag_preview(
+        &self,
+        orientation: crate::terminal_view::tab_strip::state::TabStripOrientation,
+        window: &Window,
+        position: gpui::Point<Pixels>,
+    ) -> TabStripDragPreview {
+        match orientation {
+            crate::terminal_view::tab_strip::state::TabStripOrientation::Horizontal => {
+                let (pointer_primary_axis, viewport_extent) =
+                    self.tab_strip_pointer_x_from_window_x(window, position.x);
+                TabStripDragPreview {
+                    pointer_primary_axis,
+                    viewport_extent,
+                }
+            }
+            crate::terminal_view::tab_strip::state::TabStripOrientation::Vertical => {
+                let layout = self.vertical_tab_strip_layout_snapshot();
+                TabStripDragPreview {
+                    pointer_primary_axis: layout
+                        .list_pointer_y_from_window_y(
+                            position.y.into(),
+                            self.vertical_tab_strip_top_inset(),
+                        ),
+                    viewport_extent: layout.list_height,
+                }
+            }
+        }
     }
 
     pub(super) fn vertical_new_tab_shelf_layout(

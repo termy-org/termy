@@ -3,39 +3,37 @@ use crate::terminal_view::tab_strip::state::TabStripOrientation;
 
 impl TerminalView {
     fn clear_tab_drag_preview_state(&mut self) {
-        self.tab_strip.drag_pointer_primary_axis = None;
-        self.tab_strip.drag_viewport_extent = 0.0;
-        self.tab_strip.drag_autoscroll_animating = false;
+        self.tab_strip.drag_preview.clear();
     }
 
     fn ensure_tab_drag_autoscroll_animation(&mut self, cx: &mut Context<Self>) {
-        if self.tab_strip.drag_autoscroll_animating {
+        if self.tab_strip.drag_preview.autoscroll_animating() {
             return;
         }
-        self.tab_strip.drag_autoscroll_animating = true;
+        self.tab_strip.drag_preview.start_autoscroll_animation();
 
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             loop {
                 smol::Timer::after(Duration::from_millis(16)).await;
                 let keep_animating = match cx.update(|cx| {
                     this.update(cx, |view, cx| {
-                        if !view.tab_strip.drag_autoscroll_animating
+                        if !view.tab_strip.drag_preview.autoscroll_animating()
                             || view.tab_strip.drag.is_none()
                         {
-                            view.tab_strip.drag_autoscroll_animating = false;
+                            view.tab_strip.drag_preview.stop_autoscroll_animation();
                             return false;
                         }
 
                         let Some(pointer_primary_axis) =
-                            view.tab_strip.drag_pointer_primary_axis
+                            view.tab_strip.drag_preview.pointer_primary_axis()
                         else {
-                            view.tab_strip.drag_autoscroll_animating = false;
+                            view.tab_strip.drag_preview.stop_autoscroll_animation();
                             return false;
                         };
-                        let viewport_extent = view.tab_strip.drag_viewport_extent;
+                        let viewport_extent = view.tab_strip.drag_preview.viewport_extent();
                         let Some(orientation) = view.tab_strip.drag.map(|drag| drag.orientation)
                         else {
-                            view.tab_strip.drag_autoscroll_animating = false;
+                            view.tab_strip.drag_preview.stop_autoscroll_animation();
                             return false;
                         };
 
@@ -53,7 +51,7 @@ impl TerminalView {
                             cx.notify();
                         }
                         if !scrolled {
-                            view.tab_strip.drag_autoscroll_animating = false;
+                            view.tab_strip.drag_preview.stop_autoscroll_animation();
                             return false;
                         }
                         true
@@ -263,11 +261,14 @@ impl TerminalView {
         if self.tab_strip.drag.is_none() {
             return false;
         }
-        self.tab_strip.drag_pointer_primary_axis = Some(pointer_primary_axis);
-        self.tab_strip.drag_viewport_extent = viewport_extent.max(0.0);
+        self.tab_strip
+            .drag_preview
+            .set_pointer_preview(pointer_primary_axis, viewport_extent);
         let widths_changed = match orientation {
             TabStripOrientation::Horizontal => self
-                .sync_tab_display_widths_for_viewport_if_needed(self.tab_strip.drag_viewport_extent),
+                .sync_tab_display_widths_for_viewport_if_needed(
+                    self.tab_strip.drag_preview.viewport_extent(),
+                ),
             TabStripOrientation::Vertical => false,
         };
 
@@ -287,7 +288,7 @@ impl TerminalView {
         if scrolled {
             self.ensure_tab_drag_autoscroll_animation(cx);
         } else {
-            self.tab_strip.drag_autoscroll_animating = false;
+            self.tab_strip.drag_preview.stop_autoscroll_animation();
         }
         scrolled || marker_changed || widths_changed
     }

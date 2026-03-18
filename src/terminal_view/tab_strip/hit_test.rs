@@ -1,5 +1,6 @@
 use super::super::*;
 use super::layout::{TabStripGeometry, VerticalTabStripLayoutSnapshot};
+use super::state::TabStripOrientation;
 
 impl TerminalView {
     pub(crate) fn unified_titlebar_tab_shell_hit_test(
@@ -63,6 +64,21 @@ impl TerminalView {
         }
 
         geometry.new_tab_button_contains(x, y)
+    }
+
+    pub(crate) fn tab_strip_interactive_hit_test(
+        &self,
+        orientation: TabStripOrientation,
+        x: f32,
+        y: f32,
+        window: &Window,
+    ) -> bool {
+        match orientation {
+            TabStripOrientation::Horizontal => {
+                self.unified_titlebar_tab_interactive_hit_test(x, y, window)
+            }
+            TabStripOrientation::Vertical => self.vertical_tab_strip_interactive_hit_test(x, y),
+        }
     }
 
     pub(crate) fn vertical_tab_strip_interactive_hit_test(&self, x: f32, y: f32) -> bool {
