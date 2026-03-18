@@ -230,7 +230,7 @@ mod tests {
         let layout = TerminalView::vertical_new_tab_shelf_layout(219.0, false);
         assert_eq!(layout.shelf_height, VERTICAL_NEW_TAB_SHELF_HEIGHT);
         assert_eq!(layout.button_x, VERTICAL_TAB_STRIP_PADDING);
-        assert_eq!(layout.button_y, 8.0);
+        assert_eq!(layout.button_y, 11.0);
         assert_eq!(layout.button_width, 203.0);
         assert_eq!(layout.button_height, VERTICAL_NEW_TAB_SHELF_BUTTON_HEIGHT);
     }
@@ -244,6 +244,17 @@ mod tests {
         assert_eq!(layout.button_height, VERTICAL_TITLEBAR_CONTROL_BUTTON_SIZE);
         assert!(layout.button_x >= VERTICAL_TAB_STRIP_PADDING);
         assert!(layout.button_x + layout.button_width <= divider_x);
+    }
+
+    #[test]
+    fn vertical_new_tab_shelf_uses_shared_button_height_in_both_states() {
+        let expanded = TerminalView::vertical_new_tab_shelf_layout(219.0, false);
+        let compact = TerminalView::vertical_new_tab_shelf_layout(
+            TerminalView::collapsed_vertical_tab_strip_width() - TAB_STROKE_THICKNESS,
+            true,
+        );
+
+        assert_eq!(expanded.button_height, compact.button_height);
     }
 
     #[test]
@@ -1123,13 +1134,16 @@ impl TerminalView {
         width: f32,
         height: f32,
         palette: &TabStripPalette,
+        show_label: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let corner_radius = TABBAR_NEW_TAB_BUTTON_RADIUS.min(height * 0.5);
+
         div()
             .id("vertical-top-shelf-new-tab-button")
             .w(px(width))
             .h(px(height))
-            .rounded(px(VERTICAL_NEW_TAB_SHELF_BUTTON_RADIUS))
+            .rounded(px(corner_radius))
             .bg(palette.tabbar_new_tab_bg)
             .border_1()
             .border_color(palette.tabbar_new_tab_border)
@@ -1154,20 +1168,24 @@ impl TerminalView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .gap(px(VERTICAL_NEW_TAB_SHELF_LABEL_GAP))
+                    .gap(px(if show_label {
+                        VERTICAL_NEW_TAB_SHELF_LABEL_GAP
+                    } else {
+                        0.0
+                    }))
                     .child(
                         div()
-                            .text_size(px(TABBAR_NEW_TAB_ICON_SIZE))
+                            .text_size(px(VERTICAL_TITLEBAR_CONTROL_ICON_SIZE.min(height)))
                             .font_weight(FontWeight::MEDIUM)
                             .mt(px(TABBAR_NEW_TAB_ICON_BASELINE_NUDGE_Y))
                             .child("+"),
                     )
-                    .child(
+                    .children(show_label.then(|| {
                         div()
                             .text_size(px(12.0))
                             .font_weight(FontWeight::MEDIUM)
-                            .child("New Tab"),
-                    ),
+                            .child("New Tab")
+                    })),
             )
             .into_any_element()
     }
@@ -1181,29 +1199,13 @@ impl TerminalView {
         compact: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let button = if compact {
-            self.render_tab_strip_control_button(
-                "vertical-top-shelf-new-tab",
-                "+",
-                TabStripControlAction::NewTab,
-                palette.tabbar_new_tab_bg,
-                palette.tabbar_new_tab_hover_bg,
-                palette.tabbar_new_tab_border,
-                palette.tabbar_new_tab_hover_border,
-                palette.tabbar_new_tab_text,
-                palette.tabbar_new_tab_hover_text,
-                layout.button_width,
-                VERTICAL_TITLEBAR_CONTROL_ICON_SIZE,
-                cx,
-            )
-        } else {
-            self.render_vertical_new_tab_shelf_button(
-                layout.button_width,
-                layout.button_height,
-                palette,
-                cx,
-            )
-        };
+        let button = self.render_vertical_new_tab_shelf_button(
+            layout.button_width,
+            layout.button_height,
+            palette,
+            !compact,
+            cx,
+        );
 
         div()
             .id("vertical-tabs-top-shelf")
