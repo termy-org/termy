@@ -1521,6 +1521,30 @@ impl TerminalView {
         self.install_cli_available
     }
 
+    pub(super) const fn update_banner_height() -> f32 {
+        #[cfg(target_os = "macos")]
+        {
+            UPDATE_BANNER_HEIGHT
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            0.0
+        }
+    }
+
+    pub(super) fn update_banner_visible(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            self.show_update_banner
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
+    }
+
     #[cfg(target_os = "macos")]
     pub(crate) fn set_native_file_drop_enabled(&mut self, enabled: bool) {
         self.native_file_drop_enabled = enabled;

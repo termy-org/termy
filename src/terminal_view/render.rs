@@ -463,10 +463,10 @@ impl TerminalView {
             root_spacer_height: if right_pane_only {
                 0.0
             } else {
-                UPDATE_BANNER_HEIGHT
+                Self::update_banner_height()
             },
             terminal_pane_spacer_height: if right_pane_only {
-                UPDATE_BANNER_HEIGHT
+                Self::update_banner_height()
             } else {
                 0.0
             },
@@ -475,7 +475,7 @@ impl TerminalView {
 
     fn update_banner_layout(&self) -> Option<UpdateBannerLayout> {
         Self::update_banner_layout_for(
-            self.show_update_banner,
+            self.update_banner_visible(),
             self.vertical_tabs,
             self.should_render_tab_strip_chrome(),
             self.tab_strip_sidebar_width(),
@@ -1250,7 +1250,7 @@ impl TerminalView {
             div()
                 .id("update-banner")
                 .w_full()
-                .h(px(UPDATE_BANNER_HEIGHT))
+                .h(px(Self::update_banner_height()))
                 .flex_none()
                 .bg(banner_bg)
                 .border_b_1()
@@ -1982,7 +1982,7 @@ impl TerminalView {
         });
 
         #[cfg(target_os = "macos")]
-        let banner_overlay: Option<AnyElement> = if self.show_update_banner {
+        let banner_overlay: Option<AnyElement> = if self.update_banner_visible() {
             let banner_state = self.auto_updater.as_ref().map(|e| e.read(cx).state.clone());
             let banner_layout = self.update_banner_layout();
             banner_state
@@ -2773,7 +2773,7 @@ mod tests {
             Some(UpdateBannerLayout {
                 overlay_top: TerminalView::titlebar_height(),
                 overlay_left: 0.0,
-                root_spacer_height: UPDATE_BANNER_HEIGHT,
+                root_spacer_height: TerminalView::update_banner_height(),
                 terminal_pane_spacer_height: 0.0,
             })
         );
@@ -2787,7 +2787,7 @@ mod tests {
                 overlay_top: 0.0,
                 overlay_left: 224.0,
                 root_spacer_height: 0.0,
-                terminal_pane_spacer_height: UPDATE_BANNER_HEIGHT,
+                terminal_pane_spacer_height: TerminalView::update_banner_height(),
             })
         );
     }

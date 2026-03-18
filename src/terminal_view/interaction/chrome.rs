@@ -131,7 +131,7 @@ impl TerminalView {
     ) -> f32 {
         Self::window_titlebar_height_for(vertical_tabs, show_tab_strip_chrome)
             + if show_update_banner {
-                UPDATE_BANNER_HEIGHT
+                Self::update_banner_height()
             } else {
                 0.0
             }
@@ -150,7 +150,7 @@ impl TerminalView {
         } else {
             titlebar_height
                 + if show_update_banner {
-                    UPDATE_BANNER_HEIGHT
+                    Self::update_banner_height()
                 } else {
                     0.0
                 }
@@ -161,7 +161,7 @@ impl TerminalView {
         Self::terminal_content_top_inset_for(
             self.vertical_tabs,
             self.should_render_tab_strip_chrome(),
-            self.show_update_banner,
+            self.update_banner_visible(),
         )
     }
 
@@ -169,7 +169,7 @@ impl TerminalView {
         Self::vertical_tab_strip_top_inset_for(
             self.vertical_tabs,
             self.should_render_tab_strip_chrome(),
-            self.show_update_banner,
+            self.update_banner_visible(),
         )
     }
 }
@@ -218,7 +218,7 @@ mod tests {
     fn terminal_content_top_inset_includes_banner_for_horizontal_tabs() {
         assert_eq!(
             TerminalView::terminal_content_top_inset_for(false, true, true),
-            TerminalView::titlebar_height() + UPDATE_BANNER_HEIGHT
+            TerminalView::titlebar_height() + TerminalView::update_banner_height()
         );
     }
 
@@ -226,7 +226,7 @@ mod tests {
     fn terminal_content_top_inset_includes_banner_for_visible_vertical_tabs() {
         assert_eq!(
             TerminalView::terminal_content_top_inset_for(true, true, true),
-            UPDATE_BANNER_HEIGHT
+            TerminalView::update_banner_height()
         );
     }
 
@@ -242,7 +242,7 @@ mod tests {
     fn vertical_tab_strip_top_inset_keeps_banner_when_sidebar_chrome_is_hidden() {
         assert_eq!(
             TerminalView::vertical_tab_strip_top_inset_for(true, false, true),
-            TerminalView::titlebar_height() + UPDATE_BANNER_HEIGHT
+            TerminalView::titlebar_height() + TerminalView::update_banner_height()
         );
     }
 

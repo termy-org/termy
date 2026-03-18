@@ -39,14 +39,14 @@ impl RuntimeKind {
         matches!(self, Self::Tmux)
     }
 
-    pub(super) const fn from_app_config(config: &AppConfig) -> Self {
-        #[cfg(target_os = "windows")]
-        {
-            let _ = config;
-            // Hard cutover: tmux runtime is unsupported on Windows, regardless of config value.
-            return Self::Native;
-        }
+    #[cfg(target_os = "windows")]
+    pub(super) fn from_app_config(_config: &AppConfig) -> Self {
+        // Hard cutover: tmux runtime is unsupported on Windows, regardless of config value.
+        Self::Native
+    }
 
+    #[cfg(not(target_os = "windows"))]
+    pub(super) fn from_app_config(config: &AppConfig) -> Self {
         if config.tmux_enabled {
             Self::Tmux
         } else {
