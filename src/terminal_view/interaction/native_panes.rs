@@ -30,6 +30,29 @@ impl TerminalView {
         }
     }
 
+    pub(in super::super) fn native_pane_lane_count_for_axis(
+        panes: &[TerminalPane],
+        axis: PaneResizeAxis,
+    ) -> usize {
+        let mut boundaries = Vec::with_capacity(panes.len().saturating_mul(2));
+        for pane in panes {
+            let (start, end) = match axis {
+                PaneResizeAxis::Horizontal => {
+                    (pane.left, pane.left.saturating_add(pane.width))
+                }
+                PaneResizeAxis::Vertical => (pane.top, pane.top.saturating_add(pane.height)),
+            };
+            if !boundaries.contains(&start) {
+                boundaries.push(start);
+            }
+            if !boundaries.contains(&end) {
+                boundaries.push(end);
+            }
+        }
+        boundaries.sort_unstable();
+        boundaries.len().saturating_sub(1)
+    }
+
     pub(in super::super) fn compute_terminal_cols(
         terminal_width: f32,
         cell_width: f32,
@@ -277,6 +300,24 @@ mod tests {
     #[should_panic(expected = "native pane count must be non-zero")]
     fn native_min_extent_allowed_rejects_zero_panes() {
         let _ = TerminalView::native_min_extent_allowed(10, 0, 2);
+    }
+
+    #[test]
+    fn native_pane_lane_count_collapses_stacks_on_each_axis() {
+        let panes = vec![
+            test_pane("%native-1", 0, 0, 60, 20),
+            test_pane("%native-2", 0, 20, 60, 20),
+            test_pane("%native-3", 60, 0, 60, 40),
+        ];
+
+        assert_eq!(
+            TerminalView::native_pane_lane_count_for_axis(&panes, PaneResizeAxis::Horizontal),
+            2
+        );
+        assert_eq!(
+            TerminalView::native_pane_lane_count_for_axis(&panes, PaneResizeAxis::Vertical),
+            2
+        );
     }
 
     #[test]

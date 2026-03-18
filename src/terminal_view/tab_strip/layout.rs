@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::terminal_view::tab_strip::state::TabStripOrientation;
 
 pub(crate) const TAB_STRIP_RAIL_GUTTER_WIDTH: f32 = 2.0;
 const TAB_STRIP_LAYOUT_EPSILON: f32 = 0.001;
@@ -442,12 +443,12 @@ impl TerminalView {
 
     pub(crate) fn tab_strip_drag_preview(
         &self,
-        orientation: crate::terminal_view::tab_strip::state::TabStripOrientation,
+        orientation: TabStripOrientation,
         window: &Window,
         position: gpui::Point<Pixels>,
     ) -> TabStripDragPreview {
         match orientation {
-            crate::terminal_view::tab_strip::state::TabStripOrientation::Horizontal => {
+            TabStripOrientation::Horizontal => {
                 let (pointer_primary_axis, viewport_extent) =
                     self.tab_strip_pointer_x_from_window_x(window, position.x);
                 TabStripDragPreview {
@@ -455,7 +456,7 @@ impl TerminalView {
                     viewport_extent,
                 }
             }
-            crate::terminal_view::tab_strip::state::TabStripOrientation::Vertical => {
+            TabStripOrientation::Vertical => {
                 let layout = self.vertical_tab_strip_layout_snapshot();
                 TabStripDragPreview {
                     pointer_primary_axis: layout

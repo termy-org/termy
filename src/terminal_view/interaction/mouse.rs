@@ -425,13 +425,15 @@ impl TerminalView {
                 if left_indices.is_empty() || right_indices.is_empty() {
                     return false;
                 }
+                let horizontal_lane_count =
+                    Self::native_pane_lane_count_for_axis(&tab.panes, PaneResizeAxis::Horizontal);
                 let min_width = Self::native_min_extent_allowed(
                     tab.panes
                         .iter()
                         .map(|pane| pane.left.saturating_add(pane.width))
                         .max()
                         .unwrap_or(0),
-                    tab.panes.len(),
+                    horizontal_lane_count,
                     Self::native_pane_min_extent_for_axis(PaneResizeAxis::Horizontal),
                 );
 
@@ -509,13 +511,15 @@ impl TerminalView {
                 if top_indices.is_empty() || bottom_indices.is_empty() {
                     return false;
                 }
+                let vertical_lane_count =
+                    Self::native_pane_lane_count_for_axis(&tab.panes, PaneResizeAxis::Vertical);
                 let min_height = Self::native_min_extent_allowed(
                     tab.panes
                         .iter()
                         .map(|pane| pane.top.saturating_add(pane.height))
                         .max()
                         .unwrap_or(0),
-                    tab.panes.len(),
+                    vertical_lane_count,
                     Self::native_pane_min_extent_for_axis(PaneResizeAxis::Vertical),
                 );
 

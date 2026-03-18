@@ -446,6 +446,9 @@ impl SettingsWindow {
                 let parsed = value
                     .parse::<f32>()
                     .map_err(|_| "Vertical tabs width must be a positive number".to_string())?;
+                if !parsed.is_finite() {
+                    return Err("Vertical tabs width must be a positive number".to_string());
+                }
                 let min = crate::terminal_view::tab_strip::min_expanded_vertical_tab_strip_width();
                 let clamped =
                     crate::terminal_view::tab_strip::clamp_expanded_vertical_tab_strip_width(parsed);
@@ -566,6 +569,20 @@ mod tests {
                         crate::terminal_view::tab_strip::min_expanded_vertical_tab_strip_width()
                             .round() as i32
                     ))
+                );
+            })
+            .expect("settings window update should succeed");
+    }
+
+    #[gpui::test]
+    fn vertical_tabs_width_rejects_non_finite_values(cx: &mut TestAppContext) {
+        let settings = open_settings_window_handle(cx);
+        settings
+            .update(cx, |view, _window, _cx| {
+                let result = view.apply_tabs_field(EditableField::VerticalTabsWidth, "NaN");
+                assert_eq!(
+                    result,
+                    Err("Vertical tabs width must be a positive number".to_string())
                 );
             })
             .expect("settings window update should succeed");
