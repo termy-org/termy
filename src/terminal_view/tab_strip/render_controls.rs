@@ -18,6 +18,7 @@ impl TerminalView {
                 self.add_tab(cx);
             }
             TabStripControlAction::ToggleVerticalSidebar => {
+                self.disarm_titlebar_window_move();
                 if let Err(error) = self.set_vertical_tabs_minimized(!self.vertical_tabs_minimized) {
                     termy_toast::error(error);
                 } else {

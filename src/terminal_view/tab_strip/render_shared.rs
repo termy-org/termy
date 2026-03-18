@@ -133,11 +133,8 @@ impl TerminalView {
 
         let geometry = layout.geometry;
         let tab_strip_viewport_width = geometry.tabs_viewport_width;
-        let widths_changed =
-            self.sync_tab_display_widths_for_viewport_if_needed(tab_strip_viewport_width);
-        if widths_changed {
-            self.scroll_active_tab_into_view(TabStripOrientation::Horizontal);
-        }
+        let _ = self.sync_tab_display_widths_for_viewport_if_needed(tab_strip_viewport_width);
+        self.scroll_active_tab_into_view(TabStripOrientation::Horizontal);
         let content_width = self
             .tab_strip_fixed_content_width()
             .max(tab_strip_viewport_width);

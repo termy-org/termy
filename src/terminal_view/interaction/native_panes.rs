@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct NativeScaledAxisSpan {
+    start: u16,
+    end: u16,
+}
+
 impl TerminalView {
     pub(in super::super) fn native_pane_min_extent_for_axis(axis: PaneResizeAxis) -> u16 {
         match axis {
@@ -50,14 +56,109 @@ impl TerminalView {
         scaled.min(u32::from(new_extent)) as u16
     }
 
+    fn scaled_native_pane_axis_span(
+        start: u16,
+        extent: u16,
+        old_extent: u16,
+        new_extent: u16,
+    ) -> NativeScaledAxisSpan {
+        let old_end = start.saturating_add(extent);
+        let mut new_start =
+            Self::scale_native_pane_edge(start, old_extent, new_extent).min(new_extent.saturating_sub(1));
+        let mut new_end = Self::scale_native_pane_edge(old_end, old_extent, new_extent).min(new_extent);
+        if new_end <= new_start {
+            new_end = (new_start + 1).min(new_extent);
+            new_start = new_end.saturating_sub(1);
+        }
+        NativeScaledAxisSpan {
+            start: new_start,
+            end: new_end,
+        }
+    }
+
+    fn rebalance_native_pane_axis_spans(
+        spans: &mut [NativeScaledAxisSpan],
+        total_extent: u16,
+        min_extent: u16,
+    ) {
+        if spans.is_empty() {
+            return;
+        }
+
+        let mut boundaries = Vec::with_capacity((spans.len() * 2) + 2);
+        boundaries.push(0);
+        boundaries.push(total_extent);
+        for span in spans.iter() {
+            boundaries.push(span.start.min(total_extent));
+            boundaries.push(span.end.min(total_extent));
+        }
+        boundaries.sort_unstable();
+        boundaries.dedup();
+
+        let pane_boundary_indices = spans
+            .iter()
+            .map(|span| {
+                let start = boundaries
+                    .binary_search(&span.start)
+                    .expect("native pane rebalance requires span start boundary");
+                let end = boundaries
+                    .binary_search(&span.end)
+                    .expect("native pane rebalance requires span end boundary");
+                assert!(start < end, "native pane axis span must have positive extent");
+                (start, end)
+            })
+            .collect::<Vec<_>>();
+
+        // Solve shared boundary positions once per axis so every pane keeps the
+        // same boundary graph after scaling while still satisfying the minimum extent.
+        let mut min_positions = vec![0u16; boundaries.len()];
+        for boundary_index in 1..boundaries.len() {
+            let mut required = min_positions[boundary_index - 1];
+            for &(start_index, end_index) in &pane_boundary_indices {
+                if end_index == boundary_index {
+                    required = required.max(min_positions[start_index].saturating_add(min_extent));
+                }
+            }
+            min_positions[boundary_index] = required.min(total_extent);
+        }
+
+        let last_index = boundaries.len() - 1;
+        let mut max_positions = vec![total_extent; boundaries.len()];
+        for boundary_index in (0..last_index).rev() {
+            let mut allowed = max_positions[boundary_index + 1];
+            for &(start_index, end_index) in &pane_boundary_indices {
+                if start_index == boundary_index {
+                    allowed = allowed.min(max_positions[end_index].saturating_sub(min_extent));
+                }
+            }
+            max_positions[boundary_index] = allowed;
+        }
+        debug_assert!(
+            min_positions
+                .iter()
+                .zip(max_positions.iter())
+                .all(|(min_position, max_position)| min_position <= max_position)
+        );
+
+        let mut adjusted = vec![0u16; boundaries.len()];
+        adjusted[0] = 0;
+        adjusted[last_index] = total_extent;
+        for boundary_index in 1..last_index {
+            let lower_bound = min_positions[boundary_index].max(adjusted[boundary_index - 1]);
+            let upper_bound = max_positions[boundary_index];
+            adjusted[boundary_index] = boundaries[boundary_index].clamp(lower_bound, upper_bound);
+        }
+
+        for (span, (start_index, end_index)) in spans.iter_mut().zip(pane_boundary_indices) {
+            span.start = adjusted[start_index];
+            span.end = adjusted[end_index];
+        }
+    }
+
     pub(in super::super) fn sync_native_tab_pane_geometry(tab: &mut TerminalTab, cols: u16, rows: u16) {
         if tab.panes.is_empty() {
             return;
         }
-        assert!(
-            tab.panes.iter().any(|pane| pane.id == tab.active_pane_id),
-            "native tab resize requires a valid active pane id"
-        );
 
         let cols = cols.max(1);
         let rows = rows.max(1);
@@ -86,32 +187,38 @@ impl TerminalView {
             .max()
             .unwrap_or(rows)
             .max(1);
-        for pane in &mut tab.panes {
-            let old_left = pane.left;
-            let old_top = pane.top;
-            let old_right = pane.left.saturating_add(pane.width);
-            let old_bottom = pane.top.saturating_add(pane.height);
+        let mut horizontal_spans = tab
+            .panes
+            .iter()
+            .map(|pane| Self::scaled_native_pane_axis_span(pane.left, pane.width, old_cols, cols))
+            .collect::<Vec<_>>();
+        let mut vertical_spans = tab
+            .panes
+            .iter()
+            .map(|pane| Self::scaled_native_pane_axis_span(pane.top, pane.height, old_rows, rows))
+            .collect::<Vec<_>>();
+        let min_cols = Self::native_min_extent_allowed(
+            cols,
+            tab.panes.len(),
+            Self::native_pane_min_extent_for_axis(PaneResizeAxis::Horizontal),
+        );
+        let min_rows = Self::native_min_extent_allowed(
+            rows,
+            tab.panes.len(),
+            Self::native_pane_min_extent_for_axis(PaneResizeAxis::Vertical),
+        );
+        Self::rebalance_native_pane_axis_spans(&mut horizontal_spans, cols, min_cols);
+        Self::rebalance_native_pane_axis_spans(&mut vertical_spans, rows, min_rows);
 
-            let mut new_left =
-                Self::scale_native_pane_edge(old_left, old_cols, cols).min(cols.saturating_sub(1));
-            let mut new_top =
-                Self::scale_native_pane_edge(old_top, old_rows, rows).min(rows.saturating_sub(1));
-            let mut new_right = Self::scale_native_pane_edge(old_right, old_cols, cols).min(cols);
-            let mut new_bottom = Self::scale_native_pane_edge(old_bottom, old_rows, rows).min(rows);
-
-            if new_right <= new_left {
-                new_right = (new_left + 1).min(cols);
-                new_left = new_right.saturating_sub(1);
-            }
-            if new_bottom <= new_top {
-                new_bottom = (new_top + 1).min(rows);
-                new_top = new_bottom.saturating_sub(1);
-            }
-
-            pane.left = new_left;
-            pane.top = new_top;
-            pane.width = new_right.saturating_sub(new_left).max(1);
-            pane.height = new_bottom.saturating_sub(new_top).max(1);
+        for (pane, (horizontal, vertical)) in tab
+            .panes
+            .iter_mut()
+            .zip(horizontal_spans.into_iter().zip(vertical_spans))
+        {
+            pane.left = horizontal.start;
+            pane.top = vertical.start;
+            pane.width = horizontal.end.saturating_sub(horizontal.start).max(1);
+            pane.height = vertical.end.saturating_sub(vertical.start).max(1);
         }
     }
 
@@ -200,5 +307,75 @@ mod tests {
         let pane = &tab.panes[0];
         assert_eq!(pane.width, 120);
         assert_eq!(pane.height, 42);
+    }
+
+    #[test]
+    fn sync_native_tab_pane_geometry_rebalances_widths_to_meet_minimums() {
+        let mut tab = TerminalTab {
+            id: 1,
+            window_id: "@native-1".to_string(),
+            window_index: 0,
+            panes: vec![
+                test_pane("%native-1", 0, 0, 80, 20),
+                test_pane("%native-2", 80, 0, 40, 20),
+            ],
+            active_pane_id: "%native-1".to_string(),
+            manual_title: None,
+            explicit_title: None,
+            shell_title: None,
+            current_command: None,
+            pending_command_title: None,
+            pending_command_token: 0,
+            last_prompt_cwd: None,
+            title: DEFAULT_TAB_TITLE.to_string(),
+            title_text_width: 0.0,
+            sticky_title_width: 0.0,
+            display_width: TAB_MIN_WIDTH,
+            running_process: false,
+        };
+
+        TerminalView::sync_native_tab_pane_geometry(&mut tab, 45, 20);
+
+        assert_eq!(tab.panes[0].left, 0);
+        assert_eq!(tab.panes[1].left, tab.panes[0].width);
+        assert_eq!(tab.panes[0].width, 23);
+        assert_eq!(tab.panes[1].width, 22);
+        assert_eq!(
+            tab.panes.iter().map(|pane| pane.width).sum::<u16>(),
+            45
+        );
+    }
+
+    #[test]
+    fn sync_native_tab_pane_geometry_scales_below_default_minimum_when_extent_is_tight() {
+        let mut tab = TerminalTab {
+            id: 1,
+            window_id: "@native-1".to_string(),
+            window_index: 0,
+            panes: vec![
+                test_pane("%native-1", 0, 0, 30, 15),
+                test_pane("%native-2", 0, 15, 30, 5),
+            ],
+            active_pane_id: "%native-1".to_string(),
+            manual_title: None,
+            explicit_title: None,
+            shell_title: None,
+            current_command: None,
+            pending_command_title: None,
+            pending_command_token: 0,
+            last_prompt_cwd: None,
+            title: DEFAULT_TAB_TITLE.to_string(),
+            title_text_width: 0.0,
+            sticky_title_width: 0.0,
+            display_width: TAB_MIN_WIDTH,
+            running_process: false,
+        };
+
+        TerminalView::sync_native_tab_pane_geometry(&mut tab, 30, 10);
+
+        assert_eq!(tab.panes[0].height, 5);
+        assert_eq!(tab.panes[1].top, 5);
+        assert_eq!(tab.panes[1].height, 5);
+        assert_eq!(tab.panes[0].height + tab.panes[1].height, 10);
     }
 }

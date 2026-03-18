@@ -513,11 +513,12 @@ impl TerminalView {
         input: VerticalTabStripLayoutInput,
     ) -> VerticalTabStripLayoutSnapshot {
         let strip_width = input.strip_width.max(0.0);
+        let clamped_list_height = input.list_height.max(0.0);
         let top_shelf_layout =
             Self::vertical_new_tab_shelf_layout(strip_width - TAB_STROKE_THICKNESS, input.compact);
         let bottom_shelf_layout = Self::vertical_bottom_shelf_layout();
         let list_top = input.header_height + top_shelf_layout.shelf_height;
-        let bottom_shelf_top = list_top + input.list_height;
+        let bottom_shelf_top = list_top + clamped_list_height;
         let divider_x = (strip_width - TAB_STROKE_THICKNESS).max(0.0);
         let resize_handle_left = (strip_width - 4.0).max(0.0);
         let mut cursor_y = 0.0;
@@ -544,7 +545,7 @@ impl TerminalView {
             top_shelf_layout,
             bottom_shelf_layout,
             list_top,
-            list_height: input.list_height.max(0.0),
+            list_height: clamped_list_height,
             bottom_shelf_top,
             divider_x,
             resize_handle_left,
@@ -577,9 +578,7 @@ impl TerminalView {
     }
 
     pub(crate) fn vertical_tab_strip_layout_snapshot(&self) -> VerticalTabStripLayoutSnapshot {
-        self.tab_strip.vertical_layout_cache.get_or_insert_with(|| {
-            self.compute_vertical_tab_strip_layout_snapshot(Instant::now())
-        })
+        self.compute_vertical_tab_strip_layout_snapshot(Instant::now())
     }
 }
 
@@ -741,6 +740,22 @@ mod tests {
             TABBAR_HEIGHT + VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT,
         );
         assert_float_eq(snapshot.bottom_shelf_top, snapshot.list_top + 180.0);
+    }
+
+    #[test]
+    fn vertical_layout_clamps_negative_list_height_before_bottom_shelf_positioning() {
+        let snapshot = TerminalView::vertical_tab_strip_layout_for_input(
+            VerticalTabStripLayoutInput {
+                strip_width: 220.0,
+                compact: false,
+                header_height: TABBAR_HEIGHT,
+                list_height: -20.0,
+                tab_heights: vec![TAB_ITEM_HEIGHT],
+            },
+        );
+
+        assert_float_eq(snapshot.list_height, 0.0);
+        assert_float_eq(snapshot.bottom_shelf_top, snapshot.list_top);
     }
 
     #[test]

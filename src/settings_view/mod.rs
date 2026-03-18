@@ -34,6 +34,8 @@ mod sections;
 mod state;
 mod state_apply;
 mod style;
+#[cfg(test)]
+mod test_utils;
 
 use self::search::SearchableSetting;
 use self::state::{ActiveTextInput, DropdownOption, EditableField};
@@ -1223,18 +1225,8 @@ impl Drop for SettingsWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_actions::open_settings_window;
+    use super::test_utils::open_settings_window_handle;
     use gpui::TestAppContext;
-
-    fn open_settings_window_handle(cx: &mut TestAppContext) -> gpui::WindowHandle<SettingsWindow> {
-        cx.update(|app| {
-            open_settings_window(app).expect("settings window should open");
-        });
-        cx.windows()
-            .into_iter()
-            .find_map(|handle| handle.downcast::<SettingsWindow>())
-            .expect("settings window should exist")
-    }
 
     #[test]
     fn settings_effective_background_opacity_prefers_preview() {

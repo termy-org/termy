@@ -1,9 +1,9 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use gpui::ScrollHandle;
 
 use super::hints::TabSwitchHintState;
-use super::layout::{TabStripLayoutSnapshot, VerticalTabStripLayoutSnapshot};
+use super::layout::TabStripLayoutSnapshot;
 
 const TAB_TITLE_WIDTH_CACHE_MAX_ENTRIES: usize = 512;
 
@@ -175,30 +175,6 @@ impl TabStripTitlebarState {
     }
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct VerticalTabStripLayoutCache {
-    snapshot: RefCell<Option<VerticalTabStripLayoutSnapshot>>,
-}
-
-impl VerticalTabStripLayoutCache {
-    pub(crate) fn clear(&self) {
-        self.snapshot.borrow_mut().take();
-    }
-
-    pub(crate) fn get_or_insert_with(
-        &self,
-        compute: impl FnOnce() -> VerticalTabStripLayoutSnapshot,
-    ) -> VerticalTabStripLayoutSnapshot {
-        if let Some(snapshot) = self.snapshot.borrow().clone() {
-            return snapshot;
-        }
-
-        let snapshot = compute();
-        self.snapshot.replace(Some(snapshot.clone()));
-        snapshot
-    }
-}
-
 pub(crate) struct TabStripState {
     pub(crate) horizontal_scroll_handle: ScrollHandle,
     pub(crate) vertical_scroll_handle: ScrollHandle,
@@ -211,7 +187,6 @@ pub(crate) struct TabStripState {
     pub(crate) horizontal_layout_last_synced_revision: u64,
     pub(crate) horizontal_layout_last_synced_viewport_width: f32,
     pub(crate) horizontal_layout_snapshot: Option<TabStripLayoutSnapshot>,
-    pub(crate) vertical_layout_cache: VerticalTabStripLayoutCache,
     pub(crate) title_width_cache: TabTitleWidthCache,
     pub(crate) titlebar: TabStripTitlebarState,
 }
@@ -230,7 +205,6 @@ impl TabStripState {
             horizontal_layout_last_synced_revision: 0,
             horizontal_layout_last_synced_viewport_width: f32::NAN,
             horizontal_layout_snapshot: None,
-            vertical_layout_cache: VerticalTabStripLayoutCache::default(),
             title_width_cache: TabTitleWidthCache::default(),
             titlebar: TabStripTitlebarState::default(),
         }
@@ -238,7 +212,6 @@ impl TabStripState {
 
     pub(crate) fn invalidate_layouts(&mut self) {
         self.horizontal_layout_revision = self.horizontal_layout_revision.wrapping_add(1);
-        self.vertical_layout_cache.clear();
     }
 }
 
@@ -290,132 +263,6 @@ mod tests {
         assert_eq!(
             cache.get("tab-overflow", "JetBrains Mono", 12f32.to_bits()),
             Some(1.0)
-        );
-    }
-
-    #[test]
-    fn vertical_layout_cache_reuses_snapshot_until_cleared() {
-        let cache = VerticalTabStripLayoutCache::default();
-        let first = VerticalTabStripLayoutSnapshot {
-            strip_width: 160.0,
-            compact: false,
-            header_height: 34.0,
-            top_shelf_layout: super::super::layout::VerticalNewTabShelfLayout {
-                shelf_height: 44.0,
-                button_x: 8.0,
-                button_y: 8.0,
-                button_width: 120.0,
-                button_height: 22.0,
-            },
-            bottom_shelf_layout: super::super::layout::VerticalBottomShelfLayout {
-                shelf_height: 38.0,
-                button_size: 22.0,
-                icon_size: 14.0,
-            },
-            list_top: 78.0,
-            list_height: 120.0,
-            bottom_shelf_top: 198.0,
-            divider_x: 159.0,
-            resize_handle_left: 156.0,
-            content_height: 32.0,
-            rows: vec![super::super::layout::VerticalTabRowLayout {
-                index: 0,
-                top: 0.0,
-                height: 32.0,
-            }],
-        };
-        let second = VerticalTabStripLayoutSnapshot {
-            rows: vec![super::super::layout::VerticalTabRowLayout {
-                index: 0,
-                top: 0.0,
-                height: 12.0,
-            }],
-            content_height: 12.0,
-            ..first.clone()
-        };
-        let mut computes = 0;
-
-        assert_eq!(
-            cache.get_or_insert_with(|| {
-                computes += 1;
-                first.clone()
-            }),
-            first
-        );
-        assert_eq!(
-            cache.get_or_insert_with(|| {
-                computes += 1;
-                second.clone()
-            }),
-            first
-        );
-        assert_eq!(computes, 1);
-
-        cache.clear();
-
-        assert_eq!(
-            cache.get_or_insert_with(|| {
-                computes += 1;
-                second.clone()
-            }),
-            second
-        );
-        assert_eq!(computes, 2);
-    }
-
-    #[test]
-    fn invalidating_layouts_clears_vertical_cache_and_bumps_revision() {
-        let mut state = TabStripState::new(false);
-        let first = VerticalTabStripLayoutSnapshot {
-            strip_width: 160.0,
-            compact: false,
-            header_height: 34.0,
-            top_shelf_layout: super::super::layout::VerticalNewTabShelfLayout {
-                shelf_height: 44.0,
-                button_x: 8.0,
-                button_y: 8.0,
-                button_width: 120.0,
-                button_height: 22.0,
-            },
-            bottom_shelf_layout: super::super::layout::VerticalBottomShelfLayout {
-                shelf_height: 38.0,
-                button_size: 22.0,
-                icon_size: 14.0,
-            },
-            list_top: 78.0,
-            list_height: 120.0,
-            bottom_shelf_top: 198.0,
-            divider_x: 159.0,
-            resize_handle_left: 156.0,
-            content_height: 32.0,
-            rows: vec![super::super::layout::VerticalTabRowLayout {
-                index: 0,
-                top: 0.0,
-                height: 32.0,
-            }],
-        };
-        let second = VerticalTabStripLayoutSnapshot {
-            strip_width: 240.0,
-            divider_x: 239.0,
-            resize_handle_left: 236.0,
-            ..first.clone()
-        };
-        let initial_revision = state.horizontal_layout_revision;
-
-        assert_eq!(
-            state.vertical_layout_cache.get_or_insert_with(|| first.clone()),
-            first
-        );
-
-        state.invalidate_layouts();
-
-        assert_eq!(
-            state.horizontal_layout_revision,
-            initial_revision.wrapping_add(1)
-        );
-        assert_eq!(
-            state.vertical_layout_cache.get_or_insert_with(|| second.clone()),
-            second
         );
     }
 

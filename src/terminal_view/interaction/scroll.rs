@@ -18,11 +18,11 @@ enum WheelScrollRetargetResult {
 
 fn terminal_scrollbar_local_y_from_window_y(
     window_y: f32,
-    chrome_height: f32,
+    content_top_inset: f32,
     surface_origin_y: f32,
     surface_height: f32,
 ) -> Option<f32> {
-    let content_y = TerminalView::window_y_to_terminal_content_y(window_y, chrome_height);
+    let content_y = TerminalView::window_y_to_terminal_content_y(window_y, content_top_inset);
     if content_y < surface_origin_y || content_y > surface_origin_y + surface_height {
         return None;
     }
@@ -579,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_scrollbar_local_y_from_window_y_subtracts_chrome_before_surface_math() {
+    fn terminal_scrollbar_local_y_from_window_y_subtracts_content_top_inset_before_surface_math() {
         let local_y = terminal_scrollbar_local_y_from_window_y(164.0, 44.0, 100.0, 300.0);
         assert_eq!(local_y, Some(20.0));
     }

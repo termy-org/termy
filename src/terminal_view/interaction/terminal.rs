@@ -1,6 +1,57 @@
 use super::*;
 
 impl TerminalView {
+    fn terminal_grid_size_for_pane_count(
+        pane_count: usize,
+        viewport_width: f32,
+        viewport_height: f32,
+        sidebar_width: f32,
+        content_top_inset: f32,
+        padding_x: f32,
+        padding_y: f32,
+        cell_width: f32,
+        cell_height: f32,
+    ) -> (u16, u16) {
+        let (outer_padding_x, outer_padding_y) = if Self::uses_outer_terminal_padding(pane_count) {
+            (padding_x, padding_y)
+        } else {
+            (0.0, 0.0)
+        };
+        let terminal_width =
+            (viewport_width - sidebar_width - (outer_padding_x * 2.0)).max(cell_width * 2.0);
+        let terminal_height =
+            (viewport_height - content_top_inset - (outer_padding_y * 2.0)).max(cell_height);
+        (
+            Self::compute_terminal_cols(terminal_width, cell_width, false),
+            Self::compute_terminal_rows(terminal_height, cell_height),
+        )
+    }
+
+    fn repair_native_tab_active_pane_for_resize(tab: &mut TerminalTab) -> bool {
+        if tab.panes.is_empty() {
+            return false;
+        }
+        if tab.has_active_pane() {
+            return true;
+        }
+
+        // Restored native layouts can carry a pane id that no longer exists.
+        // Repair that invariant here so a resize never crashes the app.
+        let fallback_id = tab
+            .panes
+            .first()
+            .map(|pane| pane.id.clone())
+            .expect("non-empty native tab must have a first pane");
+        log::warn!(
+            "native resize repaired stale active pane id '{}' for tab '{}'; falling back to '{}'",
+            tab.active_pane_id,
+            tab.window_id,
+            fallback_id
+        );
+        tab.active_pane_id = fallback_id;
+        true
+    }
+
     pub(in super::super) fn execute_layout_command_action(
         &mut self,
         action: CommandAction,
@@ -75,15 +126,6 @@ impl TerminalView {
         window: &Window,
         cell_size: Size<Pixels>,
     ) {
-        let (padding_x, padding_y) = if self
-            .tabs
-            .get(self.active_tab)
-            .is_some_and(|tab| tab.panes.len() > 1)
-        {
-            (0.0, 0.0)
-        } else {
-            (self.padding_x, self.padding_y)
-        };
         let viewport = window.viewport_size();
         let viewport_width: f32 = viewport.width.into();
         let viewport_height: f32 = viewport.height.into();
@@ -94,13 +136,22 @@ impl TerminalView {
             return;
         }
 
-        let terminal_width =
-            (viewport_width - self.tab_strip_sidebar_width() - (padding_x * 2.0)).max(cell_width * 2.0);
-        let terminal_height =
-            (viewport_height - self.terminal_content_top_inset() - (padding_y * 2.0)).max(cell_height);
+        let sidebar_width = self.tab_strip_sidebar_width();
+        let content_top_inset = self.terminal_content_top_inset();
         let backend_mode = self.runtime_kind();
-        let cols = Self::compute_terminal_cols(terminal_width, cell_width, false);
-        let rows = Self::compute_terminal_rows(terminal_height, cell_height);
+        let runtime_uses_tmux = matches!(backend_mode, RuntimeKind::Tmux);
+        let active_pane_count = self.tabs.get(self.active_tab).map_or(0, |tab| tab.panes.len());
+        let (cols, rows) = Self::terminal_grid_size_for_pane_count(
+            active_pane_count,
+            viewport_width,
+            viewport_height,
+            sidebar_width,
+            content_top_inset,
+            self.padding_x,
+            self.padding_y,
+            cell_width,
+            cell_height,
+        );
 
         match backend_mode {
             RuntimeKind::Tmux => {
@@ -117,9 +168,19 @@ impl TerminalView {
             }
             RuntimeKind::Native => {
                 for tab in &mut self.tabs {
-                    assert!(
-                        tab.panes.iter().any(|pane| pane.id == tab.active_pane_id),
-                        "native tab must own a valid active pane before resize"
+                    if !Self::repair_native_tab_active_pane_for_resize(tab) {
+                        continue;
+                    }
+                    let (cols, rows) = Self::terminal_grid_size_for_pane_count(
+                        tab.panes.len(),
+                        viewport_width,
+                        viewport_height,
+                        sidebar_width,
+                        content_top_inset,
+                        self.padding_x,
+                        self.padding_y,
+                        cell_width,
+                        cell_height,
                     );
                     Self::sync_native_tab_pane_geometry(tab, cols, rows);
                 }
@@ -127,7 +188,8 @@ impl TerminalView {
         }
 
         for tab in &self.tabs {
-            let tab_uses_native_split_padding = !self.runtime_uses_tmux() && tab.panes.len() > 1;
+            let tab_uses_native_split_padding =
+                Self::uses_native_split_content_padding(runtime_uses_tmux, tab.panes.len());
             let (content_padding_x, content_padding_y) = if tab_uses_native_split_padding {
                 (self.padding_x, self.padding_y)
             } else {
@@ -173,5 +235,67 @@ impl TerminalView {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_terminal() -> Terminal {
+        Terminal::new_tmux(TerminalSize::default(), TerminalOptions::default())
+    }
+
+    fn test_pane(id: &str) -> TerminalPane {
+        TerminalPane {
+            id: id.to_string(),
+            left: 0,
+            top: 0,
+            width: 1,
+            height: 1,
+            degraded: false,
+            terminal: test_terminal(),
+            render_cache: RefCell::new(TerminalPaneRenderCache::default()),
+            last_alternate_screen: Cell::new(false),
+        }
+    }
+
+    #[test]
+    fn terminal_grid_size_uses_outer_padding_only_for_single_pane_tabs() {
+        let single_pane = TerminalView::terminal_grid_size_for_pane_count(
+            1, 800.0, 600.0, 0.0, 32.0, 12.0, 8.0, 10.0, 20.0,
+        );
+        let split_pane = TerminalView::terminal_grid_size_for_pane_count(
+            2, 800.0, 600.0, 0.0, 32.0, 12.0, 8.0, 10.0, 20.0,
+        );
+
+        assert_eq!(single_pane, (77, 27));
+        assert_eq!(split_pane, (80, 28));
+    }
+
+    #[test]
+    fn repair_native_tab_active_pane_for_resize_falls_back_to_first_pane() {
+        let mut tab = TerminalTab {
+            id: 1,
+            window_id: "@native-1".to_string(),
+            window_index: 0,
+            panes: vec![test_pane("%native-1"), test_pane("%native-2")],
+            active_pane_id: "%missing".to_string(),
+            manual_title: None,
+            explicit_title: None,
+            shell_title: None,
+            current_command: None,
+            pending_command_title: None,
+            pending_command_token: 0,
+            last_prompt_cwd: None,
+            title: DEFAULT_TAB_TITLE.to_string(),
+            title_text_width: 0.0,
+            sticky_title_width: 0.0,
+            display_width: TAB_MIN_WIDTH,
+            running_process: false,
+        };
+
+        assert!(TerminalView::repair_native_tab_active_pane_for_resize(&mut tab));
+        assert_eq!(tab.active_pane_id, "%native-1");
     }
 }

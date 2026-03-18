@@ -550,18 +550,8 @@ impl SettingsWindow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_actions::open_settings_window;
+    use super::super::test_utils::open_settings_window_handle;
     use gpui::TestAppContext;
-
-    fn open_settings_window_handle(cx: &mut TestAppContext) -> gpui::WindowHandle<SettingsWindow> {
-        cx.update(|app| {
-            open_settings_window(app).expect("settings window should open");
-        });
-        cx.windows()
-            .into_iter()
-            .find_map(|handle| handle.downcast::<SettingsWindow>())
-            .expect("settings window should exist")
-    }
 
     #[gpui::test]
     fn vertical_tabs_width_rejects_values_below_shared_minimum(cx: &mut TestAppContext) {

@@ -158,6 +158,7 @@ impl TerminalView {
         width: f32,
         tab_baseline_y: f32,
         tab_stroke_color: gpui::Rgba,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
             .id(id)
@@ -165,6 +166,9 @@ impl TerminalView {
             .flex_none()
             .w(px(width))
             .h_full()
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+                this.on_action_rail_mouse_move(event, window, cx);
+            }))
             .child(
                 div()
                     .absolute()
@@ -214,6 +218,7 @@ impl TerminalView {
         termy_branding_slot_start_x: f32,
         termy_branding_slot_width: f32,
         termy_branding_text_color: gpui::Rgba,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
             .id("tabbar-left-inset")
@@ -221,6 +226,9 @@ impl TerminalView {
             .flex_none()
             .w(px(width))
             .h_full()
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+                this.on_action_rail_mouse_move(event, window, cx);
+            }))
             .child(
                 div()
                     .absolute()
@@ -244,6 +252,7 @@ impl TerminalView {
         tab_baseline_y: f32,
         tab_stroke_color: gpui::Rgba,
         show_divider: bool,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
             .id("tabbar-action-gutter")
@@ -251,6 +260,9 @@ impl TerminalView {
             .flex_none()
             .w(px(gutter_width))
             .h_full()
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+                this.on_action_rail_mouse_move(event, window, cx);
+            }))
             .child(
                 div()
                     .absolute()
@@ -539,6 +551,7 @@ impl TerminalView {
                     termy_branding_slot_start_x,
                     termy_branding_slot_width,
                     termy_branding_text_color,
+                    cx,
                 )
             }))
             .child(
@@ -577,6 +590,7 @@ impl TerminalView {
                     state.chrome_layout.baseline_y,
                     palette.tab_stroke_color,
                     show_gutter_divider,
+                    cx,
                 )
             }))
             .children(
@@ -589,6 +603,7 @@ impl TerminalView {
                     state.geometry.right_inset_width,
                     state.chrome_layout.baseline_y,
                     palette.tab_stroke_color,
+                    cx,
                 )
             }))
             .into_any_element()
