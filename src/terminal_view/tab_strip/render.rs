@@ -13,7 +13,10 @@ struct TabStripPalette {
     hovered_tab_bg: gpui::Rgba,
     active_tab_text: gpui::Rgba,
     inactive_tab_text: gpui::Rgba,
+    close_button_bg: gpui::Rgba,
+    close_button_border: gpui::Rgba,
     close_button_hover_bg: gpui::Rgba,
+    close_button_hover_border: gpui::Rgba,
     close_button_hover_text: gpui::Rgba,
     switch_hint_bg: gpui::Rgba,
     switch_hint_border: gpui::Rgba,
@@ -257,6 +260,12 @@ mod tests {
         let origin = TerminalView::vertical_bottom_shelf_button_origin(layout);
         assert_eq!(origin.0, VERTICAL_TAB_STRIP_PADDING);
         assert_eq!(origin.1, (layout.shelf_height - layout.button_size) * 0.5);
+    }
+
+    #[test]
+    fn close_chip_fits_within_close_slot() {
+        assert!(TAB_CLOSE_CHIP_WIDTH < TAB_CLOSE_SLOT_WIDTH);
+        assert!(TAB_CLOSE_CHIP_HEIGHT < TAB_CLOSE_HITBOX);
     }
 
     #[test]
@@ -549,8 +558,14 @@ impl TerminalView {
         active_tab_text.a = 0.95;
         let mut inactive_tab_text = colors.foreground;
         inactive_tab_text.a = 0.7;
+        let mut close_button_bg = colors.foreground;
+        close_button_bg.a = self.scaled_chrome_alpha(0.07);
+        let mut close_button_border = colors.foreground;
+        close_button_border.a = self.scaled_chrome_alpha(0.14);
         let mut close_button_hover_bg = colors.foreground;
-        close_button_hover_bg.a = self.scaled_chrome_alpha(0.24);
+        close_button_hover_bg.a = self.scaled_chrome_alpha(0.16);
+        let mut close_button_hover_border = colors.cursor;
+        close_button_hover_border.a = self.scaled_chrome_alpha(0.4);
         let mut close_button_hover_text = colors.foreground;
         close_button_hover_text.a = 0.98;
         let now = Instant::now();
@@ -583,7 +598,10 @@ impl TerminalView {
             hovered_tab_bg,
             active_tab_text,
             inactive_tab_text,
+            close_button_bg,
+            close_button_border,
             close_button_hover_bg,
+            close_button_hover_border,
             close_button_hover_text,
             switch_hint_bg,
             switch_hint_border,
@@ -1340,38 +1358,51 @@ impl TerminalView {
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(5.0))
-            .text_color(close_text_color)
-            .text_size(px(12.0))
-            .child("×")
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
-                    let is_active = close_tab_index == this.active_tab;
-                    if Self::tab_shows_close(
-                        this.tab_close_visibility,
-                        is_active,
-                        this.tab_strip.hovered_tab,
-                        this.tab_strip.hovered_tab_close,
-                        close_tab_index,
-                    ) {
-                        this.request_tab_close_by_index(close_tab_index, window, cx);
-                        cx.stop_propagation();
-                    }
-                }),
+            .child(
+                div()
+                    .w(px(TAB_CLOSE_CHIP_WIDTH.min(input.close_slot_width)))
+                    .h(px(TAB_CLOSE_CHIP_HEIGHT.min(TAB_CLOSE_HITBOX)))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(TAB_CLOSE_CHIP_RADIUS))
+                    .bg(palette.close_button_bg)
+                    .border_1()
+                    .border_color(palette.close_button_border)
+                    .text_color(close_text_color)
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
+                            let is_active = close_tab_index == this.active_tab;
+                            if Self::tab_shows_close(
+                                this.tab_close_visibility,
+                                is_active,
+                                this.tab_strip.hovered_tab,
+                                this.tab_strip.hovered_tab_close,
+                                close_tab_index,
+                            ) {
+                                this.request_tab_close_by_index(close_tab_index, window, cx);
+                                cx.stop_propagation();
+                            }
+                        }),
+                    )
+                    .on_mouse_move(
+                        cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
+                            this.on_tab_close_mouse_move(hover_tab_index, cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .hover(move |style| {
+                        style
+                            .bg(palette.close_button_hover_bg)
+                            .border_color(palette.close_button_hover_border)
+                            .text_color(palette.close_button_hover_text)
+                    })
+                    .cursor_pointer()
+                    .child(div().mt(px(-1.0)).child("×")),
             )
-            .on_mouse_move(
-                cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
-                    this.on_tab_close_mouse_move(hover_tab_index, cx);
-                    cx.stop_propagation();
-                }),
-            )
-            .hover(move |style| {
-                style
-                    .bg(palette.close_button_hover_bg)
-                    .text_color(palette.close_button_hover_text)
-            })
-            .cursor_pointer()
             .into_any_element()
     }
 
