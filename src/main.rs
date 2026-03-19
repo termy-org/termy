@@ -109,6 +109,7 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
             window_background,
             is_movable: true,
             is_resizable: true,
+            window_min_size: Some(size(px(MIN_WINDOW_WIDTH), px(MIN_WINDOW_HEIGHT))),
             ..Default::default()
         },
         move |window, cx| {
