@@ -323,6 +323,15 @@ mod tests {
     use super::*;
     use crate::config::{TabTitleConfig, TabTitleSource};
 
+    fn expected_home_relative_path(parts: &[&str]) -> String {
+        if parts.is_empty() {
+            return "~".to_string();
+        }
+
+        let separator = std::path::MAIN_SEPARATOR.to_string();
+        format!("~{}{}", std::path::MAIN_SEPARATOR, parts.join(&separator))
+    }
+
     fn pane_with(path: &str, command: &str) -> TmuxPaneState {
         TmuxPaneState {
             id: "%1".to_string(),
@@ -352,12 +361,13 @@ mod tests {
         let config = TabTitleConfig::default();
         let home = TerminalView::user_home_dir().expect("home dir");
         let cwd = home.join("projects/termy");
+        let expected = expected_home_relative_path(&["projects", "termy"]);
         let title = TerminalView::predicted_prompt_seed_title(
             &config,
             Some(cwd.to_string_lossy().as_ref()),
         );
 
-        assert_eq!(title.as_deref(), Some("~/projects/termy"));
+        assert_eq!(title.as_deref(), Some(expected.as_str()));
     }
 
     #[test]
@@ -454,10 +464,11 @@ mod tests {
     fn resolve_prompt_title_formats_absolute_home_paths_relative() {
         let home = TerminalView::user_home_dir().expect("home dir");
         let cwd = home.join("projects/termy");
+        let expected = expected_home_relative_path(&["projects", "termy"]);
 
         assert_eq!(
             TerminalView::resolve_prompt_title("{cwd}", Some(cwd.to_string_lossy().as_ref())),
-            "~/projects/termy"
+            expected
         );
     }
 
@@ -502,9 +513,10 @@ mod tests {
         };
         let home = TerminalView::user_home_dir().expect("home dir");
         let pane = pane_with(home.join("work/project").to_string_lossy().as_ref(), "zsh");
+        let expected = format!("cwd:{}", expected_home_relative_path(&["work", "project"]));
 
         let title = TerminalView::derive_tmux_shell_title(&tab_title, &pane);
-        assert_eq!(title.as_deref(), Some("cwd:~/work/project"));
+        assert_eq!(title.as_deref(), Some(expected.as_str()));
     }
 
     #[test]
