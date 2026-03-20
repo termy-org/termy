@@ -138,10 +138,16 @@ impl TerminalView {
         match RuntimeKind::from_app_config(config) {
             RuntimeKind::Tmux => {
                 let tmux_runtime = Self::tmux_runtime_from_app_config(config);
+                let initial_working_dir = termy_terminal_ui::resolve_launch_working_directory(
+                    configured_working_dir,
+                    terminal_runtime.working_dir_fallback,
+                )
+                .map(|path| path.to_string_lossy().into_owned());
                 let tmux_client = match TmuxClient::new(
                     tmux_runtime.clone(),
                     initial_cols,
                     initial_rows,
+                    initial_working_dir.as_deref(),
                     Some(event_wakeup_tx.clone()),
                 ) {
                     Ok(client) => client,

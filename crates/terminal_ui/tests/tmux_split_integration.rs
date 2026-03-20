@@ -3,9 +3,11 @@
 mod support;
 
 use std::env;
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -18,6 +20,7 @@ use termy_terminal_ui::{
 const TEST_COLS: u16 = 149;
 const TEST_ROWS: u16 = 39;
 const TEST_SOCKET_NAME: &str = "termy";
+static PWD_MARKER_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn kill_test_server(binary: &str, tmux_tmpdir: &Path) {
     let _ = Command::new(binary)
@@ -119,7 +122,28 @@ fn new_tmux_client_with_persistence_clean(binary: &str, persistence: bool) -> Tm
 }
 
 fn new_tmux_client_with_persistence_live(binary: &str, persistence: bool) -> TmuxClient {
+    new_tmux_client_with_persistence_live_in_dir(binary, persistence, None)
+}
+
+fn new_tmux_client_with_persistence_clean_in_dir(
+    binary: &str,
+    persistence: bool,
+    initial_working_dir: Option<&Path>,
+) -> TmuxClient {
+    ensure_clean_test_server(binary);
+    new_tmux_client_with_persistence_live_in_dir(binary, persistence, initial_working_dir)
+}
+
+fn new_tmux_client_with_persistence_live_in_dir(
+    binary: &str,
+    persistence: bool,
+    initial_working_dir: Option<&Path>,
+) -> TmuxClient {
     let mut last_error = None::<String>;
+    let initial_working_dir = initial_working_dir.map(|path| {
+        path.to_str()
+            .expect("tmux cwd integration tests require valid UTF-8 paths")
+    });
 
     for _attempt in 0..6 {
         let config = TmuxRuntimeConfig {
@@ -127,7 +151,7 @@ fn new_tmux_client_with_persistence_live(binary: &str, persistence: bool) -> Tmu
             launch: TmuxLaunchTarget::Managed { persistence },
             show_active_pane_border: false,
         };
-        match TmuxClient::new(config, TEST_COLS, TEST_ROWS, None) {
+        match TmuxClient::new(config, TEST_COLS, TEST_ROWS, initial_working_dir, None) {
             Ok(client) => return client,
             Err(error) => {
                 last_error = Some(format!("{error:#}"));
@@ -196,6 +220,87 @@ fn assert_window_geometry_within_bounds(window: &TmuxWindowState, cols: u16, row
     }
 }
 
+fn strip_ansi_sequences(input: &str) -> String {
+    let mut stripped = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\u{1b}' {
+            stripped.push(ch);
+            continue;
+        }
+
+        match chars.next() {
+            Some('[') => {
+                for ch in chars.by_ref() {
+                    if ('@'..='~').contains(&ch) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                let mut prev_was_escape = false;
+                for ch in chars.by_ref() {
+                    if ch == '\u{7}' || (prev_was_escape && ch == '\\') {
+                        break;
+                    }
+                    prev_was_escape = ch == '\u{1b}';
+                }
+            }
+            Some(_) | None => {}
+        }
+    }
+
+    stripped
+}
+
+fn assert_pane_pwd(client: &TmuxClient, pane_id: &str, expected_dir: &Path) {
+    let expected = expected_dir.to_string_lossy().into_owned();
+    let marker = format!(
+        "__termy_pwd_marker_{}__",
+        PWD_MARKER_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    client
+        .send_input(
+            pane_id,
+            format!("printf '{marker}\\n'\npwd\n").as_bytes(),
+        )
+        .expect("send-input should succeed");
+
+    let mut last_capture = String::new();
+    for _attempt in 0..60 {
+        let capture = client
+            .capture_pane(pane_id, 10_000)
+            .expect("capture-pane full history should succeed");
+        let capture_text = String::from_utf8_lossy(&capture);
+        last_capture = capture_text.into_owned();
+        let mut saw_marker = false;
+        for line in last_capture.lines() {
+            let trimmed = strip_ansi_sequences(line).trim().to_string();
+            if trimmed == marker {
+                saw_marker = true;
+                continue;
+            }
+            if saw_marker && trimmed == expected {
+                return;
+            }
+        }
+        if last_capture
+            .lines()
+            .map(strip_ansi_sequences)
+            .any(|line| line.trim() == expected)
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    panic!(
+        "pane '{}' never reported cwd '{}'; last capture:\n{}",
+        pane_id, expected, last_capture
+    );
+}
+
 #[test]
 #[ignore = "requires local tmux 3.3+; run explicitly"]
 fn tmux_split_vertical_then_horizontal_refresh_snapshot_parses_nested_layout() {
@@ -212,7 +317,7 @@ fn tmux_split_vertical_then_horizontal_refresh_snapshot_parses_nested_layout() {
     let first_target = active_pane_id(initial_window).to_string();
 
     client
-        .split_vertical(first_target.as_str())
+        .split_vertical(first_target.as_str(), None)
         .expect("vertical split should succeed");
 
     let after_vertical = client
@@ -222,7 +327,7 @@ fn tmux_split_vertical_then_horizontal_refresh_snapshot_parses_nested_layout() {
     let second_target = active_pane_id(after_vertical_window).to_string();
 
     client
-        .split_horizontal(second_target.as_str())
+        .split_horizontal(second_target.as_str(), None)
         .expect("horizontal split should succeed");
 
     let final_snapshot = client
@@ -277,11 +382,11 @@ fn tmux_repeated_split_refresh_cycles_remain_parseable() {
 
         if iteration % 2 == 0 {
             client
-                .split_vertical(target.as_str())
+                .split_vertical(target.as_str(), None)
                 .expect("vertical split should succeed");
         } else {
             client
-                .split_horizontal(target.as_str())
+                .split_horizontal(target.as_str(), None)
                 .expect("horizontal split should succeed");
         }
 
@@ -392,6 +497,69 @@ fn tmux_new_window_after_inserts_immediately_after_target_window() {
         Some(right_neighbor_before.as_str()),
         "existing right neighbor should shift right by one slot"
     );
+}
+
+#[test]
+#[ignore = "requires local tmux 3.3+; run explicitly"]
+fn tmux_working_directory_flags_apply_to_session_window_and_split() {
+    let binary = tmux_test_binary();
+    let _guard = tmux_test_guard(binary.as_str());
+    tmux_preflight(binary.as_str());
+
+    let tmux_tmpdir = isolated_tmux_tmpdir_from_env();
+    let initial_dir = tmux_tmpdir.join("cwd-initial");
+    let new_window_dir = tmux_tmpdir.join("cwd-window");
+    let split_dir = tmux_tmpdir.join("cwd-split");
+    for dir in [&initial_dir, &new_window_dir, &split_dir] {
+        fs::create_dir_all(dir).expect("test cwd directory should exist");
+    }
+
+    let client =
+        new_tmux_client_with_persistence_clean_in_dir(binary.as_str(), false, Some(&initial_dir));
+
+    let initial_snapshot = client
+        .refresh_snapshot()
+        .expect("initial snapshot should parse");
+    let initial_window = active_window(&initial_snapshot);
+    let initial_window_id = initial_window.id.clone();
+    let initial_pane_id = active_pane_id(initial_window).to_string();
+    assert_pane_pwd(&client, initial_pane_id.as_str(), initial_dir.as_path());
+
+    client
+        .new_window_after(
+            initial_window_id.as_str(),
+            Some(
+                new_window_dir
+                    .to_str()
+                    .expect("test cwd directory must be valid UTF-8"),
+            ),
+        )
+        .expect("new-window should succeed");
+
+    let after_new_window = client
+        .refresh_snapshot()
+        .expect("snapshot after new-window should parse");
+    let new_window = active_window(&after_new_window);
+    let new_window_pane_id = active_pane_id(new_window).to_string();
+    assert_pane_pwd(&client, new_window_pane_id.as_str(), new_window_dir.as_path());
+
+    client
+        .split_vertical(
+            new_window_pane_id.as_str(),
+            Some(
+                split_dir
+                    .to_str()
+                    .expect("test cwd directory must be valid UTF-8"),
+            ),
+        )
+        .expect("split-window should succeed");
+
+    let after_split = client
+        .refresh_snapshot()
+        .expect("snapshot after split-window should parse");
+    let split_window = active_window(&after_split);
+    let split_pane_id = active_pane_id(split_window).to_string();
+    assert_pane_pwd(&client, split_pane_id.as_str(), split_dir.as_path());
 }
 
 #[test]

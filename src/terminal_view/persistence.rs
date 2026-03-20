@@ -200,12 +200,10 @@ impl TerminalView {
     }
 
     fn persisted_native_workspace_working_dir(&self) -> Option<String> {
-        Self::resolve_configured_working_directory(self.configured_working_dir.as_deref())
-            .or_else(|| {
-                Self::default_working_directory_with_fallback(
-                    self.terminal_runtime.working_dir_fallback,
-                )
-            })
+        termy_terminal_ui::resolve_launch_working_directory(
+            self.configured_working_dir.as_deref(),
+            self.terminal_runtime.working_dir_fallback,
+        )
             .map(|path| path.to_string_lossy().into_owned())
     }
 

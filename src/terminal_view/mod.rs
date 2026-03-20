@@ -39,7 +39,7 @@ use termy_terminal_ui::{
     TerminalDirtySpan, TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle,
     TerminalGridPaintDamage, TerminalGridRows, TerminalMouseMode, TerminalOptions,
     TerminalQueryColors, TerminalReplyHost, TerminalRuntimeConfig, TerminalSize,
-    TmuxLaunchTarget,
+    TmuxLaunchTarget, normalize_working_directory_candidate, resolve_launch_working_directory,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
 #[cfg(debug_assertions)]
@@ -1609,39 +1609,6 @@ impl TerminalView {
         dirs::home_dir()
     }
 
-    fn resolve_configured_working_directory(configured: Option<&str>) -> Option<PathBuf> {
-        let configured = configured?.trim();
-        if configured.is_empty() {
-            return None;
-        }
-
-        let path = if configured == "~" {
-            Self::user_home_dir()?
-        } else if let Some(relative) = configured
-            .strip_prefix("~/")
-            .or_else(|| configured.strip_prefix("~\\"))
-        {
-            Self::user_home_dir()?.join(relative)
-        } else {
-            PathBuf::from(configured)
-        };
-
-        path.is_dir().then_some(path)
-    }
-
-    fn default_working_directory_with_fallback(
-        fallback: RuntimeWorkingDirFallback,
-    ) -> Option<PathBuf> {
-        if fallback == RuntimeWorkingDirFallback::Home
-            && let Some(home) = Self::user_home_dir()
-            && home.is_dir()
-        {
-            return Some(home);
-        }
-
-        env::current_dir().ok()
-    }
-
     fn display_working_directory_for_prompt(path: &Path) -> String {
         if let Some(home) = Self::user_home_dir() {
             if path == home.as_path() {
@@ -1661,8 +1628,7 @@ impl TerminalView {
         configured_working_dir: Option<&str>,
         fallback: RuntimeWorkingDirFallback,
     ) -> Option<String> {
-        let path = Self::resolve_configured_working_directory(configured_working_dir)
-            .or_else(|| Self::default_working_directory_with_fallback(fallback))?;
+        let path = resolve_launch_working_directory(configured_working_dir, fallback)?;
         Some(Self::display_working_directory_for_prompt(&path))
     }
 
@@ -1791,8 +1757,37 @@ impl TerminalView {
         None
     }
 
-    fn preferred_working_dir_for_new_native_session(
+    fn resolve_preferred_working_directory(
+        explicit_working_dir: Option<&str>,
+        prompt_cwd: Option<&str>,
+        process_cwd: Option<&str>,
+        title_cwd: Option<&str>,
+        configured_working_dir: Option<&str>,
+        fallback: RuntimeWorkingDirFallback,
+    ) -> Option<String> {
+        // Keep tmux and native session creation on the same cwd precedence chain so
+        // new tabs/panes do not drift based on which runtime happens to be active.
+        let explicit_working_dir = normalize_working_directory_candidate(explicit_working_dir);
+        let prompt_cwd = normalize_working_directory_candidate(prompt_cwd);
+        let process_cwd = normalize_working_directory_candidate(process_cwd);
+        let title_cwd = title_cwd
+            .map(str::trim)
+            .filter(|value| Self::looks_like_working_dir_path(value))
+            .and_then(|value| normalize_working_directory_candidate(Some(value)));
+
+        explicit_working_dir
+            .or(prompt_cwd)
+            .or(process_cwd)
+            .or(title_cwd)
+            .or_else(|| {
+                resolve_launch_working_directory(configured_working_dir, fallback)
+                    .map(|path| path.to_string_lossy().into_owned())
+            })
+    }
+
+    fn preferred_working_dir_for_new_session(
         &mut self,
+        explicit_working_dir: Option<&str>,
         cx: &mut Context<Self>,
     ) -> Option<String> {
         let active_tab = self.active_tab;
@@ -1818,14 +1813,17 @@ impl TerminalView {
                 .into_iter()
                 .flatten()
                 .find_map(Self::working_dir_title_candidate)
-                .map(str::to_string)
             })
-            .filter(|candidate| Self::looks_like_working_dir_path(candidate.as_str()));
+            .map(|candidate| candidate.to_string());
 
-        prompt_cwd
-            .or(process_cwd)
-            .or(title_cwd)
-            .or_else(|| self.configured_working_dir.clone())
+        Self::resolve_preferred_working_directory(
+            explicit_working_dir,
+            prompt_cwd.as_deref(),
+            process_cwd.as_deref(),
+            title_cwd.as_deref(),
+            self.configured_working_dir.as_deref(),
+            self.terminal_runtime.working_dir_fallback,
+        )
     }
 
     fn runtime_kind(&self) -> RuntimeKind {
@@ -3495,6 +3493,121 @@ mod tests {
         assert!(!TerminalView::native_exit_should_quit_app(1, 2));
         assert!(!TerminalView::native_exit_should_quit_app(2, 1));
         assert!(!TerminalView::native_exit_should_quit_app(0, 0));
+    }
+
+    #[test]
+    fn preferred_working_directory_prefers_active_sources_before_configured_and_fallback() {
+        let cwd = TerminalView::resolve_preferred_working_directory(
+            None,
+            Some("/prompt"),
+            Some("/process"),
+            Some("/title"),
+            Some("/configured"),
+            RuntimeWorkingDirFallback::Process,
+        );
+        assert_eq!(cwd.as_deref(), Some("/prompt"));
+
+        let cwd = TerminalView::resolve_preferred_working_directory(
+            None,
+            None,
+            Some("/process"),
+            Some("/title"),
+            Some("/configured"),
+            RuntimeWorkingDirFallback::Process,
+        );
+        assert_eq!(cwd.as_deref(), Some("/process"));
+    }
+
+    #[test]
+    fn preferred_working_directory_uses_explicit_value_first() {
+        let cwd = TerminalView::resolve_preferred_working_directory(
+            Some(" /explicit "),
+            Some("/prompt"),
+            Some("/process"),
+            Some("/title"),
+            Some("/configured"),
+            RuntimeWorkingDirFallback::Process,
+        );
+        assert_eq!(cwd.as_deref(), Some("/explicit"));
+    }
+
+    #[test]
+    fn preferred_working_directory_expands_tilde_candidates() {
+        let expected = TerminalView::user_home_dir()
+            .expect("home dir")
+            .to_string_lossy()
+            .into_owned();
+        let cwd = TerminalView::resolve_preferred_working_directory(
+            Some("~"),
+            None,
+            None,
+            None,
+            None,
+            RuntimeWorkingDirFallback::Process,
+        );
+        assert_eq!(cwd.as_deref(), Some(expected.as_str()));
+    }
+
+    #[test]
+    fn preferred_working_directory_uses_configured_before_fallback() {
+        let configured = std::env::current_dir().expect("current dir");
+        let cwd = TerminalView::resolve_preferred_working_directory(
+            None,
+            None,
+            None,
+            None,
+            Some(configured.to_string_lossy().as_ref()),
+            RuntimeWorkingDirFallback::Home,
+        );
+        assert_eq!(cwd.as_deref(), Some(configured.to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn invalid_configured_working_directory_falls_back_instead_of_passing_through() {
+        let fallback = std::env::current_dir()
+            .expect("current dir")
+            .to_string_lossy()
+            .into_owned();
+        let cwd = TerminalView::resolve_preferred_working_directory(
+            None,
+            None,
+            None,
+            None,
+            Some("/definitely/not/a/real/termy/path"),
+            RuntimeWorkingDirFallback::Process,
+        );
+        assert_eq!(cwd.as_deref(), Some(fallback.as_str()));
+    }
+
+    #[test]
+    fn attach_resolution_uses_active_working_directory_before_default_launch_dir() {
+        let cwd = TerminalView::resolve_preferred_working_directory(
+            None,
+            Some("/active/project"),
+            None,
+            None,
+            Some("/configured"),
+            RuntimeWorkingDirFallback::Process,
+        );
+        assert_eq!(cwd.as_deref(), Some("/active/project"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unresolved_working_directory_fallback_uses_home_on_macos() {
+        let expected = TerminalView::user_home_dir()
+            .expect("home dir")
+            .to_string_lossy()
+            .into_owned();
+        let cwd = TerminalView::resolve_preferred_working_directory(
+            None,
+            None,
+            None,
+            None,
+            None,
+            RuntimeWorkingDirFallback::Home,
+        );
+        assert_eq!(cwd.as_deref(), Some(expected.as_str()));
     }
 
     #[test]

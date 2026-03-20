@@ -67,6 +67,7 @@ pub(crate) fn spawn_tmux_control_mode(
     socket_target: &TmuxSocketTarget,
     session_name: &str,
     attach_existing: bool,
+    working_dir: Option<&str>,
 ) -> Result<(std::process::Child, File, File)> {
     let pty = rustix_openpty::openpty(None, None)
         .map_err(|error| anyhow!("failed to allocate tmux control pty: {error}"))?;
@@ -85,13 +86,9 @@ pub(crate) fn spawn_tmux_control_mode(
     let mut command = Command::new(config.binary.as_str());
     normalize_tmux_command_env(&mut command);
     append_socket_args(&mut command, socket_target);
-    command.arg("-CC").arg("new-session");
-    if attach_existing {
-        command.arg("-A");
-    }
+    // New tmux sessions must not inherit the app process cwd (for example `/` from Finder).
+    command.args(new_session_args(session_name, attach_existing, working_dir));
     let child = command
-        .arg("-s")
-        .arg(session_name)
         // tmux windows/panes are authoritative in tmux runtime mode; disable
         // direct shell OSC integration hooks to avoid prompt-width drift artifacts.
         .env("TERMY_SHELL_INTEGRATION", "0")
@@ -118,6 +115,29 @@ pub(crate) fn spawn_tmux_control_mode(
         .context("failed to clone tmux pty controller for writer")?;
 
     Ok((child, writer, controller))
+}
+
+pub(crate) fn append_working_dir_args<'a>(args: &mut Vec<&'a str>, working_dir: Option<&'a str>) {
+    let working_dir = working_dir.map(str::trim).filter(|value| !value.is_empty());
+    if let Some(working_dir) = working_dir {
+        args.push("-c");
+        args.push(working_dir);
+    }
+}
+
+fn new_session_args<'a>(
+    session_name: &'a str,
+    attach_existing: bool,
+    working_dir: Option<&'a str>,
+) -> Vec<&'a str> {
+    let mut args = vec!["-CC", "new-session"];
+    if attach_existing {
+        args.push("-A");
+    }
+    append_working_dir_args(&mut args, working_dir);
+    args.push("-s");
+    args.push(session_name);
+    args
 }
 
 pub(crate) fn managed_session_window_option_overrides(
@@ -327,5 +347,21 @@ mod tests {
             "pane-active-border-style",
             "fg=default,bg=default",
         ]));
+    }
+
+    #[test]
+    fn new_session_args_include_working_directory_when_provided() {
+        assert_eq!(
+            new_session_args("work", true, Some("/tmp/project")),
+            vec!["-CC", "new-session", "-A", "-c", "/tmp/project", "-s", "work"]
+        );
+    }
+
+    #[test]
+    fn new_session_args_omit_working_directory_when_missing() {
+        assert_eq!(
+            new_session_args("work", false, Some("  ")),
+            vec!["-CC", "new-session", "-s", "work"]
+        );
     }
 }

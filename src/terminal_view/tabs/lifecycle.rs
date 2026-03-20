@@ -251,11 +251,8 @@ impl TerminalView {
                     .active_terminal()
                     .map(|terminal| terminal.size())
                     .unwrap_or_default();
-                let preferred_working_dir = working_dir
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(ToOwned::to_owned)
-                    .or_else(|| self.preferred_working_dir_for_new_native_session(cx));
+                let preferred_working_dir =
+                    self.preferred_working_dir_for_new_session(working_dir, cx);
                 let terminal = match Terminal::new_native(
                     size,
                     preferred_working_dir.as_deref(),
@@ -753,7 +750,7 @@ impl TerminalView {
         rows: u16,
         cx: &mut Context<Self>,
     ) -> Result<Terminal, String> {
-        let preferred_working_dir = self.preferred_working_dir_for_new_native_session(cx);
+        let preferred_working_dir = self.preferred_working_dir_for_new_session(None, cx);
         Terminal::new_native(
             TerminalSize {
                 cols: cols.max(1),

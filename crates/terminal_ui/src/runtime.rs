@@ -402,7 +402,7 @@ fn apply_utf8_locale_overrides(env_overrides: &mut HashMap<String, String>) {
     }
 }
 
-fn resolve_working_directory(configured: Option<&str>) -> Option<std::path::PathBuf> {
+pub fn resolve_working_directory_path(configured: Option<&str>) -> Option<std::path::PathBuf> {
     let configured = configured?.trim();
     if configured.is_empty() {
         return None;
@@ -420,6 +420,26 @@ fn resolve_working_directory(configured: Option<&str>) -> Option<std::path::Path
     };
 
     if path.is_dir() { Some(path) } else { None }
+}
+
+pub fn resolve_launch_working_directory(
+    configured: Option<&str>,
+    fallback: WorkingDirFallback,
+) -> Option<PathBuf> {
+    resolve_working_directory_path(configured).or_else(|| default_working_directory_with_fallback(fallback))
+}
+
+pub fn normalize_working_directory_candidate(candidate: Option<&str>) -> Option<String> {
+    let candidate = candidate?.trim();
+    if candidate.is_empty() {
+        return None;
+    }
+
+    Some(
+        resolve_working_directory_path(Some(candidate))
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| candidate.to_string()),
+    )
 }
 
 fn default_working_directory_with_fallback(fallback: WorkingDirFallback) -> Option<PathBuf> {
@@ -674,9 +694,8 @@ impl Terminal {
         let shell = startup_shell(&runtime_config, startup_command);
 
         // Get working directory
-        let working_directory = resolve_working_directory(configured_working_dir).or_else(|| {
-            default_working_directory_with_fallback(runtime_config.working_dir_fallback)
-        });
+        let working_directory =
+            resolve_launch_working_directory(configured_working_dir, runtime_config.working_dir_fallback);
 
         // Configure PTY
         let pty_options = PtyOptions {
@@ -1090,9 +1109,11 @@ mod tests {
     use super::quote_shell_program_if_needed;
     use super::{
         DEFAULT_TERM, TerminalCursorState, TerminalDamageSnapshot, TerminalEvent,
-        TerminalRuntimeConfig, TerminalSize, cursor_position_from_term, cursor_state_from_term,
-        drain_runtime_events, keystroke_to_input, pty_env_overrides, resolve_shell_path,
-        take_term_damage_snapshot, termmode_to_terminal_mouse_mode,
+        TerminalRuntimeConfig, TerminalSize, WorkingDirFallback, cursor_position_from_term,
+        cursor_state_from_term, drain_runtime_events, keystroke_to_input,
+        normalize_working_directory_candidate, pty_env_overrides,
+        resolve_launch_working_directory, resolve_shell_path, take_term_damage_snapshot,
+        termmode_to_terminal_mouse_mode,
     };
     use crate::protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
     use crate::grid::TerminalCursorStyle;
@@ -1196,6 +1217,37 @@ mod tests {
 
         assert_eq!(size.last_column().0, 0);
         assert_eq!(size.bottommost_line().0, 0);
+    }
+
+    #[test]
+    fn normalize_working_directory_candidate_preserves_relative_paths() {
+        assert_eq!(
+            normalize_working_directory_candidate(Some(" crates/cli ")).as_deref(),
+            Some("crates/cli")
+        );
+    }
+
+    #[test]
+    fn resolve_launch_working_directory_falls_back_when_configured_path_is_invalid() {
+        let fallback = std::env::current_dir().expect("current dir");
+        let resolved = resolve_launch_working_directory(
+            Some("/definitely/not/a/real/termy/path"),
+            WorkingDirFallback::Process,
+        )
+        .expect("fallback path");
+        assert_eq!(resolved, fallback);
+    }
+
+    #[test]
+    fn normalize_working_directory_candidate_expands_home_directory() {
+        let expected = dirs::home_dir()
+            .expect("home dir")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            normalize_working_directory_candidate(Some("~")).as_deref(),
+            Some(expected.as_str())
+        );
     }
 
     #[test]

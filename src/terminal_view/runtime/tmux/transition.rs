@@ -92,10 +92,12 @@ impl TerminalView {
             .active_terminal()
             .map(|terminal| terminal.size())
             .unwrap_or_default();
+        let initial_working_dir = self.preferred_working_dir_for_new_session(None, cx);
         let tmux_client = match TmuxClient::new(
             runtime_config.clone(),
             size.cols.max(1),
             size.rows.max(1),
+            initial_working_dir.as_deref(),
             Some(self.event_wakeup_tx.clone()),
         ) {
             Ok(client) => client,
@@ -292,6 +294,11 @@ impl TerminalView {
 
         let cols = self.tmux_runtime().client_cols.max(1);
         let rows = self.tmux_runtime().client_rows.max(1);
+        let initial_working_dir = termy_terminal_ui::resolve_launch_working_directory(
+            self.configured_working_dir.as_deref(),
+            self.terminal_runtime.working_dir_fallback,
+        )
+        .map(|path| path.to_string_lossy().into_owned());
         if let Err(error) = TmuxClient::verify_tmux_version(next_config.binary.as_str(), 3, 3) {
             termy_toast::error(format!("tmux preflight failed: {error}"));
             return;
@@ -300,6 +307,7 @@ impl TerminalView {
             next_config.clone(),
             cols,
             rows,
+            initial_working_dir.as_deref(),
             Some(self.event_wakeup_tx.clone()),
         ) {
             Ok(next_client) => {

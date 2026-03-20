@@ -17,7 +17,9 @@ use super::control::{
 };
 #[cfg(unix)]
 use super::launch::spawn_tmux_control_mode;
-use super::launch::{SessionLaunchPlan, managed_session_window_option_override_commands};
+use super::launch::{
+    SessionLaunchPlan, append_working_dir_args, managed_session_window_option_override_commands,
+};
 use super::payload::{capture_full_pane_args, sanitize_tmux_payload, unescape_tmux_payload};
 use super::session::{self, run_tmux_command_with_socket};
 use super::shutdown::{
@@ -44,6 +46,24 @@ pub struct TmuxClient {
     fatal_exit_rx: Receiver<Option<String>>,
 }
 
+fn new_window_after_args<'a>(target_window_id: &'a str, working_dir: Option<&'a str>) -> Vec<&'a str> {
+    let mut args = vec!["new-window", "-a", "-t", target_window_id];
+    append_working_dir_args(&mut args, working_dir);
+    args
+}
+
+fn split_vertical_args<'a>(pane_id: &'a str, working_dir: Option<&'a str>) -> Vec<&'a str> {
+    let mut args = vec!["split-window", "-h", "-t", pane_id];
+    append_working_dir_args(&mut args, working_dir);
+    args
+}
+
+fn split_horizontal_args<'a>(pane_id: &'a str, working_dir: Option<&'a str>) -> Vec<&'a str> {
+    let mut args = vec!["split-window", "-t", pane_id];
+    append_working_dir_args(&mut args, working_dir);
+    args
+}
+
 impl TmuxClient {
     fn launch_plan(config: &TmuxRuntimeConfig) -> SessionLaunchPlan {
         super::launch::launch_plan(config)
@@ -54,6 +74,7 @@ impl TmuxClient {
         config: TmuxRuntimeConfig,
         cols: u16,
         rows: u16,
+        initial_working_dir: Option<&str>,
         event_wakeup_tx: Option<Sender<()>>,
     ) -> Result<Self> {
         let launch_plan = Self::launch_plan(&config);
@@ -67,6 +88,7 @@ impl TmuxClient {
             &launch_plan.socket_target,
             launch_plan.session_name.as_str(),
             launch_plan.attach_existing,
+            initial_working_dir,
         )?;
 
         let (request_tx, request_rx) = flume::bounded::<ControlRequest>(REQUEST_QUEUE_BOUND);
@@ -114,9 +136,10 @@ impl TmuxClient {
         config: TmuxRuntimeConfig,
         cols: u16,
         rows: u16,
+        initial_working_dir: Option<&str>,
         event_wakeup_tx: Option<Sender<()>>,
     ) -> Result<Self> {
-        let _ = (config, cols, rows, event_wakeup_tx);
+        let _ = (config, cols, rows, initial_working_dir, event_wakeup_tx);
         Err(anyhow!(
             "tmux control mode is only supported on unix targets"
         ))
@@ -191,12 +214,7 @@ impl TmuxClient {
     ) -> Result<()> {
         // Use explicit insert-after targeting so Termy tab creation is deterministic:
         // new tabs always appear immediately to the right of the active tab.
-        let mut args = vec!["new-window", "-a", "-t", target_window_id];
-        let working_dir = working_dir.map(str::trim).filter(|value| !value.is_empty());
-        if let Some(working_dir) = working_dir {
-            args.push("-c");
-            args.push(working_dir);
-        }
+        let args = new_window_after_args(target_window_id, working_dir);
         self.run_control_status_args(&args)
     }
 
@@ -224,12 +242,14 @@ impl TmuxClient {
         self.run_control_status_args(&["swap-window", "-s", src, "-t", dst])
     }
 
-    pub fn split_vertical(&self, pane_id: &str) -> Result<()> {
-        self.run_control_status_args(&["split-window", "-h", "-t", pane_id])
+    pub fn split_vertical(&self, pane_id: &str, working_dir: Option<&str>) -> Result<()> {
+        let args = split_vertical_args(pane_id, working_dir);
+        self.run_control_status_args(&args)
     }
 
-    pub fn split_horizontal(&self, pane_id: &str) -> Result<()> {
-        self.run_control_status_args(&["split-window", "-t", pane_id])
+    pub fn split_horizontal(&self, pane_id: &str, working_dir: Option<&str>) -> Result<()> {
+        let args = split_horizontal_args(pane_id, working_dir);
+        self.run_control_status_args(&args)
     }
 
     pub fn close_pane(&self, pane_id: &str) -> Result<()> {
@@ -819,6 +839,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn new_window_after_args_include_working_directory_when_provided() {
+        assert_eq!(
+            new_window_after_args("@2", Some("/tmp/project")),
+            vec!["new-window", "-a", "-t", "@2", "-c", "/tmp/project"]
+        );
+    }
+
+    #[test]
+    fn new_window_after_args_omit_working_directory_when_missing() {
+        assert_eq!(
+            new_window_after_args("@2", Some("  ")),
+            vec!["new-window", "-a", "-t", "@2"]
+        );
+    }
+
+    #[test]
+    fn split_vertical_args_include_working_directory_when_provided() {
+        assert_eq!(
+            split_vertical_args("%7", Some("/tmp/project")),
+            vec!["split-window", "-h", "-t", "%7", "-c", "/tmp/project"]
+        );
+    }
+
+    #[test]
+    fn split_horizontal_args_omit_working_directory_when_missing() {
+        assert_eq!(
+            split_horizontal_args("%7", None),
+            vec!["split-window", "-t", "%7"]
+        );
+    }
+
     #[cfg(not(unix))]
     #[test]
     fn new_reports_unsupported_platform_on_non_unix() {
@@ -826,6 +878,7 @@ mod tests {
             TmuxRuntimeConfig::default(),
             120,
             40,
+            None,
             None::<flume::Sender<()>>,
         )
         .expect_err("non-unix targets must reject tmux runtime startup");
