@@ -263,7 +263,7 @@ fn assert_pane_pwd(client: &TmuxClient, pane_id: &str, expected_dir: &Path) {
     client
         .send_input(
             pane_id,
-            format!("printf '{marker}\\n'\npwd\n").as_bytes(),
+            format!("printf '{marker}\\n'\ncommand pwd\n").as_bytes(),
         )
         .expect("send-input should succeed");
 

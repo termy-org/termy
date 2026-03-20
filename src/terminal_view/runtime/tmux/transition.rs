@@ -151,6 +151,7 @@ impl TerminalView {
         self.runtime = RuntimeState::Tmux(TmuxRuntime::new(
             runtime_config,
             tmux_client,
+            initial_working_dir,
             size.cols.max(1),
             size.rows.max(1),
         ));
@@ -294,11 +295,13 @@ impl TerminalView {
 
         let cols = self.tmux_runtime().client_cols.max(1);
         let rows = self.tmux_runtime().client_rows.max(1);
-        let initial_working_dir = termy_terminal_ui::resolve_launch_working_directory(
-            self.configured_working_dir.as_deref(),
-            self.terminal_runtime.working_dir_fallback,
-        )
-        .map(|path| path.to_string_lossy().into_owned());
+        let initial_working_dir = self.tmux_runtime().preferred_cwd.clone().or_else(|| {
+            termy_terminal_ui::resolve_launch_working_directory(
+                self.configured_working_dir.as_deref(),
+                self.terminal_runtime.working_dir_fallback,
+            )
+            .map(|path| path.to_string_lossy().into_owned())
+        });
         if let Err(error) = TmuxClient::verify_tmux_version(next_config.binary.as_str(), 3, 3) {
             termy_toast::error(format!("tmux preflight failed: {error}"));
             return;
@@ -337,6 +340,7 @@ impl TerminalView {
                 let runtime = self.tmux_runtime_mut();
                 runtime.config = next_config;
                 runtime.client = next_client;
+                runtime.preferred_cwd = initial_working_dir;
                 runtime.resize_scheduler.clear();
                 runtime.resize_wakeup_scheduled = false;
                 runtime.title_refresh_deadline = None;

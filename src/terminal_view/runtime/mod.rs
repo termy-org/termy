@@ -87,6 +87,7 @@ impl RuntimeState {
 pub(super) struct TmuxRuntime {
     pub(super) config: TmuxRuntimeConfig,
     pub(super) client: TmuxClient,
+    pub(super) preferred_cwd: Option<String>,
     pub(super) client_cols: u16,
     pub(super) client_rows: u16,
     pub(super) resize_scheduler: TmuxResizeScheduler,
@@ -96,10 +97,17 @@ pub(super) struct TmuxRuntime {
 }
 
 impl TmuxRuntime {
-    pub(super) fn new(config: TmuxRuntimeConfig, client: TmuxClient, cols: u16, rows: u16) -> Self {
+    pub(super) fn new(
+        config: TmuxRuntimeConfig,
+        client: TmuxClient,
+        preferred_cwd: Option<String>,
+        cols: u16,
+        rows: u16,
+    ) -> Self {
         Self {
             config,
             client,
+            preferred_cwd,
             client_cols: cols,
             client_rows: rows,
             resize_scheduler: TmuxResizeScheduler::default(),
@@ -181,6 +189,7 @@ impl TerminalView {
                     RuntimeState::Tmux(TmuxRuntime::new(
                         tmux_runtime,
                         tmux_client,
+                        initial_working_dir,
                         initial_cols,
                         initial_rows,
                     )),

@@ -1113,7 +1113,7 @@ mod tests {
         cursor_state_from_term, drain_runtime_events, keystroke_to_input,
         normalize_working_directory_candidate, pty_env_overrides,
         resolve_launch_working_directory, resolve_shell_path, take_term_damage_snapshot,
-        termmode_to_terminal_mouse_mode,
+        termmode_to_terminal_mouse_mode, user_home_dir,
     };
     use crate::protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
     use crate::grid::TerminalCursorStyle;
@@ -1240,7 +1240,7 @@ mod tests {
 
     #[test]
     fn normalize_working_directory_candidate_expands_home_directory() {
-        let expected = dirs::home_dir()
+        let expected = user_home_dir()
             .expect("home dir")
             .to_string_lossy()
             .into_owned();

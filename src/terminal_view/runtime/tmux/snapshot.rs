@@ -9,6 +9,24 @@ fn window_order_index(window_order: &[&str], target_window_id: Option<&str>) -> 
     })
 }
 
+fn snapshot_preferred_cwd(snapshot: &TmuxSnapshot) -> Option<String> {
+    snapshot
+        .windows
+        .iter()
+        .find(|window| window.is_active)
+        .or_else(|| snapshot.windows.first())
+        .and_then(|window| {
+            window
+                .active_pane_id
+                .as_deref()
+                .and_then(|pane_id| window.panes.iter().find(|pane| pane.id == pane_id))
+                .or_else(|| window.panes.first())
+        })
+        .map(|pane| pane.current_path.trim())
+        .filter(|path| !path.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 impl TerminalView {
     fn hydration_capture_scrollback_history(
         active_scrollback_history: usize,
@@ -85,6 +103,10 @@ impl TerminalView {
         snapshot: TmuxSnapshot,
         reuse_existing_terminals: bool,
     ) {
+        let preferred_cwd = snapshot_preferred_cwd(&snapshot);
+        if self.runtime_uses_tmux() {
+            self.tmux_runtime_mut().preferred_cwd = preferred_cwd;
+        }
         let snapshot_pane_ids = snapshot
             .windows
             .iter()
@@ -389,5 +411,65 @@ mod tests {
         assert_eq!(window_order_index(&order, Some("@1")), Some(1));
         assert_eq!(window_order_index(&order, Some("@2")), Some(0));
         assert_eq!(window_order_index(&order, Some("@missing")), None);
+    }
+
+    fn pane_state_with_path(id: &str, path: &str, active: bool) -> TmuxPaneState {
+        TmuxPaneState {
+            id: id.to_string(),
+            window_id: "@1".to_string(),
+            session_id: "$1".to_string(),
+            is_active: active,
+            left: 0,
+            top: 0,
+            width: 80,
+            height: 24,
+            cursor_x: 0,
+            cursor_y: 0,
+            current_path: path.to_string(),
+            current_command: String::new(),
+        }
+    }
+
+    #[test]
+    fn snapshot_preferred_cwd_uses_active_pane_path() {
+        let snapshot = TmuxSnapshot {
+            session_name: "one".to_string(),
+            session_id: Some("$1".to_string()),
+            windows: vec![TmuxWindowState {
+                id: "@1".to_string(),
+                name: "one".to_string(),
+                index: 0,
+                layout: "layout".to_string(),
+                is_active: true,
+                active_pane_id: Some("%2".to_string()),
+                automatic_rename: true,
+                panes: vec![
+                    pane_state_with_path("%1", "/inactive", false),
+                    pane_state_with_path("%2", "/active", true),
+                ],
+            }],
+        };
+
+        assert_eq!(snapshot_preferred_cwd(&snapshot).as_deref(), Some("/active"));
+    }
+
+    #[test]
+    fn snapshot_preferred_cwd_skips_empty_paths() {
+        let snapshot = TmuxSnapshot {
+            session_name: "one".to_string(),
+            session_id: Some("$1".to_string()),
+            windows: vec![TmuxWindowState {
+                id: "@1".to_string(),
+                name: "one".to_string(),
+                index: 0,
+                layout: "layout".to_string(),
+                is_active: true,
+                active_pane_id: Some("%1".to_string()),
+                automatic_rename: true,
+                panes: vec![pane_state_with_path("%1", "   ", true)],
+            }],
+        };
+
+        assert!(snapshot_preferred_cwd(&snapshot).is_none());
     }
 }
