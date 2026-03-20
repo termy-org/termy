@@ -27,6 +27,16 @@ fn snapshot_preferred_cwd(snapshot: &TmuxSnapshot) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+impl TmuxRuntime {
+    fn merged_preferred_cwd(existing: Option<&str>, snapshot: &TmuxSnapshot) -> Option<String> {
+        snapshot_preferred_cwd(snapshot).or_else(|| existing.map(ToOwned::to_owned))
+    }
+
+    fn update_preferred_cwd_from_snapshot(&mut self, snapshot: &TmuxSnapshot) {
+        self.preferred_cwd = Self::merged_preferred_cwd(self.preferred_cwd.as_deref(), snapshot);
+    }
+}
+
 impl TerminalView {
     fn hydration_capture_scrollback_history(
         active_scrollback_history: usize,
@@ -103,9 +113,9 @@ impl TerminalView {
         snapshot: TmuxSnapshot,
         reuse_existing_terminals: bool,
     ) {
-        let preferred_cwd = snapshot_preferred_cwd(&snapshot);
         if self.runtime_uses_tmux() {
-            self.tmux_runtime_mut().preferred_cwd = preferred_cwd;
+            self.tmux_runtime_mut()
+                .update_preferred_cwd_from_snapshot(&snapshot);
         }
         let snapshot_pane_ids = snapshot
             .windows
@@ -474,5 +484,28 @@ mod tests {
         };
 
         assert!(snapshot_preferred_cwd(&snapshot).is_none());
+    }
+
+    #[test]
+    fn merged_preferred_cwd_preserves_existing_value_for_empty_paths() {
+        let snapshot = TmuxSnapshot {
+            session_name: "one".to_string(),
+            session_id: Some("$1".to_string()),
+            windows: vec![TmuxWindowState {
+                id: "@1".to_string(),
+                name: "one".to_string(),
+                index: 0,
+                layout: "layout".to_string(),
+                is_active: true,
+                active_pane_id: Some("%1".to_string()),
+                automatic_rename: true,
+                panes: vec![pane_state_with_path("%1", "   ", true)],
+            }],
+        };
+
+        assert_eq!(
+            TmuxRuntime::merged_preferred_cwd(Some("/existing/path"), &snapshot).as_deref(),
+            Some("/existing/path")
+        );
     }
 }

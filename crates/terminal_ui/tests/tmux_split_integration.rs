@@ -285,13 +285,6 @@ fn assert_pane_pwd(client: &TmuxClient, pane_id: &str, expected_dir: &Path) {
                 return;
             }
         }
-        if last_capture
-            .lines()
-            .map(strip_ansi_sequences)
-            .any(|line| line.trim() == expected)
-        {
-            return;
-        }
         thread::sleep(Duration::from_millis(100));
     }
 
