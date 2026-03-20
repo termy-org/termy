@@ -728,9 +728,9 @@ impl TerminalView {
         key: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         let Some(nav_key) = CommandPaletteNavKey::parse(key) else {
-            return;
+            return false;
         };
 
         match nav_key {
@@ -801,6 +801,8 @@ impl TerminalView {
                 }
             }
         }
+
+        true
     }
 
     fn command_palette_escape_action(

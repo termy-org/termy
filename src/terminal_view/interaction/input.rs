@@ -101,7 +101,263 @@ fn clipboard_item_to_terminal_paste_input(
     }
 }
 
+fn synthetic_modifier_keystroke(key: &str, modifiers: gpui::Modifiers) -> gpui::Keystroke {
+    gpui::Keystroke {
+        modifiers,
+        key: key.to_string(),
+        key_char: None,
+    }
+}
+
+fn modifier_transition_events(
+    previous: gpui::Modifiers,
+    current: gpui::Modifiers,
+) -> Vec<(gpui::Keystroke, TerminalKeyEventKind)> {
+    // GPUI surfaces pure modifier transitions separately from key presses, so
+    // synthesize terminal key events here when enhanced keyboard reporting is active.
+    let mut events = Vec::with_capacity(4);
+
+    for (key, was_pressed, is_pressed) in [
+        ("control", previous.control, current.control),
+        ("alt", previous.alt, current.alt),
+        ("shift", previous.shift, current.shift),
+        ("super", previous.platform, current.platform),
+    ] {
+        if was_pressed && !is_pressed {
+            events.push((
+                synthetic_modifier_keystroke(key, current),
+                TerminalKeyEventKind::Release,
+            ));
+        }
+    }
+
+    for (key, was_pressed, is_pressed) in [
+        ("control", previous.control, current.control),
+        ("alt", previous.alt, current.alt),
+        ("shift", previous.shift, current.shift),
+        ("super", previous.platform, current.platform),
+    ] {
+        if !was_pressed && is_pressed {
+            events.push((
+                synthetic_modifier_keystroke(key, current),
+                TerminalKeyEventKind::Press,
+            ));
+        }
+    }
+
+    events
+}
+
+fn overlay_owns_terminal_input_state(
+    command_palette_open: bool,
+    search_open: bool,
+    renaming_tab: Option<usize>,
+) -> bool {
+    command_palette_open || search_open || renaming_tab.is_some()
+}
+
+fn terminal_modifier_transition_events(
+    previous: gpui::Modifiers,
+    current: gpui::Modifiers,
+    overlay_owns_terminal_input: bool,
+) -> Vec<(gpui::Keystroke, TerminalKeyEventKind)> {
+    if overlay_owns_terminal_input {
+        return Vec::new();
+    }
+
+    modifier_transition_events(previous, current)
+}
+
+fn should_prepare_terminal_input_write(active_pane_id: Option<&str>, pane_id: &str) -> bool {
+    active_pane_id == Some(pane_id)
+}
+
+fn take_deferred_ime_key_release(
+    deferred_ime_key_releases: &mut HashSet<String>,
+    key: &str,
+) -> bool {
+    deferred_ime_key_releases.remove(key)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum PendingKeyReleaseAction {
+    Drop,
+    ForwardToPane(String),
+    FallbackToActivePane,
+}
+
+fn take_pending_key_release_action(
+    pending_key_releases: &mut HashMap<String, PendingKeyRelease>,
+    key: &str,
+) -> PendingKeyReleaseAction {
+    match pending_key_releases.remove(key) {
+        Some(PendingKeyRelease::Consumed) => PendingKeyReleaseAction::Drop,
+        Some(PendingKeyRelease::Terminal { pane_id }) => {
+            PendingKeyReleaseAction::ForwardToPane(pane_id)
+        }
+        None => PendingKeyReleaseAction::FallbackToActivePane,
+    }
+}
+
 impl TerminalView {
+    fn overlay_owns_terminal_input(&self) -> bool {
+        overlay_owns_terminal_input_state(
+            self.is_command_palette_open(),
+            self.search_open,
+            self.renaming_tab,
+        )
+    }
+
+    fn pane_keyboard_mode(&self, pane_id: &str) -> TerminalKeyboardMode {
+        self.pane_terminal_by_id(pane_id)
+            .map(Terminal::keyboard_mode)
+            .unwrap_or_default()
+    }
+
+    fn prompt_shortcuts_enabled_for_pane(&self, pane_id: &str) -> bool {
+        !self
+            .pane_terminal_by_id(pane_id)
+            .is_some_and(|terminal| terminal.alternate_screen_mode())
+    }
+
+    fn send_input_to_pane(&self, pane_id: &str, input: &[u8]) -> bool {
+        match self.runtime_kind() {
+            RuntimeKind::Tmux => self.tmux_send_input_to_pane(pane_id, input),
+            RuntimeKind::Native => {
+                let Some(terminal) = self.pane_terminal_by_id(pane_id) else {
+                    return false;
+                };
+                terminal.write_input(input);
+                true
+            }
+        }
+    }
+
+    fn send_input_to_active_pane(&self, input: &[u8]) -> bool {
+        let Some(pane_id) = self.active_pane_id() else {
+            return false;
+        };
+
+        self.send_input_to_pane(pane_id, input)
+    }
+
+    fn write_terminal_keystroke_to_pane(
+        &mut self,
+        pane_id: &str,
+        keystroke: &gpui::Keystroke,
+        event_kind: TerminalKeyEventKind,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(input) = keystroke_to_input(
+            keystroke,
+            event_kind,
+            self.pane_keyboard_mode(pane_id),
+            self.prompt_shortcuts_enabled_for_pane(pane_id),
+        ) else {
+            return false;
+        };
+
+        self.write_terminal_input_to_pane(pane_id, &input, cx);
+        true
+    }
+
+    fn write_terminal_keystroke(
+        &mut self,
+        keystroke: &gpui::Keystroke,
+        event_kind: TerminalKeyEventKind,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(str::to_owned) else {
+            return false;
+        };
+
+        self.write_terminal_keystroke_to_pane(pane_id.as_str(), keystroke, event_kind, cx)
+    }
+
+    fn remember_consumed_key_release(&mut self, key: &str) {
+        self.pending_key_releases
+            .insert(key.to_string(), PendingKeyRelease::Consumed);
+    }
+
+    fn remember_terminal_key_release(&mut self, key: &str, pane_id: String) {
+        self.pending_key_releases
+            .insert(key.to_string(), PendingKeyRelease::Terminal { pane_id });
+    }
+
+    fn write_forwarded_terminal_key_event(
+        &mut self,
+        keystroke: &gpui::Keystroke,
+        event_kind: TerminalKeyEventKind,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(pane_id) = self.active_pane_id().map(str::to_owned) else {
+            return false;
+        };
+
+        if !self.write_terminal_keystroke_to_pane(pane_id.as_str(), keystroke, event_kind, cx) {
+            return false;
+        }
+
+        if matches!(event_kind, TerminalKeyEventKind::Press) {
+            self.remember_terminal_key_release(keystroke.key.as_str(), pane_id);
+        }
+
+        true
+    }
+
+    fn write_terminal_key_release(
+        &mut self,
+        keystroke: &gpui::Keystroke,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        // Use the pane that received the press so delayed releases do not drift
+        // to whatever pane is active when the key is eventually released.
+        match take_pending_key_release_action(&mut self.pending_key_releases, keystroke.key.as_str())
+        {
+            PendingKeyReleaseAction::Drop => false,
+            PendingKeyReleaseAction::ForwardToPane(pane_id) => self
+                .write_terminal_keystroke_to_pane(
+                    pane_id.as_str(),
+                    keystroke,
+                    TerminalKeyEventKind::Release,
+                    cx,
+                ),
+            PendingKeyReleaseAction::FallbackToActivePane => {
+                self.write_terminal_keystroke(keystroke, TerminalKeyEventKind::Release, cx)
+            }
+        }
+    }
+
+    pub(in crate::terminal_view) fn release_forwarded_modifiers(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let previous = std::mem::take(&mut self.last_terminal_modifiers);
+        let mut wrote_input = false;
+        let mut cleared_selection = false;
+
+        for (keystroke, event_kind) in modifier_transition_events(previous, gpui::Modifiers::default())
+        {
+            let wrote = match event_kind {
+                TerminalKeyEventKind::Press => {
+                    self.write_forwarded_terminal_key_event(&keystroke, event_kind, cx)
+                }
+                TerminalKeyEventKind::Release => self.write_terminal_key_release(&keystroke, cx),
+                TerminalKeyEventKind::Repeat => false,
+            };
+            if wrote {
+                wrote_input = true;
+                cleared_selection |= self.clear_selection();
+            }
+        }
+
+        if cleared_selection {
+            cx.notify();
+        }
+
+        wrote_input
+    }
+
     fn write_dropped_paths(&mut self, input: &[u8], cx: &mut Context<Self>) {
         let _ = self.close_terminal_context_menu(cx);
         self.write_terminal_paste_input(input, cx);
@@ -137,18 +393,37 @@ impl TerminalView {
         {
             cx.notify();
         }
-    }
 
-    fn send_input_to_active_pane(&self, input: &[u8]) -> bool {
-        match self.runtime_kind() {
-            RuntimeKind::Tmux => self.tmux_send_input_to_active_pane(input),
-            RuntimeKind::Native => {
-                let Some(terminal) = self.active_terminal() else {
-                    return false;
-                };
-                terminal.write_input(input);
-                true
+        let previous = self.last_terminal_modifiers;
+        self.last_terminal_modifiers = event.modifiers;
+        let overlay_owns_terminal_input = self.overlay_owns_terminal_input();
+        if overlay_owns_terminal_input {
+            // Match key-down/up ownership rules: overlays consume modifier
+            // transitions too, so terminal-only synth events must stop here.
+            return;
+        }
+        let mut wrote_input = false;
+        let mut cleared_selection = false;
+        for (keystroke, event_kind) in terminal_modifier_transition_events(
+            previous,
+            event.modifiers,
+            overlay_owns_terminal_input,
+        ) {
+            let wrote = match event_kind {
+                TerminalKeyEventKind::Press => {
+                    self.write_forwarded_terminal_key_event(&keystroke, event_kind, cx)
+                }
+                TerminalKeyEventKind::Release => self.write_terminal_key_release(&keystroke, cx),
+                TerminalKeyEventKind::Repeat => false,
+            };
+            if wrote {
+                wrote_input = true;
+                cleared_selection |= self.clear_selection();
             }
+        }
+
+        if wrote_input || cleared_selection {
+            cx.notify();
         }
     }
 
@@ -159,15 +434,34 @@ impl TerminalView {
         self.scroll_to_bottom(cx);
     }
 
+    pub(in super::super) fn write_terminal_input_to_pane(
+        &mut self,
+        pane_id: &str,
+        input: &[u8],
+        cx: &mut Context<Self>,
+    ) {
+        if input.is_empty() {
+            return;
+        }
+
+        if should_prepare_terminal_input_write(self.active_pane_id(), pane_id) {
+            self.prepare_terminal_input_write(cx);
+        }
+        if self.send_input_to_pane(pane_id, input) && self.runtime_kind() == RuntimeKind::Tmux {
+            self.schedule_tmux_title_refresh();
+        }
+    }
+
     pub(in super::super) fn write_terminal_input(&mut self, input: &[u8], cx: &mut Context<Self>) {
         if input.is_empty() {
             return;
         }
 
-        self.prepare_terminal_input_write(cx);
-        if self.send_input_to_active_pane(input) && self.runtime_kind() == RuntimeKind::Tmux {
-            self.schedule_tmux_title_refresh();
-        }
+        let Some(pane_id) = self.active_pane_id().map(str::to_owned) else {
+            return;
+        };
+
+        self.write_terminal_input_to_pane(pane_id.as_str(), input, cx);
     }
 
     fn sanitize_bracketed_paste_input(input: &[u8]) -> Option<Vec<u8>> {
@@ -321,47 +615,84 @@ impl TerminalView {
         let key = event.keystroke.key.as_str();
         self.maybe_suppress_tab_switch_hint_for_key_down(key, event.keystroke.modifiers, cx);
 
-        if self.is_command_palette_open() {
-            self.handle_command_palette_key_down(key, window, cx);
-            return;
-        }
+        if self.overlay_owns_terminal_input() {
+            if self.is_command_palette_open() {
+                if self.handle_command_palette_key_down(key, window, cx) {
+                    self.remember_consumed_key_release(key);
+                }
+                return;
+            }
 
-        if self.search_open {
-            self.handle_search_key_down(key, cx);
-            return;
-        }
+            if self.search_open {
+                if self.handle_search_key_down(key, event.keystroke.modifiers.shift, cx) {
+                    self.remember_consumed_key_release(key);
+                }
+                return;
+            }
 
-        if self.renaming_tab.is_some() {
             match key {
                 "enter" => {
                     self.commit_rename_tab(cx);
+                    self.remember_consumed_key_release(key);
                     return;
                 }
                 "escape" => {
                     self.cancel_rename_tab(cx);
+                    self.remember_consumed_key_release(key);
                     return;
                 }
                 _ => return,
             }
         }
 
+        self.last_terminal_modifiers = event.keystroke.modifiers;
+
         // Printable character input without modifiers is delegated to the
         // platform IME / input handler so that CJK input methods work.
         // Named special keys (enter, tab, space, etc.) and modifier
         // combinations are still handled here via keystroke_to_input.
         if should_defer_key_down_to_ime(&event.keystroke) {
+            self.deferred_ime_key_releases.insert(key.to_string());
             // Let the event propagate to the platform IME handler which
             // will call `replace_text_in_range` on our EntityInputHandler.
             return;
         }
 
-        let prompt_shortcuts_enabled = !self
-            .active_terminal()
-            .is_some_and(|terminal| terminal.alternate_screen_mode());
-        if let Some(input) = keystroke_to_input(&event.keystroke, prompt_shortcuts_enabled) {
-            self.write_terminal_input(&input, cx);
+        let event_kind = if event.is_held {
+            TerminalKeyEventKind::Repeat
+        } else {
+            TerminalKeyEventKind::Press
+        };
+        if self.write_forwarded_terminal_key_event(&event.keystroke, event_kind, cx) {
             self.clear_selection();
             // Stop propagation so the event does not bubble up to the IME input handler.
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    pub(in super::super) fn handle_key_up(
+        &mut self,
+        event: &KeyUpEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.overlay_owns_terminal_input() {
+            self.last_terminal_modifiers = event.keystroke.modifiers;
+            return;
+        }
+
+        self.last_terminal_modifiers = event.keystroke.modifiers;
+        // IME-deferred printable keys never wrote a terminal press, so their
+        // matching release must be dropped to avoid an unpaired kitty release.
+        if take_deferred_ime_key_release(
+            &mut self.deferred_ime_key_releases,
+            event.keystroke.key.as_str(),
+        ) {
+            return;
+        }
+        if self.write_terminal_key_release(&event.keystroke, cx) {
+            self.clear_selection();
             cx.stop_propagation();
             cx.notify();
         }
@@ -404,10 +735,16 @@ impl TerminalView {
 mod tests {
     use super::{
         clipboard_item_to_terminal_paste_input, dropped_paths_to_terminal_paste_input,
-        image_extension, shell_quote_paths, should_defer_key_down_to_ime,
+        image_extension, modifier_transition_events, shell_quote_paths,
+        should_defer_key_down_to_ime, should_prepare_terminal_input_write,
+        take_deferred_ime_key_release, take_pending_key_release_action,
+        terminal_modifier_transition_events, PendingKeyRelease, PendingKeyReleaseAction,
     };
     use gpui::{Keystroke, Modifiers};
-    use std::path::PathBuf;
+    use std::{
+        collections::{HashMap, HashSet},
+        path::PathBuf,
+    };
 
     fn keystroke(key: &str, key_char: Option<&str>, modifiers: Modifiers) -> Keystroke {
         Keystroke {
@@ -523,5 +860,114 @@ mod tests {
         assert_eq!(image_extension(gpui::ImageFormat::Tiff), "tiff");
         assert_eq!(image_extension(gpui::ImageFormat::Svg), "svg");
         assert_eq!(image_extension(gpui::ImageFormat::Ico), "ico");
+    }
+
+    #[test]
+    fn modifier_transitions_synthesize_shift_press_with_super_held() {
+        let previous = Modifiers {
+            platform: true,
+            ..Modifiers::default()
+        };
+        let current = Modifiers {
+            platform: true,
+            shift: true,
+            ..Modifiers::default()
+        };
+
+        let events = modifier_transition_events(previous, current);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0.key, "shift");
+        assert_eq!(
+            events[0].1,
+            termy_terminal_ui::TerminalKeyEventKind::Press
+        );
+        assert!(events[0].0.modifiers.platform);
+        assert!(events[0].0.modifiers.shift);
+    }
+
+    #[test]
+    fn overlay_owned_modifier_changes_skip_terminal_events() {
+        let previous = Modifiers {
+            platform: true,
+            ..Modifiers::default()
+        };
+
+        assert!(
+            terminal_modifier_transition_events(previous, Modifiers::default(), true).is_empty()
+        );
+    }
+
+    #[test]
+    fn non_active_pane_writes_skip_terminal_input_prepare() {
+        assert!(should_prepare_terminal_input_write(Some("%pane-1"), "%pane-1"));
+        assert!(!should_prepare_terminal_input_write(Some("%pane-1"), "%pane-2"));
+        assert!(!should_prepare_terminal_input_write(None, "%pane-1"));
+    }
+
+    #[test]
+    fn deferred_ime_key_release_is_cleared_without_forwarding() {
+        let mut deferred = HashSet::from(["a".to_string()]);
+
+        assert!(take_deferred_ime_key_release(&mut deferred, "a"));
+        assert!(!take_deferred_ime_key_release(&mut deferred, "a"));
+        assert!(deferred.is_empty());
+    }
+
+    #[test]
+    fn consumed_key_release_is_dropped_after_transient_input_closes() {
+        let mut pending = HashMap::from([(
+            "enter".to_string(),
+            PendingKeyRelease::Consumed,
+        )]);
+
+        assert_eq!(
+            take_pending_key_release_action(&mut pending, "enter"),
+            PendingKeyReleaseAction::Drop
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn forwarded_key_release_routes_to_original_pane() {
+        let mut pending = HashMap::from([(
+            "enter".to_string(),
+            PendingKeyRelease::Terminal {
+                pane_id: "%pane-1".to_string(),
+            },
+        )]);
+
+        assert_eq!(
+            take_pending_key_release_action(&mut pending, "enter"),
+            PendingKeyReleaseAction::ForwardToPane("%pane-1".to_string())
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn modifier_releases_keep_their_original_panes() {
+        let mut pending = HashMap::from([
+            (
+                "shift".to_string(),
+                PendingKeyRelease::Terminal {
+                    pane_id: "%left".to_string(),
+                },
+            ),
+            (
+                "super".to_string(),
+                PendingKeyRelease::Terminal {
+                    pane_id: "%right".to_string(),
+                },
+            ),
+        ]);
+
+        assert_eq!(
+            take_pending_key_release_action(&mut pending, "shift"),
+            PendingKeyReleaseAction::ForwardToPane("%left".to_string())
+        );
+        assert_eq!(
+            take_pending_key_release_action(&mut pending, "super"),
+            PendingKeyReleaseAction::ForwardToPane("%right".to_string())
+        );
+        assert!(pending.is_empty());
     }
 }

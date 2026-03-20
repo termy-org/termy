@@ -13,6 +13,7 @@ use crate::runtime::{
     cursor_position_from_term, cursor_state_from_term, take_term_damage_snapshot,
     termmode_to_terminal_mouse_mode,
 };
+use crate::keyboard::TerminalKeyboardMode;
 
 struct PaneTerminalInner {
     term: Arc<FairMutex<Term<VoidListener>>>,
@@ -161,6 +162,11 @@ impl PaneTerminal {
         let term = self.cloned_term_arc();
         let mode = *term.lock().mode();
         termmode_to_terminal_mouse_mode(mode)
+    }
+
+    pub fn keyboard_mode(&self) -> TerminalKeyboardMode {
+        let term = self.cloned_term_arc();
+        TerminalKeyboardMode::from_term_mode(*term.lock().mode())
     }
 
     pub fn alternate_screen_mode(&self) -> bool {

@@ -84,13 +84,6 @@ impl TerminalView {
         }
     }
 
-    pub(in crate::terminal_view) fn tmux_send_input_to_active_pane(&self, input: &[u8]) -> bool {
-        let Some(active_pane_id) = self.active_pane_id() else {
-            return false;
-        };
-        self.tmux_send_input_to_pane(active_pane_id, input)
-    }
-
     pub(in crate::terminal_view) fn tmux_send_input_to_pane(
         &self,
         pane_id: &str,

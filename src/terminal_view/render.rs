@@ -2682,6 +2682,7 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_inline_delete_to_start_action))
                     .on_action(cx.listener(Self::handle_inline_delete_to_end_action))
                     .on_key_down(cx.listener(Self::handle_key_down))
+                    .on_key_up(cx.listener(Self::handle_key_up))
                     .on_modifiers_changed(cx.listener(Self::handle_modifiers_changed))
                     .relative()
                     .flex_1()

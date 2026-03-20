@@ -1,4 +1,5 @@
 use crate::grid::TerminalCursorStyle;
+use crate::keyboard::TerminalKeyboardMode;
 #[cfg(unix)]
 use crate::locale::{Utf8LocaleOverridePlan, preferred_utf8_locale, utf8_locale_override_plan};
 use crate::mouse_protocol::TerminalMouseMode;
@@ -16,7 +17,7 @@ use alacritty_terminal::{
     vte::ansi::{self, CursorShape, CursorStyle as AlacrittyCursorStyle},
 };
 use flume::{Receiver, Sender, unbounded};
-use gpui::{Keystroke, Modifiers, Pixels, px};
+use gpui::{Pixels, px};
 #[cfg(not(target_os = "windows"))]
 use std::path::Path;
 use std::{
@@ -120,6 +121,7 @@ impl TerminalOptions {
                 shape,
                 blinking: false,
             },
+            kitty_keyboard: true,
             ..TermConfig::default()
         }
     }
@@ -891,6 +893,11 @@ impl Terminal {
         termmode_to_terminal_mouse_mode(*term.mode())
     }
 
+    pub fn keyboard_mode(&self) -> TerminalKeyboardMode {
+        let term = self.term.lock();
+        TerminalKeyboardMode::from_term_mode(*term.mode())
+    }
+
     /// Check if the terminal is currently in alternate screen mode
     pub fn alternate_screen_mode(&self) -> bool {
         let term = self.term.lock();
@@ -949,166 +956,6 @@ impl Drop for Terminal {
     }
 }
 
-/// Convert a GPUI keystroke into bytes for the terminal PTY.
-///
-/// `prompt_shortcuts_enabled` should be false for alternate-screen TUIs to avoid
-/// remapping non-macOS Ctrl+special keys to readline-style prompt editing bytes.
-pub fn keystroke_to_input(
-    keystroke: &Keystroke,
-    prompt_shortcuts_enabled: bool,
-) -> Option<Vec<u8>> {
-    if let Some(modified_input) =
-        modified_special_keystroke_input(keystroke, prompt_shortcuts_enabled)
-    {
-        return Some(modified_input.to_vec());
-    }
-
-    let key = keystroke.key.as_str();
-    let modifiers = keystroke.modifiers;
-
-    // Handle special keys
-    let input = match key {
-        "enter" => {
-            if modifiers.shift {
-                Some(vec![b'\n'])
-            } else {
-                Some(vec![b'\r'])
-            }
-        }
-        "tab" => Some(vec![b'\t']),
-        "escape" => Some(vec![0x1b]),
-        "backspace" => Some(vec![0x7f]),
-        "delete" => Some(b"\x1b[3~".to_vec()),
-        "up" => Some(b"\x1b[A".to_vec()),
-        "down" => Some(b"\x1b[B".to_vec()),
-        "right" => Some(b"\x1b[C".to_vec()),
-        "left" => Some(b"\x1b[D".to_vec()),
-        "home" => Some(b"\x1b[H".to_vec()),
-        "end" => Some(b"\x1b[F".to_vec()),
-        "pageup" => Some(b"\x1b[5~".to_vec()),
-        "pagedown" => Some(b"\x1b[6~".to_vec()),
-        "space" => Some(vec![b' ']),
-        _ => None,
-    };
-
-    if let Some(input) = input {
-        return Some(input);
-    }
-
-    // Handle control key combinations
-    if modifiers.control && !modifiers.platform && !modifiers.function && key.len() == 1 {
-        let c = key.chars().next().unwrap();
-        if c.is_ascii_alphabetic() {
-            // Ctrl+A = 0x01, Ctrl+B = 0x02, etc.
-            let ctrl_char = (c.to_ascii_lowercase() as u8) - b'a' + 1;
-            return Some(vec![ctrl_char]);
-        }
-    }
-
-    // Prefer actual text input provided by the platform for regular typing.
-    if !modifiers.control
-        && !modifiers.platform
-        && !modifiers.function
-        && let Some(key_char) = keystroke.key_char.as_deref()
-        && !key_char.is_empty()
-    {
-        return Some(key_char.as_bytes().to_vec());
-    }
-
-    // Fallback for printable single-key input when key_char is unavailable.
-    if !modifiers.control && !modifiers.platform && !modifiers.function && key.len() == 1 {
-        let c = key.chars().next().unwrap();
-        if c.is_ascii() {
-            return Some(vec![c as u8]);
-        } else {
-            // UTF-8 encode non-ASCII characters
-            let mut buf = [0u8; 4];
-            let s = c.encode_utf8(&mut buf);
-            return Some(s.as_bytes().to_vec());
-        }
-    }
-
-    None
-}
-
-fn modified_special_keystroke_input(
-    keystroke: &Keystroke,
-    prompt_shortcuts_enabled: bool,
-) -> Option<&'static [u8]> {
-    let key = keystroke.key.as_str();
-    let modifiers = keystroke.modifiers;
-    #[cfg(target_os = "macos")]
-    let _ = prompt_shortcuts_enabled;
-
-    #[cfg(target_os = "macos")]
-    {
-        if is_plain_alt(modifiers) {
-            return match key {
-                "left" => Some(b"\x1bb"),
-                "right" => Some(b"\x1bf"),
-                "backspace" => Some(b"\x1b\x7f"),
-                "delete" => Some(b"\x1bd"),
-                _ => None,
-            };
-        }
-
-        if is_plain_platform(modifiers) {
-            return match key {
-                "left" | "home" => Some(b"\x01"),
-                "right" | "end" => Some(b"\x05"),
-                "backspace" => Some(b"\x15"),
-                "delete" => Some(b"\x0b"),
-                _ => None,
-            };
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        if prompt_shortcuts_enabled && is_plain_control(modifiers) {
-            return match key {
-                "left" => Some(b"\x1bb"),
-                "right" => Some(b"\x1bf"),
-                "backspace" => Some(b"\x17"),
-                "delete" => Some(b"\x1bd"),
-                _ => None,
-            };
-        }
-    }
-
-    None
-}
-
-#[cfg(target_os = "macos")]
-#[inline]
-fn is_plain_alt(modifiers: Modifiers) -> bool {
-    modifiers.alt
-        && !modifiers.control
-        && !modifiers.platform
-        && !modifiers.shift
-        && !modifiers.function
-}
-
-#[cfg(target_os = "macos")]
-#[inline]
-fn is_plain_platform(modifiers: Modifiers) -> bool {
-    modifiers.platform
-        && !modifiers.control
-        && !modifiers.alt
-        && !modifiers.shift
-        && !modifiers.function
-}
-
-#[cfg(not(target_os = "macos"))]
-#[inline]
-fn is_plain_control(modifiers: Modifiers) -> bool {
-    modifiers.control
-        && !modifiers.platform
-        && !modifiers.alt
-        && !modifiers.shift
-        && !modifiers.function
-}
-
 #[cfg(test)]
 mod tests {
     #[cfg(target_os = "windows")]
@@ -1116,18 +963,19 @@ mod tests {
     use super::{
         DEFAULT_TERM, TerminalCursorState, TerminalDamageSnapshot, TerminalEvent,
         TerminalRuntimeConfig, TerminalSize, WorkingDirFallback, cursor_position_from_term,
-        cursor_state_from_term, drain_runtime_events, keystroke_to_input,
-        normalize_working_directory_candidate, pty_env_overrides,
+        cursor_state_from_term, drain_runtime_events, normalize_working_directory_candidate,
+        pty_env_overrides,
         resolve_launch_working_directory, resolve_shell_path, take_term_damage_snapshot,
         termmode_to_terminal_mouse_mode, user_home_dir,
     };
     use crate::grid::TerminalCursorStyle;
+    use crate::keyboard::{TerminalKeyEventKind, TerminalKeyboardMode, keystroke_to_input};
     use crate::protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
     use alacritty_terminal::{
         event::VoidListener,
         grid::{Dimensions, Scroll},
         sync::FairMutex,
-        term::{ClipboardType, Config as TermConfig, LineDamageBounds, Term},
+        term::{ClipboardType, Config as TermConfig, LineDamageBounds, Term, TermMode},
         vte::ansi::{self, CursorShape, NamedColor},
     };
     use flume::unbounded;
@@ -1197,6 +1045,14 @@ mod tests {
             key: key.to_string(),
             key_char: None,
         }
+    }
+
+    fn press_mode() -> TerminalKeyboardMode {
+        TerminalKeyboardMode::default()
+    }
+
+    fn keyboard_mode(flags: TermMode) -> TerminalKeyboardMode {
+        TerminalKeyboardMode::from_term_mode(flags)
     }
 
     #[derive(Default)]
@@ -1504,27 +1360,57 @@ mod tests {
         };
 
         assert_eq!(
-            keystroke_to_input(&keystroke("left", secondary), true),
+            keystroke_to_input(
+                &keystroke("left", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x01".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("home", secondary), true),
+            keystroke_to_input(
+                &keystroke("home", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x01".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("right", secondary), true),
+            keystroke_to_input(
+                &keystroke("right", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x05".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("end", secondary), true),
+            keystroke_to_input(
+                &keystroke("end", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x05".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("backspace", secondary), true),
+            keystroke_to_input(
+                &keystroke("backspace", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x15".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("delete", secondary), true),
+            keystroke_to_input(
+                &keystroke("delete", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x0b".to_vec())
         );
     }
@@ -1538,19 +1424,39 @@ mod tests {
         };
 
         assert_eq!(
-            keystroke_to_input(&keystroke("left", alt), true),
+            keystroke_to_input(
+                &keystroke("left", alt),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1bb".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("right", alt), true),
+            keystroke_to_input(
+                &keystroke("right", alt),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1bf".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("backspace", alt), true),
+            keystroke_to_input(
+                &keystroke("backspace", alt),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1b\x7f".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("delete", alt), true),
+            keystroke_to_input(
+                &keystroke("delete", alt),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1bd".to_vec())
         );
     }
@@ -1564,19 +1470,39 @@ mod tests {
         };
 
         assert_eq!(
-            keystroke_to_input(&keystroke("left", secondary), true),
+            keystroke_to_input(
+                &keystroke("left", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1bb".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("right", secondary), true),
+            keystroke_to_input(
+                &keystroke("right", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1bf".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("backspace", secondary), true),
+            keystroke_to_input(
+                &keystroke("backspace", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x17".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("delete", secondary), true),
+            keystroke_to_input(
+                &keystroke("delete", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1bd".to_vec())
         );
     }
@@ -1590,19 +1516,39 @@ mod tests {
         };
 
         assert_eq!(
-            keystroke_to_input(&keystroke("left", secondary), false),
+            keystroke_to_input(
+                &keystroke("left", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                false,
+            ),
             Some(b"\x1b[D".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("right", secondary), false),
+            keystroke_to_input(
+                &keystroke("right", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                false,
+            ),
             Some(b"\x1b[C".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("backspace", secondary), false),
+            keystroke_to_input(
+                &keystroke("backspace", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                false,
+            ),
             Some(vec![0x7f])
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("delete", secondary), false),
+            keystroke_to_input(
+                &keystroke("delete", secondary),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                false,
+            ),
             Some(b"\x1b[3~".to_vec())
         );
     }
@@ -1612,27 +1558,57 @@ mod tests {
         let none = Modifiers::default();
 
         assert_eq!(
-            keystroke_to_input(&keystroke("backspace", none), true),
+            keystroke_to_input(
+                &keystroke("backspace", none),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(vec![0x7f])
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("delete", none), true),
+            keystroke_to_input(
+                &keystroke("delete", none),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1b[3~".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("left", none), true),
+            keystroke_to_input(
+                &keystroke("left", none),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1b[D".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("right", none), true),
+            keystroke_to_input(
+                &keystroke("right", none),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1b[C".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("home", none), true),
+            keystroke_to_input(
+                &keystroke("home", none),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1b[H".to_vec())
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("end", none), true),
+            keystroke_to_input(
+                &keystroke("end", none),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(b"\x1b[F".to_vec())
         );
     }
@@ -1645,17 +1621,56 @@ mod tests {
         };
 
         assert_eq!(
-            keystroke_to_input(&keystroke("a", control), true),
+            keystroke_to_input(
+                &keystroke("a", control),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(vec![0x01])
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("c", control), true),
+            keystroke_to_input(
+                &keystroke("c", control),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(vec![0x03])
         );
         assert_eq!(
-            keystroke_to_input(&keystroke("z", control), true),
+            keystroke_to_input(
+                &keystroke("z", control),
+                TerminalKeyEventKind::Press,
+                press_mode(),
+                true,
+            ),
             Some(vec![0x1a])
         );
+    }
+
+    #[test]
+    fn term_options_enable_kitty_keyboard_negotiation() {
+        assert!(TerminalRuntimeConfig::default()
+            .term_options()
+            .term_config()
+            .kitty_keyboard);
+    }
+
+    #[test]
+    fn keyboard_mode_detects_report_all_and_event_types() {
+        let mode = keyboard_mode(TermMode::REPORT_ALL_KEYS_AS_ESC | TermMode::REPORT_EVENT_TYPES);
+        assert!(mode.report_all_keys_as_esc());
+        assert!(mode.report_event_types());
+        assert!(mode.enhanced_reporting_active());
+    }
+
+    #[test]
+    fn keyboard_mode_augment_only_flags_do_not_activate_enhanced_reporting() {
+        let mode = keyboard_mode(TermMode::REPORT_ALTERNATE_KEYS | TermMode::REPORT_ASSOCIATED_TEXT);
+        assert!(mode.report_alternate_keys());
+        assert!(mode.report_associated_text());
+        assert!(!mode.enhanced_reporting_active());
     }
 
     #[test]

@@ -1,4 +1,5 @@
 mod grid;
+mod keyboard;
 mod links;
 mod locale;
 mod monotonic_time;
@@ -16,6 +17,7 @@ pub use grid::{
     CellRenderInfo, TerminalCursorStyle, TerminalGrid, TerminalGridPaintCacheHandle,
     TerminalGridPaintDamage, TerminalGridRow, TerminalGridRows,
 };
+pub use keyboard::{TerminalKeyEventKind, TerminalKeyboardMode, keystroke_to_input};
 pub use links::{DetectedLink, classify_link_token, find_link_in_line};
 pub use monotonic_time::terminal_ui_monotonic_now_ns;
 pub use mouse_protocol::{
@@ -33,7 +35,7 @@ pub use runtime::{
     resolve_working_directory_path,
     TabTitleShellIntegration, Terminal, TerminalCursorState, TerminalDamageSnapshot,
     TerminalDirtySpan, TerminalEvent, TerminalOptions, TerminalRuntimeConfig, TerminalSize,
-    WorkingDirFallback, keystroke_to_input,
+    WorkingDirFallback,
 };
 pub use tmux::{
     TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,

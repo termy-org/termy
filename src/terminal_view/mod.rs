@@ -12,9 +12,9 @@ use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
 use gpui::AppContext;
 use gpui::{
-    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths, FocusHandle,
-    Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
-    ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths,
+    FocusHandle, Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    KeyUpEvent, ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     ParentElement, Pixels, Render, ScrollWheelEvent, SharedString, Size,
     StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window, WindowBackgroundAppearance,
     div, point, px,
@@ -37,8 +37,9 @@ use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
     TerminalClipboardTarget, TerminalCursorState, TerminalCursorStyle, TerminalDamageSnapshot,
     TerminalDirtySpan, TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle,
-    TerminalGridPaintDamage, TerminalGridRows, TerminalMouseMode, TerminalOptions,
-    TerminalQueryColors, TerminalReplyHost, TerminalRuntimeConfig, TerminalSize,
+    TerminalGridPaintDamage, TerminalGridRows, TerminalKeyEventKind, TerminalKeyboardMode,
+    TerminalMouseMode, TerminalOptions, TerminalQueryColors, TerminalReplyHost,
+    TerminalRuntimeConfig, TerminalSize,
     TmuxLaunchTarget, normalize_working_directory_candidate, resolve_launch_working_directory,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
 };
@@ -398,6 +399,12 @@ struct MouseReportingState {
     scroll_accumulator_y: f32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PendingKeyRelease {
+    Consumed,
+    Terminal { pane_id: String },
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct PaneFocusPreset {
     inactive_fg_blend: f32,
@@ -625,6 +632,16 @@ impl Terminal {
             Self::Native(terminal) => terminal
                 .lock()
                 .map(|terminal| terminal.mouse_mode())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn keyboard_mode(&self) -> TerminalKeyboardMode {
+        match self {
+            Self::Tmux(terminal) => terminal.keyboard_mode(),
+            Self::Native(terminal) => terminal
+                .lock()
+                .map(|terminal| terminal.keyboard_mode())
                 .unwrap_or_default(),
         }
     }
@@ -1453,6 +1470,9 @@ pub struct TerminalView {
     line_height: f32,
     copy_on_select: bool,
     copy_on_select_toast: bool,
+    last_terminal_modifiers: gpui::Modifiers,
+    pending_key_releases: HashMap<String, PendingKeyRelease>,
+    deferred_ime_key_releases: HashSet<String>,
     selection_anchor: Option<SelectionPos>,
     selection_head: Option<SelectionPos>,
     selection_dragging: bool,
@@ -2901,6 +2921,9 @@ impl TerminalView {
             line_height: 1.4,
             copy_on_select: config.copy_on_select,
             copy_on_select_toast: config.copy_on_select_toast,
+            last_terminal_modifiers: gpui::Modifiers::default(),
+            pending_key_releases: HashMap::default(),
+            deferred_ime_key_releases: HashSet::default(),
             selection_anchor: None,
             selection_head: None,
             selection_dragging: false,
@@ -3025,9 +3048,14 @@ impl TerminalView {
         .detach();
         cx.on_blur(&blur_focus_handle, window, |view, _window, cx| {
             let released_mouse_presses = view.release_all_forwarded_mouse_presses();
+            let released_keyboard_modifiers = view.release_forwarded_modifiers(cx);
             let cleared_tab_switch_hint_state = view.tab_strip.switch_hints.reset_hold_state();
             let dismissed_context_menu = view.close_terminal_context_menu(cx);
-            if released_mouse_presses || cleared_tab_switch_hint_state || dismissed_context_menu {
+            if released_mouse_presses
+                || released_keyboard_modifiers
+                || cleared_tab_switch_hint_state
+                || dismissed_context_menu
+            {
                 cx.notify();
             }
         })

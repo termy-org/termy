@@ -1,6 +1,22 @@
 use super::*;
 use alacritty_terminal::grid::Dimensions;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SearchKeyAction {
+    Close,
+    Next,
+    Previous,
+}
+
+fn search_key_action(key: &str, shift_pressed: bool) -> Option<SearchKeyAction> {
+    match key {
+        "escape" => Some(SearchKeyAction::Close),
+        "enter" if shift_pressed => Some(SearchKeyAction::Previous),
+        "enter" => Some(SearchKeyAction::Next),
+        _ => None,
+    }
+}
+
 impl TerminalView {
     pub(super) fn execute_search_command_action(
         &mut self,
@@ -177,19 +193,28 @@ impl TerminalView {
         }
     }
 
-    pub(super) fn handle_search_key_down(&mut self, key: &str, cx: &mut Context<Self>) {
-        match key {
-            "escape" => {
+    pub(super) fn handle_search_key_down(
+        &mut self,
+        key: &str,
+        shift_pressed: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        match search_key_action(key, shift_pressed) {
+            Some(SearchKeyAction::Close) => {
                 self.close_search(cx);
+                true
             }
-            "enter" => {
+            Some(SearchKeyAction::Next) => {
                 self.search_next(cx);
+                true
             }
-            "shift-enter" => {
+            Some(SearchKeyAction::Previous) => {
                 self.search_previous(cx);
+                true
             }
-            _ => {
+            None => {
                 // Text input is handled elsewhere via InlineInput actions
+                false
             }
         }
     }
@@ -474,5 +499,13 @@ mod tests {
             native_has_non_empty_buffer,
             "native terminal read adapter should expose at least one non-empty line buffer"
         );
+    }
+
+    #[test]
+    fn search_key_action_uses_shift_for_enter_navigation() {
+        assert_eq!(search_key_action("enter", false), Some(SearchKeyAction::Next));
+        assert_eq!(search_key_action("enter", true), Some(SearchKeyAction::Previous));
+        assert_eq!(search_key_action("escape", false), Some(SearchKeyAction::Close));
+        assert_eq!(search_key_action("a", true), None);
     }
 }
