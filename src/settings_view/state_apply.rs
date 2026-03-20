@@ -451,7 +451,9 @@ impl SettingsWindow {
                 }
                 let min = crate::terminal_view::tab_strip::min_expanded_vertical_tab_strip_width();
                 let clamped =
-                    crate::terminal_view::tab_strip::clamp_expanded_vertical_tab_strip_width(parsed);
+                    crate::terminal_view::tab_strip::clamp_expanded_vertical_tab_strip_width(
+                        parsed,
+                    );
                 if (clamped - parsed).abs() > f32::EPSILON {
                     return Err(format!(
                         "Vertical tabs width must be between {} and 480",
@@ -552,8 +554,8 @@ impl SettingsWindow {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::test_utils::open_settings_window_handle;
+    use super::*;
     use gpui::TestAppContext;
 
     #[gpui::test]

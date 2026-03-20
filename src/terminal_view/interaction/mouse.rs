@@ -191,8 +191,9 @@ impl TerminalView {
     }
 
     fn update_vertical_tab_strip_width(&mut self, requested_width: f32) -> bool {
-        let next_width =
-            crate::terminal_view::tab_strip::clamp_expanded_vertical_tab_strip_width(requested_width);
+        let next_width = crate::terminal_view::tab_strip::clamp_expanded_vertical_tab_strip_width(
+            requested_width,
+        );
         if (self.vertical_tabs_width - next_width).abs() < f32::EPSILON {
             return false;
         }
@@ -201,7 +202,7 @@ impl TerminalView {
         self.mark_tab_strip_layout_dirty();
         self.clear_pane_render_caches();
         self.clear_terminal_scrollbar_marker_cache();
-        self.cell_size = None;
+        self.cell_size_cache.clear();
         true
     }
 
@@ -232,7 +233,7 @@ impl TerminalView {
         self.vertical_tabs_minimized = minimized;
         self.clear_pane_render_caches();
         self.clear_terminal_scrollbar_marker_cache();
-        self.cell_size = None;
+        self.cell_size_cache.clear();
         self.mark_tab_strip_layout_dirty();
         config::set_root_setting(
             termy_config_core::RootSettingId::VerticalTabsMinimized,
@@ -282,6 +283,9 @@ impl TerminalView {
             .max()
             .unwrap_or(0);
         let (padding_x, padding_y) = self.effective_terminal_padding();
+        let layout_cell_size = self.layout_cell_size();
+        let layout_cell_width: f32 = layout_cell_size.width.into();
+        let layout_cell_height: f32 = layout_cell_size.height.into();
         let (x, y) = self.terminal_content_position(position);
         let mut best: Option<(f32, PaneResizeAxis, PaneResizeEdge, String)> = None;
 
@@ -291,16 +295,14 @@ impl TerminalView {
                 continue;
             }
 
-            let cell_width: f32 = size.cell_width.into();
-            let cell_height: f32 = size.cell_height.into();
-            if cell_width <= f32::EPSILON || cell_height <= f32::EPSILON {
+            if layout_cell_width <= f32::EPSILON || layout_cell_height <= f32::EPSILON {
                 continue;
             }
 
-            let left = padding_x + (f32::from(pane.left) * cell_width);
-            let top = padding_y + (f32::from(pane.top) * cell_height);
-            let right = left + (f32::from(size.cols) * cell_width);
-            let bottom = top + (f32::from(size.rows) * cell_height);
+            let left = padding_x + (f32::from(pane.left) * layout_cell_width);
+            let top = padding_y + (f32::from(pane.top) * layout_cell_height);
+            let right = left + (f32::from(pane.width) * layout_cell_width);
+            let bottom = top + (f32::from(pane.height) * layout_cell_height);
             let inside = x >= left && x <= right && y >= top && y <= bottom;
             if !inside {
                 continue;
@@ -573,17 +575,14 @@ impl TerminalView {
         let start_y = drag_state.start_y;
         let already_applied_steps = drag_state.applied_steps;
 
-        let Some(terminal) = self.pane_terminal_by_id(pane_id.as_str()) else {
-            return false;
-        };
-        let terminal_size = terminal.size();
+        let layout_cell_size = self.layout_cell_size();
         let axis_cell_pixels = match axis {
             PaneResizeAxis::Horizontal => {
-                let width: f32 = terminal_size.cell_width.into();
+                let width: f32 = layout_cell_size.width.into();
                 width
             }
             PaneResizeAxis::Vertical => {
-                let height: f32 = terminal_size.cell_height.into();
+                let height: f32 = layout_cell_size.height.into();
                 height
             }
         };

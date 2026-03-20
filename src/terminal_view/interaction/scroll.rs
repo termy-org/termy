@@ -279,8 +279,7 @@ impl TerminalView {
 
         if hit.thumb_hit {
             self.stop_terminal_scrollbar_track_hold();
-            let thumb_grab_offset =
-                (hit.local_y - hit.thumb_top).clamp(0.0, metrics.thumb_height);
+            let thumb_grab_offset = (hit.local_y - hit.thumb_top).clamp(0.0, metrics.thumb_height);
             self.start_terminal_scrollbar_drag(thumb_grab_offset, cx);
             cx.notify();
             return;
@@ -322,9 +321,8 @@ impl TerminalView {
         };
         let range = layout.range;
         let metrics = layout.metrics;
-        let thumb_contains_point =
-            state.local_y >= metrics.thumb_top
-                && state.local_y <= metrics.thumb_top + metrics.thumb_height;
+        let thumb_contains_point = state.local_y >= metrics.thumb_top
+            && state.local_y <= metrics.thumb_top + metrics.thumb_height;
         if thumb_contains_point {
             self.terminal_scrollbar_track_hold = None;
             return false;
@@ -587,8 +585,8 @@ mod tests {
 
     #[test]
     fn terminal_scrollbar_gutter_frame_anchors_to_surface_right_edge() {
-        let surface = TerminalScrollbarSurfaceGeometry::new(600.0, 400.0, 407.0, 409.0)
-            .expect("surface");
+        let surface =
+            TerminalScrollbarSurfaceGeometry::new(600.0, 400.0, 407.0, 409.0).expect("surface");
 
         let frame = surface.gutter_frame().expect("frame");
         assert_eq!(frame.left, 995.0);

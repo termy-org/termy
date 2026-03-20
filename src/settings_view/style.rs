@@ -27,11 +27,17 @@ impl SettingsWindow {
     }
 
     fn scaled_chrome_neutral_alpha(&self, base_alpha: f32) -> f32 {
-        self.scaled_background_alpha(self.chrome_contrast_profile().panel_neutral_alpha(base_alpha))
+        self.scaled_background_alpha(
+            self.chrome_contrast_profile()
+                .panel_neutral_alpha(base_alpha),
+        )
     }
 
     fn scaled_chrome_accent_alpha(&self, base_alpha: f32) -> f32 {
-        self.scaled_background_alpha(self.chrome_contrast_profile().panel_accent_alpha(base_alpha))
+        self.scaled_background_alpha(
+            self.chrome_contrast_profile()
+                .panel_accent_alpha(base_alpha),
+        )
     }
 
     pub(super) fn sync_window_background_appearance(&mut self, window: &mut Window) {

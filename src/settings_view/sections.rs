@@ -878,40 +878,23 @@ impl SettingsWindow {
                     )
                     .into_any_element(),
             );
-        } else if self.theme_store_themes.is_empty() {
-            rows.push(
-                div()
-                    .py_4()
-                    .px_4()
-                    .bg(bg_card)
-                    .border_1()
-                    .border_color(border_color)
-                    .text_sm()
-                    .text_color(text_muted)
-                    .child("No themes available in store.")
-                    .into_any_element(),
-            );
         } else {
-            let filtered_themes: Vec<ThemeStoreTheme> = self
-                .theme_store_themes
-                .iter()
-                .filter(|theme| {
-                    if normalized_query.is_empty() {
-                        return true;
-                    }
-                    let haystack = format!(
-                        "{} {} {}",
-                        theme.name.to_ascii_lowercase(),
-                        theme.slug.to_ascii_lowercase(),
-                        theme.description.to_ascii_lowercase()
-                    );
-                    haystack.contains(&normalized_query)
-                })
-                .take(30)
-                .cloned()
-                .collect();
+            if self.theme_store_from_cache {
+                rows.push(
+                    div()
+                        .py_2()
+                        .px_4()
+                        .bg(bg_card)
+                        .border_1()
+                        .border_color(border_color)
+                        .text_sm()
+                        .text_color(text_muted)
+                        .child("Showing cached themes (API unavailable)")
+                        .into_any_element(),
+                );
+            }
 
-            if filtered_themes.is_empty() {
+            if self.theme_store_themes.is_empty() {
                 rows.push(
                     div()
                         .py_4()
@@ -921,173 +904,209 @@ impl SettingsWindow {
                         .border_color(border_color)
                         .text_sm()
                         .text_color(text_muted)
-                        .child("No themes match your search.")
+                        .child("No themes available in store.")
                         .into_any_element(),
                 );
-            }
+            } else {
+                let filtered_themes: Vec<ThemeStoreTheme> = self
+                    .theme_store_themes
+                    .iter()
+                    .filter(|theme| {
+                        if normalized_query.is_empty() {
+                            return true;
+                        }
+                        let haystack = format!(
+                            "{} {} {}",
+                            theme.name.to_ascii_lowercase(),
+                            theme.slug.to_ascii_lowercase(),
+                            theme.description.to_ascii_lowercase()
+                        );
+                        haystack.contains(&normalized_query)
+                    })
+                    .take(30)
+                    .cloned()
+                    .collect();
 
-            let mut theme_cards: Vec<AnyElement> = Vec::new();
+                if filtered_themes.is_empty() {
+                    rows.push(
+                        div()
+                            .py_4()
+                            .px_4()
+                            .bg(bg_card)
+                            .border_1()
+                            .border_color(border_color)
+                            .text_sm()
+                            .text_color(text_muted)
+                            .child("No themes match your search.")
+                            .into_any_element(),
+                    );
+                }
 
-            for theme in filtered_themes {
-                let install_theme = theme.clone();
-                let version_label = theme
-                    .latest_version
-                    .clone()
-                    .unwrap_or_else(|| "n/a".to_string());
-                let slug_key = theme.slug.to_ascii_lowercase();
-                let installed_version = self.theme_store_installed_versions.get(&slug_key);
-                let is_installed = self
-                    .theme_store_installed_versions
-                    .get(&slug_key)
-                    .is_some_and(|version| {
-                        theme
-                            .latest_version
-                            .as_deref()
-                            .is_none_or(|latest| version.eq_ignore_ascii_case(latest))
-                    });
-                let description = if theme.description.trim().is_empty() {
-                    "No description provided.".to_string()
-                } else {
-                    theme.description.clone()
-                };
-                let installed_label = installed_version
-                    .and_then(|version| (!version.trim().is_empty()).then_some(version))
-                    .map(|_| "Installed".to_string())
-                    .unwrap_or_else(|| "Installed".to_string());
-                let install_button = if is_installed {
-                    let uninstall_slug = theme.slug.clone();
-                    div()
-                        .id(SharedString::from(format!(
-                            "theme-store-actions-{}",
-                            theme.slug
-                        )))
-                        .mt_auto()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            div()
-                                .w(px(108.0))
-                                .h(px(32.0))
-                                .px_2()
-                                .border_1()
-                                .border_color(border_color)
-                                .bg(bg_card)
-                                .text_sm()
-                                .text_color(text_muted)
-                                .whitespace_nowrap()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(installed_label),
-                        )
-                        .child(
-                            div()
-                                .id(SharedString::from(format!(
-                                    "theme-store-uninstall-{}",
-                                    theme.slug
-                                )))
-                                .w(px(108.0))
-                                .h(px(32.0))
-                                .px_2()
-                                .border_1()
-                                .border_color(button_border)
-                                .bg(bg_input)
-                                .text_sm()
-                                .text_color(text_secondary)
-                                .cursor_pointer()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
-                                .child("Uninstall")
-                                .on_click(cx.listener(move |view, _, _, cx| {
-                                    view.uninstall_theme_store_theme(&uninstall_slug, cx);
-                                    cx.notify();
-                                })),
-                        )
-                        .into_any_element()
-                } else {
-                    div()
-                        .id(SharedString::from(format!(
-                            "theme-store-install-{}",
-                            theme.slug
-                        )))
-                        .mt_auto()
-                        .w(px(108.0))
-                        .h(px(32.0))
-                        .px_2()
-                        .border_1()
-                        .border_color(button_border)
-                        .bg(bg_input)
-                        .text_sm()
-                        .text_color(text_secondary)
-                        .whitespace_nowrap()
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
-                        .child("Install")
-                        .on_click(cx.listener(move |view, _, _, cx| {
-                            view.confirm_install_theme_store_theme(install_theme.clone(), cx);
-                        }))
-                        .into_any_element()
-                };
+                let mut theme_cards: Vec<AnyElement> = Vec::new();
 
-                theme_cards.push(
-                    div()
-                        .py_3()
-                        .px_4()
-                        .w(px(250.0))
-                        .min_w(px(250.0))
-                        .max_w(px(250.0))
-                        .min_h(px(186.0))
-                        .bg(bg_card)
-                        .border_1()
-                        .border_color(border_color)
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .child(
-                            div()
-                                .flex()
-                                .justify_between()
-                                .items_center()
-                                .child(div().text_sm().text_color(text_primary).child(theme.name))
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(text_muted)
-                                        .child(format!("v{version_label}")),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(text_muted)
-                                .min_h(px(42.0))
-                                .child(description),
-                        )
-                        .child(install_button)
-                        .into_any_element(),
-                );
-            }
+                for theme in filtered_themes {
+                    let install_theme = theme.clone();
+                    let version_label = theme
+                        .latest_version
+                        .clone()
+                        .unwrap_or_else(|| "n/a".to_string());
+                    let slug_key = theme.slug.to_ascii_lowercase();
+                    let installed_version = self.theme_store_installed_versions.get(&slug_key);
+                    let is_installed = self
+                        .theme_store_installed_versions
+                        .get(&slug_key)
+                        .is_some_and(|version| {
+                            theme
+                                .latest_version
+                                .as_deref()
+                                .is_none_or(|latest| version.eq_ignore_ascii_case(latest))
+                        });
+                    let description = if theme.description.trim().is_empty() {
+                        "No description provided.".to_string()
+                    } else {
+                        theme.description.clone()
+                    };
+                    let installed_label = installed_version
+                        .and_then(|version| (!version.trim().is_empty()).then_some(version))
+                        .map(|_| "Installed".to_string())
+                        .unwrap_or_else(|| "Installed".to_string());
+                    let install_button = if is_installed {
+                        let uninstall_slug = theme.slug.clone();
+                        div()
+                            .id(SharedString::from(format!(
+                                "theme-store-actions-{}",
+                                theme.slug
+                            )))
+                            .mt_auto()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .w(px(108.0))
+                                    .h(px(32.0))
+                                    .px_2()
+                                    .border_1()
+                                    .border_color(border_color)
+                                    .bg(bg_card)
+                                    .text_sm()
+                                    .text_color(text_muted)
+                                    .whitespace_nowrap()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(installed_label),
+                            )
+                            .child(
+                                div()
+                                    .id(SharedString::from(format!(
+                                        "theme-store-uninstall-{}",
+                                        theme.slug
+                                    )))
+                                    .w(px(108.0))
+                                    .h(px(32.0))
+                                    .px_2()
+                                    .border_1()
+                                    .border_color(button_border)
+                                    .bg(bg_input)
+                                    .text_sm()
+                                    .text_color(text_secondary)
+                                    .cursor_pointer()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
+                                    .child("Uninstall")
+                                    .on_click(cx.listener(move |view, _, _, cx| {
+                                        view.uninstall_theme_store_theme(&uninstall_slug, cx);
+                                        cx.notify();
+                                    })),
+                            )
+                            .into_any_element()
+                    } else {
+                        div()
+                            .id(SharedString::from(format!(
+                                "theme-store-install-{}",
+                                theme.slug
+                            )))
+                            .mt_auto()
+                            .w(px(108.0))
+                            .h(px(32.0))
+                            .px_2()
+                            .border_1()
+                            .border_color(button_border)
+                            .bg(bg_input)
+                            .text_sm()
+                            .text_color(text_secondary)
+                            .whitespace_nowrap()
+                            .cursor_pointer()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
+                            .child("Install")
+                            .on_click(cx.listener(move |view, _, _, cx| {
+                                view.confirm_install_theme_store_theme(install_theme.clone(), cx);
+                            }))
+                            .into_any_element()
+                    };
 
-            if !theme_cards.is_empty() {
-                rows.push(
-                    div()
-                        .mt_3()
-                        .pt_3()
-                        .border_t_1()
-                        .border_color(border_color)
-                        .flex()
-                        .flex_wrap()
-                        .gap_2()
-                        .children(theme_cards)
-                        .into_any_element(),
-                );
-            }
+                    theme_cards.push(
+                        div()
+                            .py_3()
+                            .px_4()
+                            .w(px(250.0))
+                            .min_w(px(250.0))
+                            .max_w(px(250.0))
+                            .min_h(px(186.0))
+                            .bg(bg_card)
+                            .border_1()
+                            .border_color(border_color)
+                            .flex()
+                            .flex_col()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .items_center()
+                                    .child(
+                                        div().text_sm().text_color(text_primary).child(theme.name),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(text_muted)
+                                            .child(format!("v{version_label}")),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(text_muted)
+                                    .min_h(px(42.0))
+                                    .child(description),
+                            )
+                            .child(install_button)
+                            .into_any_element(),
+                    );
+                }
+
+                if !theme_cards.is_empty() {
+                    rows.push(
+                        div()
+                            .mt_3()
+                            .pt_3()
+                            .border_t_1()
+                            .border_color(border_color)
+                            .flex()
+                            .flex_wrap()
+                            .gap_2()
+                            .children(theme_cards)
+                            .into_any_element(),
+                    );
+                }
+            } // end else (themes loaded, not error)
         }
 
         self.render_settings_group("THEME STORE", rows)

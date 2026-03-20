@@ -273,10 +273,16 @@ fn resolve_shell_path(configured_shell: Option<&str>) -> String {
 }
 
 fn startup_shell(runtime_config: &TerminalRuntimeConfig, startup_command: Option<&str>) -> Shell {
-    if let Some(command) = startup_command.map(str::trim).filter(|command| !command.is_empty()) {
+    if let Some(command) = startup_command
+        .map(str::trim)
+        .filter(|command| !command.is_empty())
+    {
         #[cfg(unix)]
         {
-            return Shell::new("/bin/sh".to_string(), vec!["-c".to_string(), command.to_string()]);
+            return Shell::new(
+                "/bin/sh".to_string(),
+                vec!["-c".to_string(), command.to_string()],
+            );
         }
 
         #[cfg(target_os = "windows")]
@@ -1115,8 +1121,8 @@ mod tests {
         resolve_launch_working_directory, resolve_shell_path, take_term_damage_snapshot,
         termmode_to_terminal_mouse_mode, user_home_dir,
     };
-    use crate::protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
     use crate::grid::TerminalCursorStyle;
+    use crate::protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
     use alacritty_terminal::{
         event::VoidListener,
         grid::{Dimensions, Scroll},
@@ -1254,12 +1260,16 @@ mod tests {
     fn drain_runtime_events_replays_replies_and_collects_runtime_events() {
         let (events_tx, events_rx) = unbounded();
         events_tx
-            .send(alacritty_terminal::event::Event::PtyWrite("\x1b[?6c".to_string()))
+            .send(alacritty_terminal::event::Event::PtyWrite(
+                "\x1b[?6c".to_string(),
+            ))
             .unwrap();
         events_tx
-            .send(alacritty_terminal::event::Event::TextAreaSizeRequest(Arc::new(
-                |window_size| format!("size:{}x{}", window_size.num_cols, window_size.num_lines),
-            )))
+            .send(alacritty_terminal::event::Event::TextAreaSizeRequest(
+                Arc::new(|window_size| {
+                    format!("size:{}x{}", window_size.num_cols, window_size.num_lines)
+                }),
+            ))
             .unwrap();
         events_tx
             .send(alacritty_terminal::event::Event::ClipboardLoad(
@@ -1277,7 +1287,9 @@ mod tests {
             .send(alacritty_terminal::event::Event::Wakeup)
             .unwrap();
         events_tx
-            .send(alacritty_terminal::event::Event::Title("shell title".to_string()))
+            .send(alacritty_terminal::event::Event::Title(
+                "shell title".to_string(),
+            ))
             .unwrap();
         events_tx
             .send(alacritty_terminal::event::Event::ClipboardStore(
@@ -1285,7 +1297,9 @@ mod tests {
                 "stored text".to_string(),
             ))
             .unwrap();
-        events_tx.send(alacritty_terminal::event::Event::Exit).unwrap();
+        events_tx
+            .send(alacritty_terminal::event::Event::Exit)
+            .unwrap();
         drop(events_tx);
 
         let term = FairMutex::new(term_after_bytes(b"\x1b]10;#123456\x07"));
@@ -1317,17 +1331,15 @@ mod tests {
             reply_host.requested_targets,
             vec![TerminalClipboardTarget::Selection]
         );
-        assert!(
-            matches!(
-                events.as_slice(),
-                [
-                    TerminalEvent::Wakeup,
-                    TerminalEvent::Title(title),
-                    TerminalEvent::ClipboardStore(text),
-                    TerminalEvent::Exit,
-                ] if title == "shell title" && text == "stored text"
-            )
-        );
+        assert!(matches!(
+            events.as_slice(),
+            [
+                TerminalEvent::Wakeup,
+                TerminalEvent::Title(title),
+                TerminalEvent::ClipboardStore(text),
+                TerminalEvent::Exit,
+            ] if title == "shell title" && text == "stored text"
+        ));
     }
 
     #[test]

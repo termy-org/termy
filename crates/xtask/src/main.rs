@@ -8,8 +8,7 @@ use termy_config_core::{
 
 mod benchmark;
 
-const XTASK_USAGE: &str =
-    "usage: cargo run -p xtask -- <generate-keybindings-doc|generate-config-doc|benchmark-driver|benchmark-compare> [options]";
+const XTASK_USAGE: &str = "usage: cargo run -p xtask -- <generate-keybindings-doc|generate-config-doc|benchmark-driver|benchmark-compare> [options]";
 
 fn main() {
     if let Err(error) = run() {
@@ -62,9 +61,7 @@ fn run() -> Result<()> {
                 "default config template",
             )
         }
-        other => bail!(
-            "unknown xtask command `{other}`; {XTASK_USAGE}"
-        ),
+        other => bail!("unknown xtask command `{other}`; {XTASK_USAGE}"),
     }
 }
 

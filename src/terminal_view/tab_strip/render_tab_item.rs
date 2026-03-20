@@ -65,9 +65,13 @@ impl TerminalView {
                 .font_weight(FontWeight::MEDIUM);
 
             if input.orientation == TabStripOrientation::Horizontal {
-                accessory = accessory.border_l_1().border_color(palette.switch_hint_border);
+                accessory = accessory
+                    .border_l_1()
+                    .border_color(palette.switch_hint_border);
             } else {
-                accessory = accessory.border_1().border_color(palette.switch_hint_border);
+                accessory = accessory
+                    .border_1()
+                    .border_color(palette.switch_hint_border);
             }
 
             return accessory.child(label.clone()).into_any_element();
@@ -110,12 +114,12 @@ impl TerminalView {
                             }
                         }),
                     )
-                    .on_mouse_move(
-                        cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
+                    .on_mouse_move(cx.listener(
+                        move |this, _event: &MouseMoveEvent, _window, cx| {
                             this.on_tab_close_mouse_move(hover_tab_index, cx);
                             cx.stop_propagation();
-                        }),
-                    )
+                        },
+                    ))
                     .hover(move |style| {
                         style
                             .bg(palette.close_button_hover_bg)
@@ -249,7 +253,9 @@ impl TerminalView {
                     .absolute()
                     .left(px(TAB_DROP_MARKER_INSET_Y))
                     .top(px(marker_y))
-                    .w(px((input.tab_primary_extent - (TAB_DROP_MARKER_INSET_Y * 2.0)).max(0.0)))
+                    .w(px((input.tab_primary_extent
+                        - (TAB_DROP_MARKER_INSET_Y * 2.0))
+                        .max(0.0)))
                     .h(px(TAB_DROP_MARKER_WIDTH))
                     .bg(palette.tab_drop_marker_color)
             }

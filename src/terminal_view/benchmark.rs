@@ -154,10 +154,8 @@ impl BenchmarkSession {
     }
 
     pub fn record_terminal_event_drain_pass(&mut self) {
-        self.counters.terminal_event_drain_passes = self
-            .counters
-            .terminal_event_drain_passes
-            .saturating_add(1);
+        self.counters.terminal_event_drain_passes =
+            self.counters.terminal_event_drain_passes.saturating_add(1);
     }
 
     pub fn record_terminal_redraw(&mut self) {
@@ -246,12 +244,16 @@ impl BenchmarkSession {
 
         let timeline_path = self.config.metrics_path.join("timeline.ndjson");
         let timeline_tmp_path = temp_path(&timeline_path);
-        let timeline_file = File::create(&timeline_tmp_path)
-            .map_err(|error| format!("failed to create {}: {error}", timeline_tmp_path.display()))?;
+        let timeline_file = File::create(&timeline_tmp_path).map_err(|error| {
+            format!("failed to create {}: {error}", timeline_tmp_path.display())
+        })?;
         let mut timeline_writer = BufWriter::new(timeline_file);
         for sample in &self.samples {
             serde_json::to_writer(&mut timeline_writer, sample).map_err(|error| {
-                format!("failed to serialize benchmark sample to {}: {error}", timeline_path.display())
+                format!(
+                    "failed to serialize benchmark sample to {}: {error}",
+                    timeline_path.display()
+                )
             })?;
             timeline_writer
                 .write_all(b"\n")
@@ -464,11 +466,7 @@ fn mean_f32(values: impl Iterator<Item = f32>) -> f32 {
         sum += value;
         count = count.saturating_add(1);
     }
-    if count == 0 {
-        0.0
-    } else {
-        sum / count as f32
-    }
+    if count == 0 { 0.0 } else { sum / count as f32 }
 }
 
 #[cfg(test)]

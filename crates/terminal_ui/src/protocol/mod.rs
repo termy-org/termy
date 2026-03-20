@@ -4,5 +4,5 @@ mod query_colors;
 mod replies;
 
 pub use query_colors::TerminalQueryColors;
-pub use replies::{TerminalClipboardTarget, TerminalReplyHost};
 pub(crate) use replies::reply_bytes_for_event;
+pub use replies::{TerminalClipboardTarget, TerminalReplyHost};

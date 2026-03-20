@@ -115,6 +115,7 @@ pub struct SettingsWindow {
     theme_store_loaded: bool,
     theme_store_loading: bool,
     theme_store_error: Option<String>,
+    theme_store_from_cache: bool,
     theme_store_auth_session: Option<ThemeStoreAuthSession>,
     theme_store_auth_loading: bool,
     theme_store_auth_error: Option<String>,
@@ -181,6 +182,7 @@ impl SettingsWindow {
             theme_store_loaded: false,
             theme_store_loading: false,
             theme_store_error: None,
+            theme_store_from_cache: false,
             theme_store_auth_session,
             theme_store_auth_loading: false,
             theme_store_auth_error: None,
@@ -280,6 +282,7 @@ impl SettingsWindow {
 
         self.theme_store_loading = true;
         self.theme_store_error = None;
+        self.theme_store_from_cache = false;
         let api_base = Self::theme_store_api_base_url();
 
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
@@ -291,15 +294,17 @@ impl SettingsWindow {
                 this.update(cx, |view, cx| {
                     view.theme_store_loading = false;
                     match result {
-                        Ok(themes) => {
+                        Ok((themes, from_cache)) => {
                             view.theme_store_themes = themes;
                             view.theme_store_loaded = true;
                             view.theme_store_error = None;
+                            view.theme_store_from_cache = from_cache;
                         }
                         Err(error) => {
                             view.theme_store_themes.clear();
                             view.theme_store_loaded = true;
                             view.theme_store_error = Some(error);
+                            view.theme_store_from_cache = false;
                         }
                     }
                     cx.notify();
@@ -1224,8 +1229,8 @@ impl Drop for SettingsWindow {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::test_utils::open_settings_window_handle;
+    use super::*;
     use gpui::TestAppContext;
 
     #[test]
@@ -1275,9 +1280,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn apply_runtime_config_preserves_out_of_range_vertical_tab_width(
-        cx: &mut TestAppContext,
-    ) {
+    fn apply_runtime_config_preserves_out_of_range_vertical_tab_width(cx: &mut TestAppContext) {
         let settings = open_settings_window_handle(cx);
         settings
             .update(cx, |view, _window, _cx| {

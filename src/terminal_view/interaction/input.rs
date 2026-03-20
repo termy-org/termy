@@ -404,8 +404,7 @@ impl TerminalView {
 mod tests {
     use super::{
         clipboard_item_to_terminal_paste_input, dropped_paths_to_terminal_paste_input,
-        image_extension, shell_quote_paths,
-        should_defer_key_down_to_ime,
+        image_extension, shell_quote_paths, should_defer_key_down_to_ime,
     };
     use gpui::{Keystroke, Modifiers};
     use std::path::PathBuf;

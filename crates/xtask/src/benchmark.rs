@@ -25,9 +25,7 @@ const ECHO_TRAIN_DEFAULT_ITERATIONS: u64 = 40;
 
 pub(crate) fn run(mut args: impl Iterator<Item = String>) -> Result<()> {
     let Some(command) = args.next() else {
-        bail!(
-            "usage: cargo run -p xtask -- <benchmark-driver|benchmark-compare> [options]"
-        );
+        bail!("usage: cargo run -p xtask -- <benchmark-driver|benchmark-compare> [options]");
     };
 
     match command.as_str() {
@@ -278,9 +276,7 @@ fn run_echo_train(duration: Duration) -> Result<()> {
     let reserved_post_idle = ECHO_TRAIN_POST_IDLE.min(remaining);
     let emit_budget = remaining.saturating_sub(reserved_post_idle);
     let budget_iterations = (emit_budget.as_millis() / ECHO_TRAIN_INTERVAL.as_millis()) as u64;
-    let iterations = budget_iterations
-        .max(1)
-        .min(ECHO_TRAIN_DEFAULT_ITERATIONS);
+    let iterations = budget_iterations.max(1).min(ECHO_TRAIN_DEFAULT_ITERATIONS);
     let glyphs = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
     for seq in 0..iterations {
@@ -358,7 +354,9 @@ impl BenchmarkMarkerWriter {
     }
 
     fn flush(&mut self) -> Result<()> {
-        self.writer.flush().context("failed to flush benchmark marker")
+        self.writer
+            .flush()
+            .context("failed to flush benchmark marker")
     }
 }
 
@@ -498,8 +496,14 @@ fn run_single_benchmark(
     duration_secs: u64,
     output_root: &Path,
 ) -> Result<RunResult> {
-    let raw_dir = output_root.join("raw").join(build.label).join(scenario.as_str());
-    let energy_dir = output_root.join("energy").join(build.label).join(scenario.as_str());
+    let raw_dir = output_root
+        .join("raw")
+        .join(build.label)
+        .join(scenario.as_str());
+    let energy_dir = output_root
+        .join("energy")
+        .join(build.label)
+        .join(scenario.as_str());
     let config_root = raw_dir.join("config");
     let metrics_dir = raw_dir.join("app");
     let driver_dir = raw_dir.join("driver");
@@ -540,7 +544,11 @@ fn run_single_benchmark(
     );
     run_command(
         &mut activity_command,
-        format!("xctrace benchmark run for {} {}", build.label, scenario.as_str()),
+        format!(
+            "xctrace benchmark run for {} {}",
+            build.label,
+            scenario.as_str()
+        ),
     )?;
 
     let summary_path = metrics_dir.join("summary.json");
@@ -618,7 +626,10 @@ fn activity_monitor_command(
         .arg("--env")
         .arg(format!("TERMY_BENCHMARK_SCENARIO={}", scenario.as_str()))
         .arg("--env")
-        .arg(format!("TERMY_BENCHMARK_METRICS_PATH={}", metrics_dir.display()))
+        .arg(format!(
+            "TERMY_BENCHMARK_METRICS_PATH={}",
+            metrics_dir.display()
+        ))
         .arg("--env")
         .arg(format!(
             "{BENCHMARK_EVENTS_PATH_ENV}={}",
@@ -723,8 +734,13 @@ fn summarize_idle_burst_latency(
         .find(|marker| marker.kind == "burst_end")
         .context("missing burst_end marker")?
         .monotonic_ns;
-    let first_frame = frames.iter().find(|frame| frame.monotonic_ns >= burst_start);
-    let last_frame = frames.iter().rev().find(|frame| frame.monotonic_ns >= burst_end);
+    let first_frame = frames
+        .iter()
+        .find(|frame| frame.monotonic_ns >= burst_start);
+    let last_frame = frames
+        .iter()
+        .rev()
+        .find(|frame| frame.monotonic_ns >= burst_end);
     let frames_before_burst = frames
         .iter()
         .rev()
@@ -737,11 +753,8 @@ fn summarize_idle_burst_latency(
             .map(|frame| nanos_to_millis(frame.monotonic_ns.saturating_sub(burst_start))),
         last_frame_after_burst_ms: last_frame
             .map(|frame| nanos_to_millis(frame.monotonic_ns.saturating_sub(burst_end))),
-        frames_until_settle: last_frame.map(|frame| {
-            frame
-                .total_frames
-                .saturating_sub(frames_before_burst)
-        }),
+        frames_until_settle: last_frame
+            .map(|frame| frame.total_frames.saturating_sub(frames_before_burst)),
     })
 }
 
@@ -760,7 +773,10 @@ fn summarize_echo_train_latency(
     let mut latencies_ns = Vec::with_capacity(echo_markers.len());
     let mut missed_count = 0u64;
     for marker in echo_markers {
-        if let Some(frame) = frames.iter().find(|frame| frame.monotonic_ns >= marker.monotonic_ns) {
+        if let Some(frame) = frames
+            .iter()
+            .find(|frame| frame.monotonic_ns >= marker.monotonic_ns)
+        {
             latencies_ns.push(frame.monotonic_ns.saturating_sub(marker.monotonic_ns));
         } else {
             missed_count = missed_count.saturating_add(1);
@@ -776,10 +792,7 @@ fn summarize_echo_train_latency(
             .then(|| percentile_nanos_to_millis(&sorted, 95, 100)),
         echo_first_frame_ms_p99: (!sorted.is_empty())
             .then(|| percentile_nanos_to_millis(&sorted, 99, 100)),
-        echo_first_frame_ms_max: sorted
-            .last()
-            .copied()
-            .map(nanos_to_millis),
+        echo_first_frame_ms_max: sorted.last().copied().map(nanos_to_millis),
         echo_missed_count: missed_count,
         echo_sample_count: sorted.len() as u64,
     })
@@ -1070,8 +1083,12 @@ fn option_f32_delta(candidate: Option<f32>, baseline: Option<f32>) -> Option<f32
 
 fn write_report_artifacts(output_root: &Path, summary: &ComparisonSummary) -> Result<()> {
     write_json(&output_root.join("summary.json"), summary)?;
-    fs::write(output_root.join("report.md"), render_report(summary))
-        .with_context(|| format!("failed to write {}", output_root.join("report.md").display()))
+    fs::write(output_root.join("report.md"), render_report(summary)).with_context(|| {
+        format!(
+            "failed to write {}",
+            output_root.join("report.md").display()
+        )
+    })
 }
 
 fn render_report(summary: &ComparisonSummary) -> String {
@@ -1090,7 +1107,8 @@ fn render_report(summary: &ComparisonSummary) -> String {
             "| Frame p50 ms | {:.2} | {:.2} | {:.2} |\n",
             scenario.baseline.app_summary.frame_p50_ms,
             scenario.candidate.app_summary.frame_p50_ms,
-            scenario.candidate.app_summary.frame_p50_ms - scenario.baseline.app_summary.frame_p50_ms
+            scenario.candidate.app_summary.frame_p50_ms
+                - scenario.baseline.app_summary.frame_p50_ms
         ));
         report.push_str(&format!(
             "| Frame p95 ms | {:.2} | {:.2} | {:.2} |\n",
@@ -1263,22 +1281,14 @@ fn render_report(summary: &ComparisonSummary) -> String {
         if let Some(delta) = scenario.deltas.idle_burst_first_frame_ms {
             report.push_str(&format!(
                 "- Candidate {} idle-burst first-frame latency by {:.2} ms.\n",
-                if delta < 0.0 {
-                    "improves"
-                } else {
-                    "regresses"
-                },
+                if delta < 0.0 { "improves" } else { "regresses" },
                 delta.abs()
             ));
         }
         if let Some(delta) = scenario.deltas.echo_first_frame_ms_p95 {
             report.push_str(&format!(
                 "- Candidate {} echo-train first-frame p95 by {:.2} ms.\n",
-                if delta < 0.0 {
-                    "improves"
-                } else {
-                    "regresses"
-                },
+                if delta < 0.0 { "improves" } else { "regresses" },
                 delta.abs()
             ));
         }

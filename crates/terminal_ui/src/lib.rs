@@ -17,12 +17,13 @@ pub use grid::{
     TerminalGridPaintDamage, TerminalGridRow, TerminalGridRows,
 };
 pub use links::{DetectedLink, classify_link_token, find_link_in_line};
+pub use monotonic_time::terminal_ui_monotonic_now_ns;
 pub use mouse_protocol::{
     TerminalMouseButton, TerminalMouseEventKind, TerminalMouseMode, TerminalMouseModifiers,
     TerminalMousePosition, encode_mouse_report,
 };
-pub use monotonic_time::terminal_ui_monotonic_now_ns;
 pub use pane_terminal::PaneTerminal;
+pub use protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
 pub use render_metrics::{
     TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_reset,
     terminal_ui_render_metrics_snapshot,
@@ -34,7 +35,6 @@ pub use runtime::{
     TerminalDirtySpan, TerminalEvent, TerminalOptions, TerminalRuntimeConfig, TerminalSize,
     WorkingDirFallback, keystroke_to_input,
 };
-pub use protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
 pub use tmux::{
     TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,
     TmuxSessionSummary, TmuxShutdownMode, TmuxSnapshot, TmuxSocketTarget, TmuxWindowState,

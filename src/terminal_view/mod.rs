@@ -1,5 +1,5 @@
-use crate::colors::TerminalColors;
 use crate::chrome_style::ChromeContrastProfile;
+use crate::colors::TerminalColors;
 use crate::commands::{self, CommandAction};
 use crate::config::{
     self, AppConfig, CursorStyle as AppCursorStyle, PaneFocusEffect, TabCloseVisibility,
@@ -12,8 +12,8 @@ use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
 use gpui::AppContext;
 use gpui::{
-    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths,
-    FocusHandle, Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths, FocusHandle,
+    Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
     ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     ParentElement, Pixels, Render, ScrollWheelEvent, SharedString, Size,
     StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window, WindowBackgroundAppearance,
@@ -67,14 +67,14 @@ mod titles;
 #[cfg(target_os = "macos")]
 mod update_toasts;
 
+use self::benchmark::{BENCHMARK_SAMPLE_INTERVAL, BenchmarkConfig, BenchmarkSession};
 use command_palette::{CommandPaletteMode, CommandPaletteState, TmuxSessionIntent};
 use inline_input::{InlineInputAlignment, InlineInputState};
-use overlay_view::TerminalOverlayView;
-use runtime::{RuntimeKind, RuntimeState, TmuxRuntime};
-use self::benchmark::{BENCHMARK_SAMPLE_INTERVAL, BenchmarkConfig, BenchmarkSession};
-pub(crate) use tab_strip::constants::*;
 #[cfg(target_os = "macos")]
 pub(crate) use macos_file_drop::{NativeDropResult, install_native_file_drop};
+use overlay_view::TerminalOverlayView;
+use runtime::{RuntimeKind, RuntimeState, TmuxRuntime};
+pub(crate) use tab_strip::constants::*;
 use tab_strip::state::TabStripState;
 
 const MIN_FONT_SIZE: f32 = 8.0;
@@ -694,6 +694,7 @@ struct TerminalPane {
     top: u16,
     width: u16,
     height: u16,
+    pane_zoom_steps: i16,
     degraded: bool,
     terminal: Terminal,
     render_cache: RefCell<TerminalPaneRenderCache>,
@@ -739,6 +740,30 @@ impl TerminalPaneRenderCache {
         self.display_offset = 0;
         self.key = None;
         self.paint_cache.clear();
+    }
+}
+
+impl TerminalPane {
+    fn new_native(
+        id: String,
+        left: u16,
+        top: u16,
+        width: u16,
+        height: u16,
+        terminal: Terminal,
+    ) -> Self {
+        Self {
+            id,
+            left,
+            top,
+            width,
+            height,
+            pane_zoom_steps: 0,
+            degraded: false,
+            terminal,
+            render_cache: RefCell::new(TerminalPaneRenderCache::default()),
+            last_alternate_screen: Cell::new(false),
+        }
     }
 }
 
@@ -983,8 +1008,7 @@ fn percentile_millis(samples_micros: &[u32], numerator: usize, denominator: usiz
     let Some(last_index) = samples_micros.len().checked_sub(1) else {
         return 0.0;
     };
-    let rank = (samples_micros.len().saturating_mul(numerator)
-        + denominator.saturating_sub(1))
+    let rank = (samples_micros.len().saturating_mul(numerator) + denominator.saturating_sub(1))
         / denominator;
     let index = rank.saturating_sub(1).min(last_index);
     samples_micros[index] as f32 / 1000.0
@@ -1472,8 +1496,8 @@ pub struct TerminalView {
     pane_resize_drag: Option<PaneResizeDragState>,
     vertical_tab_strip_resize_drag: Option<VerticalTabStripResizeDragState>,
     terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache,
-    /// Cached cell dimensions
-    cell_size: Option<Size<Pixels>>,
+    /// Cached cell dimensions keyed by font-size bits.
+    cell_size_cache: HashMap<u32, Size<Pixels>>,
     // Search state
     search_open: bool,
     search_input: InlineInputState,
@@ -1867,14 +1891,14 @@ impl TerminalView {
         let pane_id = format!("%native-{tab_id}");
         let pane = TerminalPane {
             id: pane_id.clone(),
-            left: 0,
-            top: 0,
-            width: cols.max(1),
-            height: rows.max(1),
-            degraded: false,
-            terminal,
-            render_cache: RefCell::new(TerminalPaneRenderCache::default()),
-            last_alternate_screen: Cell::new(false),
+            ..TerminalPane::new_native(
+                pane_id.clone(),
+                0,
+                0,
+                cols.max(1),
+                rows.max(1),
+                terminal,
+            )
         };
         TerminalTab {
             id: tab_id,
@@ -1953,7 +1977,8 @@ impl TerminalView {
 
     fn scaled_chrome_neutral_border_alpha(&self, base_alpha: f32) -> f32 {
         scaled_chrome_alpha_for_opacity(
-            self.chrome_contrast_profile().neutral_border_alpha(base_alpha),
+            self.chrome_contrast_profile()
+                .neutral_border_alpha(base_alpha),
             self.effective_background_opacity(),
         )
     }
@@ -2348,6 +2373,13 @@ impl TerminalView {
         pane: &TerminalPane,
         content_bounds: TerminalContentRect,
     ) -> Option<TerminalPaneLayout> {
+        let layout_cell_size = self.layout_cell_size();
+        let layout_cell_width: f32 = layout_cell_size.width.into();
+        let layout_cell_height: f32 = layout_cell_size.height.into();
+        if layout_cell_width <= f32::EPSILON || layout_cell_height <= f32::EPSILON {
+            return None;
+        }
+
         let terminal_size = pane.terminal.size();
         if terminal_size.cols == 0 || terminal_size.rows == 0 {
             return None;
@@ -2362,10 +2394,10 @@ impl TerminalView {
         let (outer_padding_x, outer_padding_y) = self.effective_terminal_padding();
         let (content_padding_x, content_padding_y) = self.native_split_content_padding();
         let frame = TerminalContentRect::new(
-            outer_padding_x + (f32::from(pane.left) * cell_width),
-            outer_padding_y + (f32::from(pane.top) * cell_height),
-            f32::from(pane.width) * cell_width,
-            f32::from(pane.height) * cell_height,
+            outer_padding_x + (f32::from(pane.left) * layout_cell_width),
+            outer_padding_y + (f32::from(pane.top) * layout_cell_height),
+            f32::from(pane.width) * layout_cell_width,
+            f32::from(pane.height) * layout_cell_height,
         )?;
         let content_frame = TerminalContentRect::new(
             frame.origin_x + content_padding_x,
@@ -2392,8 +2424,16 @@ impl TerminalView {
         let extends_right_edge = !multi_pane || pane_right == max_right;
         let extends_bottom_edge = !multi_pane || pane_bottom == max_bottom;
         let scrollbar_surface = TerminalScrollbarSurfaceGeometry::new(
-            if multi_pane { frame.origin_x } else { content_bounds.origin_x },
-            if multi_pane { frame.origin_y } else { content_bounds.origin_y },
+            if multi_pane {
+                frame.origin_x
+            } else {
+                content_bounds.origin_x
+            },
+            if multi_pane {
+                frame.origin_y
+            } else {
+                content_bounds.origin_y
+            },
             if multi_pane && !extends_right_edge {
                 frame.width
             } else if multi_pane {
@@ -2414,8 +2454,8 @@ impl TerminalView {
             frame,
             content_frame,
             scrollbar_surface,
-            cell_width,
-            cell_height,
+            cell_width: layout_cell_width,
+            cell_height: layout_cell_height,
             extends_right_edge,
             extends_bottom_edge,
             gaps,
@@ -2431,24 +2471,27 @@ impl TerminalView {
     }
 
     pub(super) fn terminal_viewport_geometry(&self) -> Option<TerminalViewportGeometry> {
-        let pane = self.active_pane_ref()?;
+        let tab = self.active_tab_ref()?;
+        let pane_index = tab.active_pane_index()?;
+        let pane = tab.panes.get(pane_index)?;
+        let layout_cell_size = self.layout_cell_size();
+        let layout_cell_width: f32 = layout_cell_size.width.into();
+        let layout_cell_height: f32 = layout_cell_size.height.into();
         let size = pane.terminal.size();
-        if size.cols == 0 || size.rows == 0 {
+        if layout_cell_width <= f32::EPSILON
+            || layout_cell_height <= f32::EPSILON
+            || size.cols == 0
+            || size.rows == 0
+        {
             return None;
         }
-
         let (padding_x, padding_y) = self.effective_terminal_padding();
         let (content_padding_x, content_padding_y) = self.native_split_content_padding();
-        let cell_width: f32 = size.cell_width.into();
-        let cell_height: f32 = size.cell_height.into();
-        if cell_width <= f32::EPSILON || cell_height <= f32::EPSILON {
-            return None;
-        }
-
+        let pane_cell_height: f32 = size.cell_height.into();
         Some(TerminalViewportGeometry {
-            origin_x: padding_x + (f32::from(pane.left) * cell_width) + content_padding_x,
-            origin_y: padding_y + (f32::from(pane.top) * cell_height) + content_padding_y,
-            height: cell_height * f32::from(size.rows),
+            origin_x: padding_x + (f32::from(pane.left) * layout_cell_width) + content_padding_x,
+            origin_y: padding_y + (f32::from(pane.top) * layout_cell_height) + content_padding_y,
+            height: pane_cell_height * f32::from(size.rows),
         })
     }
 
@@ -2472,7 +2515,7 @@ impl TerminalView {
         self.tab_bar_visibility = visibility;
         self.clear_pane_render_caches();
         self.clear_terminal_scrollbar_marker_cache();
-        self.cell_size = None;
+        self.cell_size_cache.clear();
         self.mark_tab_strip_layout_dirty();
         true
     }
@@ -2754,7 +2797,8 @@ impl TerminalView {
                 std::process::exit(1);
             }
         };
-        if benchmark_config.is_some() && RuntimeKind::from_app_config(&config) == RuntimeKind::Tmux {
+        if benchmark_config.is_some() && RuntimeKind::from_app_config(&config) == RuntimeKind::Tmux
+        {
             eprintln!("Termy startup blocked: benchmark mode requires native runtime");
             std::process::exit(1);
         }
@@ -2778,7 +2822,9 @@ impl TerminalView {
             configured_working_dir.as_deref(),
             &tab_shell_integration,
             &terminal_runtime,
-            benchmark_config.as_ref().map(|config| config.command.as_str()),
+            benchmark_config
+                .as_ref()
+                .map(|config| config.command.as_str()),
             initial_cols,
             initial_rows,
         );
@@ -2895,7 +2941,7 @@ impl TerminalView {
             pane_resize_drag: None,
             vertical_tab_strip_resize_drag: None,
             terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache::default(),
-            cell_size: None,
+            cell_size_cache: HashMap::new(),
             search_open: false,
             search_input: InlineInputState::new(String::new()),
             search_state: SearchState::new(),
@@ -3138,7 +3184,7 @@ impl TerminalView {
         if vertical_tabs_changed || vertical_tabs_width_changed || vertical_tabs_minimized_changed {
             self.clear_pane_render_caches();
             self.clear_terminal_scrollbar_marker_cache();
-            self.cell_size = None;
+            self.cell_size_cache.clear();
         }
         let reconnect_managed_tmux = self.runtime_uses_tmux()
             && matches!(
@@ -3158,7 +3204,7 @@ impl TerminalView {
         self.cursor_style = config.cursor_style;
         self.cursor_blink = config.cursor_blink;
         self.cursor_blink_visible = true;
-        self.cell_size = None;
+        self.cell_size_cache.clear();
         if self.font_family != previous_font_family || self.font_size != previous_font_size {
             self.clear_tab_title_width_cache();
             self.mark_tab_strip_layout_dirty();
@@ -3384,8 +3430,9 @@ impl TerminalView {
             for pane_index in 0..self.tabs[index].panes.len() {
                 let pane_id = self.tabs[index].panes[pane_index].id.clone();
                 let pane_is_active = pane_id == active_pane_id;
-                let events =
-                    self.tabs[index].panes[pane_index].terminal.drain_events(&mut reply_host);
+                let events = self.tabs[index].panes[pane_index]
+                    .terminal
+                    .drain_events(&mut reply_host);
 
                 for event in events {
                     match event {

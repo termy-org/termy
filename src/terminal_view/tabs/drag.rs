@@ -42,11 +42,8 @@ impl TerminalView {
                             pointer_primary_axis,
                             viewport_extent,
                         );
-                        let marker_changed = view.update_tab_drag_marker(
-                            orientation,
-                            pointer_primary_axis,
-                            cx,
-                        );
+                        let marker_changed =
+                            view.update_tab_drag_marker(orientation, pointer_primary_axis, cx);
                         if scrolled && !marker_changed {
                             cx.notify();
                         }
@@ -130,8 +127,7 @@ impl TerminalView {
             }
             TabStripOrientation::Vertical => {
                 let layout = self.vertical_tab_strip_layout_snapshot();
-                let scroll_offset_y: f32 =
-                    self.tab_strip.vertical_scroll_handle.offset().y.into();
+                let scroll_offset_y: f32 = self.tab_strip.vertical_scroll_handle.offset().y.into();
                 layout.drop_slot_for_pointer(pointer_primary_axis, scroll_offset_y)
             }
         }
@@ -241,8 +237,7 @@ impl TerminalView {
             .max(f32::EPSILON);
         let leading_strength = ((edge - pointer_primary_axis) / edge).clamp(0.0, 1.0);
         let trailing_start = (viewport_extent - edge).max(0.0);
-        let trailing_strength =
-            ((pointer_primary_axis - trailing_start) / edge).clamp(0.0, 1.0);
+        let trailing_strength = ((pointer_primary_axis - trailing_start) / edge).clamp(0.0, 1.0);
         let delta = (trailing_strength - leading_strength) * TAB_DRAG_AUTOSCROLL_MAX_STEP;
 
         match orientation {
@@ -265,10 +260,9 @@ impl TerminalView {
             .drag_preview
             .set_pointer_preview(pointer_primary_axis, viewport_extent);
         let widths_changed = match orientation {
-            TabStripOrientation::Horizontal => self
-                .sync_tab_display_widths_for_viewport_if_needed(
-                    self.tab_strip.drag_preview.viewport_extent(),
-                ),
+            TabStripOrientation::Horizontal => self.sync_tab_display_widths_for_viewport_if_needed(
+                self.tab_strip.drag_preview.viewport_extent(),
+            ),
             TabStripOrientation::Vertical => false,
         };
 
@@ -277,8 +271,7 @@ impl TerminalView {
             pointer_primary_axis,
             viewport_extent,
         );
-        let marker_changed =
-            self.update_tab_drag_marker(orientation, pointer_primary_axis, cx);
+        let marker_changed = self.update_tab_drag_marker(orientation, pointer_primary_axis, cx);
         if scrolled && !marker_changed {
             cx.notify();
         }
@@ -330,7 +323,9 @@ mod tests {
         title.chars().count() as f32 * 7.0
     }
 
-    fn vertical_layout(tab_heights: Vec<f32>) -> crate::terminal_view::tab_strip::layout::VerticalTabStripLayoutSnapshot {
+    fn vertical_layout(
+        tab_heights: Vec<f32>,
+    ) -> crate::terminal_view::tab_strip::layout::VerticalTabStripLayoutSnapshot {
         TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
             strip_width: 220.0,
             compact: false,
@@ -409,10 +404,7 @@ mod tests {
     #[test]
     fn vertical_drop_slot_respects_midpoints() {
         let layout = vertical_layout(vec![TAB_ITEM_HEIGHT, TAB_ITEM_HEIGHT, TAB_ITEM_HEIGHT]);
-        assert_eq!(
-            layout.drop_slot_for_pointer(10.0, 0.0),
-            0
-        );
+        assert_eq!(layout.drop_slot_for_pointer(10.0, 0.0), 0);
         assert_eq!(
             layout.drop_slot_for_pointer(TAB_ITEM_HEIGHT * 0.5 + 1.0, 0.0),
             1

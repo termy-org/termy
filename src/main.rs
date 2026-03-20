@@ -69,11 +69,6 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
     let window_width = startup_config.window_width;
     let window_height = startup_config.window_height;
 
-    #[cfg(target_os = "macos")]
-    let main_window_is_movable = false;
-    #[cfg(not(target_os = "macos"))]
-    let main_window_is_movable = true;
-
     #[cfg(target_os = "windows")]
     let (window_width, window_height) = if (window_width - LEGACY_DEFAULT_WINDOW_WIDTH).abs()
         < f32::EPSILON
@@ -90,7 +85,7 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
 
     #[cfg(target_os = "macos")]
     let titlebar = Some(gpui::TitlebarOptions {
-        title: None,
+        title: Some("Termy".into()),
         appears_transparent: true,
         traffic_light_position: Some(gpui::point(px(12.0), px(10.0))),
     });
@@ -112,7 +107,9 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar,
             window_background,
-            is_movable: main_window_is_movable,
+            is_movable: true,
+            is_resizable: true,
+            window_min_size: Some(size(px(MIN_WINDOW_WIDTH), px(MIN_WINDOW_HEIGHT))),
             ..Default::default()
         },
         move |window, cx| {

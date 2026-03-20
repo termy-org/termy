@@ -1,7 +1,7 @@
 use cocoa::{
     appkit::{
-        NSFilenamesPboardType, NSPasteboard, NSPasteboardItem, NSView, NSViewHeightSizable,
-        NSViewWidthSizable, NSURLPboardType,
+        NSFilenamesPboardType, NSPasteboard, NSPasteboardItem, NSURLPboardType, NSView,
+        NSViewHeightSizable, NSViewWidthSizable,
     },
     base::{BOOL, NO, YES, id, nil},
     foundation::{NSArray, NSAutoreleasePool, NSFastEnumeration, NSPoint, NSString, NSUInteger},
@@ -45,7 +45,9 @@ impl fmt::Display for NativeDropError {
             Self::Install(message) => write!(f, "{message}"),
             Self::UnsupportedDrag => write!(f, "Only Finder file drops are supported here."),
             Self::InvalidUtf8 => write!(f, "Finder drop data was not valid UTF-8."),
-            Self::InvalidFileUrl(url) => write!(f, "Finder drop did not contain a valid file URL: {url}"),
+            Self::InvalidFileUrl(url) => {
+                write!(f, "Finder drop did not contain a valid file URL: {url}")
+            }
         }
     }
 }
@@ -182,11 +184,7 @@ extern "C" fn perform_drag_operation(this: &Object, _sel: Sel, dragging_info: id
         return NO;
     }
 
-    if accepted {
-        YES
-    } else {
-        NO
-    }
+    if accepted { YES } else { NO }
 }
 
 fn drag_operation_for_info(_this: &Object, dragging_info: id) -> NSUInteger {
@@ -224,7 +222,11 @@ fn decode_file_url_items(pasteboard: id) -> Result<Option<Vec<PathBuf>>, NativeD
         return Ok(None);
     }
 
-    let public_file_url = unsafe { NSString::alloc(nil).init_str("public.file-url").autorelease() };
+    let public_file_url = unsafe {
+        NSString::alloc(nil)
+            .init_str("public.file-url")
+            .autorelease()
+    };
     let mut paths = Vec::new();
     let mut saw_file_url = false;
 

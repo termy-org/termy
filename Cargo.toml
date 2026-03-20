@@ -21,7 +21,7 @@ resolver = "2"
 
 [package]
 name = "termy"
-version = "0.1.58"
+version = "0.1.61"
 edition = "2024"
 
 [package.metadata.bundle]
@@ -32,7 +32,10 @@ category = "Developer Tool"
 icon = ["assets/termy.icns"]
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(macos_sdk_26)', 'cfg(feature, values("cargo-clippy"))'] }
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(macos_sdk_26)',
+  'cfg(feature, values("cargo-clippy"))',
+] }
 
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", rev = "83de8a25e0ef71a8d762a148459bc863adaeb7e3", package = "gpui" }

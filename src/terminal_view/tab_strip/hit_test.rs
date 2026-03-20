@@ -427,6 +427,10 @@ mod tests {
         let strip_width = 220.0;
         let compact = false;
         let layout = vertical_hit_test_layout(strip_width, compact);
+        let top_shelf_background_x = layout.top_shelf_layout.button_x * 0.5;
+        let top_shelf_background_y = layout.header_height
+            + layout.top_shelf_layout.button_y
+            + (layout.top_shelf_layout.button_height * 0.5);
 
         assert!(
             !TerminalView::vertical_tab_strip_interactive_hit_test_for_layout(
@@ -435,8 +439,8 @@ mod tests {
         );
         assert!(
             !TerminalView::vertical_tab_strip_interactive_hit_test_for_layout(
-                12.0,
-                layout.header_height + 8.0,
+                top_shelf_background_x,
+                top_shelf_background_y,
                 &layout,
                 0.0,
             )

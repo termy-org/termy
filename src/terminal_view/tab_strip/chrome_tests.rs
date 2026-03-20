@@ -73,7 +73,9 @@ fn vertical_coverage_map(
         push_rect(control_seam);
     }
 
-    let list_origin_y = layout.control_seam.map_or(0.0, |stroke| stroke.y + stroke.h);
+    let list_origin_y = layout
+        .control_seam
+        .map_or(0.0, |stroke| stroke.y + stroke.h);
 
     for stroke in &layout.content_divider_strokes {
         push_rect(StrokeRect::new(
@@ -428,7 +430,10 @@ fn vertical_no_active_keeps_continuous_divider_and_single_top_owner() {
         .collect();
 
     for y in 0..layout.content_height as i32 {
-        assert!(divider_pixels.contains(&y), "missing divider pixel at y={y}");
+        assert!(
+            divider_pixels.contains(&y),
+            "missing divider pixel at y={y}"
+        );
     }
     assert!(layout.control_seam.is_some());
     assert!(layout.tab_strokes[0].top_boundary.is_none());

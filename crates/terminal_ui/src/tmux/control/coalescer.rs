@@ -200,11 +200,9 @@ fn try_send_notification(
     match notifications_tx.try_send(notification) {
         Ok(()) => Ok(()),
         Err(TrySendError::Full(notification)) => Err(TrySendNotificationError::Full(notification)),
-        Err(TrySendError::Disconnected(_)) => {
-            Err(TrySendNotificationError::Disconnected(TmuxControlError::channel(
-                "tmux notification channel is closed",
-            )))
-        }
+        Err(TrySendError::Disconnected(_)) => Err(TrySendNotificationError::Disconnected(
+            TmuxControlError::channel("tmux notification channel is closed"),
+        )),
     }
 }
 
@@ -452,8 +450,13 @@ mod tests {
 
         flush_notification_coalescer(&mut c, &notifications_tx, None)
             .expect("queue overflow should degrade instead of failing");
-        drain_thread.join().expect("receiver thread should complete");
-        assert!(c.drain().is_empty(), "recovery path should collapse to one refresh");
+        drain_thread
+            .join()
+            .expect("receiver thread should complete");
+        assert!(
+            c.drain().is_empty(),
+            "recovery path should collapse to one refresh"
+        );
     }
 
     #[test]
@@ -480,7 +483,12 @@ mod tests {
 
         flush_notification_coalescer(&mut c, &notifications_tx, None)
             .expect("queue overflow should preserve exit");
-        drain_thread.join().expect("receiver thread should complete");
-        assert!(c.drain().is_empty(), "exit recovery should not leave stale backlog");
+        drain_thread
+            .join()
+            .expect("receiver thread should complete");
+        assert!(
+            c.drain().is_empty(),
+            "exit recovery should not leave stale backlog"
+        );
     }
 }

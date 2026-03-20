@@ -565,8 +565,7 @@ mod tests {
         should_refresh_search_after_tmux_pane_focus,
     };
     use crate::terminal_view::{
-        Terminal, TerminalOptions, TerminalPane, TerminalPaneRenderCache, TerminalSize,
-        TerminalTab,
+        Terminal, TerminalOptions, TerminalPane, TerminalPaneRenderCache, TerminalSize, TerminalTab,
     };
     use std::cell::{Cell, RefCell};
 
@@ -584,6 +583,7 @@ mod tests {
             top: 0,
             width: 10,
             height: 10,
+            pane_zoom_steps: 0,
             degraded: false,
             terminal: Terminal::new_tmux(TerminalSize::default(), TerminalOptions::default()),
             render_cache: RefCell::new(TerminalPaneRenderCache::default()),
@@ -595,6 +595,7 @@ mod tests {
             top: 0,
             width: 10,
             height: 10,
+            pane_zoom_steps: 0,
             degraded: false,
             terminal: Terminal::new_tmux(TerminalSize::default(), TerminalOptions::default()),
             render_cache: RefCell::new(TerminalPaneRenderCache::default()),

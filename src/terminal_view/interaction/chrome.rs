@@ -1,8 +1,8 @@
 use super::*;
+use crate::terminal_view::tab_strip::state::TabStripOrientation;
 use crate::terminal_view::tab_strip::{
     clamp_expanded_vertical_tab_strip_width, collapsed_vertical_tab_strip_width,
 };
-use crate::terminal_view::tab_strip::state::TabStripOrientation;
 
 impl TerminalView {
     pub(in super::super) fn tab_strip_orientation(&self) -> TabStripOrientation {
@@ -20,8 +20,10 @@ impl TerminalView {
 
         if self.vertical_tabs_minimized {
             collapsed_vertical_tab_strip_width(Self::titlebar_left_padding_for_platform())
+                + VERTICAL_TAB_STRIP_MACOS_TRAILING_PADDING
         } else {
             clamp_expanded_vertical_tab_strip_width(self.vertical_tabs_width)
+                + VERTICAL_TAB_STRIP_MACOS_TRAILING_PADDING
         }
     }
 
@@ -76,7 +78,9 @@ impl TerminalView {
         let header_height = self.vertical_tab_strip_header_height();
         let top_shelf_height = self.vertical_tab_strip_top_shelf_height();
         let bottom_slot_height = self.vertical_tab_strip_bottom_control_slot_height();
-        let viewport_height = self.last_viewport_size_px.map_or(0.0, |(_, height)| height as f32);
+        let viewport_height = self
+            .last_viewport_size_px
+            .map_or(0.0, |(_, height)| height as f32);
         Self::vertical_tabs_list_height_for(
             viewport_height,
             self.vertical_tab_strip_top_inset(),
@@ -142,7 +146,8 @@ impl TerminalView {
         show_tab_strip_chrome: bool,
         show_update_banner: bool,
     ) -> f32 {
-        let titlebar_height = Self::window_titlebar_height_for(vertical_tabs, show_tab_strip_chrome);
+        let titlebar_height =
+            Self::window_titlebar_height_for(vertical_tabs, show_tab_strip_chrome);
         // When the vertical sidebar owns the top chrome, keep banner spacing
         // scoped to the terminal pane so the sidebar geometry stays flush.
         if vertical_tabs && show_tab_strip_chrome {
@@ -196,12 +201,18 @@ mod tests {
 
     #[test]
     fn window_y_to_terminal_content_y_can_be_negative_when_cursor_is_above_chrome() {
-        assert_eq!(TerminalView::window_y_to_terminal_content_y(20.0, 40.0), -20.0);
+        assert_eq!(
+            TerminalView::window_y_to_terminal_content_y(20.0, 40.0),
+            -20.0
+        );
     }
 
     #[test]
     fn window_titlebar_height_keeps_horizontal_strip_height() {
-        assert_eq!(TerminalView::window_titlebar_height_for(false, true), TerminalView::titlebar_height());
+        assert_eq!(
+            TerminalView::window_titlebar_height_for(false, true),
+            TerminalView::titlebar_height()
+        );
     }
 
     #[test]
@@ -211,7 +222,10 @@ mod tests {
 
     #[test]
     fn window_titlebar_height_stays_when_vertical_sidebar_is_hidden() {
-        assert_eq!(TerminalView::window_titlebar_height_for(true, false), TerminalView::titlebar_height());
+        assert_eq!(
+            TerminalView::window_titlebar_height_for(true, false),
+            TerminalView::titlebar_height()
+        );
     }
 
     #[test]
@@ -266,16 +280,15 @@ mod tests {
     fn expanded_vertical_sidebar_minimum_stays_above_collapsed_width() {
         assert!(
             crate::terminal_view::tab_strip::min_expanded_vertical_tab_strip_width()
-                > collapsed_vertical_tab_strip_width(TerminalView::titlebar_left_padding_for_platform())
+                > collapsed_vertical_tab_strip_width(
+                    TerminalView::titlebar_left_padding_for_platform()
+                )
         );
     }
 
     #[test]
     fn vertical_bottom_shelf_height_matches_control_clearance() {
-        assert_eq!(
-            VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT,
-            38.0
-        );
+        assert_eq!(VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT, 38.0);
     }
 
     #[test]

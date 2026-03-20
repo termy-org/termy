@@ -322,12 +322,7 @@ impl TerminalView {
             .items_end()
             .gap(px(TAB_ITEM_GAP))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
-                this.on_tabs_content_mouse_move(
-                    TabStripOrientation::Horizontal,
-                    event,
-                    window,
-                    cx,
-                );
+                this.on_tabs_content_mouse_move(TabStripOrientation::Horizontal, event, window, cx);
             }));
 
         tabs_scroll_content = tabs_scroll_content.child(

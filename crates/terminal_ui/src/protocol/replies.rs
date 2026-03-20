@@ -45,7 +45,9 @@ pub(crate) fn reply_bytes_for_event(
         AlacEvent::ColorRequest(index, formatter) => query_colors
             .resolve_color(live_colors, *index)
             .map(|color| formatter(color).into_bytes()),
-        AlacEvent::TextAreaSizeRequest(formatter) => Some(formatter(WindowSize::from(size)).into_bytes()),
+        AlacEvent::TextAreaSizeRequest(formatter) => {
+            Some(formatter(WindowSize::from(size)).into_bytes())
+        }
         AlacEvent::ClipboardLoad(clipboard, formatter) => host
             .load_clipboard(TerminalClipboardTarget::from_alacritty(*clipboard))
             .map(|text| formatter(&text).into_bytes()),
@@ -115,7 +117,10 @@ mod tests {
             &AlacEvent::ColorRequest(
                 NamedColor::Foreground as usize,
                 Arc::new(|color| {
-                    format!("\x1b]10;rgb:{:02x}/{:02x}/{:02x}\x1b\\", color.r, color.g, color.b)
+                    format!(
+                        "\x1b]10;rgb:{:02x}/{:02x}/{:02x}\x1b\\",
+                        color.r, color.g, color.b
+                    )
                 }),
             ),
             test_terminal_size(),
@@ -130,7 +135,10 @@ mod tests {
             &AlacEvent::ColorRequest(
                 8,
                 Arc::new(|color| {
-                    format!("\x1b]4;8;rgb:{:02x}/{:02x}/{:02x}\x1b\\", color.r, color.g, color.b)
+                    format!(
+                        "\x1b]4;8;rgb:{:02x}/{:02x}/{:02x}\x1b\\",
+                        color.r, color.g, color.b
+                    )
                 }),
             ),
             test_terminal_size(),
@@ -139,7 +147,10 @@ mod tests {
             &mut |_| None,
         );
 
-        assert_eq!(fallback_response, Some(b"\x1b]4;8;rgb:7f/7f/7f\x1b\\".to_vec()));
+        assert_eq!(
+            fallback_response,
+            Some(b"\x1b]4;8;rgb:7f/7f/7f\x1b\\".to_vec())
+        );
     }
 
     #[test]

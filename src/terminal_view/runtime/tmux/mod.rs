@@ -86,6 +86,7 @@ impl TerminalPane {
             top: state.top,
             width: state.width,
             height: state.height,
+            pane_zoom_steps: 0,
             degraded,
             terminal,
             render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),

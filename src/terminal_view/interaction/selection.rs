@@ -183,6 +183,8 @@ fn pane_cell_for_position(
     y: f32,
     padding_x: f32,
     padding_y: f32,
+    layout_cell_width: f32,
+    layout_cell_height: f32,
     pane_content_padding_x: f32,
     pane_content_padding_y: f32,
     clamp: bool,
@@ -198,8 +200,9 @@ fn pane_cell_for_position(
         return None;
     }
 
-    let origin_x = padding_x + (f32::from(pane.left) * cell_width) + pane_content_padding_x;
-    let origin_y = padding_y + (f32::from(pane.top) * cell_height) + pane_content_padding_y;
+    let origin_x = padding_x + (f32::from(pane.left) * layout_cell_width) + pane_content_padding_x;
+    let origin_y =
+        padding_y + (f32::from(pane.top) * layout_cell_height) + pane_content_padding_y;
     let width = f32::from(size.cols) * cell_width;
     let height = f32::from(size.rows) * cell_height;
     if width <= f32::EPSILON || height <= f32::EPSILON {
@@ -246,6 +249,8 @@ fn resolve_pane_cell_for_position(
     y: f32,
     padding_x: f32,
     padding_y: f32,
+    layout_cell_width: f32,
+    layout_cell_height: f32,
     pane_content_padding_x: f32,
     pane_content_padding_y: f32,
     clamp: bool,
@@ -257,6 +262,8 @@ fn resolve_pane_cell_for_position(
             y,
             padding_x,
             padding_y,
+            layout_cell_width,
+            layout_cell_height,
             pane_content_padding_x,
             pane_content_padding_y,
             false,
@@ -277,6 +284,8 @@ fn resolve_pane_cell_for_position(
             y,
             padding_x,
             padding_y,
+            layout_cell_width,
+            layout_cell_height,
             pane_content_padding_x,
             pane_content_padding_y,
             true,
@@ -293,6 +302,8 @@ fn resolve_pane_cell_for_position(
             y,
             padding_x,
             padding_y,
+            layout_cell_width,
+            layout_cell_height,
             pane_content_padding_x,
             pane_content_padding_y,
             clamp,
@@ -323,6 +334,7 @@ impl TerminalView {
     ) -> Option<(String, CellPos)> {
         let tab = self.tabs.get(self.active_tab)?;
         let (padding_x, padding_y) = self.effective_terminal_padding();
+        let layout_cell_size = self.layout_cell_size();
         let (pane_content_padding_x, pane_content_padding_y) = self.native_split_content_padding();
         let (x, y) = self.terminal_content_position(position);
         resolve_pane_cell_for_position(
@@ -332,6 +344,8 @@ impl TerminalView {
             y,
             padding_x,
             padding_y,
+            layout_cell_size.width.into(),
+            layout_cell_size.height.into(),
             pane_content_padding_x,
             pane_content_padding_y,
             clamp,
@@ -347,6 +361,7 @@ impl TerminalView {
         let tab = self.tabs.get(self.active_tab)?;
         let pane = tab.panes.iter().find(|pane| pane.id == pane_id)?;
         let (padding_x, padding_y) = self.effective_terminal_padding();
+        let layout_cell_size = self.layout_cell_size();
         let (pane_content_padding_x, pane_content_padding_y) = self.native_split_content_padding();
         let (x, y) = self.terminal_content_position(position);
         pane_cell_for_position(
@@ -355,6 +370,8 @@ impl TerminalView {
             y,
             padding_x,
             padding_y,
+            layout_cell_size.width.into(),
+            layout_cell_size.height.into(),
             pane_content_padding_x,
             pane_content_padding_y,
             clamp,
@@ -1038,6 +1055,7 @@ mod tests {
                 top: 0,
                 width: left_cols,
                 height: rows,
+                pane_zoom_steps: 0,
                 degraded: false,
                 terminal: left_terminal,
                 render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
@@ -1049,6 +1067,7 @@ mod tests {
                 top: 0,
                 width: right_cols,
                 height: rows,
+                pane_zoom_steps: 0,
                 degraded: false,
                 terminal: right_terminal,
                 render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
@@ -1068,6 +1087,8 @@ mod tests {
             pointer_y,
             0.0,
             0.0,
+            cell_width,
+            cell_height,
             0.0,
             0.0,
             true,
@@ -1113,6 +1134,7 @@ mod tests {
                 top: 0,
                 width: left_cols,
                 height: rows,
+                pane_zoom_steps: 0,
                 degraded: false,
                 terminal: left_terminal,
                 render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
@@ -1124,6 +1146,7 @@ mod tests {
                 top: 0,
                 width: right_cols,
                 height: rows,
+                pane_zoom_steps: 0,
                 degraded: false,
                 terminal: right_terminal,
                 render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
@@ -1161,6 +1184,8 @@ mod tests {
             pointer_y,
             padding_x,
             padding_y,
+            cell_width,
+            cell_height,
             0.0,
             0.0,
             true,
@@ -1174,6 +1199,85 @@ mod tests {
                     row: expected_row,
                 },
             ))
+        );
+    }
+
+    #[test]
+    fn pane_lookup_uses_shared_layout_origin_when_neighbor_has_local_zoom() {
+        let rows = 6u16;
+        let base_cell_width = 9.0;
+        let base_cell_height = 18.0;
+        let left_terminal = Terminal::new_tmux(
+            TerminalSize {
+                cols: 8,
+                rows,
+                cell_width: px(base_cell_width),
+                cell_height: px(base_cell_height),
+            },
+            TerminalOptions {
+                scrollback_history: 128,
+                ..TerminalOptions::default()
+            },
+        );
+        let right_terminal = Terminal::new_tmux(
+            TerminalSize {
+                cols: 4,
+                rows,
+                cell_width: px(base_cell_width * 2.0),
+                cell_height: px(base_cell_height * 2.0),
+            },
+            TerminalOptions {
+                scrollback_history: 128,
+                ..TerminalOptions::default()
+            },
+        );
+
+        let panes = vec![
+            TerminalPane {
+                id: "%left".to_string(),
+                left: 0,
+                top: 0,
+                width: 8,
+                height: rows,
+                pane_zoom_steps: 0,
+                degraded: false,
+                terminal: left_terminal,
+                render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
+                last_alternate_screen: std::cell::Cell::new(false),
+            },
+            TerminalPane {
+                id: "%right".to_string(),
+                left: 8,
+                top: 0,
+                width: 8,
+                height: rows,
+                pane_zoom_steps: 2,
+                degraded: false,
+                terminal: right_terminal,
+                render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
+                last_alternate_screen: std::cell::Cell::new(false),
+            },
+        ];
+
+        let pointer_x = (8.0 * base_cell_width) + 1.0;
+        let pointer_y = 1.0;
+        let resolved = resolve_pane_cell_for_position(
+            &panes,
+            Some("%left"),
+            pointer_x,
+            pointer_y,
+            0.0,
+            0.0,
+            base_cell_width,
+            base_cell_height,
+            0.0,
+            0.0,
+            false,
+        );
+
+        assert_eq!(
+            resolved,
+            Some(("%right".to_string(), CellPos { col: 0, row: 0 }))
         );
     }
 }

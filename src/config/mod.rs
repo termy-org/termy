@@ -25,10 +25,9 @@ pub use preview::{
     synced_background_opacity_preview,
 };
 pub use termy_config_core::{
-    AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors,
-    PaneFocusEffect, SHELL_DECIDE_THEME_ID, TabCloseVisibility, TabTitleConfig, TabTitleSource,
-    TabWidthMode, TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility,
-    WorkingDirFallback,
+    AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors, PaneFocusEffect,
+    SHELL_DECIDE_THEME_ID, TabCloseVisibility, TabTitleConfig, TabTitleSource, TabWidthMode,
+    TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
 };
 
 pub struct LoadedConfig {

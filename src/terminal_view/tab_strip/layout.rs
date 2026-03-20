@@ -215,7 +215,9 @@ impl VerticalTabStripLayoutSnapshot {
         }
 
         if y >= self.list_top && y < self.list_bottom() {
-            return self.row_at_pointer(y - self.list_top, scroll_offset_y).is_some();
+            return self
+                .row_at_pointer(y - self.list_top, scroll_offset_y)
+                .is_some();
         }
 
         Self::point_hits_rect(
@@ -459,11 +461,10 @@ impl TerminalView {
             TabStripOrientation::Vertical => {
                 let layout = self.vertical_tab_strip_layout_snapshot();
                 TabStripDragPreview {
-                    pointer_primary_axis: layout
-                        .list_pointer_y_from_window_y(
-                            position.y.into(),
-                            self.vertical_tab_strip_top_inset(),
-                        ),
+                    pointer_primary_axis: layout.list_pointer_y_from_window_y(
+                        position.y.into(),
+                        self.vertical_tab_strip_top_inset(),
+                    ),
                     viewport_extent: layout.list_height,
                 }
             }
@@ -706,24 +707,26 @@ mod tests {
 
     #[test]
     fn vertical_layout_list_origin_includes_header_and_top_shelf() {
-        let snapshot = TerminalView::vertical_tab_strip_layout_for_input(
-            VerticalTabStripLayoutInput {
+        let snapshot =
+            TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
                 strip_width: 220.0,
                 compact: false,
                 header_height: TABBAR_HEIGHT,
                 list_height: 180.0,
                 tab_heights: vec![TAB_ITEM_HEIGHT],
-            },
-        );
+            });
 
-        assert_float_eq(snapshot.list_top, TABBAR_HEIGHT + VERTICAL_NEW_TAB_SHELF_HEIGHT);
+        assert_float_eq(
+            snapshot.list_top,
+            TABBAR_HEIGHT + VERTICAL_NEW_TAB_SHELF_HEIGHT,
+        );
         assert_float_eq(snapshot.bottom_shelf_top, snapshot.list_top + 180.0);
     }
 
     #[test]
     fn compact_vertical_layout_list_origin_uses_compact_top_shelf_height() {
-        let snapshot = TerminalView::vertical_tab_strip_layout_for_input(
-            VerticalTabStripLayoutInput {
+        let snapshot =
+            TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
                 strip_width: collapsed_vertical_tab_strip_width(
                     TerminalView::titlebar_left_padding_for_platform(),
                 ),
@@ -731,8 +734,7 @@ mod tests {
                 header_height: TABBAR_HEIGHT,
                 list_height: 180.0,
                 tab_heights: vec![TAB_ITEM_HEIGHT],
-            },
-        );
+            });
 
         assert_float_eq(
             snapshot.list_top,
@@ -743,15 +745,14 @@ mod tests {
 
     #[test]
     fn vertical_layout_clamps_negative_list_height_before_bottom_shelf_positioning() {
-        let snapshot = TerminalView::vertical_tab_strip_layout_for_input(
-            VerticalTabStripLayoutInput {
+        let snapshot =
+            TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
                 strip_width: 220.0,
                 compact: false,
                 header_height: TABBAR_HEIGHT,
                 list_height: -20.0,
                 tab_heights: vec![TAB_ITEM_HEIGHT],
-            },
-        );
+            });
 
         assert_float_eq(snapshot.list_height, 0.0);
         assert_float_eq(snapshot.bottom_shelf_top, snapshot.list_top);
@@ -759,17 +760,16 @@ mod tests {
 
     #[test]
     fn expanded_and_compact_vertical_layouts_share_list_origin() {
-        let expanded = TerminalView::vertical_tab_strip_layout_for_input(
-            VerticalTabStripLayoutInput {
+        let expanded =
+            TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
                 strip_width: 220.0,
                 compact: false,
                 header_height: TABBAR_HEIGHT,
                 list_height: 180.0,
                 tab_heights: vec![TAB_ITEM_HEIGHT],
-            },
-        );
-        let compact = TerminalView::vertical_tab_strip_layout_for_input(
-            VerticalTabStripLayoutInput {
+            });
+        let compact =
+            TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
                 strip_width: collapsed_vertical_tab_strip_width(
                     TerminalView::titlebar_left_padding_for_platform(),
                 ),
@@ -777,8 +777,7 @@ mod tests {
                 header_height: TABBAR_HEIGHT,
                 list_height: 180.0,
                 tab_heights: vec![TAB_ITEM_HEIGHT],
-            },
-        );
+            });
 
         assert_float_eq(expanded.list_top, compact.list_top);
         assert_float_eq(expanded.bottom_shelf_top, compact.bottom_shelf_top);
@@ -786,15 +785,14 @@ mod tests {
 
     #[test]
     fn vertical_layout_drop_slot_respects_animated_row_heights() {
-        let snapshot = TerminalView::vertical_tab_strip_layout_for_input(
-            VerticalTabStripLayoutInput {
+        let snapshot =
+            TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
                 strip_width: 220.0,
                 compact: false,
                 header_height: TABBAR_HEIGHT,
                 list_height: 180.0,
                 tab_heights: vec![16.0, 32.0, 32.0],
-            },
-        );
+            });
 
         assert_eq!(snapshot.drop_slot_for_pointer(7.0, 0.0), 0);
         assert_eq!(snapshot.drop_slot_for_pointer(9.0, 0.0), 1);
@@ -803,15 +801,14 @@ mod tests {
 
     #[test]
     fn vertical_layout_row_hit_respects_scroll_offset() {
-        let snapshot = TerminalView::vertical_tab_strip_layout_for_input(
-            VerticalTabStripLayoutInput {
+        let snapshot =
+            TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
                 strip_width: 220.0,
                 compact: false,
                 header_height: TABBAR_HEIGHT,
                 list_height: 180.0,
                 tab_heights: vec![32.0, 32.0],
-            },
-        );
+            });
 
         assert_eq!(snapshot.row_at_pointer(10.0, 0.0), Some(0));
         assert_eq!(snapshot.row_at_pointer(10.0, -20.0), Some(0));
@@ -820,19 +817,15 @@ mod tests {
 
     #[test]
     fn vertical_layout_scroll_target_uses_row_bounds() {
-        let snapshot = TerminalView::vertical_tab_strip_layout_for_input(
-            VerticalTabStripLayoutInput {
+        let snapshot =
+            TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
                 strip_width: 220.0,
                 compact: false,
                 header_height: TABBAR_HEIGHT,
                 list_height: 40.0,
                 tab_heights: vec![16.0, 48.0],
-            },
-        );
+            });
 
-        assert_eq!(
-            snapshot.scroll_target_for_active_row(1, 0.0),
-            Some(24.0)
-        );
+        assert_eq!(snapshot.scroll_target_for_active_row(1, 0.0), Some(24.0));
     }
 }

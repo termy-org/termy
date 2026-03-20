@@ -164,7 +164,7 @@ impl TerminalView {
                             &self.tmux_runtime().client,
                             pane_state,
                             hydration_options,
-                            self.cell_size,
+                            self.cached_cell_size_for_font_size(self.font_size),
                         );
                         (terminal, hydration_error.is_some(), hydration_error)
                     };
@@ -173,7 +173,10 @@ impl TerminalView {
                     hydration_failures.push(format!("{} ({hydration_error})", pane_state.id));
                 }
 
-                let next_size = Self::terminal_size_for_pane_state(pane_state, self.cell_size);
+                let next_size = Self::terminal_size_for_pane_state(
+                    pane_state,
+                    self.cached_cell_size_for_font_size(self.font_size),
+                );
                 let current_size = terminal.size();
                 if current_size.cols != next_size.cols
                     || current_size.rows != next_size.rows

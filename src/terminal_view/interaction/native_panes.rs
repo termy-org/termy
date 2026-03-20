@@ -19,8 +19,7 @@ impl TerminalView {
         pane_count: usize,
         min_extent: u16,
     ) -> u16 {
-        let pane_count =
-            u16::try_from(pane_count).expect("native pane count must fit into u16");
+        let pane_count = u16::try_from(pane_count).expect("native pane count must fit into u16");
         assert!(pane_count > 0, "native pane count must be non-zero");
         let required = min_extent.saturating_mul(pane_count);
         if total_extent >= required {
@@ -37,9 +36,7 @@ impl TerminalView {
         let mut boundaries = Vec::with_capacity(panes.len().saturating_mul(2));
         for pane in panes {
             let (start, end) = match axis {
-                PaneResizeAxis::Horizontal => {
-                    (pane.left, pane.left.saturating_add(pane.width))
-                }
+                PaneResizeAxis::Horizontal => (pane.left, pane.left.saturating_add(pane.width)),
                 PaneResizeAxis::Vertical => (pane.top, pane.top.saturating_add(pane.height)),
             };
             if !boundaries.contains(&start) {
@@ -86,9 +83,10 @@ impl TerminalView {
         new_extent: u16,
     ) -> NativeScaledAxisSpan {
         let old_end = start.saturating_add(extent);
-        let mut new_start =
-            Self::scale_native_pane_edge(start, old_extent, new_extent).min(new_extent.saturating_sub(1));
-        let mut new_end = Self::scale_native_pane_edge(old_end, old_extent, new_extent).min(new_extent);
+        let mut new_start = Self::scale_native_pane_edge(start, old_extent, new_extent)
+            .min(new_extent.saturating_sub(1));
+        let mut new_end =
+            Self::scale_native_pane_edge(old_end, old_extent, new_extent).min(new_extent);
         if new_end <= new_start {
             new_end = (new_start + 1).min(new_extent);
             new_start = new_end.saturating_sub(1);
@@ -127,7 +125,10 @@ impl TerminalView {
                 let end = boundaries
                     .binary_search(&span.end)
                     .expect("native pane rebalance requires span end boundary");
-                assert!(start < end, "native pane axis span must have positive extent");
+                assert!(
+                    start < end,
+                    "native pane axis span must have positive extent"
+                );
                 (start, end)
             })
             .collect::<Vec<_>>();
@@ -178,7 +179,11 @@ impl TerminalView {
         }
     }
 
-    pub(in super::super) fn sync_native_tab_pane_geometry(tab: &mut TerminalTab, cols: u16, rows: u16) {
+    pub(in super::super) fn sync_native_tab_pane_geometry(
+        tab: &mut TerminalTab,
+        cols: u16,
+        rows: u16,
+    ) {
         if tab.panes.is_empty() {
             return;
         }
@@ -289,6 +294,7 @@ mod tests {
             top,
             width,
             height,
+            pane_zoom_steps: 0,
             degraded: false,
             terminal: test_terminal(),
             render_cache: RefCell::new(TerminalPaneRenderCache::default()),
@@ -381,10 +387,7 @@ mod tests {
         assert_eq!(tab.panes[1].left, tab.panes[0].width);
         assert_eq!(tab.panes[0].width, 23);
         assert_eq!(tab.panes[1].width, 22);
-        assert_eq!(
-            tab.panes.iter().map(|pane| pane.width).sum::<u16>(),
-            45
-        );
+        assert_eq!(tab.panes.iter().map(|pane| pane.width).sum::<u16>(), 45);
     }
 
     #[test]

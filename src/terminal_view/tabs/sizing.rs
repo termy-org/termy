@@ -52,7 +52,9 @@ impl TerminalView {
 
         match orientation {
             TabStripOrientation::Horizontal => {
-                let viewport_width = self.tab_strip.horizontal_layout_last_synced_viewport_width
+                let viewport_width = self
+                    .tab_strip
+                    .horizontal_layout_last_synced_viewport_width
                     .max(0.0);
                 if viewport_width <= f32::EPSILON {
                     return;
@@ -351,9 +353,8 @@ impl TerminalView {
         let viewport_unchanged =
             (self.tab_strip.horizontal_layout_last_synced_viewport_width - clamped_viewport).abs()
                 <= f32::EPSILON;
-        let revision_unchanged =
-            self.tab_strip.horizontal_layout_last_synced_revision
-                == self.tab_strip.horizontal_layout_revision;
+        let revision_unchanged = self.tab_strip.horizontal_layout_last_synced_revision
+            == self.tab_strip.horizontal_layout_revision;
         if viewport_unchanged && revision_unchanged {
             return false;
         }
@@ -402,13 +403,14 @@ mod tests {
 
     #[test]
     fn vertical_scroll_target_uses_animated_row_height() {
-        let layout = TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
-            strip_width: 220.0,
-            compact: false,
-            header_height: TABBAR_HEIGHT,
-            list_height: 40.0,
-            tab_heights: vec![16.0, 48.0],
-        });
+        let layout =
+            TerminalView::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
+                strip_width: 220.0,
+                compact: false,
+                header_height: TABBAR_HEIGHT,
+                list_height: 40.0,
+                tab_heights: vec![16.0, 48.0],
+            });
 
         assert_eq!(layout.scroll_target_for_active_row(1, 0.0), Some(24.0));
     }

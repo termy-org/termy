@@ -1,33 +1,38 @@
-# Task: Fix Selection Broken Issue
+# Task List
 
-## Issue Reference
-- **Repository:** lassejlv/termy
-- **Issue #:** 249
-- **Title:** Selection broken
-- **URL:** https://github.com/lassejlv/termy/issues/249
-- **Status:** Open
-- **Labels:** bug
+## Bug: Terminals Overlapping (#260)
 
-## Problem Description
-The text selection is broken when content is scrolling. When you scroll up and try to select something while content is still running and scrolling down, the selection doesn't keep the current buffer selected—it tries to follow the scrolling instead.
+**Status:** Open  
+**Labels:** bug  
+**Assignee:** lassejlv  
+**Reported by:** janburzinski  
+**Version:** 0.1.59
 
-This behavior does not occur in ghostty.
+### Description
+After closing split screen sessions, terminals sometimes overlap (two terminals stacked on top of each other).
 
-## Expected Behavior
-When selecting text and scrolling up while content is still running, the selection should remain fixed on the selected text/buffer, not try to follow the scrolling output.
+### Image
+![Terminal Overlap Issue](https://github.com/user-attachments/assets/60d73b62-c4ff-4f37-9210-d96d45ddfd18)
 
-## Actual Behavior
-The selection tries to follow the scrolling content instead of maintaining the current buffer selection.
+### Steps to Reproduce
+1. Split tabs
+2. Delete them
+3. Issue doesn't happen every time (intermittent)
 
-## Reproduction Steps
-1. Start a command that produces continuous output
-2. Scroll up while the output is still running
-3. Try to select/mark some text
-4. Observe that the selection follows the scrolling instead of staying fixed
+### Expected Behavior
+Tabs should close cleanly without overlapping
 
-## Priority
-High - affects user experience when working with scrolling terminal output
+### Environment
+- OS: macOS
+- Version: 0.1.59
 
-## Notes
-- Includes video demonstration in the original issue
-- Works correctly in ghostty (reference implementation)
+### Reference
+https://github.com/lassejlv/termy/issues/260
+
+---
+
+## Pending Tasks
+
+- [ ] Investigate terminal overlap issue when closing split tabs
+- [ ] Find root cause of intermittent behavior
+- [ ] Implement fix for clean tab closure

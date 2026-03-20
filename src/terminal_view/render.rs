@@ -1974,10 +1974,13 @@ impl TerminalView {
                 .child(format!("MEM: {}", memory))
                 .child(format!("Drain passes: {terminal_event_drain_passes}"))
                 .child(format!("Redraws: {terminal_redraws}"))
-                .child(format!("Alt fallback redraws: {alt_screen_fallback_redraws}"));
+                .child(format!(
+                    "Alt fallback redraws: {alt_screen_fallback_redraws}"
+                ));
             #[cfg(debug_assertions)]
-            let overlay =
-                overlay.child(format!("Wakeups runtime/view: {runtime_wakeups}/{view_wake_signals}"));
+            let overlay = overlay.child(format!(
+                "Wakeups runtime/view: {runtime_wakeups}/{view_wake_signals}"
+            ));
             overlay.into_any_element()
         });
 
@@ -2037,7 +2040,7 @@ impl Render for TerminalView {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
 
-        let cell_size = self.calculate_cell_size(window, cx);
+        let layout_cell_size = self.calculate_cell_size(window, cx);
         let colors = self.colors.clone();
         let font_family = self.font_family.clone();
         let font_size = self.font_size;
@@ -2046,7 +2049,7 @@ impl Render for TerminalView {
         let mut terminal_surface_bg = colors.background;
         terminal_surface_bg.a = self.scaled_background_alpha(terminal_surface_bg.a);
 
-        self.sync_terminal_size(window, cell_size);
+        self.sync_terminal_size(window, layout_cell_size, cx);
         let active_pane_id = self.active_pane_id().map(ToOwned::to_owned);
         let now = frame_now;
         self.track_window_resize_indicator(window.viewport_size(), now);
@@ -2072,6 +2075,20 @@ impl Render for TerminalView {
         #[cfg(debug_assertions)]
         let mut render_pass_cache_counts = RenderPassCacheStrategyCounts::default();
 
+        let active_pane_font_sizes = self
+            .tabs
+            .get(self.active_tab)
+            .map(|tab| {
+                tab.panes
+                    .iter()
+                    .map(|pane| self.effective_font_size_for_pane_in_tab(tab, pane))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for pane_font_size in active_pane_font_sizes.iter().copied() {
+            let _ = self.calculate_cell_size_for_font_size(pane_font_size, window, cx);
+        }
+
         if let Some(active_tab) = self.tabs.get(self.active_tab)
             && let Some(content_bounds) = self.terminal_content_bounds(window)
         {
@@ -2079,7 +2096,11 @@ impl Render for TerminalView {
             let pane_focus_enabled =
                 multi_pane && pane_focus_config.is_some() && !command_palette_open;
 
-            for pane in &active_tab.panes {
+            for (pane, pane_font_size) in active_tab
+                .panes
+                .iter()
+                .zip(active_pane_font_sizes.iter().copied())
+            {
                 let terminal = &pane.terminal;
                 let terminal_size = terminal.size();
                 let cols = terminal_size.cols as usize;
@@ -2200,13 +2221,14 @@ impl Render for TerminalView {
                     pane_cells,
                     paint_cache,
                     paint_damage,
-                    cell_size,
+                    self.cached_cell_size_for_font_size(pane_font_size)
+                        .unwrap_or(layout_cell_size),
                     cols,
                     rows,
                     &colors,
                     hovered_link_range,
                     font_family.clone(),
-                    font_size,
+                    pane_font_size,
                     pane_cursor_style,
                     cursor_cell,
                     terminal_surface_bg,
@@ -2400,17 +2422,8 @@ impl Render for TerminalView {
             self.tab_bar_visibility,
             self.show_termy_in_titlebar,
         )
-            .then(|| {
-                self.render_titlebar_branding(
-                    window,
-                    &colors,
-                    &font_family,
-                    tabbar_bg,
-                    false,
-                    cx,
-                )
-            })
-            .flatten();
+        .then(|| self.render_titlebar_branding(window, &colors, &font_family, tabbar_bg, false, cx))
+        .flatten();
         let vertical_tab_strip = (self.vertical_tabs && show_tab_strip_chrome)
             .then(|| self.render_vertical_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
         #[cfg(target_os = "macos")]
@@ -2726,13 +2739,16 @@ impl Render for TerminalView {
                                                 MouseButton::Right,
                                                 cx.listener(Self::handle_mouse_up),
                                             )
-                                            .when_some(
-                                                self.pane_resize_drag.as_ref(),
-                                                |s, drag| match drag.axis {
-                                                    PaneResizeAxis::Horizontal => s.cursor_col_resize(),
-                                                    PaneResizeAxis::Vertical => s.cursor_row_resize(),
-                                                },
-                                            )
+                                            .when_some(self.pane_resize_drag.as_ref(), |s, drag| {
+                                                match drag.axis {
+                                                    PaneResizeAxis::Horizontal => {
+                                                        s.cursor_col_resize()
+                                                    }
+                                                    PaneResizeAxis::Vertical => {
+                                                        s.cursor_row_resize()
+                                                    }
+                                                }
+                                            })
                                             .font_family(font_family.clone())
                                             .text_size(font_size)
                                             .child(ime_input_layer)
@@ -2874,6 +2890,7 @@ mod tests {
             top,
             width: cols,
             height: rows,
+            pane_zoom_steps: 0,
             degraded: false,
             terminal: Terminal::new_tmux(
                 size,
@@ -3034,8 +3051,8 @@ mod tests {
 
     #[test]
     fn terminal_scrollbar_overlay_frame_anchors_to_active_pane_geometry() {
-        let surface = TerminalScrollbarSurfaceGeometry::new(32.0, 48.0, 640.0, 420.0)
-            .expect("surface");
+        let surface =
+            TerminalScrollbarSurfaceGeometry::new(32.0, 48.0, 640.0, 420.0).expect("surface");
 
         let frame = terminal_scrollbar_overlay_frame(surface).expect("frame");
         assert_eq!(
@@ -3324,7 +3341,8 @@ mod tests {
     }
 
     #[test]
-    fn resolve_cell_colors_keeps_opaque_inverse_explicit_background_when_background_opacity_cells_off() {
+    fn resolve_cell_colors_keeps_opaque_inverse_explicit_background_when_background_opacity_cells_off()
+     {
         let context = test_build_context(0.2);
         let inverse_explicit_background = resolve_cell_colors(
             &test_term_cell(

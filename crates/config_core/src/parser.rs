@@ -9,8 +9,8 @@ use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseRepo
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
 use crate::types::{
     AiProvider, AppConfig, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility,
-    TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig,
-    TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
+    TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
+    TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
 };
 
 #[derive(Default)]
@@ -166,13 +166,7 @@ impl AppConfig {
 
             // These keys already live in AppConfig and are exercised by parser tests, but they
             // are not part of the schema-driven settings/docs surface yet.
-            if parse_ai_root_key(
-                &mut config,
-                &mut diagnostics,
-                line_number,
-                key,
-                value,
-            ) {
+            if parse_ai_root_key(&mut config, &mut diagnostics, line_number, key, value) {
                 continue;
             }
 

@@ -510,6 +510,7 @@ impl TerminalView {
                     top: pane.top,
                     width: pane.width.max(1),
                     height: pane.height.max(1),
+                    pane_zoom_steps: 0,
                     degraded: false,
                     terminal,
                     render_cache: RefCell::new(TerminalPaneRenderCache::default()),

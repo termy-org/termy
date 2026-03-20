@@ -91,7 +91,9 @@ pub(super) fn compute_vertical_tab_chrome_layout(
             TAB_STROKE_THICKNESS,
         );
         match side {
-            HorizontalBoundaryOwnerSide::Top => tab_strokes[tab_index].top_boundary = Some(local_rect),
+            HorizontalBoundaryOwnerSide::Top => {
+                tab_strokes[tab_index].top_boundary = Some(local_rect)
+            }
             HorizontalBoundaryOwnerSide::Bottom => {
                 tab_strokes[tab_index].bottom_boundary = Some(local_rect)
             }
@@ -122,7 +124,9 @@ pub(super) fn compute_vertical_tab_chrome_layout(
                 top_boundary_rect,
             );
         }
-    } else if control_seam.is_none() && let Some(first_span) = spans.first().copied() {
+    } else if control_seam.is_none()
+        && let Some(first_span) = spans.first().copied()
+    {
         let top_boundary_y = first_span.top;
         let top_boundary_rect = StrokeRect::new(
             boundary_start_x,

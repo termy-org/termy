@@ -42,18 +42,31 @@ pub(crate) fn theme_store_api_base_url() -> String {
     std::env::var("THEME_STORE_API_URL").unwrap_or_else(|_| DEFAULT_THEME_STORE_API_URL.into())
 }
 
+/// Fetches themes from the API. Returns `(themes, from_cache)` where `from_cache` is `true`
+/// when the API was unreachable and a previously saved cache was used as a fallback.
 pub(crate) fn fetch_theme_store_themes_blocking(
     api_base: &str,
-) -> Result<Vec<ThemeStoreTheme>, String> {
+) -> Result<(Vec<ThemeStoreTheme>, bool), String> {
     let base = api_base.trim_end_matches('/');
     let url = format!("{base}/themes");
-    let response = ureq::get(&url)
-        .set("Accept", "application/json")
-        .call()
-        .map_err(|error| format!("Failed to fetch store themes: {error}"))?;
 
-    let payload: serde_json::Value = response
-        .into_json()
+    let fetch_result = ureq::get(&url).set("Accept", "application/json").call();
+
+    let response = match fetch_result {
+        Ok(response) => response,
+        Err(error) => {
+            if let Some(cached) = load_theme_store_cache() {
+                return Ok((cached, true));
+            }
+            return Err(format!("Failed to fetch store themes: {error}"));
+        }
+    };
+
+    let raw = response
+        .into_string()
+        .map_err(|error| format!("Invalid theme store response: {error}"))?;
+
+    let payload: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|error| format!("Invalid theme store response: {error}"))?;
 
     let themes = payload
@@ -72,7 +85,54 @@ pub(crate) fn fetch_theme_store_themes_blocking(
             .to_ascii_lowercase()
             .cmp(&right.name.to_ascii_lowercase())
     });
-    Ok(parsed)
+
+    save_theme_store_cache(&raw);
+
+    Ok((parsed, false))
+}
+
+fn theme_store_cache_path() -> Option<PathBuf> {
+    let config_path = config::ensure_config_file().ok()?;
+    let parent = config_path.parent()?;
+    Some(parent.join("theme_store_cache.json"))
+}
+
+fn save_theme_store_cache(raw_json: &str) {
+    let Some(path) = theme_store_cache_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    // Store minified to save space.
+    let minified = serde_json::from_str::<serde_json::Value>(raw_json)
+        .ok()
+        .and_then(|v| serde_json::to_string(&v).ok())
+        .unwrap_or_else(|| raw_json.to_string());
+    if let Err(error) = std::fs::write(&path, minified) {
+        log::debug!(
+            "Failed to write theme store cache to {}: {}",
+            path.display(),
+            error
+        );
+    }
+}
+
+fn load_theme_store_cache() -> Option<Vec<ThemeStoreTheme>> {
+    let path = theme_store_cache_path()?;
+    let contents = std::fs::read_to_string(path).ok()?;
+    let payload: serde_json::Value = serde_json::from_str(&contents).ok()?;
+    let themes = payload.as_array()?;
+    let mut parsed: Vec<ThemeStoreTheme> = themes.iter().filter_map(parse_theme_value).collect();
+    if parsed.is_empty() {
+        return None;
+    }
+    parsed.sort_unstable_by(|left, right| {
+        left.name
+            .to_ascii_lowercase()
+            .cmp(&right.name.to_ascii_lowercase())
+    });
+    Some(parsed)
 }
 
 pub(crate) fn fetch_theme_for_deeplink_blocking(slug: &str) -> Result<ThemeStoreTheme, String> {

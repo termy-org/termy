@@ -4,7 +4,8 @@ use super::super::{
     COMMAND_PALETTE_PANEL_SOLID_ALPHA, COMMAND_PALETTE_ROW_SELECTED_BG_ALPHA,
     COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA, COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA,
     COMMAND_PALETTE_SHORTCUT_BG_ALPHA, COMMAND_PALETTE_SHORTCUT_TEXT_ALPHA,
-    OVERLAY_MUTED_TEXT_ALPHA, OVERLAY_PRIMARY_TEXT_ALPHA, TerminalView, resolve_chrome_stroke_color,
+    OVERLAY_MUTED_TEXT_ALPHA, OVERLAY_PRIMARY_TEXT_ALPHA, TerminalView,
+    resolve_chrome_stroke_color,
 };
 
 pub(in super::super) const COMMAND_PALETTE_PANEL_RADIUS: f32 = 0.0;
@@ -60,7 +61,8 @@ impl CommandPaletteStyle {
             COMMAND_PALETTE_INPUT_BG_ALPHA,
             COMMAND_PALETTE_INPUT_SOLID_ALPHA,
         );
-        let input_selection = overlay_style.chrome_panel_cursor(COMMAND_PALETTE_INPUT_SELECTION_ALPHA);
+        let input_selection =
+            overlay_style.chrome_panel_cursor(COMMAND_PALETTE_INPUT_SELECTION_ALPHA);
         let shortcut_bg = overlay_style.chrome_panel_cursor(COMMAND_PALETTE_SHORTCUT_BG_ALPHA);
         let shortcut_text = overlay_style.panel_foreground(COMMAND_PALETTE_SHORTCUT_TEXT_ALPHA);
         let scrollbar_track =
@@ -113,10 +115,7 @@ mod tests {
             a: 1.0,
         };
 
-        let stroke_mix = crate::chrome_style::ChromeContrastProfile::from_enabled(
-            false,
-        )
-        .stroke_mix;
+        let stroke_mix = crate::chrome_style::ChromeContrastProfile::from_enabled(false).stroke_mix;
         let border = command_palette_border_color(chrome_surface_bg, foreground, stroke_mix);
         let tab_stroke = resolve_chrome_stroke_color(chrome_surface_bg, foreground, stroke_mix);
 

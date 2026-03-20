@@ -33,7 +33,8 @@ pub fn terminal_ui_monotonic_now_ns() -> u64 {
     {
         let info = mach_timebase_info_now();
         let ticks = unsafe { mach_absolute_time() };
-        let nanos = u128::from(ticks).saturating_mul(u128::from(info.numer)) / u128::from(info.denom);
+        let nanos =
+            u128::from(ticks).saturating_mul(u128::from(info.numer)) / u128::from(info.denom);
         return nanos.min(u128::from(u64::MAX)) as u64;
     }
 
