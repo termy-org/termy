@@ -105,6 +105,7 @@ pub(crate) struct TabStripDragPreview {
 pub(crate) struct TabStripLayoutInput {
     pub(crate) viewport_width: f32,
     pub(crate) left_inset_width: f32,
+    pub(crate) content_width: Option<f32>,
 }
 
 impl TabStripGeometry {
@@ -276,6 +277,16 @@ impl VerticalTabStripLayoutSnapshot {
 
 impl TerminalView {
     #[cfg(target_os = "windows")]
+    fn horizontal_action_rail_width_for_platform(_: f32) -> f32 {
+        0.0
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn horizontal_action_rail_width_for_platform(max_row_width: f32) -> f32 {
+        TABBAR_ACTION_RAIL_WIDTH.min(max_row_width)
+    }
+
+    #[cfg(target_os = "windows")]
     fn titlebar_right_padding_for_platform() -> f32 {
         WINDOWS_CAPTION_BUTTONS_RESERVED_WIDTH
     }
@@ -297,15 +308,33 @@ impl TerminalView {
         let window_width = input.viewport_width.max(0.0);
         let left_inset_width = input.left_inset_width.max(0.0).min(window_width);
         let remaining_after_left = (window_width - left_inset_width).max(0.0);
-        let right_inset_width =
+        let reserved_right_inset_width =
             Self::titlebar_right_padding_for_platform().min(remaining_after_left);
-        let row_width = (remaining_after_left - right_inset_width).max(0.0);
+        let max_row_width = (remaining_after_left - reserved_right_inset_width).max(0.0);
+        let action_rail_width = Self::horizontal_action_rail_width_for_platform(max_row_width);
+        let available_after_rail = (max_row_width - action_rail_width).max(0.0);
+        let gutter_width = if action_rail_width > f32::EPSILON {
+            TAB_STRIP_RAIL_GUTTER_WIDTH.min(available_after_rail)
+        } else {
+            0.0
+        };
+        let max_tabs_viewport_width = (max_row_width - action_rail_width - gutter_width).max(0.0);
+        #[cfg(target_os = "windows")]
+        let tabs_viewport_width = input
+            .content_width
+            .map(|width| width.max(0.0).min(max_tabs_viewport_width))
+            .unwrap_or(max_tabs_viewport_width);
+        #[cfg(not(target_os = "windows"))]
+        let tabs_viewport_width = {
+            let _ = input.content_width;
+            max_tabs_viewport_width
+        };
+        let row_width = (tabs_viewport_width + gutter_width + action_rail_width)
+            .min(remaining_after_left)
+            .max(0.0);
+        let right_inset_width = (remaining_after_left - row_width).max(0.0);
         let row_start_x = left_inset_width;
         let row_end_x = row_start_x + row_width;
-        let action_rail_width = TABBAR_ACTION_RAIL_WIDTH.min(row_width);
-        let available_after_rail = (row_width - action_rail_width).max(0.0);
-        let gutter_width = TAB_STRIP_RAIL_GUTTER_WIDTH.min(available_after_rail);
-        let tabs_viewport_width = (row_width - action_rail_width - gutter_width).max(0.0);
         let gutter_start_x = row_start_x + tabs_viewport_width;
         let action_rail_start_x = gutter_start_x + gutter_width;
         let button_size = TABBAR_NEW_TAB_BUTTON_SIZE.min(action_rail_width);
@@ -383,6 +412,19 @@ impl TerminalView {
         Self::tab_strip_layout_for_input(TabStripLayoutInput {
             viewport_width,
             left_inset_width,
+            content_width: None,
+        })
+    }
+
+    pub(crate) fn tab_strip_layout_for_viewport_with_left_inset_and_content_width(
+        viewport_width: f32,
+        left_inset_width: f32,
+        content_width: f32,
+    ) -> TabStripLayoutSnapshot {
+        Self::tab_strip_layout_for_input(TabStripLayoutInput {
+            viewport_width,
+            left_inset_width,
+            content_width: Some(content_width),
         })
     }
 
@@ -639,6 +681,7 @@ mod tests {
         assert!(geometry.button_end_x <= geometry.action_rail_end_x());
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn button_shrinks_to_narrow_action_rail() {
         let viewport_width =
@@ -654,10 +697,19 @@ mod tests {
         assert!(geometry.button_end_x <= geometry.action_rail_end_x());
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn action_rail_keeps_positive_width_in_standard_viewport() {
         let snapshot = TerminalView::tab_strip_layout_for_viewport_width(1280.0);
         assert!(snapshot.geometry.action_rail_width > 0.0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn action_rail_is_hidden_on_windows() {
+        let snapshot = TerminalView::tab_strip_layout_for_viewport_width(1280.0);
+        assert_float_eq(snapshot.geometry.action_rail_width, 0.0);
+        assert_float_eq(snapshot.geometry.gutter_width, 0.0);
     }
 
     #[test]
@@ -703,6 +755,29 @@ mod tests {
             geometry.row_end_x + geometry.right_inset_width,
             geometry.window_width,
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn fitting_windows_content_turns_extra_space_into_trailing_drag_region() {
+        let left_inset_width = TerminalView::titlebar_left_padding_for_platform();
+        let content_width = 192.0;
+        let snapshot =
+            TerminalView::tab_strip_layout_for_viewport_with_left_inset_and_content_width(
+                1280.0,
+                left_inset_width,
+                content_width,
+            );
+        let geometry = snapshot.geometry;
+
+        assert_float_eq(geometry.tabs_viewport_width, content_width);
+        assert_float_eq(geometry.action_rail_width, 0.0);
+        assert_float_eq(geometry.gutter_width, 0.0);
+        assert!(
+            geometry.right_inset_width > TerminalView::titlebar_right_padding_for_platform(),
+            "expected leftover titlebar slack to move into the trailing drag region",
+        );
+        assert_float_eq(geometry.row_end_x, geometry.row_start_x + content_width);
     }
 
     #[test]

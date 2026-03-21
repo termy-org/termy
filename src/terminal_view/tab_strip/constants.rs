@@ -41,6 +41,7 @@ pub(crate) const TAB_DROP_MARKER_WIDTH: f32 = 2.0;
 pub(crate) const TAB_DROP_MARKER_INSET_Y: f32 = 3.0;
 pub(crate) const TAB_DRAG_AUTOSCROLL_EDGE_WIDTH: f32 = 32.0;
 pub(crate) const TAB_DRAG_AUTOSCROLL_MAX_STEP: f32 = 24.0;
+#[cfg(not(target_os = "windows"))]
 pub(crate) const TABBAR_ACTION_RAIL_WIDTH: f32 = 36.0;
 pub(crate) const TABBAR_NEW_TAB_BUTTON_SIZE: f32 = 22.0;
 pub(crate) const TABBAR_NEW_TAB_BUTTON_RADIUS: f32 = 2.0;

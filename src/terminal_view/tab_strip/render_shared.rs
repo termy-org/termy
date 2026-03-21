@@ -197,17 +197,21 @@ impl TerminalView {
         left_inset_width: f32,
     ) -> TabStripRenderState {
         let viewport_width: f32 = window.viewport_size().width.into();
-        let layout =
+        let provisional_layout =
             Self::tab_strip_layout_for_viewport_with_left_inset(viewport_width, left_inset_width);
+        let tab_strip_viewport_width = provisional_layout.geometry.tabs_viewport_width;
+        let _ = self.sync_tab_display_widths_for_viewport_if_needed(tab_strip_viewport_width);
+        self.scroll_active_tab_into_view(TabStripOrientation::Horizontal);
+        let fixed_content_width = self.tab_strip_fixed_content_width();
+        let layout = Self::tab_strip_layout_for_viewport_with_left_inset_and_content_width(
+            viewport_width,
+            left_inset_width,
+            fixed_content_width,
+        );
         self.set_tab_strip_layout_snapshot(layout);
 
         let geometry = layout.geometry;
-        let tab_strip_viewport_width = geometry.tabs_viewport_width;
-        let _ = self.sync_tab_display_widths_for_viewport_if_needed(tab_strip_viewport_width);
-        self.scroll_active_tab_into_view(TabStripOrientation::Horizontal);
-        let content_width = self
-            .tab_strip_fixed_content_width()
-            .max(tab_strip_viewport_width);
+        let content_width = fixed_content_width.max(geometry.tabs_viewport_width);
         let overflow_state = self.tab_strip_overflow_state();
         let active_tab_index = (self.active_tab < self.tabs.len()).then_some(self.active_tab);
         let chrome_layout = chrome::compute_tab_chrome_layout(
