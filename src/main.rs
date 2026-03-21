@@ -18,7 +18,9 @@ mod ui;
 use commands::{OpenConfig, OpenSettings};
 use deeplink::{AuthCallbackDeepLink, DeepLinkArgument, DeepLinkRoute};
 use flume::Receiver;
-use gpui::{App, Application, AsyncApp, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
+use gpui::{
+    App, Application, AsyncApp, Bounds, Pixels, WindowBounds, WindowOptions, prelude::*, px, size,
+};
 use startup::StartupBlocker;
 use terminal_view::{TerminalView, initial_window_background_appearance};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -64,8 +66,7 @@ fn preflight_tmux_runtime(config: &config::AppConfig) -> Result<(), StartupBlock
     ))
 }
 
-fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(), String> {
-    let window_background = initial_window_background_appearance(&startup_config);
+fn normalized_startup_window_size(startup_config: &config::AppConfig) -> gpui::Size<Pixels> {
     let window_width = startup_config.window_width;
     let window_height = startup_config.window_height;
 
@@ -79,9 +80,27 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
         (window_width, window_height)
     };
 
-    let window_width = window_width.max(MIN_WINDOW_WIDTH);
-    let window_height = window_height.max(MIN_WINDOW_HEIGHT);
-    let bounds = Bounds::centered(None, size(px(window_width), px(window_height)), cx);
+    size(
+        px(window_width.max(MIN_WINDOW_WIDTH)),
+        px(window_height.max(MIN_WINDOW_HEIGHT)),
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn should_apply_windows_startup_resize(
+    current: gpui::Size<Pixels>,
+    desired: gpui::Size<Pixels>,
+) -> bool {
+    const WINDOW_SIZE_EPSILON: f32 = 0.5;
+
+    (f32::from(current.width) - f32::from(desired.width)).abs() > WINDOW_SIZE_EPSILON
+        || (f32::from(current.height) - f32::from(desired.height)).abs() > WINDOW_SIZE_EPSILON
+}
+
+fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(), String> {
+    let window_background = initial_window_background_appearance(&startup_config);
+    let startup_window_size = normalized_startup_window_size(&startup_config);
+    let bounds = Bounds::centered(None, startup_window_size, cx);
 
     #[cfg(target_os = "macos")]
     let titlebar = Some(gpui::TitlebarOptions {
@@ -113,6 +132,19 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
             ..Default::default()
         },
         move |window, cx| {
+            #[cfg(target_os = "windows")]
+            {
+                let startup_window_size = startup_window_size;
+                window.defer(cx, move |window, _cx| {
+                    if should_apply_windows_startup_resize(
+                        window.viewport_size(),
+                        startup_window_size,
+                    ) {
+                        window.resize(startup_window_size);
+                    }
+                });
+            }
+
             let view = cx.new({
                 let startup_config = startup_config;
                 |cx| TerminalView::new(window, cx, startup_config)
@@ -456,13 +488,21 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        DeepLinkArgument, DeepLinkRoute, focus_or_open_main_window,
-        handle_open_urls_with_main_window, reopen_if_no_windows,
+        DeepLinkArgument, DeepLinkRoute, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH,
+        focus_or_open_main_window, handle_open_urls_with_main_window,
+        normalized_startup_window_size, reopen_if_no_windows,
+    };
+    #[cfg(target_os = "windows")]
+    use super::{
+        LEGACY_DEFAULT_WINDOW_HEIGHT, LEGACY_DEFAULT_WINDOW_WIDTH, WINDOWS_DEFAULT_WINDOW_HEIGHT,
+        WINDOWS_DEFAULT_WINDOW_WIDTH, should_apply_windows_startup_resize,
     };
     use crate::app_actions;
+    use crate::config::AppConfig;
     use crate::deeplink::NewTabDeepLink;
     use gpui::{
         App, AppContext, Context, IntoElement, Render, TestAppContext, Window, WindowOptions, div,
+        px, size,
     };
     use std::cell::RefCell;
 
@@ -592,6 +632,61 @@ mod tests {
 
         assert_eq!(cx.windows().len(), 1);
         assert_eq!(*handled.borrow(), vec![(DeepLinkRoute::NewTab, None)]);
+    }
+
+    #[test]
+    fn normalized_startup_window_size_uses_default_config_values() {
+        let config = AppConfig::default();
+
+        assert_eq!(
+            normalized_startup_window_size(&config),
+            size(px(1280.0), px(820.0))
+        );
+    }
+
+    #[test]
+    fn normalized_startup_window_size_clamps_to_minimums() {
+        let mut config = AppConfig::default();
+        config.window_width = 100.0;
+        config.window_height = 200.0;
+
+        assert_eq!(
+            normalized_startup_window_size(&config),
+            size(px(MIN_WINDOW_WIDTH), px(MIN_WINDOW_HEIGHT))
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn normalized_startup_window_size_migrates_legacy_windows_default() {
+        let mut config = AppConfig::default();
+        config.window_width = LEGACY_DEFAULT_WINDOW_WIDTH;
+        config.window_height = LEGACY_DEFAULT_WINDOW_HEIGHT;
+
+        assert_eq!(
+            normalized_startup_window_size(&config),
+            size(
+                px(WINDOWS_DEFAULT_WINDOW_WIDTH),
+                px(WINDOWS_DEFAULT_WINDOW_HEIGHT)
+            )
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_startup_resize_correction_skips_matching_sizes() {
+        let target = size(px(1280.0), px(820.0));
+
+        assert!(!should_apply_windows_startup_resize(target, target));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_startup_resize_correction_detects_size_mismatch() {
+        let current = size(px(900.0), px(700.0));
+        let target = size(px(1280.0), px(820.0));
+
+        assert!(should_apply_windows_startup_resize(current, target));
     }
 
     #[gpui::test]
