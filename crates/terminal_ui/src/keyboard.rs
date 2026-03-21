@@ -264,6 +264,41 @@ fn textual_sequence_base(
     None
 }
 
+fn pure_text_event_text<'a>(keystroke: &'a Keystroke) -> Option<&'a str> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = keystroke;
+        None
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let modifiers = keystroke.modifiers;
+        if !modifiers.alt || modifiers.control || modifiers.platform || modifiers.function {
+            return None;
+        }
+
+        let text = keystroke.key_char.as_deref()?;
+        if text.is_empty() || is_control_character(text) || !text.is_ascii() {
+            return None;
+        }
+
+        // macOS Option-based layouts surface ASCII code symbols like `@`
+        // through the key/text fields without exposing the original base key.
+        // Treat these as pure text events so kitty/disambiguate mode doesn't
+        // downgrade them into dead Alt+number shortcuts.
+        let ch = text.chars().next().unwrap();
+        if text != keystroke.key
+            || ascii_shifted_symbol_base(ch).is_some()
+            || matches!(ch, '[' | ']' | '\\')
+        {
+            return Some(text);
+        }
+
+        None
+    }
+}
+
 fn unshifted_text_character(keystroke: &Keystroke, ch: char) -> char {
     if keystroke.modifiers.shift {
         if let Some(unshifted) = ascii_shifted_symbol_base(ch) {
@@ -424,6 +459,7 @@ struct SequenceBuilder<'a> {
     event_kind: TerminalKeyEventKind,
     keyboard_mode: TerminalKeyboardMode,
     modifiers: SequenceModifiers,
+    pure_text_event: bool,
     include_event_type: bool,
     associated_text: Option<&'a str>,
 }
@@ -434,17 +470,24 @@ impl<'a> SequenceBuilder<'a> {
         event_kind: TerminalKeyEventKind,
         keyboard_mode: TerminalKeyboardMode,
     ) -> Self {
+        let pure_text_event = pure_text_event_text(keystroke).is_some();
         let include_event_type = keyboard_mode.report_event_types()
             && matches!(
                 event_kind,
                 TerminalKeyEventKind::Repeat | TerminalKeyEventKind::Release
             );
+        let modifiers = if pure_text_event {
+            SequenceModifiers::default()
+        } else {
+            SequenceModifiers::from_modifiers(keystroke.modifiers)
+        };
 
         Self {
             keystroke,
             event_kind,
             keyboard_mode,
-            modifiers: SequenceModifiers::from_modifiers(keystroke.modifiers),
+            modifiers,
+            pure_text_event,
             include_event_type,
             associated_text: associated_text(keystroke, event_kind, keyboard_mode),
         }
@@ -506,6 +549,10 @@ impl<'a> SequenceBuilder<'a> {
     }
 
     fn should_build(&self) -> bool {
+        if self.pure_text_event {
+            return self.keyboard_mode.report_all_keys_as_esc();
+        }
+
         if self.keyboard_mode.report_all_keys_as_esc() {
             return true;
         }
@@ -563,6 +610,10 @@ impl<'a> SequenceBuilder<'a> {
     }
 
     fn try_build_textual(&self) -> Option<SequenceBase> {
+        if self.pure_text_event {
+            return Some(SequenceBase::new("0".to_string(), 'u'));
+        }
+
         textual_sequence_base(
             self.keystroke,
             self.keyboard_mode,
@@ -723,7 +774,10 @@ impl SequenceModifiers {
 
 #[cfg(test)]
 mod tests {
-    use super::{TerminalKeyEventKind, TerminalKeyboardMode, associated_text, keystroke_to_input};
+    use super::{
+        TerminalKeyEventKind, TerminalKeyboardMode, associated_text, keystroke_to_input,
+        pure_text_event_text,
+    };
     use gpui::{Keystroke, Modifiers};
 
     fn keystroke(key: &str, key_char: Option<&str>, modifiers: Modifiers) -> Keystroke {
@@ -1001,6 +1055,70 @@ mod tests {
                 },
             ),
             Some("a")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_option_layout_ascii_symbol_uses_pure_text_path() {
+        let modifiers = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+
+        assert_eq!(
+            pure_text_event_text(&keystroke("@", Some("@"), modifiers)),
+            Some("@")
+        );
+        assert_eq!(
+            pure_text_event_text(&keystroke("2", Some("@"), modifiers)),
+            Some("@")
+        );
+        assert_eq!(
+            pure_text_event_text(&keystroke("[", Some("["), modifiers)),
+            Some("[")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_option_layout_ascii_symbol_falls_back_to_utf8_in_disambiguate_mode() {
+        let modifiers = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+
+        assert_eq!(
+            keystroke_to_input(
+                &keystroke("@", Some("@"), modifiers),
+                TerminalKeyEventKind::Press,
+                disambiguate_mode(),
+                true,
+            ),
+            Some(b"@".to_vec())
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_option_layout_ascii_symbol_uses_key_zero_in_report_all_mode() {
+        let modifiers = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+
+        assert_eq!(
+            keystroke_to_input(
+                &keystroke("@", Some("@"), modifiers),
+                TerminalKeyEventKind::Press,
+                TerminalKeyboardMode {
+                    report_all_keys_as_esc: true,
+                    report_associated_text: true,
+                    ..TerminalKeyboardMode::default()
+                },
+                true,
+            ),
+            Some(b"\x1b[0;1;64u".to_vec())
         );
     }
 }
