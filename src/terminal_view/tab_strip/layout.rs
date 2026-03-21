@@ -287,12 +287,12 @@ impl TerminalView {
     }
 
     #[cfg(target_os = "windows")]
-    fn titlebar_right_padding_for_platform() -> f32 {
+    pub(crate) fn titlebar_right_padding_for_platform() -> f32 {
         WINDOWS_CAPTION_BUTTONS_RESERVED_WIDTH
     }
 
     #[cfg(not(target_os = "windows"))]
-    fn titlebar_right_padding_for_platform() -> f32 {
+    pub(crate) fn titlebar_right_padding_for_platform() -> f32 {
         TOP_STRIP_SIDE_PADDING
     }
 

@@ -1,9 +1,64 @@
 use super::super::*;
 use super::state::TabStripOrientation;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HorizontalTitlebarPointerTarget {
+    NativeCaptionButtons,
+    InteractiveChrome,
+    DragSurface,
+}
+
 impl TerminalView {
     pub(crate) fn disarm_titlebar_window_move(&mut self) {
         self.tab_strip.titlebar.disarm();
+    }
+
+    #[cfg(target_os = "windows")]
+    fn horizontal_native_caption_buttons_hit_test_for_geometry(
+        x: f32,
+        geometry: crate::terminal_view::tab_strip::layout::TabStripGeometry,
+    ) -> bool {
+        let caption_width = geometry
+            .right_inset_width
+            .min(Self::titlebar_right_padding_for_platform());
+        caption_width > f32::EPSILON
+            && x >= geometry.window_width - caption_width
+            && x < geometry.window_width
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn horizontal_native_caption_buttons_hit_test_for_geometry(
+        x: f32,
+        geometry: crate::terminal_view::tab_strip::layout::TabStripGeometry,
+    ) -> bool {
+        let _ = (x, geometry);
+        false
+    }
+
+    fn horizontal_titlebar_pointer_target_for_geometry(
+        x: f32,
+        y: f32,
+        show_tab_strip_chrome: bool,
+        geometry: crate::terminal_view::tab_strip::layout::TabStripGeometry,
+        tab_widths: impl IntoIterator<Item = f32>,
+        scroll_offset_x: f32,
+    ) -> HorizontalTitlebarPointerTarget {
+        if Self::horizontal_native_caption_buttons_hit_test_for_geometry(x, geometry) {
+            return HorizontalTitlebarPointerTarget::NativeCaptionButtons;
+        }
+
+        if Self::unified_titlebar_top_chrome_interactive_hit_test_for_geometry(
+            x,
+            y,
+            show_tab_strip_chrome,
+            geometry,
+            tab_widths,
+            scroll_offset_x,
+        ) {
+            HorizontalTitlebarPointerTarget::InteractiveChrome
+        } else {
+            HorizontalTitlebarPointerTarget::DragSurface
+        }
     }
 
     fn handle_window_drag_surface_mouse_down(
@@ -19,7 +74,31 @@ impl TerminalView {
 
         let x: f32 = event.position.x.into();
         let y: f32 = event.position.y.into();
-        let interactive_hit = self.top_chrome_interactive_hit_test(orientation, x, y, window);
+        let interactive_hit = match orientation {
+            TabStripOrientation::Horizontal => {
+                let geometry = self.tab_strip_geometry(window);
+                let scroll_offset_x: f32 =
+                    self.tab_strip.horizontal_scroll_handle.offset().x.into();
+                match Self::horizontal_titlebar_pointer_target_for_geometry(
+                    x,
+                    y,
+                    self.should_render_tab_strip_chrome(),
+                    geometry,
+                    self.tabs.iter().map(|tab| tab.display_width),
+                    scroll_offset_x,
+                ) {
+                    HorizontalTitlebarPointerTarget::NativeCaptionButtons => {
+                        self.disarm_titlebar_window_move();
+                        return;
+                    }
+                    HorizontalTitlebarPointerTarget::InteractiveChrome => true,
+                    HorizontalTitlebarPointerTarget::DragSurface => false,
+                }
+            }
+            TabStripOrientation::Vertical => {
+                self.top_chrome_interactive_hit_test(orientation, x, y, window)
+            }
+        };
         let outcome = self
             .tab_strip
             .titlebar
@@ -69,10 +148,17 @@ impl TerminalView {
     pub(crate) fn handle_unified_titlebar_mouse_up(
         &mut self,
         event: &MouseUpEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if event.button != MouseButton::Left {
+            return;
+        }
+
+        let x: f32 = event.position.x.into();
+        let geometry = self.tab_strip_geometry(window);
+        if Self::horizontal_native_caption_buttons_hit_test_for_geometry(x, geometry) {
+            self.disarm_titlebar_window_move();
             return;
         }
 
@@ -166,6 +252,7 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::terminal_view::tab_strip::layout::TabStripGeometry;
     use crate::terminal_view::tab_strip::layout::VerticalTabStripLayoutInput;
     use crate::terminal_view::tab_strip::state::TabStripTitlebarState;
 
@@ -202,6 +289,16 @@ mod tests {
             [120.0],
             0.0,
         )
+    }
+
+    #[cfg(target_os = "windows")]
+    fn windows_horizontal_geometry_with_extra_slack() -> TabStripGeometry {
+        TerminalView::tab_strip_layout_for_viewport_with_left_inset_and_content_width(
+            1280.0,
+            TerminalView::titlebar_left_padding_for_platform(),
+            192.0,
+        )
+        .geometry
     }
 
     #[test]
@@ -275,5 +372,73 @@ mod tests {
         let outcome = state.on_mouse_down(interactive, 2);
         assert!(!outcome.arm_move);
         assert!(outcome.trigger_window_action);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_caption_hit_test_uses_only_reserved_trailing_slice() {
+        let geometry = windows_horizontal_geometry_with_extra_slack();
+        let caption_width = geometry
+            .right_inset_width
+            .min(TerminalView::titlebar_right_padding_for_platform());
+        let caption_start = geometry.window_width - caption_width;
+
+        assert!(caption_start > geometry.row_end_x);
+        assert!(
+            !TerminalView::horizontal_native_caption_buttons_hit_test_for_geometry(
+                geometry.row_end_x + 8.0,
+                geometry,
+            )
+        );
+        assert!(
+            TerminalView::horizontal_native_caption_buttons_hit_test_for_geometry(
+                caption_start + 8.0,
+                geometry,
+            )
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_caption_buttons_pass_through_even_when_tab_strip_is_hidden() {
+        let geometry = windows_horizontal_geometry_with_extra_slack();
+        let caption_width = geometry
+            .right_inset_width
+            .min(TerminalView::titlebar_right_padding_for_platform());
+        let x = geometry.window_width - (caption_width * 0.5);
+
+        assert_eq!(
+            TerminalView::horizontal_titlebar_pointer_target_for_geometry(
+                x,
+                TOP_STRIP_CONTENT_OFFSET_Y + 4.0,
+                false,
+                geometry,
+                [120.0],
+                0.0,
+            ),
+            HorizontalTitlebarPointerTarget::NativeCaptionButtons
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_extra_right_inset_slack_stays_draggable() {
+        let geometry = windows_horizontal_geometry_with_extra_slack();
+        let caption_width = geometry
+            .right_inset_width
+            .min(TerminalView::titlebar_right_padding_for_platform());
+        let x = (geometry.row_end_x + (geometry.window_width - caption_width)) * 0.5;
+
+        assert_eq!(
+            TerminalView::horizontal_titlebar_pointer_target_for_geometry(
+                x,
+                TOP_STRIP_CONTENT_OFFSET_Y + 4.0,
+                true,
+                geometry,
+                [120.0],
+                0.0,
+            ),
+            HorizontalTitlebarPointerTarget::DragSurface
+        );
     }
 }
