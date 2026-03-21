@@ -322,7 +322,7 @@ impl TerminalView {
     }
 
     pub(crate) fn close_tab(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index >= self.tabs.len() {
+        if index >= self.tabs.len() || self.tabs[index].pinned {
             return;
         }
         let removed_tab_id = self.tabs[index].id;
@@ -381,6 +381,44 @@ impl TerminalView {
         self.scroll_active_tab_into_view(self.tab_strip_orientation());
         self.schedule_persist_native_workspace();
         cx.notify();
+    }
+
+    pub(crate) fn tab_index_by_id(&self, tab_id: TabId) -> Option<usize> {
+        self.tabs.iter().position(|tab| tab.id == tab_id)
+    }
+
+    pub(crate) fn set_tab_pinned(
+        &mut self,
+        index: usize,
+        pinned: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(tab) = self.tabs.get_mut(index) else {
+            return false;
+        };
+        if tab.pinned == pinned {
+            return false;
+        }
+
+        tab.pinned = pinned;
+        self.mark_tab_strip_layout_dirty();
+        if self.runtime_kind() == RuntimeKind::Native {
+            self.schedule_persist_native_workspace();
+        }
+        cx.notify();
+        true
+    }
+
+    pub(crate) fn set_tab_pinned_by_id(
+        &mut self,
+        tab_id: TabId,
+        pinned: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(index) = self.tab_index_by_id(tab_id) else {
+            return false;
+        };
+        self.set_tab_pinned(index, pinned, cx)
     }
 
     pub(crate) fn begin_rename_tab(&mut self, index: usize, cx: &mut Context<Self>) {

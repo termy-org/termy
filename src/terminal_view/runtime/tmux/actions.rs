@@ -600,6 +600,7 @@ mod tests {
             window_index: 0,
             panes: vec![pane_one, pane_two],
             active_pane_id: "%1".to_string(),
+            pinned: false,
             manual_title: None,
             explicit_title: None,
             shell_title: None,

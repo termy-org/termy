@@ -14,6 +14,7 @@ pub(super) struct TabItemRenderInput {
     pub(super) is_hovered: bool,
     pub(super) is_renaming: bool,
     pub(super) show_tab_close: bool,
+    pub(super) show_tab_pin: bool,
     pub(super) close_slot_width: f32,
     pub(super) text_padding_x: f32,
     pub(super) label_centered: bool,
@@ -75,6 +76,53 @@ impl TerminalView {
             }
 
             return accessory.child(label.clone()).into_any_element();
+        }
+
+        if input.show_tab_pin {
+            return div()
+                .flex_none()
+                .w(px(input.close_slot_width))
+                .h(px(TAB_CLOSE_HITBOX))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .w(px(TAB_CLOSE_CHIP_WIDTH.min(input.close_slot_width)))
+                        .h(px(TAB_CLOSE_CHIP_HEIGHT.min(TAB_CLOSE_HITBOX)))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(TAB_CLOSE_CHIP_RADIUS))
+                        .bg(palette.close_button_bg)
+                        .border_1()
+                        .border_color(palette.close_button_border)
+                        .text_color(close_text_color)
+                        .text_size(px(7.5))
+                        .font_weight(FontWeight::BOLD)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                                let _ = this.set_tab_pinned(close_tab_index, false, cx);
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .on_mouse_move(cx.listener(
+                            move |this, _event: &MouseMoveEvent, _window, cx| {
+                                this.on_tab_close_mouse_move(hover_tab_index, cx);
+                                cx.stop_propagation();
+                            },
+                        ))
+                        .hover(move |style| {
+                            style
+                                .bg(palette.close_button_hover_bg)
+                                .border_color(palette.close_button_hover_border)
+                                .text_color(palette.close_button_hover_text)
+                        })
+                        .cursor_pointer()
+                        .child("PIN"),
+                )
+                .into_any_element();
         }
 
         div()
@@ -172,7 +220,7 @@ impl TerminalView {
             palette.inactive_tab_text
         };
         close_text_color.a *= anim;
-        if !input.show_tab_close {
+        if !input.show_tab_close && !input.show_tab_pin {
             close_text_color.a = 0.0;
         }
 
@@ -202,6 +250,13 @@ impl TerminalView {
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
                     this.on_tab_mouse_down(orientation, switch_tab_index, event.click_count, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
+                    this.open_tab_context_menu(switch_tab_index, event.position, cx);
                     cx.stop_propagation();
                 }),
             )

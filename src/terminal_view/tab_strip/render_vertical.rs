@@ -622,6 +622,7 @@ impl TerminalView {
 
         for index in 0..self.tabs.len() {
             let tab_title = self.tabs[index].title.clone();
+            let pinned = self.tabs[index].pinned;
             let tab_height = vertical_layout.rows[index].height;
             let anim_progress =
                 (tab_height < TAB_ITEM_HEIGHT).then_some(tab_height / TAB_ITEM_HEIGHT);
@@ -645,11 +646,13 @@ impl TerminalView {
                 index,
             );
             let show_tab_close = !compact && show_close_button && switch_hint_label.is_none();
-            let close_slot_width = if !compact && (show_tab_close || switch_hint_label.is_some()) {
-                TAB_CLOSE_SLOT_WIDTH
-            } else {
-                0.0
-            };
+            let show_tab_pin = !compact && pinned && switch_hint_label.is_none();
+            let close_slot_width =
+                if !compact && (show_tab_close || show_tab_pin || switch_hint_label.is_some()) {
+                    TAB_CLOSE_SLOT_WIDTH
+                } else {
+                    0.0
+                };
             let label = if compact {
                 Self::compact_vertical_tab_label(index, &tab_title)
             } else {
@@ -686,6 +689,7 @@ impl TerminalView {
                     is_hovered,
                     is_renaming,
                     show_tab_close,
+                    show_tab_pin,
                     close_slot_width,
                     text_padding_x: if compact { 0.0 } else { TAB_TEXT_PADDING_X },
                     label_centered: compact,

@@ -254,7 +254,12 @@ impl TerminalView {
         tab_width_mode: TabWidthMode,
         tab_close_visibility: TabCloseVisibility,
         is_active: bool,
+        is_pinned: bool,
     ) -> bool {
+        if is_pinned {
+            return true;
+        }
+
         match tab_width_mode {
             TabWidthMode::Stable => true,
             TabWidthMode::ActiveGrow | TabWidthMode::ActiveGrowSticky => {
@@ -317,6 +322,7 @@ impl TerminalView {
                 tab_width_mode,
                 tab_close_visibility,
                 is_active,
+                tab.pinned,
             );
             let (next_width, next_sticky_width) = Self::resolve_tab_width_for_mode(
                 tab_width_mode,

@@ -353,7 +353,15 @@ mod tests {
     fn new_session_args_include_working_directory_when_provided() {
         assert_eq!(
             new_session_args("work", true, Some("/tmp/project")),
-            vec!["-CC", "new-session", "-A", "-c", "/tmp/project", "-s", "work"]
+            vec![
+                "-CC",
+                "new-session",
+                "-A",
+                "-c",
+                "/tmp/project",
+                "-s",
+                "work"
+            ]
         );
     }
 

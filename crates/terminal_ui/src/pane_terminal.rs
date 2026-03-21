@@ -7,13 +7,13 @@ use alacritty_terminal::{
 };
 use std::sync::Arc;
 
+use crate::keyboard::TerminalKeyboardMode;
 use crate::mouse_protocol::TerminalMouseMode;
 use crate::runtime::{
     TerminalCursorState, TerminalDamageSnapshot, TerminalOptions, TerminalSize,
     cursor_position_from_term, cursor_state_from_term, take_term_damage_snapshot,
     termmode_to_terminal_mouse_mode,
 };
-use crate::keyboard::TerminalKeyboardMode;
 
 struct PaneTerminalInner {
     term: Arc<FairMutex<Term<VoidListener>>>,

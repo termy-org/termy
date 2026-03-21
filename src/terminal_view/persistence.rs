@@ -23,6 +23,7 @@ struct PersistedNativePane {
 struct PersistedNativeTab {
     panes: Vec<PersistedNativePane>,
     active_pane: usize,
+    pinned: bool,
     manual_title: Option<String>,
 }
 
@@ -204,7 +205,7 @@ impl TerminalView {
             self.configured_working_dir.as_deref(),
             self.terminal_runtime.working_dir_fallback,
         )
-            .map(|path| path.to_string_lossy().into_owned())
+        .map(|path| path.to_string_lossy().into_owned())
     }
 
     fn collect_persisted_native_workspace(&self) -> Option<PersistedNativeWorkspace> {
@@ -228,6 +229,7 @@ impl TerminalView {
                     })
                     .collect(),
                 active_pane: tab.active_pane_index().unwrap_or(0),
+                pinned: tab.pinned,
                 manual_title: tab.manual_title.clone(),
             })
             .collect::<Vec<_>>();
@@ -244,6 +246,7 @@ impl TerminalView {
             "tabs": workspace.tabs.into_iter().map(|tab| {
                 json!({
                     "active_pane": tab.active_pane,
+                    "pinned": tab.pinned,
                     "manual_title": tab.manual_title,
                     "panes": tab.panes.into_iter().map(|pane| {
                         json!({
@@ -338,6 +341,10 @@ impl TerminalView {
                 .and_then(|value| usize::try_from(value).ok())
                 .unwrap_or(0)
                 .min(panes.len().saturating_sub(1));
+            let pinned = tab_value
+                .get("pinned")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let manual_title = tab_value
                 .get("manual_title")
                 .and_then(Value::as_str)
@@ -346,6 +353,7 @@ impl TerminalView {
             tabs.push(PersistedNativeTab {
                 panes,
                 active_pane,
+                pinned,
                 manual_title,
             });
         }
@@ -524,6 +532,7 @@ impl TerminalView {
                 .or_else(|| tab.panes.first())
                 .map(|pane| pane.id.clone())
                 .ok_or_else(|| "restored tab has no panes".to_string())?;
+            tab.pinned = persisted_tab.pinned;
             tab.manual_title = persisted_tab.manual_title;
             restored_tabs.push(tab);
         }
@@ -834,6 +843,7 @@ mod tests {
             .expect("legacy state should populate last session");
         assert_eq!(workspace.tabs.len(), 2);
         assert_eq!(workspace.active_tab, 1);
+        assert!(!workspace.tabs[0].pinned);
         assert_eq!(workspace.tabs[0].manual_title.as_deref(), Some("Work"));
         assert_eq!(workspace.tabs[1].active_pane, 1);
         assert_eq!(workspace.tabs[1].panes[1].left, 40);
@@ -870,6 +880,37 @@ mod tests {
         assert_eq!(state.layouts.len(), 1);
         assert_eq!(state.layouts[0].name, "Main");
         assert_eq!(state.layouts[0].workspace.tabs.len(), 1);
+        assert!(!state.layouts[0].workspace.tabs[0].pinned);
+    }
+
+    #[test]
+    fn persisted_native_workspace_parser_reads_pinned_tabs() {
+        let state = TerminalView::parse_persisted_native_workspace_state(
+            r#"{
+  "version": 2,
+  "last_session": {
+    "active_tab": 0,
+    "tabs": [
+      {
+        "active_pane": 0,
+        "pinned": true,
+        "manual_title": "Pinned",
+        "panes": [
+          { "left": 0, "top": 0, "width": 80, "height": 24 }
+        ]
+      }
+    ]
+  },
+  "layouts": []
+}"#,
+        )
+        .expect("workspace state should parse");
+
+        let workspace = state
+            .last_session
+            .expect("state should include last session");
+        assert_eq!(workspace.tabs.len(), 1);
+        assert!(workspace.tabs[0].pinned);
     }
 
     #[test]

@@ -359,14 +359,12 @@ impl TerminalView {
                     let pane_height_px = (f32::from(pane.height) * cell_height).max(cell_height);
                     let pane_cell_width: f32 = pane_cell_size.width.into();
                     let pane_cell_height: f32 = pane_cell_size.height.into();
-                    pane_cols =
-                        ((pane_width_px - (content_padding_x * 2.0)).max(pane_cell_width)
-                            / pane_cell_width)
+                    pane_cols = ((pane_width_px - (content_padding_x * 2.0)).max(pane_cell_width)
+                        / pane_cell_width)
                         .floor()
                         .max(1.0) as u16;
-                    pane_rows =
-                        ((pane_height_px - (content_padding_y * 2.0)).max(pane_cell_height)
-                            / pane_cell_height)
+                    pane_rows = ((pane_height_px - (content_padding_y * 2.0)).max(pane_cell_height)
+                        / pane_cell_height)
                         .floor()
                         .max(1.0) as u16;
                 }
@@ -442,6 +440,7 @@ mod tests {
             window_index: 0,
             panes: vec![test_pane("%native-1"), test_pane("%native-2")],
             active_pane_id: "%missing".to_string(),
+            pinned: false,
             manual_title: None,
             explicit_title: None,
             shell_title: None,

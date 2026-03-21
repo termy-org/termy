@@ -46,7 +46,10 @@ pub struct TmuxClient {
     fatal_exit_rx: Receiver<Option<String>>,
 }
 
-fn new_window_after_args<'a>(target_window_id: &'a str, working_dir: Option<&'a str>) -> Vec<&'a str> {
+fn new_window_after_args<'a>(
+    target_window_id: &'a str,
+    working_dir: Option<&'a str>,
+) -> Vec<&'a str> {
     let mut args = vec!["new-window", "-a", "-t", target_window_id];
     append_working_dir_args(&mut args, working_dir);
     args

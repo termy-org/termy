@@ -9,6 +9,21 @@ enum CloseRequestTarget {
 }
 
 impl TerminalView {
+    fn tab_is_pinned_for_close_target(&self, target: CloseRequestTarget) -> bool {
+        match target {
+            CloseRequestTarget::TabClose { tab_id } => self
+                .tab_index_by_id(tab_id)
+                .and_then(|index| self.tabs.get(index))
+                .is_some_and(|tab| tab.pinned),
+            CloseRequestTarget::Application | CloseRequestTarget::WindowClose => false,
+        }
+    }
+
+    fn notify_pinned_tab_close_blocked(&mut self, cx: &mut Context<Self>) {
+        termy_toast::info("Pinned tabs must be unpinned before closing");
+        self.notify_overlay(cx);
+    }
+
     fn should_prompt_for_close_target(
         target: CloseRequestTarget,
         warn_on_quit: bool,
@@ -200,7 +215,7 @@ impl TerminalView {
     }
 
     fn close_tab_by_id(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
-        if let Some(index) = self.tabs.iter().position(|tab| tab.id == tab_id) {
+        if let Some(index) = self.tab_index_by_id(tab_id) {
             self.close_tab(index, cx);
         }
     }
@@ -241,6 +256,11 @@ impl TerminalView {
                 self.allow_quit_without_prompt = true;
                 cx.quit();
             }
+            return false;
+        }
+
+        if self.tab_is_pinned_for_close_target(target) {
+            self.notify_pinned_tab_close_blocked(cx);
             return false;
         }
 

@@ -503,9 +503,18 @@ mod tests {
 
     #[test]
     fn search_key_action_uses_shift_for_enter_navigation() {
-        assert_eq!(search_key_action("enter", false), Some(SearchKeyAction::Next));
-        assert_eq!(search_key_action("enter", true), Some(SearchKeyAction::Previous));
-        assert_eq!(search_key_action("escape", false), Some(SearchKeyAction::Close));
+        assert_eq!(
+            search_key_action("enter", false),
+            Some(SearchKeyAction::Next)
+        );
+        assert_eq!(
+            search_key_action("enter", true),
+            Some(SearchKeyAction::Previous)
+        );
+        assert_eq!(
+            search_key_action("escape", false),
+            Some(SearchKeyAction::Close)
+        );
         assert_eq!(search_key_action("a", true), None);
     }
 }

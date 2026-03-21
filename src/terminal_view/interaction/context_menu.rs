@@ -52,6 +52,15 @@ impl TerminalView {
         }
     }
 
+    pub(in super::super) fn close_tab_context_menu(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.tab_context_menu.take().is_some() {
+            self.notify_overlay(cx);
+            true
+        } else {
+            false
+        }
+    }
+
     pub(in super::super) fn execute_terminal_context_menu_command(
         &mut self,
         action: CommandAction,
@@ -110,6 +119,27 @@ impl TerminalView {
         }
     }
 
+    fn execute_tab_context_menu_action(
+        &mut self,
+        action: termy_native_sdk::TabContextMenuAction,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(tab_id) = self.tab_context_menu.as_ref().map(|state| state.tab_id) else {
+            let _ = self.close_tab_context_menu(cx);
+            return;
+        };
+
+        let _ = self.close_tab_context_menu(cx);
+        match action {
+            termy_native_sdk::TabContextMenuAction::Pin => {
+                let _ = self.set_tab_pinned_by_id(tab_id, true, cx);
+            }
+            termy_native_sdk::TabContextMenuAction::Unpin => {
+                let _ = self.set_tab_pinned_by_id(tab_id, false, cx);
+            }
+        }
+    }
+
     pub(in super::super) fn execute_terminal_context_menu_search_google(
         &mut self,
         cx: &mut Context<Self>,
@@ -164,11 +194,31 @@ impl TerminalView {
         .detach();
     }
 
+    #[cfg(not(target_os = "linux"))]
+    fn schedule_native_tab_context_menu(&mut self, pinned: bool, cx: &mut Context<Self>) {
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let action =
+                smol::unblock(move || termy_native_sdk::show_tab_context_menu(pinned)).await;
+
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    let Some(action) = action else {
+                        let _ = view.close_tab_context_menu(cx);
+                        return;
+                    };
+                    view.execute_tab_context_menu_action(action, cx);
+                })
+            });
+        })
+        .detach();
+    }
+
     pub(in super::super) fn open_terminal_context_menu(
         &mut self,
         position: gpui::Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
+        let _ = self.close_tab_context_menu(cx);
         let (can_copy, can_paste, can_search_google) = self.terminal_context_menu_capabilities(cx);
         let buffer_position = self.terminal_context_menu_buffer_position(position);
         let state = TerminalContextMenuState {
@@ -200,6 +250,40 @@ impl TerminalView {
                 can_search_google,
                 cx,
             );
+        }
+    }
+
+    pub(in super::super) fn open_tab_context_menu(
+        &mut self,
+        tab_index: usize,
+        position: gpui::Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((tab_id, pinned)) = self.tabs.get(tab_index).map(|tab| (tab.id, tab.pinned))
+        else {
+            return;
+        };
+
+        let _ = self.close_terminal_context_menu(cx);
+        let state = TabContextMenuState {
+            anchor_position: position,
+            tab_id,
+            pinned,
+        };
+        #[cfg(target_os = "linux")]
+        let state_changed = self.tab_context_menu.as_ref() != Some(&state);
+        self.tab_context_menu = Some(state);
+
+        #[cfg(target_os = "linux")]
+        {
+            if state_changed {
+                self.notify_overlay(cx);
+            }
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.schedule_native_tab_context_menu(pinned, cx);
         }
     }
 }
