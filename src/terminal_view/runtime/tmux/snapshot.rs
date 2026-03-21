@@ -142,6 +142,11 @@ impl TerminalView {
             .iter()
             .map(|tab| (tab.window_id.clone(), tab.id))
             .collect::<std::collections::HashMap<_, _>>();
+        let previous_pins = self
+            .tabs
+            .iter()
+            .map(|tab| (tab.window_id.clone(), tab.pinned))
+            .collect::<std::collections::HashMap<_, _>>();
 
         let mut existing_terminals = std::collections::HashMap::<String, Terminal>::new();
         let old_tabs = std::mem::take(&mut self.tabs);
@@ -222,6 +227,7 @@ impl TerminalView {
                 .map(ToOwned::to_owned);
 
             let mut tab = TerminalTab::from_tmux_window(tab_id, window, panes);
+            tab.pinned = previous_pins.get(&window.id).copied().unwrap_or(false);
             tab.manual_title = manual_title;
             tab.shell_title = shell_title;
             tab.current_command = current_command;
@@ -463,7 +469,10 @@ mod tests {
             }],
         };
 
-        assert_eq!(snapshot_preferred_cwd(&snapshot).as_deref(), Some("/active"));
+        assert_eq!(
+            snapshot_preferred_cwd(&snapshot).as_deref(),
+            Some("/active")
+        );
     }
 
     #[test]

@@ -31,11 +31,10 @@ pub use render_metrics::{
     terminal_ui_render_metrics_snapshot,
 };
 pub use runtime::{
-    normalize_working_directory_candidate, resolve_launch_working_directory,
-    resolve_working_directory_path,
     TabTitleShellIntegration, Terminal, TerminalCursorState, TerminalDamageSnapshot,
     TerminalDirtySpan, TerminalEvent, TerminalOptions, TerminalRuntimeConfig, TerminalSize,
-    WorkingDirFallback,
+    WorkingDirFallback, normalize_working_directory_candidate, resolve_launch_working_directory,
+    resolve_working_directory_path,
 };
 pub use tmux::{
     TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,

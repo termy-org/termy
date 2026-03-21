@@ -201,8 +201,7 @@ fn pane_cell_for_position(
     }
 
     let origin_x = padding_x + (f32::from(pane.left) * layout_cell_width) + pane_content_padding_x;
-    let origin_y =
-        padding_y + (f32::from(pane.top) * layout_cell_height) + pane_content_padding_y;
+    let origin_y = padding_y + (f32::from(pane.top) * layout_cell_height) + pane_content_padding_y;
     let width = f32::from(size.cols) * cell_width;
     let height = f32::from(size.rows) * cell_height;
     if width <= f32::EPSILON || height <= f32::EPSILON {

@@ -94,8 +94,7 @@ fn should_disambiguate_escape_code(key: &str, modifiers: Modifiers) -> bool {
         && !modifiers.alt
         && !modifiers.platform
         && !modifiers.function;
-    !modifiers_are_empty(modifiers)
-        && (!only_shift || matches!(key, "tab" | "enter" | "backspace"))
+    !modifiers_are_empty(modifiers) && (!only_shift || matches!(key, "tab" | "enter" | "backspace"))
 }
 
 fn modifiers_are_empty(modifiers: Modifiers) -> bool {
@@ -248,13 +247,12 @@ fn textual_sequence_base(
 
         let unicode_key_code = u32::from(unshifted);
         let alternate_key_code = u32::from(ch);
-        let payload = if keyboard_mode.report_alternate_keys()
-            && alternate_key_code != unicode_key_code
-        {
-            format!("{unicode_key_code}:{alternate_key_code}")
-        } else {
-            unicode_key_code.to_string()
-        };
+        let payload =
+            if keyboard_mode.report_alternate_keys() && alternate_key_code != unicode_key_code {
+                format!("{unicode_key_code}:{alternate_key_code}")
+            } else {
+                unicode_key_code.to_string()
+            };
 
         return Some(SequenceBase::new(payload, 'u'));
     }
@@ -414,7 +412,10 @@ struct SequenceBase {
 
 impl SequenceBase {
     fn new(payload: String, terminator: char) -> Self {
-        Self { payload, terminator }
+        Self {
+            payload,
+            terminator,
+        }
     }
 }
 
@@ -467,7 +468,10 @@ impl<'a> SequenceBuilder<'a> {
             return None;
         }
 
-        let SequenceBase { payload, terminator } = self
+        let SequenceBase {
+            payload,
+            terminator,
+        } = self
             .try_build_named()
             .or_else(|| self.try_build_control_char_or_mod())
             .or_else(|| self.try_build_textual())?;
@@ -519,7 +523,10 @@ impl<'a> SequenceBuilder<'a> {
         }
 
         if self.keyboard_mode.disambiguate_escape_codes()
-            && should_disambiguate_escape_code(self.keystroke.key.as_str(), self.keystroke.modifiers)
+            && should_disambiguate_escape_code(
+                self.keystroke.key.as_str(),
+                self.keystroke.modifiers,
+            )
         {
             return true;
         }

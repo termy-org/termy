@@ -1577,7 +1577,7 @@ impl TerminalView {
     }
 
     #[cfg(target_os = "linux")]
-    fn clamped_terminal_context_menu_origin(
+    fn clamped_context_menu_origin(
         &self,
         anchor: gpui::Point<Pixels>,
         menu_width: f32,
@@ -1619,11 +1619,8 @@ impl TerminalView {
                     0.0
                 } + 1.0;
             let menu_height = row_height * row_count + 8.0;
-            let (menu_x, menu_y) = self.clamped_terminal_context_menu_origin(
-                state.anchor_position,
-                menu_width,
-                menu_height,
-            );
+            let (menu_x, menu_y) =
+                self.clamped_context_menu_origin(state.anchor_position, menu_width, menu_height);
             let panel_bg = overlay_style.chrome_panel_background(0.98);
             let panel_border = overlay_style.chrome_panel_neutral(0.22);
             let text_active = overlay_style.panel_foreground(0.95);
@@ -1822,6 +1819,119 @@ impl TerminalView {
         }
     }
 
+    fn render_tab_context_menu_overlay(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = cx;
+            return None;
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let state = self.tab_context_menu.clone()?;
+            let overlay_style = self.overlay_style();
+            let menu_width = 180.0;
+            let row_height = 30.0;
+            let menu_height = row_height + 8.0;
+            let (menu_x, menu_y) =
+                self.clamped_context_menu_origin(state.anchor_position, menu_width, menu_height);
+            let panel_bg = overlay_style.chrome_panel_background(0.98);
+            let panel_border = overlay_style.chrome_panel_neutral(0.22);
+            let text_active = overlay_style.panel_foreground(0.95);
+            let hover_bg = overlay_style.chrome_panel_cursor(0.22);
+            let label = if state.pinned { "Unpin Tab" } else { "Pin Tab" };
+
+            Some(
+                div()
+                    .id("tab-context-menu-overlay")
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                            let _ = view.close_tab_context_menu(cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Middle,
+                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                            let _ = view.close_tab_context_menu(cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
+                            let _ = view.close_tab_context_menu(cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .child(
+                        div()
+                            .id("tab-context-menu-panel")
+                            .absolute()
+                            .left(px(menu_x))
+                            .top(px(menu_y))
+                            .w(px(menu_width))
+                            .py(px(4.0))
+                            .bg(panel_bg)
+                            .border_1()
+                            .border_color(panel_border)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Middle,
+                                cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .id("tab-context-menu-toggle-pin")
+                                    .h(px(row_height))
+                                    .px(px(10.0))
+                                    .flex()
+                                    .items_center()
+                                    .text_size(px(13.0))
+                                    .text_color(text_active)
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(hover_bg))
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |view, _event: &MouseDownEvent, _window, cx| {
+                                                let _ = view.set_tab_pinned_by_id(
+                                                    state.tab_id,
+                                                    !state.pinned,
+                                                    cx,
+                                                );
+                                                let _ = view.close_tab_context_menu(cx);
+                                                cx.stop_propagation();
+                                            },
+                                        ),
+                                    )
+                                    .child(label),
+                            ),
+                    )
+                    .into_any_element(),
+            )
+        }
+    }
+
     pub(super) fn render_overlay_layer(
         &mut self,
         _window: &mut Window,
@@ -1896,6 +2006,7 @@ impl TerminalView {
                     .into_any_element()
             });
         let context_menu_overlay = self.render_terminal_context_menu_overlay(cx);
+        let tab_context_menu_overlay = self.render_tab_context_menu_overlay(cx);
         let toast_overlay = self.render_toast_overlay(&colors, cx);
         let resize_overlay = self
             .resize_indicator_visible_until
@@ -2022,6 +2133,7 @@ impl TerminalView {
             .children(banner_overlay)
             .children(terminal_overlay)
             .children(context_menu_overlay)
+            .children(tab_context_menu_overlay)
             .children(resize_overlay)
             .children(debug_overlay)
             .children(toast_overlay)

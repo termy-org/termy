@@ -41,11 +41,19 @@ pub enum ContextMenuAction {
     SearchGoogle,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TabContextMenuAction {
+    Pin,
+    Unpin,
+}
+
 const CONTEXT_MENU_COPY_ID: i32 = 1;
 const CONTEXT_MENU_PASTE_ID: i32 = 2;
 const CONTEXT_MENU_OPEN_SEARCH_ID: i32 = 3;
 const CONTEXT_MENU_COPY_BUFFER_POSITION_ID: i32 = 4;
 const CONTEXT_MENU_SEARCH_GOOGLE_ID: i32 = 5;
+const TAB_CONTEXT_MENU_PIN_ID: i32 = 101;
+const TAB_CONTEXT_MENU_UNPIN_ID: i32 = 102;
 
 #[cfg(target_os = "macos")]
 static CONTEXT_MENU_SELECTION: AtomicI32 = AtomicI32::new(0);
@@ -407,6 +415,108 @@ pub fn show_copy_paste_context_menu(
             can_paste,
             can_search_google,
         );
+        None
+    }
+}
+
+pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
+    #[cfg(target_os = "macos")]
+    {
+        fn show_tab_context_menu_on_main(
+            mtm: MainThreadMarker,
+            pinned: bool,
+        ) -> Option<TabContextMenuAction> {
+            let app = NSApplication::sharedApplication(mtm);
+            let Some(_current_event) = app.currentEvent() else {
+                return None;
+            };
+
+            let menu = NSMenu::new(mtm);
+            menu.setAutoenablesItems(false);
+
+            let (title, action_id) = if pinned {
+                ("Unpin Tab", TAB_CONTEXT_MENU_UNPIN_ID)
+            } else {
+                ("Pin Tab", TAB_CONTEXT_MENU_PIN_ID)
+            };
+            let item = TermyContextMenuItem::new_with_action_id(mtm, title, action_id, true);
+            menu.addItem(&item);
+
+            CONTEXT_MENU_SELECTION.store(0, Ordering::Relaxed);
+            let location: NSPoint = NSEvent::mouseLocation();
+            let _ = menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
+
+            match CONTEXT_MENU_SELECTION.swap(0, Ordering::Relaxed) {
+                TAB_CONTEXT_MENU_PIN_ID => Some(TabContextMenuAction::Pin),
+                TAB_CONTEXT_MENU_UNPIN_ID => Some(TabContextMenuAction::Unpin),
+                _ => None,
+            }
+        }
+
+        if let Some(mtm) = MainThreadMarker::new() {
+            return show_tab_context_menu_on_main(mtm, pinned);
+        }
+        return run_on_main(|mtm| show_tab_context_menu_on_main(mtm, pinned));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let menu = unsafe { CreatePopupMenu().ok()? };
+        struct MenuGuard(windows::Win32::UI::WindowsAndMessaging::HMENU);
+        impl Drop for MenuGuard {
+            fn drop(&mut self) {
+                let _ = unsafe { DestroyMenu(self.0) };
+            }
+        }
+        let _menu_guard = MenuGuard(menu);
+
+        let (title, action_id) = if pinned {
+            (wide_string("Unpin Tab"), TAB_CONTEXT_MENU_UNPIN_ID)
+        } else {
+            (wide_string("Pin Tab"), TAB_CONTEXT_MENU_PIN_ID)
+        };
+
+        unsafe {
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                action_id as usize,
+                windows::core::PCWSTR(title.as_ptr()),
+            )
+            .ok()?;
+        }
+
+        let mut cursor = POINT::default();
+        unsafe {
+            GetCursorPos(&mut cursor).ok()?;
+        }
+        let owner: HWND = unsafe { GetForegroundWindow() };
+        let result = unsafe {
+            TrackPopupMenu(
+                menu,
+                TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                cursor.x,
+                cursor.y,
+                Some(0),
+                owner,
+                None,
+            )
+            .0
+        };
+
+        return match result {
+            TAB_CONTEXT_MENU_PIN_ID => Some(TabContextMenuAction::Pin),
+            TAB_CONTEXT_MENU_UNPIN_ID => Some(TabContextMenuAction::Unpin),
+            _ => None,
+        };
+    }
+
+    #[cfg(any(
+        target_os = "linux",
+        not(any(target_os = "macos", target_os = "windows"))
+    ))]
+    {
+        let _ = pinned;
         None
     }
 }

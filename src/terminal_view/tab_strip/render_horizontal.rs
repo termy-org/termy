@@ -334,9 +334,9 @@ impl TerminalView {
         );
 
         for index in 0..self.tabs.len() {
-            let (display_width, tab_title) = {
+            let (display_width, tab_title, pinned) = {
                 let tab = &self.tabs[index];
-                (tab.display_width, tab.title.clone())
+                (tab.display_width, tab.title.clone(), tab.pinned)
             };
             let anim_progress = new_tab_anim
                 .filter(|(anim_index, _)| *anim_index == index)
@@ -366,7 +366,9 @@ impl TerminalView {
                 .then(|| TabSwitchHintState::label_for_index(index))
                 .flatten();
             let show_tab_close = show_close_button && switch_hint_label.is_none();
-            let close_slot_width = if show_tab_close || switch_hint_label.is_some() {
+            let show_tab_pin = pinned && switch_hint_label.is_none();
+            let close_slot_width = if show_tab_close || show_tab_pin || switch_hint_label.is_some()
+            {
                 TAB_CLOSE_SLOT_WIDTH
             } else {
                 0.0
@@ -398,6 +400,7 @@ impl TerminalView {
                     is_hovered,
                     is_renaming,
                     show_tab_close,
+                    show_tab_pin,
                     close_slot_width,
                     text_padding_x: TAB_TEXT_PADDING_X,
                     label_centered: false,

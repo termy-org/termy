@@ -12,9 +12,9 @@ use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
 use gpui::AppContext;
 use gpui::{
-    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths,
-    FocusHandle, Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
-    KeyUpEvent, ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths, FocusHandle,
+    Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, KeyUpEvent,
+    ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     ParentElement, Pixels, Render, ScrollWheelEvent, SharedString, Size,
     StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window, WindowBackgroundAppearance,
     div, point, px,
@@ -39,9 +39,9 @@ use termy_terminal_ui::{
     TerminalDirtySpan, TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle,
     TerminalGridPaintDamage, TerminalGridRows, TerminalKeyEventKind, TerminalKeyboardMode,
     TerminalMouseMode, TerminalOptions, TerminalQueryColors, TerminalReplyHost,
-    TerminalRuntimeConfig, TerminalSize,
-    TmuxLaunchTarget, normalize_working_directory_candidate, resolve_launch_working_directory,
+    TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
+    normalize_working_directory_candidate, resolve_launch_working_directory,
 };
 #[cfg(debug_assertions)]
 use termy_terminal_ui::{
@@ -373,6 +373,13 @@ struct TerminalContextMenuState {
     can_copy: bool,
     can_paste: bool,
     can_search_google: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct TabContextMenuState {
+    anchor_position: gpui::Point<Pixels>,
+    tab_id: TabId,
+    pinned: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1051,6 +1058,7 @@ struct TerminalTab {
     window_index: i32,
     panes: Vec<TerminalPane>,
     active_pane_id: String,
+    pinned: bool,
     manual_title: Option<String>,
     explicit_title: Option<String>,
     shell_title: Option<String>,
@@ -1498,6 +1506,7 @@ pub struct TerminalView {
     pending_cursor_move_click: Option<PendingCursorMoveClick>,
     pending_cursor_move_preview: Option<PendingCursorMovePreview>,
     terminal_context_menu: Option<TerminalContextMenuState>,
+    tab_context_menu: Option<TabContextMenuState>,
     hovered_link: Option<HoveredLink>,
     hovered_toast: Option<u64>,
     copied_toast_feedback: Option<(u64, Instant)>,
@@ -1925,14 +1934,7 @@ impl TerminalView {
         let pane_id = format!("%native-{tab_id}");
         let pane = TerminalPane {
             id: pane_id.clone(),
-            ..TerminalPane::new_native(
-                pane_id.clone(),
-                0,
-                0,
-                cols.max(1),
-                rows.max(1),
-                terminal,
-            )
+            ..TerminalPane::new_native(pane_id.clone(), 0, 0, cols.max(1), rows.max(1), terminal)
         };
         TerminalTab {
             id: tab_id,
@@ -1940,6 +1942,7 @@ impl TerminalView {
             window_index: 0,
             panes: vec![pane],
             active_pane_id: pane_id,
+            pinned: false,
             manual_title: None,
             explicit_title: predicted_prompt_title,
             shell_title: None,
@@ -2946,6 +2949,7 @@ impl TerminalView {
             pending_cursor_move_click: None,
             pending_cursor_move_preview: None,
             terminal_context_menu: None,
+            tab_context_menu: None,
             hovered_link: None,
             hovered_toast: None,
             copied_toast_feedback: None,

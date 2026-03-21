@@ -21,7 +21,7 @@ resolver = "2"
 
 [package]
 name = "termy"
-version = "0.1.62"
+version = "0.1.63"
 edition = "2024"
 
 [package.metadata.bundle]

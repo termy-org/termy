@@ -534,7 +534,11 @@ fn tmux_working_directory_flags_apply_to_session_window_and_split() {
         .expect("snapshot after new-window should parse");
     let new_window = active_window(&after_new_window);
     let new_window_pane_id = active_pane_id(new_window).to_string();
-    assert_pane_pwd(&client, new_window_pane_id.as_str(), new_window_dir.as_path());
+    assert_pane_pwd(
+        &client,
+        new_window_pane_id.as_str(),
+        new_window_dir.as_path(),
+    );
 
     client
         .split_vertical(

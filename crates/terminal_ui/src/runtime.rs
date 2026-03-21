@@ -434,7 +434,8 @@ pub fn resolve_launch_working_directory(
     configured: Option<&str>,
     fallback: WorkingDirFallback,
 ) -> Option<PathBuf> {
-    resolve_working_directory_path(configured).or_else(|| default_working_directory_with_fallback(fallback))
+    resolve_working_directory_path(configured)
+        .or_else(|| default_working_directory_with_fallback(fallback))
 }
 
 pub fn normalize_working_directory_candidate(candidate: Option<&str>) -> Option<String> {
@@ -702,8 +703,10 @@ impl Terminal {
         let shell = startup_shell(&runtime_config, startup_command);
 
         // Get working directory
-        let working_directory =
-            resolve_launch_working_directory(configured_working_dir, runtime_config.working_dir_fallback);
+        let working_directory = resolve_launch_working_directory(
+            configured_working_dir,
+            runtime_config.working_dir_fallback,
+        );
 
         // Configure PTY
         let pty_options = PtyOptions {
@@ -964,9 +967,8 @@ mod tests {
         DEFAULT_TERM, TerminalCursorState, TerminalDamageSnapshot, TerminalEvent,
         TerminalRuntimeConfig, TerminalSize, WorkingDirFallback, cursor_position_from_term,
         cursor_state_from_term, drain_runtime_events, normalize_working_directory_candidate,
-        pty_env_overrides,
-        resolve_launch_working_directory, resolve_shell_path, take_term_damage_snapshot,
-        termmode_to_terminal_mouse_mode, user_home_dir,
+        pty_env_overrides, resolve_launch_working_directory, resolve_shell_path,
+        take_term_damage_snapshot, termmode_to_terminal_mouse_mode, user_home_dir,
     };
     use crate::grid::TerminalCursorStyle;
     use crate::keyboard::{TerminalKeyEventKind, TerminalKeyboardMode, keystroke_to_input};
@@ -1651,10 +1653,12 @@ mod tests {
 
     #[test]
     fn term_options_enable_kitty_keyboard_negotiation() {
-        assert!(TerminalRuntimeConfig::default()
-            .term_options()
-            .term_config()
-            .kitty_keyboard);
+        assert!(
+            TerminalRuntimeConfig::default()
+                .term_options()
+                .term_config()
+                .kitty_keyboard
+        );
     }
 
     #[test]
@@ -1667,7 +1671,8 @@ mod tests {
 
     #[test]
     fn keyboard_mode_augment_only_flags_do_not_activate_enhanced_reporting() {
-        let mode = keyboard_mode(TermMode::REPORT_ALTERNATE_KEYS | TermMode::REPORT_ASSOCIATED_TEXT);
+        let mode =
+            keyboard_mode(TermMode::REPORT_ALTERNATE_KEYS | TermMode::REPORT_ASSOCIATED_TEXT);
         assert!(mode.report_alternate_keys());
         assert!(mode.report_associated_text());
         assert!(!mode.enhanced_reporting_active());

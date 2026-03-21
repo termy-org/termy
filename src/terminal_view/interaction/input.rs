@@ -312,8 +312,10 @@ impl TerminalView {
     ) -> bool {
         // Use the pane that received the press so delayed releases do not drift
         // to whatever pane is active when the key is eventually released.
-        match take_pending_key_release_action(&mut self.pending_key_releases, keystroke.key.as_str())
-        {
+        match take_pending_key_release_action(
+            &mut self.pending_key_releases,
+            keystroke.key.as_str(),
+        ) {
             PendingKeyReleaseAction::Drop => false,
             PendingKeyReleaseAction::ForwardToPane(pane_id) => self
                 .write_terminal_keystroke_to_pane(
@@ -336,7 +338,8 @@ impl TerminalView {
         let mut wrote_input = false;
         let mut cleared_selection = false;
 
-        for (keystroke, event_kind) in modifier_transition_events(previous, gpui::Modifiers::default())
+        for (keystroke, event_kind) in
+            modifier_transition_events(previous, gpui::Modifiers::default())
         {
             let wrote = match event_kind {
                 TerminalKeyEventKind::Press => {
@@ -734,11 +737,11 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::{
-        clipboard_item_to_terminal_paste_input, dropped_paths_to_terminal_paste_input,
-        image_extension, modifier_transition_events, shell_quote_paths,
-        should_defer_key_down_to_ime, should_prepare_terminal_input_write,
+        PendingKeyRelease, PendingKeyReleaseAction, clipboard_item_to_terminal_paste_input,
+        dropped_paths_to_terminal_paste_input, image_extension, modifier_transition_events,
+        shell_quote_paths, should_defer_key_down_to_ime, should_prepare_terminal_input_write,
         take_deferred_ime_key_release, take_pending_key_release_action,
-        terminal_modifier_transition_events, PendingKeyRelease, PendingKeyReleaseAction,
+        terminal_modifier_transition_events,
     };
     use gpui::{Keystroke, Modifiers};
     use std::{
@@ -877,10 +880,7 @@ mod tests {
         let events = modifier_transition_events(previous, current);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].0.key, "shift");
-        assert_eq!(
-            events[0].1,
-            termy_terminal_ui::TerminalKeyEventKind::Press
-        );
+        assert_eq!(events[0].1, termy_terminal_ui::TerminalKeyEventKind::Press);
         assert!(events[0].0.modifiers.platform);
         assert!(events[0].0.modifiers.shift);
     }
@@ -899,8 +899,14 @@ mod tests {
 
     #[test]
     fn non_active_pane_writes_skip_terminal_input_prepare() {
-        assert!(should_prepare_terminal_input_write(Some("%pane-1"), "%pane-1"));
-        assert!(!should_prepare_terminal_input_write(Some("%pane-1"), "%pane-2"));
+        assert!(should_prepare_terminal_input_write(
+            Some("%pane-1"),
+            "%pane-1"
+        ));
+        assert!(!should_prepare_terminal_input_write(
+            Some("%pane-1"),
+            "%pane-2"
+        ));
         assert!(!should_prepare_terminal_input_write(None, "%pane-1"));
     }
 
@@ -915,10 +921,7 @@ mod tests {
 
     #[test]
     fn consumed_key_release_is_dropped_after_transient_input_closes() {
-        let mut pending = HashMap::from([(
-            "enter".to_string(),
-            PendingKeyRelease::Consumed,
-        )]);
+        let mut pending = HashMap::from([("enter".to_string(), PendingKeyRelease::Consumed)]);
 
         assert_eq!(
             take_pending_key_release_action(&mut pending, "enter"),
