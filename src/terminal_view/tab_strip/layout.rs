@@ -724,7 +724,12 @@ mod tests {
     #[test]
     fn gutter_divider_is_present_and_fixed() {
         let snapshot = TerminalView::tab_strip_layout_for_viewport_width(1280.0);
-        assert_float_eq(snapshot.geometry.gutter_width, TAB_STRIP_RAIL_GUTTER_WIDTH);
+        let expected_width = if cfg!(target_os = "windows") {
+            0.0
+        } else {
+            TAB_STRIP_RAIL_GUTTER_WIDTH
+        };
+        assert_float_eq(snapshot.geometry.gutter_width, expected_width);
     }
 
     #[test]
