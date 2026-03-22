@@ -1617,10 +1617,10 @@ impl TerminalView {
         {
             let state = self.terminal_context_menu.clone()?;
             let overlay_style = self.overlay_style();
-            let menu_width = 220.0;
+            let menu_width = 240.0;
             let row_height = 30.0;
             let row_count =
-                5.0 + if state.buffer_position.is_some() {
+                6.0 + if state.buffer_position.is_some() {
                     1.0
                 } else {
                     0.0
@@ -1818,6 +1818,7 @@ impl TerminalView {
                                 state.can_paste,
                                 CommandAction::Paste,
                             ))
+                            .child(search_google_item(state.can_copy))
                             .child(open_search_item()),
                     )
                     .into_any_element(),

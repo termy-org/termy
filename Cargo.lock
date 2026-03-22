@@ -7342,6 +7342,7 @@ dependencies = [
  "dirs 6.0.0",
  "env_logger",
  "flume",
+ "form_urlencoded",
  "fs4",
  "futures",
  "gpui",

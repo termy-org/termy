@@ -1,4 +1,5 @@
 use super::*;
+use form_urlencoded;
 
 impl TerminalView {
     pub(in super::super) fn format_terminal_buffer_position(position: SelectionPos) -> String {
@@ -90,6 +91,54 @@ impl TerminalView {
         ));
         termy_toast::success("Copied buffer position");
         self.notify_overlay(cx);
+    }
+
+    pub(in super::super) fn execute_terminal_context_menu_search_google(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) {
+        let _ = self.close_terminal_context_menu(cx);
+
+        let Some(text) = self.selected_text() else {
+            return;
+        };
+
+        if text.trim().is_empty() {
+            return;
+        }
+
+        // URL-encode the search query for Google
+        let encoded = form_urlencoded::byte_serialize(text.as_bytes()).collect::<String>();
+        let google_url = format!("https://www.google.com/search?q={}", encoded);
+
+        // Open the URL in browser
+        #[cfg(target_os = "macos")]
+        {
+            let _ = Command::new("open")
+                .arg(&google_url)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = Command::new("xdg-open")
+                .arg(&google_url)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = Command::new("cmd")
+                .args(["/C", "start", "", &google_url])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+        }
     }
 
     fn execute_terminal_context_menu_action(
