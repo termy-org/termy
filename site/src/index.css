@@ -1,0 +1,378 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Outfit — local woff2 */
+@font-face {
+  font-family: "Outfit";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url("/fonts/outfit-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Outfit";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url("/fonts/outfit-latin-ext.woff2") format("woff2");
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+/* Dark theme — clean minimal */
+:root {
+  --radius: 0.75rem;
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --card: #111111;
+  --card-foreground: #fafafa;
+  --popover: #111111;
+  --popover-foreground: #fafafa;
+  --primary: #22c55e;
+  --primary-foreground: #052e16;
+  --secondary: #171717;
+  --secondary-foreground: #fafafa;
+  --muted: #171717;
+  --muted-foreground: #737373;
+  --accent: #171717;
+  --accent-foreground: #fafafa;
+  --destructive: #ef4444;
+  --border: #1a1a1a;
+  --input: #1a1a1a;
+  --ring: #22c55e;
+}
+
+/* Light theme — clean minimal */
+.light {
+  --background: #fafafa;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --primary: #16a34a;
+  --primary-foreground: #f0fdf4;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #0a0a0a;
+  --muted: #f5f5f5;
+  --muted-foreground: #525252;
+  --accent: #f5f5f5;
+  --accent-foreground: #0a0a0a;
+  --destructive: #dc2626;
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #16a34a;
+}
+
+@layer base {
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+
+  * {
+    @apply border-border;
+  }
+}
+
+/* Gradient text — green only */
+.gradient-text {
+  @apply bg-clip-text text-transparent;
+  background-image: linear-gradient(135deg, #4ade80 0%, #86efac 100%);
+}
+
+.light .gradient-text {
+  background-image: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
+}
+
+/* Blur fade-in animation */
+@keyframes blur-fade-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+.animate-blur-in {
+  animation: blur-fade-in 0.4s ease-out forwards;
+  opacity: 0;
+}
+
+/* Terminal window styling — matches Termy app */
+.terminal-window {
+  @apply rounded-xl overflow-hidden;
+  background: #141a24;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.light .terminal-window {
+  background: #f0f2f5;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.12);
+}
+
+.terminal-header {
+  @apply flex items-center px-3 py-2;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  gap: 10px;
+}
+
+.light .terminal-header {
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.terminal-tabs {
+  @apply flex items-center gap-1 flex-1 min-w-0;
+}
+
+.terminal-tab {
+  @apply flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-mono cursor-pointer transition-colors;
+  color: #5c6370;
+  background: transparent;
+  border: none;
+  max-width: 140px;
+}
+
+.terminal-tab:hover {
+  color: #8b929e;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.terminal-tab.active {
+  color: #abb2bf;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.light .terminal-tab {
+  color: #8b95a5;
+}
+
+.light .terminal-tab:hover {
+  color: #5a6270;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.light .terminal-tab.active {
+  color: #383e49;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.terminal-tab-title {
+  @apply truncate;
+}
+
+.terminal-tab-close {
+  @apply flex items-center justify-center rounded opacity-0 transition-opacity;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.terminal-tab-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.light .terminal-tab-close:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.terminal-tab:hover .terminal-tab-close,
+.terminal-tab.active .terminal-tab-close {
+  opacity: 1;
+}
+
+.terminal-tab-add {
+  @apply flex items-center justify-center rounded transition-colors cursor-pointer flex-shrink-0;
+  width: 24px;
+  height: 24px;
+  color: #5c6370;
+  background: transparent;
+  border: none;
+}
+
+.terminal-tab-add:hover {
+  color: #abb2bf;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.light .terminal-tab-add {
+  color: #8b95a5;
+}
+
+.light .terminal-tab-add:hover {
+  color: #383e49;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.terminal-header-title {
+  @apply absolute left-1/2 -translate-x-1/2 text-xs font-mono;
+  color: #5c6370;
+}
+
+/* Docs code highlighting */
+.prose pre code.hljs {
+  display: block;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: #d4d4d4;
+}
+
+.prose pre code .hljs-keyword,
+.prose pre code .hljs-selector-tag,
+.prose pre code .hljs-literal,
+.prose pre code .hljs-built_in {
+  color: #c586c0;
+}
+
+.prose pre code .hljs-title,
+.prose pre code .hljs-title.class_,
+.prose pre code .hljs-title.function_ {
+  color: #4ec9b0;
+}
+
+.prose pre code .hljs-string,
+.prose pre code .hljs-attr,
+.prose pre code .hljs-template-tag,
+.prose pre code .hljs-template-variable {
+  color: #ce9178;
+}
+
+.prose pre code .hljs-number,
+.prose pre code .hljs-symbol,
+.prose pre code .hljs-bullet {
+  color: #b5cea8;
+}
+
+.prose pre code .hljs-comment,
+.prose pre code .hljs-quote {
+  color: #6a9955;
+}
+
+.prose pre code .hljs-variable,
+.prose pre code .hljs-params,
+.prose pre code .hljs-property {
+  color: #9cdcfe;
+}
+
+.terminal-dots {
+  @apply flex items-center gap-[7px];
+}
+
+.terminal-dot {
+  @apply rounded-full;
+  width: 11px;
+  height: 11px;
+}
+
+.terminal-body {
+  @apply p-5 font-mono overflow-auto;
+  font-size: 12.5px;
+  background: #141a24;
+  max-height: 480px;
+  line-height: 1.25;
+  color: #d1d5db;
+}
+
+@media (max-width: 639px) {
+  .terminal-body {
+    max-height: 300px;
+    font-size: 11px;
+  }
+}
+
+.light .terminal-body {
+  background: #f0f2f5;
+  color: #1f2937;
+}
+
+.terminal-input {
+  @apply bg-transparent border-none outline-none w-full p-0;
+  color: #d1d5db;
+  caret-color: transparent;
+  font: inherit;
+  line-height: inherit;
+}
+
+.light .terminal-input {
+  color: #1f2937;
+}
+
+/* Terminal cursor blink */
+@keyframes terminal-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-terminal-blink {
+  animation: terminal-blink 1s step-end infinite;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Selection */
+::selection {
+  @apply bg-primary/30 text-foreground;
+}

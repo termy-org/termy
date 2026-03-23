@@ -1,33 +1,24 @@
-# build output
-dist/
-# generated types
-.astro/
-
-# dependencies
-node_modules/
-
-# logs
+# Logs
+logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
 
-# environment variables
-.env
-.env.production
-
-# macOS-specific files
-.DS_Store
+node_modules
+dist
+dist-ssr
+*.local
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-
-# local env files
-*.local
-
-# SSR build output
-dist-ssr
-
-# jetbrains setting folder
-.idea/
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

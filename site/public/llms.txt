@@ -1,0 +1,709 @@
+# Termy
+
+> A fast, GPU-accelerated terminal emulator built with Rust and GPUI.
+
+## Overview
+
+Termy is an open-source terminal emulator focused on performance and simplicity. It's built using Rust for the backend and GPUI (Zed's GPU-accelerated UI framework) for rendering.
+
+## Links
+
+- Website: https://termy.sh
+- GitHub: https://github.com/lassejlv/termy
+- Releases: https://github.com/lassejlv/termy/releases
+- Documentation: https://termy.sh/docs
+
+## Installation
+
+### macOS (Homebrew)
+```
+brew tap lassejlv/termy https://github.com/lassejlv/termy
+brew install --cask termy
+```
+
+Termy is not code signed yet. If Gatekeeper blocks launch after moving Termy to `Applications`, run:
+```
+sudo xattr -d com.apple.quarantine /Applications/Termy.app
+```
+
+### Windows
+Install using the latest `Setup.exe` release asset.
+
+If SmartScreen appears on first launch:
+1. Click `More info`
+2. Click `Run anyway`
+
+### Linux (AppImage)
+```
+chmod +x Termy-*.AppImage
+./Termy-*.AppImage
+```
+
+### Linux (Tarball)
+```
+tar -xzf Termy-*.tar.gz
+cd termy
+./install.sh
+```
+
+### Arch Linux
+```
+paru -S termy-bin
+```
+
+## Updating
+
+Use the Command Palette and run `Check for updates`.
+
+- macOS: `cmd+p`
+- Windows/Linux: `ctrl+p`
+
+---
+
+# Documentation
+
+## Docs Index
+
+- Installation: `/docs/installation`
+- First Steps: `/docs/first-steps`
+- Customization Guide: `/docs/customization-guide`
+- Plugin System Overview: `/docs/plugins/overview`
+- Developing Plugins: `/docs/plugins/developing-plugins`
+- plugin_core Reference: `/docs/plugins/plugin-core`
+- plugin_host Reference: `/docs/plugins/plugin-host`
+- plugin_sdk (Rust) Reference: `/docs/plugins/plugin-sdk-rust`
+- go-bindings Reference: `/docs/plugins/go-bindings`
+- ts-bindings Reference: `/docs/plugins/ts-bindings`
+- Troubleshooting: `/docs/troubleshooting`
+- FAQ: `/docs/faq`
+
+---
+
+## Plugins
+
+Termy supports local plugins via JSON manifest + stdio JSON-RPC protocol.
+
+### Plugin Directory
+
+- `~/.config/termy/plugins`
+- One plugin per folder
+- Required manifest file: `termy-plugin.json`
+
+### Settings UI
+
+In `Settings -> Plugins`, available actions include:
+
+- `Reload`
+- `Open Folder`
+- `Install From Folder`
+- Per-plugin controls:
+  - `Start/Stop`
+  - `Enable/Disable Autostart`
+  - `Open Folder`
+  - `View Logs`
+  - `Remove`
+
+### Manifest (plugin_core)
+
+Constants:
+
+- `PLUGIN_MANIFEST_FILE_NAME = "termy-plugin.json"`
+- `PLUGIN_PROTOCOL_VERSION = 1`
+
+Required manifest fields:
+
+- `schema_version` (must be `1`)
+- `id`
+- `name`
+- `version`
+- `entrypoint`
+
+Optional fields include:
+
+- `description`
+- `author`
+- `minimum_host_version`
+- `api_version`
+- `runtime` (`executable`)
+- `autostart` (defaults to `true`)
+- `permissions`
+- `contributes.commands`
+
+Permissions:
+
+- `filesystem_read`
+- `filesystem_write`
+- `network`
+- `shell`
+- `clipboard`
+- `notifications`
+- `terminal_read`
+- `terminal_write`
+- `ui_panels`
+
+Capabilities:
+
+- `command_provider`
+- `event_subscriber`
+- `ui_panel`
+
+### Wire Protocol
+
+Host -> Plugin:
+
+- `hello`
+- `invoke_command`
+- `shutdown`
+- `ping`
+
+Plugin -> Host:
+
+- `hello`
+- `log`
+- `toast`
+- `pong`
+
+### plugin_host API
+
+`PluginHost`:
+
+- `load_default(host_version)`
+- `load_from_dir(root_dir, host_version)`
+- `root_dir()`
+- `running_plugins()`
+- `failures()`
+- `recent_logs(plugin_id)`
+- `start_plugin(plugin_id)`
+- `stop_plugin(plugin_id)`
+- `invoke_command(plugin_id, command_id)`
+
+`RunningPlugin`:
+
+- `id()`
+- `name()`
+- `version()`
+- `root_dir()`
+- `permissions()`
+- `capabilities()`
+- `shutdown()`
+- `invoke_command(command_id)`
+
+`PluginLoadFailure`:
+
+- `plugin_id()`
+- `message()`
+
+Free functions:
+
+- `default_plugins_dir()`
+- `discover_plugins(root_dir)`
+
+### plugin_sdk (Rust) API
+
+Types:
+
+- `PluginMetadata`
+- `PluginSession<R, W>`
+- `PluginSessionError`
+
+`PluginMetadata`:
+
+- `new(plugin_id, name, version)`
+- `with_capabilities(capabilities)`
+
+`PluginSession`:
+
+- `stdio(metadata)` (for `Stdin/Stdout`)
+- `initialize(reader, writer, metadata)`
+- `host_hello()`
+- `plugin_id()`
+- `recv()`
+- `send(message)`
+- `send_log(level, message)`
+- `send_pong()`
+- `send_toast(level, message, duration_ms)`
+- `command_id(message)`
+- `run_until_shutdown(on_message)`
+
+`PluginSessionError` variants:
+
+- `Io`
+- `Json`
+- `HostClosedStream`
+- `ProtocolVersionMismatch`
+- `PluginIdMismatch`
+- `UnexpectedMessage`
+
+### go-bindings API (`github.com/lassejlv/termy/bindings/go-bindings`)
+
+Constants:
+
+- `PluginManifestFileName`
+- `PluginProtocolVersion`
+
+Types:
+
+- `PluginRuntime`
+- `PluginPermission`
+- `PluginContributions`
+- `PluginCommandContribution`
+- `PluginManifest`
+- `HostHello`
+- `HostCommandInvocation`
+- `HostRPCMessage`
+- `PluginCapability`
+- `PluginHello`
+- `PluginLogLevel`
+- `PluginLogMessage`
+- `PluginToastLevel`
+- `PluginToastMessage`
+- `PluginRPCMessage`
+- `PluginMetadata`
+- `PluginSession`
+- `ProtocolVersionMismatchError`
+- `PluginIDMismatchError`
+- `UnexpectedMessageError`
+
+Variables:
+
+- `ErrHostClosedStream`
+
+`HostRPCMessage` methods:
+
+- `AsHello()`
+- `AsInvokeCommand()`
+
+Session/protocol functions:
+
+- `NewStdioSession(metadata)`
+- `NewSession(reader, writer, metadata)`
+- `CommandID(message)`
+- `ReadHostHello(reader)`
+- `ReadHostMessage(reader)`
+- `ParseHostRPCMessage(line)`
+- `ParsePluginRPCMessage(line)`
+- `SerializePluginRPCMessage(message)`
+- `NewPluginHelloMessage(payload)`
+- `NewPluginLogMessage(level, message)`
+- `NewPluginToastMessage(level, message, durationMS)`
+- `NewPluginPongMessage()`
+
+`PluginSession` methods:
+
+- `Recv()`
+- `Send(message)`
+- `SendLog(level, message)`
+- `SendPong()`
+- `SendToast(level, message, durationMS)`
+- `RunUntilShutdown(onMessage)`
+
+### ts-bindings API (`@termy-oss/ts-bindings`)
+
+Constants:
+
+- `PLUGIN_MANIFEST_FILE_NAME`
+- `PLUGIN_PROTOCOL_VERSION`
+
+Classes:
+
+- `PluginSessionError`
+- `HostClosedStreamError`
+- `ProtocolVersionMismatchError`
+- `PluginIdMismatchError`
+- `InvalidMessageError`
+- `UnexpectedMessageError`
+- `PluginSession`
+
+`PluginSession` static methods:
+
+- `PluginSession.stdio(metadata)`
+- `PluginSession.initialize(reader, writer, metadata)`
+- `PluginSession.commandId(message)`
+
+`PluginSession` instance members:
+
+- readonly `hostHello`
+- readonly `pluginId`
+- `recv()`
+- `send(message)`
+- `sendLog(level, message)`
+- `sendPong()`
+- `sendToast(level, message, durationMs?)`
+- `runUntilShutdown(onMessage)`
+
+Free functions:
+
+- `readHostHello(reader)`
+- `readHostMessage(reader)`
+- `parseHostRpcMessage(line)`
+- `parsePluginRpcMessage(line)`
+- `serializePluginRpcMessage(message)`
+
+## Configuration
+
+Termy reads configuration from `~/.config/termy/config.txt`.
+
+### Appearance
+
+`theme`
+- Default: `termy`
+- Current color scheme name
+
+`font_family`
+- Default: `JetBrains Mono`
+- Font family used in terminal UI
+
+`font_size`
+- Default: `14`
+- Terminal font size in pixels
+
+`background_opacity`
+- Default: `1`
+- Window background opacity (0.0 to 1.0)
+
+`background_blur`
+- Default: `false`
+- Enable blur effect for transparent backgrounds
+
+`padding_x`
+- Default: `12`
+- Left and right terminal padding
+
+`padding_y`
+- Default: `8`
+- Top and bottom terminal padding
+
+### Terminal
+
+`shell`
+- Default: unset
+- Executable used for new sessions
+
+`term`
+- Default: `xterm-256color`
+- TERM value exposed to child applications
+
+`colorterm`
+- Default: `truecolor`
+- COLORTERM value exposed to child applications
+
+`cursor_style`
+- Default: `block`
+- Shape of the terminal cursor
+
+`cursor_blink`
+- Default: `true`
+- Enable blinking cursor animation
+
+`mouse_scroll_multiplier`
+- Default: `3`
+- Mouse wheel scroll speed multiplier
+
+`scrollbar_visibility`
+- Default: `on_scroll`
+- Terminal scrollbar visibility behavior
+
+`scrollbar_style`
+- Default: `neutral`
+- Terminal scrollbar color style
+
+`scrollback_history`
+- Default: `2000`
+- Aliases: `scrollback`
+- Lines retained in terminal scrollback
+
+`inactive_tab_scrollback`
+- Default: unset
+- Scrollback limit for inactive tabs
+
+`command_palette_show_keybinds`
+- Default: `true`
+- Show shortcut badges in command palette rows
+
+### Tabs
+
+`tab_title_priority`
+- Default: `manual, explicit, shell, fallback`
+- Exact source priority for tab titles
+
+`tab_title_mode`
+- Default: `smart`
+- How tab titles are determined
+
+`tab_title_fallback`
+- Default: `Terminal`
+- Default tab title when no source is available
+
+`tab_title_explicit_prefix`
+- Default: `termy:tab:`
+- Prefix used for explicit OSC title payloads
+
+`tab_title_shell_integration`
+- Default: `true`
+- Export TERMY_* environment values for shell hooks
+
+`tab_title_prompt_format`
+- Default: `{cwd}`
+- Template for prompt-derived tab titles
+
+`tab_title_command_format`
+- Default: `{command}`
+- Template for command-derived tab titles
+
+`tab_close_visibility`
+- Default: `active_hover`
+- When tab close buttons are visible
+
+`tab_width_mode`
+- Default: `active_grow_sticky`
+- How tab widths react to active state
+
+`show_termy_in_titlebar`
+- Default: `true`
+- Show or hide the termy branding in the titlebar
+
+### Advanced
+
+`working_dir`
+- Default: unset
+- Initial directory for new sessions
+
+`working_dir_fallback`
+- Default: `home` (macOS/Windows), `process` (Linux/other)
+- Aliases: `default_working_dir`
+- Directory used when working_dir is unset
+
+`warn_on_quit_with_running_process`
+- Default: `true`
+- Warn before quitting when a tab has an active process
+
+`window_width`
+- Default: `1280`
+- Default startup window width in pixels
+
+`window_height`
+- Default: `820`
+- Default startup window height in pixels
+
+### Keybindings Config
+
+`keybind`
+- Default: built-in platform defaults
+- Keybinding override directive
+
+### Colors
+
+Use `[colors]` to override theme colors with `#RRGGBB` values.
+
+Available color keys:
+- `foreground` (alias: `fg`) - Default text color
+- `background` (alias: `bg`) - Terminal background color
+- `cursor` - Cursor color
+- `black` (alias: `color0`) - ANSI black
+- `red` (alias: `color1`) - ANSI red
+- `green` (alias: `color2`) - ANSI green
+- `yellow` (alias: `color3`) - ANSI yellow
+- `blue` (alias: `color4`) - ANSI blue
+- `magenta` (alias: `color5`) - ANSI magenta
+- `cyan` (alias: `color6`) - ANSI cyan
+- `white` (alias: `color7`) - ANSI white
+- `bright_black` (aliases: `brightblack`, `color8`) - ANSI bright black
+- `bright_red` (aliases: `brightred`, `color9`) - ANSI bright red
+- `bright_green` (aliases: `brightgreen`, `color10`) - ANSI bright green
+- `bright_yellow` (aliases: `brightyellow`, `color11`) - ANSI bright yellow
+- `bright_blue` (aliases: `brightblue`, `color12`) - ANSI bright blue
+- `bright_magenta` (aliases: `brightmagenta`, `color13`) - ANSI bright magenta
+- `bright_cyan` (aliases: `brightcyan`, `color14`) - ANSI bright cyan
+- `bright_white` (aliases: `brightwhite`, `color15`) - ANSI bright white
+
+---
+
+## Keybindings
+
+Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lines in `~/.config/termy/config.txt`.
+
+### Default Keybinds
+
+#### macOS Defaults
+- `cmd-q` -> `quit`
+- `cmd-,` -> `open_settings`
+- `cmd-p` -> `toggle_command_palette`
+- `cmd-t` -> `new_tab`
+- `cmd-w` -> `close_tab`
+- `cmd-=` -> `zoom_in`
+- `cmd-+` -> `zoom_in`
+- `cmd--` -> `zoom_out`
+- `cmd-0` -> `zoom_reset`
+- `cmd-f` -> `open_search`
+- `cmd-g` -> `search_next`
+- `cmd-shift-g` -> `search_previous`
+- `cmd-m` -> `minimize_window`
+- `cmd-c` -> `copy`
+- `cmd-v` -> `paste`
+
+#### Windows/Linux Defaults
+- `ctrl-q` -> `quit`
+- `ctrl-,` -> `open_settings`
+- `ctrl-p` -> `toggle_command_palette`
+- `ctrl-t` -> `new_tab`
+- `ctrl-w` -> `close_tab`
+- `ctrl-=` -> `zoom_in`
+- `ctrl-+` -> `zoom_in`
+- `ctrl--` -> `zoom_out`
+- `ctrl-0` -> `zoom_reset`
+- `ctrl-f` -> `open_search`
+- `ctrl-g` -> `search_next`
+- `ctrl-shift-g` -> `search_previous`
+- `ctrl-shift-c` -> `copy`
+- `ctrl-shift-v` -> `paste`
+
+Note: `secondary` maps to `cmd` on macOS and `ctrl` on non-macOS platforms.
+
+### Config Syntax
+
+Supported forms:
+- `keybind = clear` - Remove all default keybinds
+- `keybind = <trigger>=<action>` - Bind a key to an action
+- `keybind = <trigger>=unbind` - Remove a specific binding
+
+Behavior:
+- Directives are applied in file order
+- Later lines win for the same trigger
+- `clear` removes all defaults before later lines are applied
+- `unbind` removes the current mapping for a trigger
+- Invalid lines are ignored (with warnings)
+
+### Configurable Actions
+
+- `new_tab` - Open a new tab
+- `close_tab` - Close current tab
+- `move_tab_left` - Move tab left
+- `move_tab_right` - Move tab right
+- `switch_tab_left` - Switch to tab on left
+- `switch_tab_right` - Switch to tab on right
+- `minimize_window` - Minimize window
+- `rename_tab` - Rename current tab
+- `app_info` - Show app info
+- `restart_app` - Restart application
+- `open_config` - Open config file
+- `open_settings` - Open settings
+- `import_colors` - Import color scheme
+- `switch_theme` - Switch theme
+- `zoom_in` - Increase font size
+- `zoom_out` - Decrease font size
+- `zoom_reset` - Reset font size
+- `open_search` - Open search
+- `check_for_updates` - Check for updates
+- `quit` - Quit application
+- `toggle_command_palette` - Toggle command palette
+- `copy` - Copy selection
+- `paste` - Paste clipboard
+- `close_search` - Close search
+- `search_next` - Find next match
+- `search_previous` - Find previous match
+- `toggle_search_case_sensitive` - Toggle case sensitivity
+- `toggle_search_regex` - Toggle regex search
+- `install_cli` - Install CLI tool
+
+### Customization Examples
+
+Override one default:
+```
+keybind = cmd-p=toggle_command_palette
+```
+
+Remove one default:
+```
+keybind = cmd-w=unbind
+```
+
+Start from scratch:
+```
+keybind = clear
+keybind = cmd-p=toggle_command_palette
+keybind = cmd-t=new_tab
+keybind = cmd-w=close_tab
+keybind = cmd-c=copy
+keybind = cmd-v=paste
+```
+
+Use `secondary` for cross-platform configs:
+```
+keybind = secondary-p=toggle_command_palette
+keybind = secondary-t=new_tab
+```
+
+---
+
+## Architecture: Command Boundary
+
+This document defines ownership boundaries for command and keybind behavior.
+
+### Ownership
+
+`termy_command_core` owns:
+- Command IDs and config-facing command names
+- Command config-name parsing and normalization
+- Keybind defaults
+- Keybind directive parsing (`clear`, bind, unbind)
+- Deterministic keybind resolution order
+
+App/CLI adapters own:
+- UI labels, keywords, and command-palette presentation
+- Platform-specific visibility policy for palette entries
+- UI trigger canonicalization and validation (for example GPUI keystroke parsing)
+
+### Dependency Rule
+
+`termy_command_core` must remain a pure domain crate and must not depend on:
+- `termy_config_core`
+- `gpui`
+- other UI or presentation crates
+
+### Integration Pattern
+
+- Adapters convert parsed config keybind lines into `termy_command_core::KeybindLineRef`
+- Adapters call `parse_keybind_directives_from_iter`; trigger canonicalization happens in `termy_command_core`
+- Adapters call `resolve_keybinds` over `default_resolved_keybinds`
+
+This keeps one canonical command/keybind engine while preserving thin and readable adapter code.
+
+---
+
+## Example Config
+
+```
+# ~/.config/termy/config.txt
+
+# Appearance
+theme = dracula
+font_family = Fira Code
+font_size = 13
+background_opacity = 0.95
+background_blur = true
+
+# Terminal
+cursor_style = beam
+cursor_blink = false
+scrollback_history = 5000
+
+# Tabs
+tab_title_mode = smart
+show_termy_in_titlebar = false
+
+# Keybindings
+keybind = cmd-shift-t=new_tab
+keybind = cmd-shift-w=close_tab
+
+# Colors
+[colors]
+foreground = #f8f8f2
+background = #282a36
+cursor = #f8f8f2
+```
+
+---
+
+## License
+
+Open source - see GitHub repository for license details.

@@ -5,6 +5,6 @@
     "buildCommand": "bun run build"
   },
   "deploy": {
-    "startCommand": "node ./dist/server/entry.mjs"
+    "startCommand": "bun run server.ts"
   }
 }

@@ -48,7 +48,7 @@ interface ApiErrorBody {
   error?: string;
 }
 
-const API_BASE = "https://api.termy.run";
+const API_BASE = "/theme-api";
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
@@ -66,26 +66,44 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     let message = `Request failed (${response.status})`;
     try {
       const body = (await response.json()) as ApiErrorBody;
-      if (body.error) message = body.error;
-    } catch { /* keep default message */ }
+      if (body.error) {
+        message = body.error;
+      }
+    } catch {
+      // keep default message
+    }
     throw new Error(message);
   }
 
-  if (response.status === 204) return undefined as T;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return (await response.json()) as T;
 }
 
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
-  const response = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
-  if (response.status === 401) return null;
+  const response = await fetch(`${API_BASE}/auth/me`, {
+    credentials: "include",
+  });
+
+  if (response.status === 401) {
+    return null;
+  }
+
   if (!response.ok) {
     let message = `Could not resolve session (${response.status})`;
     try {
       const body = (await response.json()) as ApiErrorBody;
-      if (body.error) message = body.error;
-    } catch { /* keep default message */ }
+      if (body.error) {
+        message = body.error;
+      }
+    } catch {
+      // keep default message
+    }
     throw new Error(message);
   }
+
   return (await response.json()) as AuthUser;
 }
 
@@ -94,7 +112,9 @@ export async function logout(): Promise<void> {
 }
 
 export async function createDeviceSession(): Promise<DeviceSessionResponse> {
-  return requestJson<DeviceSessionResponse>("/auth/device-session", { method: "POST" });
+  return requestJson<DeviceSessionResponse>("/auth/device-session", {
+    method: "POST",
+  });
 }
 
 export async function fetchThemes(): Promise<Theme[]> {
@@ -105,8 +125,12 @@ export async function fetchMyThemes(): Promise<Theme[]> {
   return requestJson<Theme[]>("/themes/me", { method: "GET" });
 }
 
-export async function fetchThemeWithVersions(slug: string): Promise<ThemeWithVersionsResponse> {
-  return requestJson<ThemeWithVersionsResponse>(`/themes/${slug}/versions`, { method: "GET" });
+export async function fetchThemeWithVersions(
+  slug: string,
+): Promise<ThemeWithVersionsResponse> {
+  return requestJson<ThemeWithVersionsResponse>(`/themes/${slug}/versions`, {
+    method: "GET",
+  });
 }
 
 export async function createTheme(input: {
@@ -123,45 +147,71 @@ export async function createTheme(input: {
   formData.append("isPublic", String(input.isPublic));
   formData.append("version", input.version);
   appendThemePayload(formData, input.themeFile ?? null, input.themeJson);
-  return requestJson<Theme>("/themes", { method: "POST", body: formData });
-}
 
-export async function updateTheme(slug: string, input: {
-  name: string;
-  description: string;
-  isPublic: boolean;
-}): Promise<Theme> {
-  return requestJson<Theme>(`/themes/${slug}`, {
-    method: "PATCH",
-    body: JSON.stringify(input),
-  });
-}
-
-export async function publishThemeVersion(slug: string, input: {
-  version: string;
-  changelog: string;
-  checksumSha256: string;
-  themeFile?: File | null;
-  themeJson?: string;
-}): Promise<{ theme: Theme; version: ThemeVersion }> {
-  const formData = new FormData();
-  formData.append("version", input.version);
-  formData.append("changelog", input.changelog);
-  formData.append("checksumSha256", input.checksumSha256);
-  appendThemePayload(formData, input.themeFile ?? null, input.themeJson);
-  return requestJson<{ theme: Theme; version: ThemeVersion }>(`/themes/${slug}/versions`, {
+  return requestJson<Theme>("/themes", {
     method: "POST",
     body: formData,
   });
 }
 
-function appendThemePayload(formData: FormData, themeFile: File | null, themeJson?: string): void {
+export async function updateTheme(
+  slug: string,
+  input: {
+    name: string;
+    description: string;
+    isPublic: boolean;
+  },
+): Promise<Theme> {
+  return requestJson<Theme>(`/themes/${slug}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: input.name,
+      description: input.description,
+      isPublic: input.isPublic,
+    }),
+  });
+}
+
+export async function publishThemeVersion(
+  slug: string,
+  input: {
+    version: string;
+    changelog: string;
+    checksumSha256: string;
+    themeFile?: File | null;
+    themeJson?: string;
+  },
+): Promise<{ theme: Theme; version: ThemeVersion }> {
+  const formData = new FormData();
+  formData.append("version", input.version);
+  formData.append("changelog", input.changelog);
+  formData.append("checksumSha256", input.checksumSha256);
+  appendThemePayload(formData, input.themeFile ?? null, input.themeJson);
+
+  return requestJson<{ theme: Theme; version: ThemeVersion }>(
+    `/themes/${slug}/versions`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+}
+
+function appendThemePayload(
+  formData: FormData,
+  themeFile: File | null,
+  themeJson?: string,
+): void {
   const trimmedThemeJson = themeJson?.trim();
+
   if (trimmedThemeJson) {
     formData.append("themeJson", trimmedThemeJson);
     return;
   }
-  if (themeFile) formData.append("themeFile", themeFile);
+
+  if (themeFile) {
+    formData.append("themeFile", themeFile);
+  }
 }
 
 export interface ThemePalette {
@@ -209,12 +259,17 @@ export const fallbackPalette: Required<ThemePalette> = {
 };
 
 export function getThemeLoginUrl(redirectToPath: string): string {
-  if (typeof window === "undefined") return `${API_BASE}/auth/github/login`;
+  if (typeof window === "undefined") {
+    return `${API_BASE}/auth/github/login`;
+  }
+
   const redirectTo = `${window.location.origin}${redirectToPath}`;
   return `${API_BASE}/auth/github/login?redirect_to=${encodeURIComponent(redirectTo)}`;
 }
 
-export function buildNativeAuthCallbackUrl(session: DeviceSessionResponse): string {
+export function buildNativeAuthCallbackUrl(
+  session: DeviceSessionResponse,
+): string {
   const url = new URL("termy://auth/callback");
   url.searchParams.set("session_token", session.sessionToken);
   return url.toString();
