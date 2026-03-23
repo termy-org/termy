@@ -11,6 +11,15 @@ pub(crate) const DEFAULT_TMUX_BINARY: &str = "tmux";
 pub(crate) const DEFAULT_TMUX_PERSISTENCE: bool = true;
 pub(crate) const DEFAULT_TMUX_SHOW_ACTIVE_PANE_BORDER: bool = false;
 pub(crate) const DEFAULT_MOUSE_SCROLL_MULTIPLIER: f32 = 3.0;
+/// Unitless multiplier applied to the font's natural cell height to produce the
+/// terminal row height. `1.0` means no extra vertical space; `2.0` doubles it.
+pub const DEFAULT_LINE_HEIGHT: f32 = 1.4;
+/// Lowest accepted line-height multiplier. Values below this cause rows to
+/// visually overlap.
+pub const MIN_LINE_HEIGHT: f32 = 0.8;
+/// Highest accepted line-height multiplier. Values above this make the grid
+/// unusably sparse.
+pub const MAX_LINE_HEIGHT: f32 = 2.5;
 pub(crate) const DEFAULT_SCROLLBACK_HISTORY: usize = 2000;
 pub(crate) const MAX_SCROLLBACK_HISTORY: usize = 100_000;
 pub(crate) const DEFAULT_INACTIVE_TAB_SCROLLBACK: Option<usize> = None;

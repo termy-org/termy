@@ -35,6 +35,7 @@ use std::{
 use sysinfo::{ProcessesToUpdate, System, get_current_pid};
 #[cfg(target_os = "macos")]
 use termy_auto_update::{AutoUpdater, UpdateState};
+use termy_config_core::{MAX_LINE_HEIGHT, MIN_LINE_HEIGHT};
 use termy_search::SearchState;
 use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
@@ -2989,7 +2990,7 @@ impl TerminalView {
             mouse_scroll_multiplier: config.mouse_scroll_multiplier,
             pane_focus_effect: config.pane_focus_effect,
             pane_focus_strength: config.pane_focus_strength,
-            line_height: 1.4,
+            line_height: config.line_height.clamp(MIN_LINE_HEIGHT, MAX_LINE_HEIGHT),
             copy_on_select: config.copy_on_select,
             copy_on_select_toast: config.copy_on_select_toast,
             last_terminal_modifiers: gpui::Modifiers::default(),
@@ -3301,6 +3302,7 @@ impl TerminalView {
         self.font_family = config.font_family.into();
         self.base_font_size = config.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         self.font_size = px(self.base_font_size);
+        self.line_height = config.line_height.clamp(MIN_LINE_HEIGHT, MAX_LINE_HEIGHT);
         self.cursor_style = config.cursor_style;
         self.cursor_blink = config.cursor_blink;
         self.cursor_blink_visible = true;

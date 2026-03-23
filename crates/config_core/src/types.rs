@@ -286,6 +286,10 @@ pub struct AppConfig {
     pub window_height: f32,
     pub font_family: String,
     pub font_size: f32,
+    /// Unitless multiplier on the font cell height that controls vertical row
+    /// spacing. Clamped to [`MIN_LINE_HEIGHT`]..=[`MAX_LINE_HEIGHT`] at the
+    /// use-site in `TerminalView`.
+    pub line_height: f32,
     pub cursor_style: CursorStyle,
     pub cursor_blink: bool,
     pub background_opacity: f32,
@@ -360,6 +364,7 @@ impl Default for AppConfig {
             window_height: 820.0,
             font_family: "JetBrains Mono".to_string(),
             font_size: 14.0,
+            line_height: crate::constants::DEFAULT_LINE_HEIGHT,
             cursor_style: CursorStyle::default(),
             cursor_blink: DEFAULT_CURSOR_BLINK,
             background_opacity: 1.0,

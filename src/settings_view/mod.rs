@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use termy_command_core::CommandId;
 use termy_config_core::{
     RootSettingId, RootSettingValueKind, SettingsSection as CoreSettingsSection,
-    color_setting_from_key, color_setting_specs, root_setting_default_value,
+    color_setting_from_key, color_setting_specs, format_line_height, root_setting_default_value,
     root_setting_enum_choices, root_setting_from_key, root_setting_specs, root_setting_value_kind,
 };
 

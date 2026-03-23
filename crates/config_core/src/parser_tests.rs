@@ -1,8 +1,8 @@
 use crate::{
-    AiProvider, AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle, PaneFocusEffect,
-    Rgb8, RootSettingId, RootSettingValueKind, TabCloseVisibility, TabTitleMode, TabTitleSource,
-    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
-    root_setting_specs,
+    AiProvider, AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle,
+    DEFAULT_LINE_HEIGHT, PaneFocusEffect, Rgb8, RootSettingId, RootSettingValueKind,
+    TabCloseVisibility, TabTitleMode, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
+    TerminalScrollbarVisibility, WorkingDirFallback, root_setting_specs,
 };
 
 fn parse(input: &str) -> AppConfig {
@@ -21,6 +21,7 @@ fn defaults_enable_tmux_persistence_and_raise_pane_focus_strength() {
     assert!(!defaults.background_opacity_cells);
     assert!(!defaults.chrome_contrast);
     assert!((defaults.pane_focus_strength - 0.6).abs() < f32::EPSILON);
+    assert!((defaults.line_height - DEFAULT_LINE_HEIGHT).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -389,6 +390,26 @@ fn numeric_keys_parse_table_driven() {
         };
         assert_eq!(parsed, fallback);
     }
+
+    assert_eq!(parse("line_height = 0.8\n").line_height, 0.8);
+    assert_eq!(parse("line_height = 1.25\n").line_height, 1.25);
+    assert_eq!(parse("line_height = 2.5\n").line_height, 2.5);
+    assert_eq!(
+        parse("line_height = 0.79\n").line_height,
+        defaults.line_height
+    );
+    assert_eq!(
+        parse("line_height = 2.51\n").line_height,
+        defaults.line_height
+    );
+    assert_eq!(
+        parse("line_height = inf\n").line_height,
+        defaults.line_height
+    );
+    assert_eq!(
+        parse("line_height = NaN\n").line_height,
+        defaults.line_height
+    );
 
     let non_negative_float_cases = [("padding_x", 2.0), ("padding_y", 4.0)];
     for (key, expected) in non_negative_float_cases {

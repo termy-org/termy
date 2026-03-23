@@ -11,6 +11,7 @@ pub(super) enum EditableField {
     BackgroundOpacity,
     FontFamily,
     FontSize,
+    LineHeight,
     PaddingX,
     PaddingY,
     Shell,
@@ -404,6 +405,7 @@ impl SettingsWindow {
             | EditableField::BackgroundOpacity
             | EditableField::FontFamily
             | EditableField::FontSize
+            | EditableField::LineHeight
             | EditableField::PaddingX
             | EditableField::PaddingY => Self::appearance_field_spec(field),
             EditableField::Shell
@@ -472,6 +474,16 @@ impl SettingsWindow {
                     delta: 1.0,
                     min: 1.0,
                     max: 4096.0,
+                }),
+            },
+            EditableField::LineHeight => FieldSpec {
+                root_setting: Some(RootSettingId::LineHeight),
+                codec: FieldCodec::Numeric,
+                dropdown_click_only: false,
+                numeric_step: Some(NumericStepSpec {
+                    delta: 0.05,
+                    min: termy_config_core::MIN_LINE_HEIGHT,
+                    max: termy_config_core::MAX_LINE_HEIGHT,
                 }),
             },
             EditableField::PaddingX => FieldSpec {
@@ -822,6 +834,7 @@ impl SettingsWindow {
             ),
             EditableField::FontFamily => self.config.font_family.clone(),
             EditableField::FontSize => format!("{}", self.config.font_size.round() as i32),
+            EditableField::LineHeight => format_line_height(self.config.line_height),
             EditableField::PaddingX => format!("{}", self.config.padding_x.round() as i32),
             EditableField::PaddingY => format!("{}", self.config.padding_y.round() as i32),
             EditableField::Shell => self.config.shell.clone().unwrap_or_default(),
@@ -974,6 +987,18 @@ impl SettingsWindow {
                     termy_config_core::RootSettingId::FontSize,
                     &next.to_string(),
                 )
+            }
+            EditableField::LineHeight => {
+                let next = (self.config.line_height + (delta as f32 * step.delta))
+                    .clamp(step.min, step.max);
+                let result = config::set_root_setting(
+                    termy_config_core::RootSettingId::LineHeight,
+                    &format_line_height(next),
+                );
+                if result.is_ok() {
+                    self.config.line_height = next;
+                }
+                result
             }
             EditableField::PaddingX => {
                 let next =
@@ -1172,6 +1197,7 @@ mod tests {
             EditableField::BackgroundOpacity,
             EditableField::FontFamily,
             EditableField::FontSize,
+            EditableField::LineHeight,
             EditableField::PaddingX,
             EditableField::PaddingY,
             EditableField::Shell,
@@ -1238,6 +1264,7 @@ mod tests {
         let numeric_fields = [
             EditableField::BackgroundOpacity,
             EditableField::FontSize,
+            EditableField::LineHeight,
             EditableField::PaddingX,
             EditableField::PaddingY,
             EditableField::ScrollbackHistory,
@@ -1254,6 +1281,14 @@ mod tests {
             assert_eq!(spec.codec, FieldCodec::Numeric);
             assert!(spec.numeric_step.is_some());
         }
+
+        let line_height_spec = SettingsWindow::field_spec(EditableField::LineHeight);
+        let step = line_height_spec
+            .numeric_step
+            .expect("missing line-height step");
+        assert!((step.delta - 0.05).abs() < f32::EPSILON);
+        assert!((step.min - termy_config_core::MIN_LINE_HEIGHT).abs() < f32::EPSILON);
+        assert!((step.max - termy_config_core::MAX_LINE_HEIGHT).abs() < f32::EPSILON);
     }
 
     #[test]

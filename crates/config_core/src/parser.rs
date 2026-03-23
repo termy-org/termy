@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::color_keys::{ColorEntryError, apply_color_entry};
 use crate::constants::{
-    MAX_MOUSE_SCROLL_MULTIPLIER, MAX_PANE_FOCUS_STRENGTH, MAX_SCROLLBACK_HISTORY,
-    MIN_MOUSE_SCROLL_MULTIPLIER, SHELL_DECIDE_THEME_ID, VALID_SECTIONS,
+    MAX_LINE_HEIGHT, MAX_MOUSE_SCROLL_MULTIPLIER, MAX_PANE_FOCUS_STRENGTH, MAX_SCROLLBACK_HISTORY,
+    MIN_LINE_HEIGHT, MIN_MOUSE_SCROLL_MULTIPLIER, SHELL_DECIDE_THEME_ID, VALID_SECTIONS,
 };
 use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
@@ -517,6 +517,29 @@ impl AppConfig {
                         parse_positive_f32_field(&mut diagnostics, line_number, key, value)
                     {
                         config.font_size = parsed;
+                    }
+                }
+                RootSettingId::LineHeight => {
+                    if let Some(parsed) = parse_f32_field(
+                        &mut diagnostics,
+                        line_number,
+                        key,
+                        value,
+                        "a finite number between 0.8 and 2.5",
+                    ) {
+                        if parsed.is_finite()
+                            && (MIN_LINE_HEIGHT..=MAX_LINE_HEIGHT).contains(&parsed)
+                        {
+                            config.line_height = parsed;
+                        } else {
+                            push_invalid_value(
+                                &mut diagnostics,
+                                line_number,
+                                key,
+                                value,
+                                "a finite number between 0.8 and 2.5",
+                            );
+                        }
                     }
                 }
                 RootSettingId::CursorStyle => {

@@ -89,12 +89,14 @@ impl SettingsWindow {
         let chrome_contrast = self.config.chrome_contrast;
         let font_family = self.config.font_family.clone();
         let font_size = self.config.font_size;
+        let line_height = self.config.line_height;
         let padding_x = self.config.padding_x;
         let padding_y = self.config.padding_y;
         let theme_meta = Self::setting_metadata_or_fallback("theme");
         let opacity_meta = Self::setting_metadata_or_fallback("background_opacity");
         let font_family_meta = Self::setting_metadata_or_fallback("font_family");
         let font_size_meta = Self::setting_metadata_or_fallback("font_size");
+        let line_height_meta = Self::setting_metadata_or_fallback("line_height");
         let padding_x_meta = Self::setting_metadata_or_fallback("padding_x");
         let padding_y_meta = Self::setting_metadata_or_fallback("padding_y");
 
@@ -159,6 +161,14 @@ impl SettingsWindow {
                 font_size_meta.title,
                 font_size_meta.description,
                 format!("{}px", font_size as i32),
+                cx,
+            ),
+            self.render_editable_row(
+                "line_height",
+                EditableField::LineHeight,
+                line_height_meta.title,
+                line_height_meta.description,
+                format!("{line_height:.2}"),
                 cx,
             ),
         ];

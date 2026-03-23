@@ -333,6 +333,7 @@ define_root_settings! {
     (WindowHeight, "window_height", [], Advanced, "WINDOW", "Window Height", "Default startup window height in pixels", ["window", "height", "startup", "size"], RootSettingValueKind::Numeric, false),
     (FontFamily, "font_family", [], Appearance, "FONT", "Font Family", "Font family used in terminal UI", ["font", "typeface", "text"], RootSettingValueKind::Special, false),
     (FontSize, "font_size", [], Appearance, "FONT", "Font Size", "Terminal font size in pixels", ["font", "size", "text"], RootSettingValueKind::Numeric, false),
+    (LineHeight, "line_height", [], Appearance, "FONT", "Line Height", "Terminal line height multiplier (0.8 to 2.5)", ["font", "line", "height", "spacing", "rows"], RootSettingValueKind::Numeric, false),
     (CursorStyle, "cursor_style", [], Terminal, "CURSOR", "Cursor Style", "Shape of the terminal cursor", ["cursor", "shape", "block", "line"], RootSettingValueKind::Enum, false),
     (CursorBlink, "cursor_blink", [], Terminal, "CURSOR", "Cursor Blink", "Enable blinking cursor animation", ["cursor", "blink", "animation"], RootSettingValueKind::Boolean, false),
     (BackgroundOpacity, "background_opacity", [], Appearance, "WINDOW", "Background Opacity", "Window background opacity (0.0 to 1.0)", ["background", "opacity", "transparency"], RootSettingValueKind::Numeric, false),
@@ -478,6 +479,7 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::WindowHeight => Some(config.window_height.to_string()),
         RootSettingId::FontFamily => Some(config.font_family.clone()),
         RootSettingId::FontSize => Some(config.font_size.to_string()),
+        RootSettingId::LineHeight => Some(crate::format_line_height(config.line_height)),
         RootSettingId::CursorStyle => Some(match config.cursor_style {
             CursorStyle::Line => "line".to_string(),
             CursorStyle::Block => "block".to_string(),
@@ -639,6 +641,15 @@ mod tests {
         assert_eq!(
             root_setting_default_value(&defaults, RootSettingId::ChromeContrast),
             Some("false".to_string())
+        );
+    }
+
+    #[test]
+    fn line_height_default_value_matches_app_config() {
+        let defaults = AppConfig::default();
+        assert_eq!(
+            root_setting_default_value(&defaults, RootSettingId::LineHeight),
+            Some(crate::format_line_height(defaults.line_height))
         );
     }
 }

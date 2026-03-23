@@ -28,6 +28,11 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - Terminal font size in pixels
 - Group: `FONT`
 
+`line_height`
+- Default: `1.4`
+- Terminal line height multiplier (0.8 to 2.5)
+- Group: `FONT`
+
 `background_opacity`
 - Default: `1`
 - Window background opacity (0.0 to 1.0)

@@ -73,6 +73,8 @@ window_height = 820
 font_family = JetBrains Mono
 # Terminal font size in pixels
 font_size = 14
+# Terminal line height multiplier (0.8 to 2.5)
+line_height = 1.4
 # Shape of the terminal cursor
 cursor_style = block
 # Enable blinking cursor animation
