@@ -128,7 +128,18 @@ fn basic_keystroke_to_input(
                 Some(vec![b'\r'])
             }
         }
-        "tab" => Some(vec![b'\t']),
+        "tab" => {
+            if modifiers.shift
+                && !modifiers.control
+                && !modifiers.alt
+                && !modifiers.platform
+                && !modifiers.function
+            {
+                Some(b"\x1b[Z".to_vec())
+            } else {
+                Some(vec![b'\t'])
+            }
+        }
         "escape" => Some(vec![0x1b]),
         "backspace" => Some(vec![0x7f]),
         "delete" => Some(b"\x1b[3~".to_vec()),
@@ -931,6 +942,24 @@ mod tests {
                 true,
             ),
             Some(vec![0x14])
+        );
+    }
+
+    #[test]
+    fn legacy_mode_reports_plain_shift_tab_as_backtab() {
+        let modifiers = Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        };
+
+        assert_eq!(
+            keystroke_to_input(
+                &keystroke("tab", None, modifiers),
+                TerminalKeyEventKind::Press,
+                TerminalKeyboardMode::default(),
+                true,
+            ),
+            Some(b"\x1b[Z".to_vec())
         );
     }
 
