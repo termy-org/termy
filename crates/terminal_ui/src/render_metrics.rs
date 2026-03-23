@@ -9,6 +9,10 @@ pub struct TerminalUiRenderMetricsSnapshot {
     pub shaped_line_cache_hits: u64,
     pub shaped_line_cache_misses: u64,
     pub runtime_wakeup_count: u64,
+    pub span_damage_compute_us: u64,
+    pub span_row_ops_rebuild_us: u64,
+    pub span_text_shaping_us: u64,
+    pub span_grid_paint_us: u64,
 }
 
 impl TerminalUiRenderMetricsSnapshot {
@@ -29,6 +33,18 @@ impl TerminalUiRenderMetricsSnapshot {
             runtime_wakeup_count: self
                 .runtime_wakeup_count
                 .saturating_sub(previous.runtime_wakeup_count),
+            span_damage_compute_us: self
+                .span_damage_compute_us
+                .saturating_sub(previous.span_damage_compute_us),
+            span_row_ops_rebuild_us: self
+                .span_row_ops_rebuild_us
+                .saturating_sub(previous.span_row_ops_rebuild_us),
+            span_text_shaping_us: self
+                .span_text_shaping_us
+                .saturating_sub(previous.span_text_shaping_us),
+            span_grid_paint_us: self
+                .span_grid_paint_us
+                .saturating_sub(previous.span_grid_paint_us),
         }
     }
 }
@@ -40,6 +56,10 @@ static SHAPE_LINE_CALLS: AtomicU64 = AtomicU64::new(0);
 static SHAPED_LINE_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
 static SHAPED_LINE_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
 static RUNTIME_WAKEUP_COUNT: AtomicU64 = AtomicU64::new(0);
+static SPAN_DAMAGE_COMPUTE_US: AtomicU64 = AtomicU64::new(0);
+static SPAN_ROW_OPS_REBUILD_US: AtomicU64 = AtomicU64::new(0);
+static SPAN_TEXT_SHAPING_US: AtomicU64 = AtomicU64::new(0);
+static SPAN_GRID_PAINT_US: AtomicU64 = AtomicU64::new(0);
 
 fn increment_counter(counter: &AtomicU64) {
     let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
@@ -67,6 +87,28 @@ pub(crate) fn increment_runtime_wakeup_count() {
     increment_counter(&RUNTIME_WAKEUP_COUNT);
 }
 
+fn add_to_counter(counter: &AtomicU64, micros: u64) {
+    let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        Some(current.saturating_add(micros))
+    });
+}
+
+pub fn add_span_damage_compute_us(micros: u64) {
+    add_to_counter(&SPAN_DAMAGE_COMPUTE_US, micros);
+}
+
+pub(crate) fn add_span_row_ops_rebuild_us(micros: u64) {
+    add_to_counter(&SPAN_ROW_OPS_REBUILD_US, micros);
+}
+
+pub(crate) fn add_span_text_shaping_us(micros: u64) {
+    add_to_counter(&SPAN_TEXT_SHAPING_US, micros);
+}
+
+pub(crate) fn add_span_grid_paint_us(micros: u64) {
+    add_to_counter(&SPAN_GRID_PAINT_US, micros);
+}
+
 pub fn terminal_ui_render_metrics_snapshot() -> TerminalUiRenderMetricsSnapshot {
     TerminalUiRenderMetricsSnapshot {
         grid_paint_count: GRID_PAINT_COUNT.load(Ordering::Relaxed),
@@ -74,6 +116,10 @@ pub fn terminal_ui_render_metrics_snapshot() -> TerminalUiRenderMetricsSnapshot 
         shaped_line_cache_hits: SHAPED_LINE_CACHE_HITS.load(Ordering::Relaxed),
         shaped_line_cache_misses: SHAPED_LINE_CACHE_MISSES.load(Ordering::Relaxed),
         runtime_wakeup_count: RUNTIME_WAKEUP_COUNT.load(Ordering::Relaxed),
+        span_damage_compute_us: SPAN_DAMAGE_COMPUTE_US.load(Ordering::Relaxed),
+        span_row_ops_rebuild_us: SPAN_ROW_OPS_REBUILD_US.load(Ordering::Relaxed),
+        span_text_shaping_us: SPAN_TEXT_SHAPING_US.load(Ordering::Relaxed),
+        span_grid_paint_us: SPAN_GRID_PAINT_US.load(Ordering::Relaxed),
     }
 }
 
@@ -83,6 +129,10 @@ pub fn terminal_ui_render_metrics_reset() {
     SHAPED_LINE_CACHE_HITS.store(0, Ordering::Relaxed);
     SHAPED_LINE_CACHE_MISSES.store(0, Ordering::Relaxed);
     RUNTIME_WAKEUP_COUNT.store(0, Ordering::Relaxed);
+    SPAN_DAMAGE_COMPUTE_US.store(0, Ordering::Relaxed);
+    SPAN_ROW_OPS_REBUILD_US.store(0, Ordering::Relaxed);
+    SPAN_TEXT_SHAPING_US.store(0, Ordering::Relaxed);
+    SPAN_GRID_PAINT_US.store(0, Ordering::Relaxed);
 }
 
 #[cfg(test)]
