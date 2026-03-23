@@ -206,7 +206,6 @@ jobs:
     timeout-minutes: 15
     needs:
       - attach-and-finalize-release
-    if: ${{ !github.event.release.prerelease }}
     permissions:
       contents: write
     steps:

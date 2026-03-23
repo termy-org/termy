@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, FileText } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { getDocsByCategory, getAllDocs, sortDocCategories } from "@/lib/docs";
@@ -88,9 +88,8 @@ export function Sidebar({ currentSlug, search, onSearchChange }: SidebarProps) {
 
   return (
     <aside className="hidden lg:block w-64 shrink-0">
-      <nav className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2">
-        {/* Search input */}
-        <div className="relative mb-6">
+      <nav className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-3">
+        <div className="relative mb-4">
           <svg
             className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
             fill="none"
@@ -109,7 +108,7 @@ export function Sidebar({ currentSlug, search, onSearchChange }: SidebarProps) {
             placeholder="Search docs..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-9 pr-8 py-2 text-sm bg-card/50 border border-border/50 rounded-xl placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all"
+            className="w-full pl-9 pr-8 py-2 text-sm bg-secondary/50 border border-border/50 rounded-lg placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-colors"
           />
           {search && (
             <button
@@ -134,7 +133,6 @@ export function Sidebar({ currentSlug, search, onSearchChange }: SidebarProps) {
           )}
         </div>
 
-        {/* Search results */}
         {filteredResults !== null ? (
           <div className="space-y-1">
             {filteredResults.length === 0 ? (
@@ -143,7 +141,7 @@ export function Sidebar({ currentSlug, search, onSearchChange }: SidebarProps) {
               </p>
             ) : (
               <>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider px-3 mb-2">
+                <p className="text-xs text-muted-foreground px-3 mb-2">
                   {filteredResults.length} result
                   {filteredResults.length !== 1 ? "s" : ""}
                 </p>
@@ -153,28 +151,31 @@ export function Sidebar({ currentSlug, search, onSearchChange }: SidebarProps) {
                     to="/docs/$"
                     params={{ _splat: doc.slug }}
                     search={{ q: search }}
-                    className={`flex items-center gap-2 text-sm py-2 px-3 rounded-lg transition-colors ${
+                    className={`block text-sm py-2 px-3 rounded-lg transition-colors ${
                       currentSlug === doc.slug
                         ? "bg-primary/10 text-primary font-medium"
                         : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
                     }`}
                   >
-                    <FileText className="w-4 h-4 shrink-0 opacity-50" />
-                    <span className="truncate">{doc.title}</span>
+                    <span className="block">{doc.title}</span>
+                    {doc.category && (
+                      <span className="text-xs text-muted-foreground/70">
+                        {doc.category}
+                      </span>
+                    )}
                   </Link>
                 ))}
               </>
             )}
           </div>
         ) : (
-          /* Category navigation */
           <div className="space-y-6">
             {categories.map((category) => (
               <div key={category}>
                 <button
                   type="button"
                   onClick={() => toggleCategory(category)}
-                  className="mb-2 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm font-semibold text-foreground hover:bg-secondary/50 transition-colors"
+                  className="mb-2 flex w-full items-center justify-between rounded-md px-1 py-1 text-left text-sm font-semibold text-foreground hover:bg-secondary/50"
                 >
                   <span>{category}</span>
                   {expandedCategories[category] !== false ? (
@@ -184,19 +185,19 @@ export function Sidebar({ currentSlug, search, onSearchChange }: SidebarProps) {
                   )}
                 </button>
                 {expandedCategories[category] !== false && (
-                  <ul className="space-y-0.5 border-l border-border/50 ml-2">
+                  <ul className="space-y-1">
                     {docsByCategory[category].map((doc) => (
                       <li key={doc.slug}>
                         <Link
                           to="/docs/$"
                           params={{ _splat: doc.slug }}
-                          className={`flex items-center gap-2 text-sm py-1.5 pl-4 pr-2 rounded-r-lg transition-colors ${
+                          className={`block text-sm py-1.5 px-3 rounded-lg transition-colors ${
                             currentSlug === doc.slug
-                              ? "bg-primary/10 text-primary font-medium border-l-2 border-primary -ml-[2px]"
-                              : "text-muted-foreground hover:text-foreground hover:bg-secondary/30"
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
                           }`}
                         >
-                          <span className="truncate">{doc.title}</span>
+                          {doc.title}
                         </Link>
                       </li>
                     ))}

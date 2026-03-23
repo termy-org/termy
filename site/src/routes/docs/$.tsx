@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import rehypeHighlight from "rehype-highlight";
 import { useMemo, type JSX, type ReactNode } from "react";
 import Markdown from "react-markdown";
@@ -76,7 +76,7 @@ function highlightText(text: string, query: string): ReactNode {
     return (
       <mark
         key={index}
-        className="bg-primary/25 text-primary rounded px-1 py-0.5 font-medium"
+        className="bg-primary/30 text-foreground rounded px-0.5"
       >
         {part}
       </mark>
@@ -117,11 +117,9 @@ function renderHeading(
   const id = generateSlug(String(children));
   const content = wrapHighlightedChildren(children, query);
 
-  const baseClasses = "scroll-mt-28 font-semibold tracking-tight";
-
   if (tagName === "h2") {
     return (
-      <h2 id={id} className={`${baseClasses} text-2xl mt-12 mb-4 text-foreground`}>
+      <h2 id={id} className="scroll-mt-24">
         {content}
       </h2>
     );
@@ -129,14 +127,14 @@ function renderHeading(
 
   if (tagName === "h3") {
     return (
-      <h3 id={id} className={`${baseClasses} text-xl mt-8 mb-3 text-foreground`}>
+      <h3 id={id} className="scroll-mt-24">
         {content}
       </h3>
     );
   }
 
   return (
-    <h4 id={id} className={`${baseClasses} text-lg mt-6 mb-2 text-foreground`}>
+    <h4 id={id} className="scroll-mt-24">
       {content}
     </h4>
   );
@@ -147,29 +145,12 @@ function createMarkdownComponents(query: string): Components {
     h2: ({ children }) => renderHeading("h2", children, query),
     h3: ({ children }) => renderHeading("h3", children, query),
     h4: ({ children }) => renderHeading("h4", children, query),
-    p: ({ children }) => (
-      <p className="leading-7 mb-4">{wrapHighlightedChildren(children, query)}</p>
-    ),
-    li: ({ children }) => (
-      <li className="mb-1">{wrapHighlightedChildren(children, query)}</li>
-    ),
+    p: ({ children }) => <p>{wrapHighlightedChildren(children, query)}</p>,
+    li: ({ children }) => <li>{wrapHighlightedChildren(children, query)}</li>,
     strong: ({ children }) => (
-      <strong className="font-semibold text-foreground">{wrapHighlightedChildren(children, query)}</strong>
+      <strong>{wrapHighlightedChildren(children, query)}</strong>
     ),
-    em: ({ children }) => (
-      <em className="italic">{wrapHighlightedChildren(children, query)}</em>
-    ),
-    code: ({ children, className }) => {
-      const isInline = !className;
-      if (isInline) {
-        return (
-          <code className="px-1.5 py-0.5 rounded-md bg-secondary text-sm font-mono text-primary">
-            {children}
-          </code>
-        );
-      }
-      return <code className={className}>{children}</code>;
-    },
+    em: ({ children }) => <em>{wrapHighlightedChildren(children, query)}</em>,
     pre: ({ children }) => {
       let content = "";
       if (
@@ -189,27 +170,19 @@ function createMarkdownComponents(query: string): Components {
       }
 
       return (
-        <div className="relative group my-6">
+        <div className="relative group">
           <CopyButton
             content={content.replace(/\n$/, "")}
             variant="outline"
             size="xs"
-            className="absolute right-3 top-3 z-10 opacity-0 transition-opacity group-hover:opacity-100"
+            className="absolute right-2 top-2 z-10 opacity-0 transition-opacity group-hover:opacity-100"
             aria-label="Copy code"
             title="Copy code"
           />
-          <pre className="rounded-xl bg-card/80 border border-border/50 p-4 overflow-x-auto">
-            {children}
-          </pre>
+          <pre>{children}</pre>
         </div>
       );
     },
-    blockquote: ({ children }) => (
-      <blockquote className="border-l-2 border-primary/50 pl-4 italic text-muted-foreground my-6">
-        {children}
-      </blockquote>
-    ),
-    hr: () => <hr className="border-border/50 my-8" />,
   };
 }
 
@@ -227,128 +200,101 @@ function DocPage(): JSX.Element {
   );
 
   return (
-    <section className="relative min-h-screen">
-      {/* Ambient background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-1/4 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />
-      </div>
+    <section className="pt-24 pb-20">
+      <div className="flex gap-8">
+        <Sidebar
+          currentSlug={doc.slug}
+          search={search}
+          onSearchChange={handleSearchChange}
+        />
 
-      <div className="relative pt-24 pb-20">
-        <div className="flex gap-10">
-          <Sidebar
-            currentSlug={doc.slug}
-            search={search}
-            onSearchChange={handleSearchChange}
-          />
+        <main className="flex-1 min-w-0">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="lg:hidden mb-6 text-muted-foreground hover:text-foreground"
+          >
+            <Link to="/docs">
+              <ChevronLeft className="w-4 h-4" />
+              All docs
+            </Link>
+          </Button>
 
-          <main className="flex-1 min-w-0">
-            {/* Mobile navigation */}
-            <div className="lg:hidden mb-6 flex items-center gap-4">
-              <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground"
+          <div className="lg:hidden mb-6">
+            <SearchInput value={search} onChange={handleSearchChange} />
+          </div>
+
+          {search && (
+            <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Highlighting: </span>
+              <span className="px-2 py-0.5 bg-primary/20 text-primary rounded font-medium">
+                {search}
+              </span>
+            </div>
+          )}
+
+          <div className="mb-8">
+            {doc.category && (
+              <span className="text-sm text-primary font-medium">
+                {doc.category}
+              </span>
+            )}
+            <h1 className="text-3xl md:text-4xl font-bold mt-1">{doc.title}</h1>
+            {doc.description && (
+              <p className="mt-3 text-muted-foreground">{doc.description}</p>
+            )}
+          </div>
+
+          <div className={`${proseClasses} prose-li:text-muted-foreground`}>
+            <Markdown
+              components={markdownComponents}
+              rehypePlugins={[rehypeHighlight]}
+            >
+              {doc.content}
+            </Markdown>
+          </div>
+
+          <div className="mt-12 pt-8 border-t border-border/50 flex flex-col sm:flex-row justify-between gap-4">
+            {prevDoc ? (
+              <Link
+                to="/docs/$"
+                params={{ _splat: prevDoc.slug }}
+                className="flex-1 p-4 rounded-lg border border-border/50 hover:border-primary/50 hover:bg-card/30 transition-all group"
               >
-                <Link to="/docs">
-                  <ChevronLeft className="w-4 h-4 mr-1" />
-                  All docs
-                </Link>
-              </Button>
-            </div>
-
-            {/* Mobile search */}
-            <div className="lg:hidden mb-6">
-              <SearchInput value={search} onChange={handleSearchChange} />
-            </div>
-
-            {/* Search indicator */}
-            {search && (
-              <div className="mb-6 flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">Highlighting:</span>
-                <span className="px-2 py-0.5 bg-primary/15 text-primary rounded-md font-medium">
-                  {search}
-                </span>
-              </div>
+                <span className="text-xs text-muted-foreground">Previous</span>
+                <div className="flex items-center gap-2 mt-1">
+                  <ChevronLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                  <span className="font-medium text-foreground group-hover:text-primary transition-colors">
+                    {prevDoc.title}
+                  </span>
+                </div>
+              </Link>
+            ) : (
+              <div className="flex-1" />
             )}
 
-            {/* Article header */}
-            <article>
-              <header className="mb-10">
-                {doc.category && (
-                  <span className="inline-block text-sm font-medium text-primary mb-3">
-                    {doc.category}
+            {nextDoc ? (
+              <Link
+                to="/docs/$"
+                params={{ _splat: nextDoc.slug }}
+                className="flex-1 p-4 rounded-lg border border-border/50 hover:border-primary/50 hover:bg-card/30 transition-all group sm:text-right"
+              >
+                <span className="text-xs text-muted-foreground">Next</span>
+                <div className="flex items-center sm:justify-end gap-2 mt-1">
+                  <span className="font-medium text-foreground group-hover:text-primary transition-colors">
+                    {nextDoc.title}
                   </span>
-                )}
-                <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
-                  {doc.title}
-                </h1>
-                {doc.description && (
-                  <p className="mt-4 text-lg text-muted-foreground leading-relaxed">
-                    {doc.description}
-                  </p>
-                )}
-              </header>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                </div>
+              </Link>
+            ) : (
+              <div className="flex-1" />
+            )}
+          </div>
+        </main>
 
-              {/* Article content */}
-              <div className={`${proseClasses} max-w-none`}>
-                <Markdown
-                  components={markdownComponents}
-                  rehypePlugins={[rehypeHighlight]}
-                >
-                  {doc.content}
-                </Markdown>
-              </div>
-            </article>
-
-            {/* Pagination */}
-            <nav className="mt-16 pt-8 border-t border-border/50">
-              <div className="flex flex-col sm:flex-row justify-between gap-4">
-                {prevDoc ? (
-                  <Link
-                    to="/docs/$"
-                    params={{ _splat: prevDoc.slug }}
-                    className="group flex-1 p-5 rounded-xl border border-border/50 hover:border-primary/30 hover:bg-card/30 transition-all"
-                  >
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                      Previous
-                    </span>
-                    <div className="flex items-center gap-2 mt-1">
-                      <ArrowLeft className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                      <span className="font-medium text-foreground group-hover:text-primary transition-colors">
-                        {prevDoc.title}
-                      </span>
-                    </div>
-                  </Link>
-                ) : (
-                  <div className="flex-1" />
-                )}
-
-                {nextDoc ? (
-                  <Link
-                    to="/docs/$"
-                    params={{ _splat: nextDoc.slug }}
-                    className="group flex-1 p-5 rounded-xl border border-border/50 hover:border-primary/30 hover:bg-card/30 transition-all sm:text-right"
-                  >
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                      Next
-                    </span>
-                    <div className="flex items-center sm:justify-end gap-2 mt-1">
-                      <span className="font-medium text-foreground group-hover:text-primary transition-colors">
-                        {nextDoc.title}
-                      </span>
-                      <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                    </div>
-                  </Link>
-                ) : (
-                  <div className="flex-1" />
-                )}
-              </div>
-            </nav>
-          </main>
-
-          <TableOfContents headings={headings} />
-        </div>
+        <TableOfContents headings={headings} />
       </div>
     </section>
   );
@@ -378,10 +324,10 @@ function SearchInput({
       </svg>
       <input
         type="text"
-        placeholder="Search documentation..."
+        placeholder="Search docs..."
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full pl-9 pr-8 py-2.5 text-sm bg-card/50 border border-border/50 rounded-xl placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/30 transition-all"
+        className="w-full pl-9 pr-8 py-2 text-sm bg-secondary/50 border border-border/50 rounded-lg placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-colors"
       />
       {value && (
         <button
