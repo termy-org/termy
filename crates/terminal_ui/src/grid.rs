@@ -1,4 +1,5 @@
 use crate::render_metrics::{
+    add_span_grid_paint_us, add_span_row_ops_rebuild_us, add_span_text_shaping_us,
     increment_grid_paint_count, increment_shape_line_calls, increment_shaped_line_cache_hit,
     increment_shaped_line_cache_miss,
 };
@@ -6,7 +7,7 @@ use gpui::{
     App, Bounds, Element, Font, FontFeatures, FontWeight, Hsla, IntoElement, Pixels, ShapedLine,
     SharedString, Size, TextAlign, TextRun, UnderlineStyle, Window, point, px, quad,
 };
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, time::Instant};
 
 /// Info needed to render a single cell.
 #[derive(Clone)]
@@ -42,6 +43,9 @@ pub enum TerminalGridPaintDamage {
     None,
     Full,
     Rows(Arc<[usize]>),
+    /// Row damage with column bounds `(row, left_col_inclusive, right_col_inclusive)`.
+    /// Emitted when alacritty reports partial damage with column-level granularity.
+    RowRanges(Arc<[(usize, usize, usize)]>),
 }
 
 #[derive(Clone, Default)]
@@ -82,6 +86,7 @@ pub struct TerminalGrid {
     pub search_current_bg: Hsla,
     pub hovered_link_range: Option<(usize, usize, usize)>,
     pub cursor_cell: Option<(usize, usize)>,
+    pub cursor_visible: bool,
     pub font_family: SharedString,
     pub font_size: Pixels,
     pub cursor_style: TerminalCursorStyle,
@@ -215,7 +220,16 @@ struct TerminalGridPaintCache {
     row_ops: Vec<CachedRowPaintOps>,
     style_key: Option<GridPaintStyleKey>,
     last_cursor_cell: Option<(usize, usize)>,
+    last_cursor_visible: bool,
     last_hovered_link_range: Option<(usize, usize, usize)>,
+    /// Per-pass scratch: `Some((left, right))` if only that column range is dirty for the row.
+    /// `None` means full-row damage (cursor/hover transitions, or no damage info available).
+    /// Cleared and repopulated at the start of every paint pass.
+    dirty_col_ranges: Vec<Option<(usize, usize)>>,
+    /// Per-style cache: maps hsla_bits(cell.bg) → resolved background fill color.
+    /// Avoids redundant float comparisons when many cells share the same default background.
+    /// Cleared whenever the style key changes.
+    color_cache: HashMap<[u32; 4], Option<Hsla>>,
 }
 
 impl TerminalGridPaintCache {
@@ -223,12 +237,21 @@ impl TerminalGridPaintCache {
         self.row_ops.clear();
         self.style_key = None;
         self.last_cursor_cell = None;
+        self.last_cursor_visible = false;
         self.last_hovered_link_range = None;
+        self.dirty_col_ranges.clear();
+        self.color_cache.clear();
     }
 
     fn ensure_row_capacity(&mut self, row_count: usize) {
         if self.row_ops.len() != row_count {
             self.row_ops = vec![CachedRowPaintOps::default(); row_count];
+        }
+        // dirty_col_ranges is per-pass scratch — resize and reset every frame
+        if self.dirty_col_ranges.len() != row_count {
+            self.dirty_col_ranges = vec![None; row_count];
+        } else {
+            self.dirty_col_ranges.fill(None);
         }
     }
 }
@@ -489,6 +512,17 @@ fn text_draw_ops_match_without_row(lhs: &TextDrawOp, rhs: &TextDrawOp) -> bool {
     }
 }
 
+fn draw_op_col_range(op: &TextDrawOp) -> (usize, usize) {
+    match op {
+        TextDrawOp::Batch(b) => (b.start_col, b.start_col + b.cell_len.saturating_sub(1)),
+        TextDrawOp::Block(b) => (b.col, b.col),
+    }
+}
+
+fn col_ranges_overlap(a: (usize, usize), b: (usize, usize)) -> bool {
+    a.0 <= b.1 && b.0 <= a.1
+}
+
 fn cached_row_draw_ops_match_without_row(lhs: &CachedRowPaintOps, rhs: &CachedRowPaintOps) -> bool {
     lhs.background_spans == rhs.background_spans
         && lhs.draw_ops.len() == rhs.draw_ops.len()
@@ -587,7 +621,9 @@ impl Element for TerminalGrid {
         cx: &mut App,
     ) {
         increment_grid_paint_count();
+        let t_paint = Instant::now();
         self.paint_with_row_cache(bounds, window, cx);
+        add_span_grid_paint_us(t_paint.elapsed().as_micros() as u64);
     }
 }
 
@@ -626,7 +662,11 @@ impl TerminalGrid {
         }
     }
 
-    fn build_row_background_spans(&self, row_cells: &[CellRenderInfo]) -> Vec<BackgroundSpan> {
+    fn build_row_background_spans(
+        &self,
+        row_cells: &[CellRenderInfo],
+        color_cache: &mut HashMap<[u32; 4], Option<Hsla>>,
+    ) -> Vec<BackgroundSpan> {
         if row_cells.is_empty() {
             return Vec::new();
         }
@@ -635,7 +675,19 @@ impl TerminalGrid {
         let mut current: Option<BackgroundSpan> = None;
 
         for cell in row_cells {
-            let fill = self.row_background_fill(cell);
+            // For cells with default background that aren't highlighted, cache the fill
+            // resolution to avoid repeated float comparisons against terminal_surface_bg.
+            let fill = if !cell.selected && !cell.search_current && !cell.search_match
+                && cell.bg.a > 0.01
+                && cell.uses_terminal_default_bg
+            {
+                let key = hsla_bits(cell.bg);
+                *color_cache.entry(key).or_insert_with(|| {
+                    (cell.bg != self.terminal_surface_bg).then_some(cell.bg)
+                })
+            } else {
+                self.row_background_fill(cell)
+            };
             match (current.as_mut(), fill) {
                 (Some(span), Some(color))
                     if span.color == color && span.end_col_exclusive == cell.col =>
@@ -730,10 +782,11 @@ impl TerminalGrid {
         row_cells: &[CellRenderInfo],
         cursor_fg: Hsla,
         highlight_fg: Hsla,
+        color_cache: &mut HashMap<[u32; 4], Option<Hsla>>,
     ) -> CachedRowPaintOps {
         let draw_ops = self.collect_row_draw_ops(row_cells, cursor_fg, highlight_fg);
         CachedRowPaintOps {
-            background_spans: self.build_row_background_spans(row_cells),
+            background_spans: self.build_row_background_spans(row_cells, color_cache),
             shaped_lines: vec![None; draw_ops.len()],
             draw_ops,
         }
@@ -819,12 +872,14 @@ impl TerminalGrid {
                             underline: batch.underline,
                             strikethrough: None,
                         };
+                        let t_shape = Instant::now();
                         row_ops.shaped_lines[index] = Some(window.text_system().shape_line(
                             batch.text.clone().into(),
                             self.font_size,
                             &[run],
                             Some(self.cell_size.width),
                         ));
+                        add_span_text_shaping_us(t_shape.elapsed().as_micros() as u64);
                         row_ops.shaped_lines[index]
                             .as_ref()
                             .expect("cached shaped line must be created")
@@ -860,6 +915,9 @@ impl TerminalGrid {
     ) -> (bool, bool, Arc<[usize]>) {
         let style_key = self.paint_style_key();
         let style_changed = cache.style_key.as_ref() != Some(&style_key);
+        if style_changed {
+            cache.color_cache.clear();
+        }
         cache.style_key = Some(style_key);
 
         let mut full_repaint =
@@ -868,6 +926,18 @@ impl TerminalGrid {
         if let TerminalGridPaintDamage::Rows(damaged_rows) = &self.paint_damage {
             rows.extend(damaged_rows.iter().copied().filter(|row| *row < self.rows));
         }
+        if let TerminalGridPaintDamage::RowRanges(spans) = &self.paint_damage {
+            for &(row, left, right) in spans.iter() {
+                if row < self.rows {
+                    rows.push(row);
+                    // Merge multiple spans on the same row into one union range
+                    cache.dirty_col_ranges[row] = Some(match cache.dirty_col_ranges[row] {
+                        None => (left, right),
+                        Some((prev_l, prev_r)) => (prev_l.min(left), prev_r.max(right)),
+                    });
+                }
+            }
+        }
 
         if cache.last_cursor_cell != self.cursor_cell {
             push_row_if_in_bounds(
@@ -875,6 +945,15 @@ impl TerminalGrid {
                 cache.last_cursor_cell.map(|(_, row)| row),
                 self.rows,
             );
+            push_row_if_in_bounds(&mut rows, self.cursor_cell.map(|(_, row)| row), self.rows);
+        }
+
+        // Blink visibility changed → only need to rebuild for Block cursor, since the
+        // cursor cell's text fg color is baked into draw ops. Line cursor is a plain
+        // quad painted after row ops and needs no row rebuild on blink.
+        if cache.last_cursor_visible != self.cursor_visible
+            && self.cursor_style == TerminalCursorStyle::Block
+        {
             push_row_if_in_bounds(&mut rows, self.cursor_cell.map(|(_, row)| row), self.rows);
         }
 
@@ -897,6 +976,7 @@ impl TerminalGrid {
         }
 
         cache.last_cursor_cell = self.cursor_cell;
+        cache.last_cursor_visible = self.cursor_visible;
         cache.last_hovered_link_range = self.hovered_link_range;
 
         (full_repaint, style_changed, sorted_dedup_rows(rows))
@@ -906,6 +986,9 @@ impl TerminalGrid {
         let Some((cursor_col, cursor_row)) = self.cursor_cell else {
             return;
         };
+        if !self.cursor_visible {
+            return;
+        }
         if cursor_row != row {
             return;
         }
@@ -950,21 +1033,35 @@ impl TerminalGrid {
         highlight_fg: Hsla,
     ) {
         let previous_row_ops = (!style_changed).then(|| cache.row_ops.clone());
+        // Build ops first using color_cache, then write to row_ops (field-split borrow).
         let mut rebuild_row = |row: usize| {
             if row >= self.rows {
                 return;
             }
+            // Read col range hint (Copy) before any mutable borrows.
+            let dirty_col_range = cache.dirty_col_ranges.get(row).copied().flatten();
+
+            // Build the next ops, using color_cache (separate field from row_ops).
+            let mut next_row_ops = if let Some(row_cells) = self.cells.get(row) {
+                self.rebuild_cached_row_ops(
+                    row_cells.as_slice(),
+                    cursor_fg,
+                    highlight_fg,
+                    &mut cache.color_cache,
+                )
+            } else {
+                // Row is no longer present — clear stale ops.
+                CachedRowPaintOps::default()
+            };
+
+            // color_cache borrow ends here; now we can mutably borrow row_ops.
             let Some(row_slot) = cache.row_ops.get_mut(row) else {
                 return;
             };
-            let Some(row_cells) = self.cells.get(row) else {
-                // If a row is now missing from `cells`, clear stale paint ops for this row so we
-                // don't replay previous-frame glyphs/background spans.
-                *row_slot = CachedRowPaintOps::default();
-                return;
-            };
-            let mut next_row_ops =
-                self.rebuild_cached_row_ops(row_cells.as_slice(), cursor_fg, highlight_fg);
+
+            // 1. Try whole-row ShapedLine reuse: if the entire row's ops match a previous
+            //    row, reuse all its ShapedLine objects (existing logic).
+            let mut whole_row_reused = false;
             if let Some(previous_row_ops) = previous_row_ops.as_ref()
                 && let Some(previous_index) =
                     find_matching_previous_row_ops_index(row, &next_row_ops, previous_row_ops)
@@ -972,11 +1069,38 @@ impl TerminalGrid {
                 let previous = &previous_row_ops[previous_index];
                 if previous.shaped_lines.len() == next_row_ops.shaped_lines.len() {
                     next_row_ops.shaped_lines = previous.shaped_lines.clone();
+                    whole_row_reused = true;
                 }
             }
+
+            // 2. Per-op ShapedLine reuse: if we know the dirty column range (from RowRanges
+            //    damage), reuse ShapedLines for text batches that don't overlap the dirty
+            //    region. This avoids re-shaping unchanged text runs when only a few columns
+            //    changed (e.g. a single character typed at the cursor).
+            if !whole_row_reused {
+                if let Some(dirty_range) = dirty_col_range {
+                    if let Some(prev_row) =
+                        previous_row_ops.as_ref().and_then(|ops| ops.get(row))
+                    {
+                        for (i, op) in next_row_ops.draw_ops.iter().enumerate() {
+                            let op_range = draw_op_col_range(op);
+                            if !col_ranges_overlap(op_range, dirty_range) {
+                                if let Some(prev_op) = prev_row.draw_ops.get(i) {
+                                    if text_draw_ops_match_without_row(op, prev_op) {
+                                        next_row_ops.shaped_lines[i] =
+                                            prev_row.shaped_lines[i].clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             *row_slot = next_row_ops;
         };
 
+        let t0 = Instant::now();
         if full_repaint {
             for row in 0..self.rows {
                 rebuild_row(row);
@@ -986,6 +1110,7 @@ impl TerminalGrid {
                 rebuild_row(row);
             }
         }
+        add_span_row_ops_rebuild_us(t0.elapsed().as_micros() as u64);
     }
 
     fn paint_with_row_cache(&self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
@@ -1070,6 +1195,7 @@ impl TerminalGrid {
     fn cell_fg_color(&self, cell: &CellRenderInfo, cursor_fg: Hsla, highlight_fg: Hsla) -> Hsla {
         if self.cursor_cell == Some((cell.col, cell.row))
             && self.cursor_style == TerminalCursorStyle::Block
+            && self.cursor_visible
         {
             cursor_fg
         } else if cell.selected {
@@ -1211,6 +1337,7 @@ mod tests {
             search_current_bg: test_color(0.5, 0.5, 0.5),
             hovered_link_range: hovered,
             cursor_cell: None,
+            cursor_visible: false,
             font_family: SharedString::from("JetBrains Mono"),
             font_size: px(14.0),
             cursor_style: TerminalCursorStyle::Block,
@@ -1537,6 +1664,7 @@ mod tests {
         cursor_block.search_current = true;
         let mut grid = test_grid(vec![cursor_block], None);
         grid.cursor_cell = Some((0, 0));
+        grid.cursor_visible = true;
         let ops = collect_draw_ops(&grid);
         let block_fg = match &ops[0] {
             TextDrawOp::Block(block) => block.fg,
@@ -1569,6 +1697,52 @@ mod tests {
         assert!(!full);
         assert!(!style_changed);
         assert_eq!(&*dirty_rows, &[1usize, 2usize, 4usize]);
+    }
+
+    #[test]
+    fn blink_only_does_not_dirty_rows_for_line_cursor() {
+        // Line cursor: toggling cursor_visible should NOT mark the cursor row dirty,
+        // since the cursor quad is painted as an overlay and row draw ops are unchanged.
+        let mut grid = test_grid(vec![test_cell(0, 0, 'a')], None);
+        grid.rows = 3;
+        grid.paint_damage = TerminalGridPaintDamage::None;
+        grid.cursor_cell = Some((0, 1));
+        grid.cursor_visible = false; // blink off
+        grid.cursor_style = TerminalCursorStyle::Line;
+
+        let mut cache = TerminalGridPaintCache {
+            style_key: Some(grid.paint_style_key()),
+            last_cursor_cell: Some((0, 1)), // same position
+            last_cursor_visible: true,      // was visible
+            ..Default::default()
+        };
+        let (full, style_changed, dirty_rows) = grid.dirty_rows_for_pass(&mut cache);
+        assert!(!full);
+        assert!(!style_changed);
+        assert!(dirty_rows.is_empty(), "Line cursor blink should not dirty any rows");
+    }
+
+    #[test]
+    fn blink_only_dirties_cursor_row_for_block_cursor() {
+        // Block cursor: toggling cursor_visible MUST mark the cursor row dirty,
+        // since the text fg color at the cursor cell is baked into draw ops.
+        let mut grid = test_grid(vec![test_cell(0, 0, 'a')], None);
+        grid.rows = 3;
+        grid.paint_damage = TerminalGridPaintDamage::None;
+        grid.cursor_cell = Some((0, 1));
+        grid.cursor_visible = false; // blink off
+        grid.cursor_style = TerminalCursorStyle::Block;
+
+        let mut cache = TerminalGridPaintCache {
+            style_key: Some(grid.paint_style_key()),
+            last_cursor_cell: Some((0, 1)), // same position
+            last_cursor_visible: true,      // was visible
+            ..Default::default()
+        };
+        let (full, style_changed, dirty_rows) = grid.dirty_rows_for_pass(&mut cache);
+        assert!(!full);
+        assert!(!style_changed);
+        assert_eq!(&*dirty_rows, &[1usize], "Block cursor blink must dirty the cursor row");
     }
 
     #[test]
@@ -1612,7 +1786,7 @@ mod tests {
         fifth.bg = Hsla::transparent_black();
 
         let grid = test_grid(vec![first, second, third, fourth, fifth], None);
-        let spans = grid.build_row_background_spans(grid.cells[0].as_slice());
+        let spans = grid.build_row_background_spans(grid.cells[0].as_slice(), &mut HashMap::new());
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].start_col, 0);
         assert_eq!(spans[0].end_col_exclusive, 2);
@@ -1632,7 +1806,7 @@ mod tests {
 
         let mut grid = test_grid(vec![default_bg_cell, ansi_bg_cell], None);
         grid.terminal_surface_bg = test_color(0.2, 0.2, 0.2);
-        let spans = grid.build_row_background_spans(grid.cells[0].as_slice());
+        let spans = grid.build_row_background_spans(grid.cells[0].as_slice(), &mut HashMap::new());
 
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].start_col, 1);
@@ -1648,7 +1822,7 @@ mod tests {
 
         let mut grid = test_grid(vec![default_bg_cell], None);
         grid.terminal_surface_bg = test_color(0.1, 0.1, 0.1);
-        let spans = grid.build_row_background_spans(grid.cells[0].as_slice());
+        let spans = grid.build_row_background_spans(grid.cells[0].as_slice(), &mut HashMap::new());
 
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].start_col, 0);
@@ -1662,7 +1836,7 @@ mod tests {
         half_block.bg = test_color(0.8, 0.4, 0.2);
 
         let grid = test_grid(vec![half_block], None);
-        let spans = grid.build_row_background_spans(grid.cells[0].as_slice());
+        let spans = grid.build_row_background_spans(grid.cells[0].as_slice(), &mut HashMap::new());
 
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].start_col, 0);
@@ -1694,11 +1868,11 @@ mod tests {
         };
 
         let previous_row_ops = vec![
-            old_grid.rebuild_cached_row_ops(old_grid.cells[0].as_slice(), cursor_fg, highlight_fg),
-            old_grid.rebuild_cached_row_ops(old_grid.cells[1].as_slice(), cursor_fg, highlight_fg),
+            old_grid.rebuild_cached_row_ops(old_grid.cells[0].as_slice(), cursor_fg, highlight_fg, &mut HashMap::new()),
+            old_grid.rebuild_cached_row_ops(old_grid.cells[1].as_slice(), cursor_fg, highlight_fg, &mut HashMap::new()),
         ];
         let next_row_ops =
-            new_grid.rebuild_cached_row_ops(new_grid.cells[0].as_slice(), cursor_fg, highlight_fg);
+            new_grid.rebuild_cached_row_ops(new_grid.cells[0].as_slice(), cursor_fg, highlight_fg, &mut HashMap::new());
 
         assert_eq!(
             find_matching_previous_row_ops_index(0, &next_row_ops, &previous_row_ops),
@@ -1727,11 +1901,13 @@ mod tests {
             previous_grid.cells[0].as_slice(),
             cursor_fg,
             highlight_fg,
+            &mut HashMap::new(),
         )];
         let next_row_ops = next_grid.rebuild_cached_row_ops(
             next_grid.cells[0].as_slice(),
             cursor_fg,
             highlight_fg,
+            &mut HashMap::new(),
         );
 
         assert_eq!(
@@ -1764,6 +1940,7 @@ mod tests {
                 l: 0.08,
                 a: 1.0,
             },
+            &mut HashMap::new(),
         );
 
         assert_eq!(row_ops.draw_ops.len(), 3);
@@ -1794,7 +1971,7 @@ mod tests {
         let mut cache = TerminalGridPaintCache {
             row_ops: vec![
                 CachedRowPaintOps::default(),
-                grid.rebuild_cached_row_ops(stale_row_cells.as_slice(), cursor_fg, highlight_fg),
+                grid.rebuild_cached_row_ops(stale_row_cells.as_slice(), cursor_fg, highlight_fg, &mut HashMap::new()),
             ],
             ..Default::default()
         };
@@ -1824,5 +2001,115 @@ mod tests {
         assert_eq!(handle.debug_row_cache_len_for_tests(), 3);
         handle.clear();
         assert_eq!(handle.debug_row_cache_len_for_tests(), 0);
+    }
+
+    #[test]
+    fn dirty_rows_for_pass_row_ranges_extracts_rows_and_col_ranges() {
+        let mut grid = test_grid(vec![test_cell(0, 0, 'a')], None);
+        grid.rows = 5;
+        grid.paint_damage =
+            TerminalGridPaintDamage::RowRanges(vec![(1, 10, 20), (3, 5, 8)].into());
+
+        let mut cache = TerminalGridPaintCache {
+            style_key: Some(grid.paint_style_key()),
+            ..Default::default()
+        };
+        cache.ensure_row_capacity(5);
+        let (full, style_changed, dirty_rows) = grid.dirty_rows_for_pass(&mut cache);
+
+        assert!(!full);
+        assert!(!style_changed);
+        assert_eq!(&*dirty_rows, &[1usize, 3usize]);
+        assert_eq!(cache.dirty_col_ranges[1], Some((10, 20)));
+        assert_eq!(cache.dirty_col_ranges[3], Some((5, 8)));
+        assert_eq!(cache.dirty_col_ranges[0], None);
+        assert_eq!(cache.dirty_col_ranges[2], None);
+    }
+
+    #[test]
+    fn dirty_rows_for_pass_row_ranges_merges_spans_on_same_row() {
+        let mut grid = test_grid(vec![test_cell(0, 0, 'a')], None);
+        grid.rows = 3;
+        // Two spans on row 1: cols 5-10 and cols 15-20 → should merge to 5-20
+        grid.paint_damage =
+            TerminalGridPaintDamage::RowRanges(vec![(1, 5, 10), (1, 15, 20)].into());
+
+        let mut cache = TerminalGridPaintCache {
+            style_key: Some(grid.paint_style_key()),
+            ..Default::default()
+        };
+        cache.ensure_row_capacity(3);
+        let (_, _, dirty_rows) = grid.dirty_rows_for_pass(&mut cache);
+
+        // Row 1 appears once despite two spans
+        assert_eq!(&*dirty_rows, &[1usize]);
+        // Col ranges should be unioned: min(5,15)=5, max(10,20)=20
+        assert_eq!(cache.dirty_col_ranges[1], Some((5, 20)));
+    }
+
+    #[test]
+    fn draw_op_col_range_returns_correct_range_for_batch() {
+        let batch = TextDrawOp::Batch(TextBatch::new(
+            5, // start_col
+            0, // row
+            'a',
+            TextBatchKey {
+                bold: false,
+                fg: Hsla::transparent_black(),
+            },
+            None,
+        ));
+        // Single char batch: range is (5, 5)
+        assert_eq!(draw_op_col_range(&batch), (5, 5));
+    }
+
+    #[test]
+    fn draw_op_col_range_returns_correct_range_for_block() {
+        let block = TextDrawOp::Block(BlockDraw {
+            row: 0,
+            col: 7,
+            geometry: block_element_geometry('\u{2580}').unwrap(),
+            fg: Hsla::transparent_black(),
+        });
+        assert_eq!(draw_op_col_range(&block), (7, 7));
+    }
+
+    #[test]
+    fn col_ranges_overlap_detects_overlapping_ranges() {
+        assert!(col_ranges_overlap((0, 5), (3, 8)));
+        assert!(col_ranges_overlap((3, 8), (0, 5)));
+        assert!(col_ranges_overlap((5, 5), (5, 5)));
+        assert!(col_ranges_overlap((0, 10), (5, 5)));
+    }
+
+    #[test]
+    fn col_ranges_overlap_detects_non_overlapping_ranges() {
+        assert!(!col_ranges_overlap((0, 4), (5, 10)));
+        assert!(!col_ranges_overlap((5, 10), (0, 4)));
+        assert!(!col_ranges_overlap((0, 0), (1, 1)));
+    }
+
+    #[test]
+    fn dirty_rows_for_pass_row_ranges_resets_each_pass() {
+        // Verify that dirty_col_ranges is cleared between passes (via ensure_row_capacity)
+        let mut grid = test_grid(vec![test_cell(0, 0, 'a')], None);
+        grid.rows = 3;
+        grid.paint_damage =
+            TerminalGridPaintDamage::RowRanges(vec![(1, 5, 10)].into());
+
+        let mut cache = TerminalGridPaintCache {
+            style_key: Some(grid.paint_style_key()),
+            ..Default::default()
+        };
+        cache.ensure_row_capacity(3);
+        grid.dirty_rows_for_pass(&mut cache);
+        assert_eq!(cache.dirty_col_ranges[1], Some((5, 10)));
+
+        // Second pass with different damage — must not carry over previous col range
+        grid.paint_damage = TerminalGridPaintDamage::None;
+        cache.ensure_row_capacity(3);
+        let (_, _, dirty_rows) = grid.dirty_rows_for_pass(&mut cache);
+        assert!(dirty_rows.is_empty());
+        assert_eq!(cache.dirty_col_ranges[1], None, "col ranges must reset each pass");
     }
 }

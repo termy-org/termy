@@ -27,7 +27,7 @@ pub use mouse_protocol::{
 pub use pane_terminal::PaneTerminal;
 pub use protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
 pub use render_metrics::{
-    TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_reset,
+    TerminalUiRenderMetricsSnapshot, add_span_damage_compute_us, terminal_ui_render_metrics_reset,
     terminal_ui_render_metrics_snapshot,
 };
 pub use runtime::{

@@ -46,11 +46,11 @@ use termy_terminal_ui::{
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
     normalize_working_directory_candidate, resolve_launch_working_directory,
 };
-#[cfg(debug_assertions)]
 use termy_terminal_ui::{
-    TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_reset,
-    terminal_ui_render_metrics_snapshot,
+    TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_snapshot,
 };
+#[cfg(debug_assertions)]
+use termy_terminal_ui::terminal_ui_render_metrics_reset;
 use termy_toast::ToastManager;
 
 mod benchmark;
@@ -902,6 +902,11 @@ struct DebugOverlayStats {
     terminal_event_drain_passes: u64,
     terminal_redraws: u64,
     alt_screen_fallback_redraws: u64,
+    span_damage_ms: f32,
+    span_rebuild_ms: f32,
+    span_shaping_ms: f32,
+    span_paint_ms: f32,
+    span_snapshot_base: TerminalUiRenderMetricsSnapshot,
     #[cfg(debug_assertions)]
     runtime_wakeup_base: u64,
     #[cfg(debug_assertions)]
@@ -929,6 +934,11 @@ impl DebugOverlayStats {
             terminal_event_drain_passes: 0,
             terminal_redraws: 0,
             alt_screen_fallback_redraws: 0,
+            span_damage_ms: 0.0,
+            span_rebuild_ms: 0.0,
+            span_shaping_ms: 0.0,
+            span_paint_ms: 0.0,
+            span_snapshot_base: terminal_ui_render_metrics_snapshot(),
             #[cfg(debug_assertions)]
             runtime_wakeup_base,
             #[cfg(debug_assertions)]
@@ -952,6 +962,11 @@ impl DebugOverlayStats {
         self.terminal_event_drain_passes = 0;
         self.terminal_redraws = 0;
         self.alt_screen_fallback_redraws = 0;
+        self.span_damage_ms = 0.0;
+        self.span_rebuild_ms = 0.0;
+        self.span_shaping_ms = 0.0;
+        self.span_paint_ms = 0.0;
+        self.span_snapshot_base = terminal_ui_render_metrics_snapshot();
         #[cfg(debug_assertions)]
         {
             self.runtime_wakeup_base = terminal_ui_render_metrics_snapshot().runtime_wakeup_count;
@@ -977,6 +992,7 @@ impl DebugOverlayStats {
             self.fps = self.frames_in_sample as f32 / elapsed_secs;
         }
         self.refresh_frame_percentiles();
+        self.refresh_span_timings();
         self.refresh_runtime_wakeups();
         self.sample_started_at = now;
         self.frames_in_sample = 0;
@@ -1030,6 +1046,17 @@ impl DebugOverlayStats {
         self.frame_p50_ms = percentile_millis(&sorted_samples, 50, 100);
         self.frame_p95_ms = percentile_millis(&sorted_samples, 95, 100);
         self.frame_p99_ms = percentile_millis(&sorted_samples, 99, 100);
+    }
+
+    fn refresh_span_timings(&mut self) {
+        let current = terminal_ui_render_metrics_snapshot();
+        let delta = current.saturating_sub(self.span_snapshot_base);
+        self.span_snapshot_base = current;
+        let frames = self.frames_in_sample.max(1) as f32;
+        self.span_damage_ms = delta.span_damage_compute_us as f32 / 1000.0 / frames;
+        self.span_rebuild_ms = delta.span_row_ops_rebuild_us as f32 / 1000.0 / frames;
+        self.span_shaping_ms = delta.span_text_shaping_us as f32 / 1000.0 / frames;
+        self.span_paint_ms = delta.span_grid_paint_us as f32 / 1000.0 / frames;
     }
 
     #[cfg(debug_assertions)]

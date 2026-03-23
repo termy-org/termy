@@ -7,6 +7,8 @@ use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
 use gpui::prelude::FluentBuilder;
 use gpui::{ElementInputHandler, canvas};
 use std::sync::Arc;
+use std::time::Instant;
+use termy_terminal_ui::add_span_damage_compute_us;
 
 fn blend_rgb_only(base: gpui::Rgba, target: gpui::Rgba, factor: f32) -> gpui::Rgba {
     let factor = factor.clamp(0.0, 1.0);
@@ -143,23 +145,42 @@ fn finalized_cache_update_strategy(
     }
 }
 
+thread_local! {
+    static DIRTY_SPAN_RANGES: std::cell::RefCell<Vec<(usize, usize, usize)>> =
+        std::cell::RefCell::new(Vec::with_capacity(128));
+}
+
 fn paint_damage_from_dirty_spans(
     spans: &[TerminalDirtySpan],
     row_count: usize,
 ) -> TerminalGridPaintDamage {
-    let mut rows = Vec::with_capacity(spans.len());
-    for span in spans {
-        if span.row < row_count {
-            rows.push(span.row);
+    let t0 = Instant::now();
+    let result = DIRTY_SPAN_RANGES.with(|buf| {
+        let mut ranges = buf.borrow_mut();
+        ranges.clear();
+        for span in spans {
+            if span.row < row_count {
+                ranges.push((span.row, span.left_col, span.right_col));
+            }
         }
-    }
-    rows.sort_unstable();
-    rows.dedup();
-    if rows.is_empty() {
-        TerminalGridPaintDamage::None
-    } else {
-        TerminalGridPaintDamage::Rows(rows.into())
-    }
+        if ranges.is_empty() {
+            return TerminalGridPaintDamage::None;
+        }
+        // Sort by row so consecutive entries for the same row are adjacent
+        ranges.sort_unstable_by_key(|&(row, _, _)| row);
+        // Merge multiple spans on the same row into one union of column ranges
+        ranges.dedup_by(|b, a| {
+            if a.0 == b.0 {
+                a.2 = a.2.max(b.2); // expand right bound of `a` to cover `b`
+                true // remove `b`
+            } else {
+                false
+            }
+        });
+        TerminalGridPaintDamage::RowRanges(Arc::from(ranges.as_slice()))
+    });
+    add_span_damage_compute_us(t0.elapsed().as_micros() as u64);
+    result
 }
 
 #[derive(Clone, Copy)]
@@ -842,6 +863,7 @@ impl TerminalView {
         font_size: Pixels,
         cursor_style: TerminalCursorStyle,
         cursor_cell: Option<(usize, usize)>,
+        cursor_visible: bool,
         terminal_surface_bg: gpui::Rgba,
     ) -> TerminalGrid {
         let mut selection_bg = colors.cursor;
@@ -876,6 +898,7 @@ impl TerminalView {
             },
             hovered_link_range,
             cursor_cell,
+            cursor_visible,
             font_family,
             font_size,
             cursor_style,
@@ -1583,6 +1606,59 @@ impl TerminalView {
         )
     }
 
+    fn render_link_preview_overlay(&self) -> Option<AnyElement> {
+        let link = self.hovered_link.as_ref()?;
+        let overlay_style = self.overlay_style();
+
+        let url = &link.target;
+        // Convert file:/// URLs to a readable path, contracting ~ for home dir.
+        let display_url = if let Some(path) = url.strip_prefix("file:///") {
+            let path = format!("/{}", path);
+            // Percent-decode common sequences (spaces, etc.)
+            let path = path.replace("%20", " ");
+            // Contract home directory to ~
+            #[cfg(unix)]
+            let path = if let Some(home) = dirs::home_dir() {
+                let home_str = home.to_string_lossy();
+                if let Some(rel) = path.strip_prefix(home_str.as_ref()) {
+                    format!("~{}", rel)
+                } else {
+                    path
+                }
+            } else {
+                path
+            };
+            if path.len() > 80 {
+                format!("…{}", &path[path.len() - 79..])
+            } else {
+                path
+            }
+        } else if url.len() > 80 {
+            format!("{}…", &url[..79])
+        } else {
+            url.clone()
+        };
+
+        Some(
+            div()
+                .id("link-preview-overlay")
+                .absolute()
+                .bottom(px(6.0))
+                .left(px(6.0))
+                .max_w(px(600.0))
+                .px(px(8.0))
+                .py(px(3.0))
+                .rounded(px(TERMINAL_OVERLAY_GEOMETRY.panel_radius))
+                .bg(overlay_style.chrome_panel_background(0.88))
+                .border_1()
+                .border_color(overlay_style.chrome_panel_neutral(0.20))
+                .text_size(px(11.5))
+                .text_color(overlay_style.panel_foreground(0.85))
+                .child(display_url)
+                .into_any_element(),
+        )
+    }
+
     #[cfg(target_os = "linux")]
     fn clamped_context_menu_origin(
         &self,
@@ -1990,6 +2066,7 @@ impl TerminalView {
         let context_menu_overlay = self.render_terminal_context_menu_overlay(cx);
         let tab_context_menu_overlay = self.render_tab_context_menu_overlay(cx);
         let toast_overlay = self.render_toast_overlay(&colors, cx);
+        let link_preview_overlay = self.render_link_preview_overlay();
         let resize_overlay = self
             .resize_indicator_visible_until
             .zip(self.resize_indicator_dims)
@@ -2031,6 +2108,10 @@ impl TerminalView {
             let terminal_event_drain_passes = self.debug_overlay_stats.terminal_event_drain_passes;
             let terminal_redraws = self.debug_overlay_stats.terminal_redraws;
             let alt_screen_fallback_redraws = self.debug_overlay_stats.alt_screen_fallback_redraws;
+            let span_damage_ms = self.debug_overlay_stats.span_damage_ms;
+            let span_rebuild_ms = self.debug_overlay_stats.span_rebuild_ms;
+            let span_shaping_ms = self.debug_overlay_stats.span_shaping_ms;
+            let span_paint_ms = self.debug_overlay_stats.span_paint_ms;
             #[cfg(debug_assertions)]
             let view_wake_signals = self.debug_overlay_stats.view_wake_signals;
             #[cfg(debug_assertions)]
@@ -2069,6 +2150,9 @@ impl TerminalView {
                 .child(format!("Redraws: {terminal_redraws}"))
                 .child(format!(
                     "Alt fallback redraws: {alt_screen_fallback_redraws}"
+                ))
+                .child(format!(
+                    "Spans ms: dmg={span_damage_ms:.2} rebuild={span_rebuild_ms:.2} shape={span_shaping_ms:.2} paint={span_paint_ms:.2}"
                 ));
             #[cfg(debug_assertions)]
             let overlay = overlay.child(format!(
@@ -2119,6 +2203,7 @@ impl TerminalView {
             .children(resize_overlay)
             .children(debug_overlay)
             .children(toast_overlay)
+            .children(link_preview_overlay)
             .into_any_element()
     }
 }
@@ -2303,13 +2388,15 @@ impl Render for TerminalView {
                     cols,
                     rows,
                 );
-                let (cursor_cell, pane_cursor_style) = match pane_cursor_state {
-                    Some(cursor) => (
-                        cursor_visible.then_some((cursor.col, cursor.row)),
-                        cursor.style,
-                    ),
-                    None => (None, configured_cursor_style),
-                };
+                let (cursor_cell, cursor_paint_visible, pane_cursor_style) =
+                    match pane_cursor_state {
+                        Some(cursor) => (
+                            Some((cursor.col, cursor.row)),
+                            cursor_visible,
+                            cursor.style,
+                        ),
+                        None => (None, false, configured_cursor_style),
+                    };
 
                 let terminal_grid = self.build_terminal_grid_from_cache(
                     pane_cells,
@@ -2325,6 +2412,7 @@ impl Render for TerminalView {
                     pane_font_size,
                     pane_cursor_style,
                     cursor_cell,
+                    cursor_paint_visible,
                     terminal_surface_bg,
                 );
 
@@ -2434,6 +2522,7 @@ impl Render for TerminalView {
                     );
                 }
 
+                let link_hovered = is_active_pane && self.hovered_link.is_some();
                 pane_layers.push(
                     div()
                         .id(SharedString::from(format!("pane-{}", pane.id)))
@@ -2442,6 +2531,7 @@ impl Render for TerminalView {
                         .top(px(pane_top))
                         .w(px(pane_width))
                         .h(px(pane_height))
+                        .when(link_hovered, |el| el.cursor_pointer())
                         .child(terminal_grid)
                         .into_any_element(),
                 );
