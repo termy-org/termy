@@ -4,12 +4,6 @@ const MAX_THEME_SUGGESTIONS: usize = 16;
 const MAX_FONT_SUGGESTIONS: usize = 200;
 const PANE_FOCUS_MAX: f32 = 2.0;
 
-/// Format a line-height multiplier for display and persistence (two decimal
-/// places, e.g. `"1.40"`).
-fn format_line_height(value: f32) -> String {
-    format!("{value:.2}")
-}
-
 #[cfg_attr(target_os = "windows", allow(dead_code))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum EditableField {

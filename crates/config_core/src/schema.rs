@@ -479,7 +479,7 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::WindowHeight => Some(config.window_height.to_string()),
         RootSettingId::FontFamily => Some(config.font_family.clone()),
         RootSettingId::FontSize => Some(config.font_size.to_string()),
-        RootSettingId::LineHeight => Some(config.line_height.to_string()),
+        RootSettingId::LineHeight => Some(crate::format_line_height(config.line_height)),
         RootSettingId::CursorStyle => Some(match config.cursor_style {
             CursorStyle::Line => "line".to_string(),
             CursorStyle::Block => "block".to_string(),
@@ -649,7 +649,7 @@ mod tests {
         let defaults = AppConfig::default();
         assert_eq!(
             root_setting_default_value(&defaults, RootSettingId::LineHeight),
-            Some(defaults.line_height.to_string())
+            Some(crate::format_line_height(defaults.line_height))
         );
     }
 }

@@ -109,11 +109,12 @@ impl SettingsWindow {
                         termy_config_core::MAX_LINE_HEIGHT
                     ));
                 }
-                self.config.line_height = parsed;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::LineHeight,
-                    &parsed.to_string(),
-                )
+                    &format_line_height(parsed),
+                )?;
+                self.config.line_height = parsed;
+                Ok(())
             }
             EditableField::PaddingX => {
                 let parsed = value

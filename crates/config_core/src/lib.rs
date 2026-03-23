@@ -35,5 +35,9 @@ pub use types::{
     TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
 };
 
+pub fn format_line_height(value: f32) -> String {
+    format!("{value:.2}")
+}
+
 #[cfg(test)]
 mod parser_tests;
