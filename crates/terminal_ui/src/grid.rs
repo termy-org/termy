@@ -717,11 +717,7 @@ impl TerminalGrid {
 
             Self::push_pending_text_batch(&mut current, &mut ops);
             current = Some(TextBatch::new(
-                cell.col,
-                cell.row,
-                cell.char,
-                key,
-                underline,
+                cell.col, cell.row, cell.char, key, underline,
             ));
         }
 
