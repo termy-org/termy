@@ -13,6 +13,23 @@ Use the latest release from GitHub and pick the asset for your platform.
 
 ## macOS
 
+### Homebrew (Recommended)
+
+Install Termy using Homebrew:
+
+```bash
+brew tap termy-org/termy
+brew install --cask termy
+```
+
+Or install in one line:
+
+```bash
+brew install --cask termy-org/termy/termy
+```
+
+### Manual Install
+
 1. Download the `.dmg` file.
 2. Open it and drag `Termy.app` into `Applications`.
 3. Launch Termy from `Applications`.
@@ -24,6 +41,14 @@ sudo xattr -d com.apple.quarantine /Applications/Termy.app
 ```
 
 Then launch Termy again.
+
+### Upgrade
+
+To update Termy to the latest version:
+
+```bash
+brew upgrade --cask termy
+```
 
 ## Windows
 
