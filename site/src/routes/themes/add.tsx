@@ -251,90 +251,74 @@ export function ThemeAddPage(): JSX.Element {
   }
 
   return (
-    <section className="pt-28 pb-16">
-      <div className="mx-auto max-w-6xl space-y-6">
-        {/* Hero */}
-        <div className="text-center max-w-3xl mx-auto px-6">
-          <h1
-            className="text-4xl md:text-6xl font-bold tracking-tight animate-blur-in"
-            style={{ animationDelay: "0ms" }}
-          >
-            <span className="gradient-text">releases.</span>
-          </h1>
-          <p
-            className="mt-4 text-lg text-muted-foreground animate-blur-in"
-            style={{ animationDelay: "100ms" }}
-          >
-            Upload theme JSON files, publish versions, and maintain your
-            catalog.
+    <section className="pt-24 pb-16">
+      <div className="mx-auto max-w-6xl">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl md:text-4xl font-bold">Releases</h1>
+          <p className="mt-2 text-muted-foreground">
+            Upload theme JSON files and publish versions.
           </p>
-          <div
-            className="mt-6 flex flex-wrap items-center justify-center gap-3 animate-blur-in"
-            style={{ animationDelay: "200ms" }}
-          >
-            <Button asChild variant="outline">
-              <Link to="/themes">Back to store</Link>
-            </Button>
-            {user ? (
-              <>
-                <div className="rounded-lg border border-border/60 bg-background/80 px-3 py-2 text-sm">
-                  Signed in as{" "}
-                  <span className="font-medium">@{user.githubLogin}</span>
-                </div>
-                <Button type="button" variant="outline" onClick={handleLogout}>
-                  Log out
-                </Button>
-              </>
-            ) : (
-              <a href={loginUrl}>
-                <Button type="button">Login with GitHub</Button>
-              </a>
-            )}
-          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <Button asChild variant="outline">
+            <Link to="/themes">Back to store</Link>
+          </Button>
+          {user ? (
+            <>
+              <span className="text-sm text-muted-foreground">
+                Signed in as <span className="font-medium">@{user.githubLogin}</span>
+              </span>
+              <Button type="button" variant="outline" onClick={handleLogout}>
+                Log out
+              </Button>
+            </>
+          ) : (
+            <a href={loginUrl}>
+              <Button type="button">Login with GitHub</Button>
+            </a>
+          )}
         </div>
 
         {error && (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive mb-6">
             {error}
           </div>
         )}
 
         {notice && (
-          <div className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-foreground">
+          <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-3 text-sm mb-6">
             {notice}
           </div>
         )}
 
         {!isBootstrapping && !user && (
-          <div className="animate-blur-in" style={{ animationDelay: "300ms" }}>
-            <Card className="border-border/60">
-              <CardHeader>
-                <CardTitle>Authentication Required</CardTitle>
-                <CardDescription>
-                  Sign in with GitHub to access the theme dashboard.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <a href={loginUrl}>
-                  <Button type="button">Login with GitHub</Button>
-                </a>
-              </CardContent>
-            </Card>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Authentication Required</CardTitle>
+              <CardDescription>
+                Sign in with GitHub to access the theme dashboard.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <a href={loginUrl}>
+                <Button type="button">Login with GitHub</Button>
+              </a>
+            </CardContent>
+          </Card>
         )}
 
         {user && (
-          <div
-            className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)] animate-blur-in"
-            style={{ animationDelay: "300ms" }}
-          >
-            <Card className="border-border/60">
+          <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+            <Card>
               <CardHeader>
-                <CardTitle>Available Themes</CardTitle>
+                <CardTitle>Your Themes</CardTitle>
                 <CardDescription>
                   {isBootstrapping
-                    ? "Loading themes..."
-                    : `${themes.length} themes available`}
+                    ? "Loading..."
+                    : `${themes.length} themes`}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -344,8 +328,8 @@ export function ThemeAddPage(): JSX.Element {
                     type="button"
                     className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
                       selectedSlug === theme.slug
-                        ? "border-primary/60 bg-primary/10"
-                        : "border-border/50 bg-background hover:border-primary/30"
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-background hover:border-primary/50"
                     }`}
                     onClick={() => void handleSelectTheme(theme.slug)}
                   >
@@ -355,20 +339,18 @@ export function ThemeAddPage(): JSX.Element {
                         {theme.latestVersion ?? "no versions"}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      /{theme.slug}
-                    </p>
+                    <p className="text-xs text-muted-foreground">/{theme.slug}</p>
                   </button>
                 ))}
               </CardContent>
             </Card>
 
             <div className="space-y-6">
-              <Card className="border-border/60">
+              <Card>
                 <CardHeader>
                   <CardTitle>Create Theme</CardTitle>
                   <CardDescription>
-                    Create a new theme and upload the initial JSON file.
+                    Create a new theme with initial JSON.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -383,9 +365,6 @@ export function ThemeAddPage(): JSX.Element {
                       onChange={(event) => setCreateName(event.target.value)}
                       disabled={!user || isSubmitting}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Slug is generated on the server from the theme name.
-                    </p>
                     <input
                       className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                       placeholder="Initial version (e.g. 1.0.0)"
@@ -414,7 +393,7 @@ export function ThemeAddPage(): JSX.Element {
                       Public theme
                     </label>
                     <input
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-xs file:font-medium"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-secondary file:px-3 file:py-1 file:text-xs"
                       type="file"
                       accept=".json,application/json"
                       onChange={(event) =>
@@ -423,18 +402,14 @@ export function ThemeAddPage(): JSX.Element {
                       disabled={!user || isSubmitting}
                     />
                     <textarea
-                      className="min-h-48 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm"
-                      placeholder='Or paste theme JSON here, for example: { "foreground": "#d1d5db" }'
+                      className="min-h-32 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs"
+                      placeholder="Or paste theme JSON here"
                       value={createThemeJson}
                       onChange={(event) =>
                         setCreateThemeJson(event.target.value)
                       }
                       disabled={!user || isSubmitting}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Paste JSON or upload a file. Pasted JSON is used when both
-                      are provided.
-                    </p>
                     <Button type="submit" disabled={!user || isSubmitting}>
                       Create theme
                     </Button>
@@ -442,12 +417,12 @@ export function ThemeAddPage(): JSX.Element {
                 </CardContent>
               </Card>
 
-              <Card className="border-border/60">
+              <Card>
                 <CardHeader>
-                  <CardTitle>Selected Theme</CardTitle>
+                  <CardTitle>Edit Theme</CardTitle>
                   <CardDescription>
                     {selectedTheme
-                      ? `${selectedTheme.name} (${selectedTheme.slug})`
+                      ? `${selectedTheme.name}`
                       : "Select a theme from the list"}
                   </CardDescription>
                 </CardHeader>
@@ -458,9 +433,7 @@ export function ThemeAddPage(): JSX.Element {
                         className="space-y-3"
                         onSubmit={(event) => void handleUpdateTheme(event)}
                       >
-                        <h3 className="text-sm font-semibold">
-                          Update metadata
-                        </h3>
+                        <h3 className="text-sm font-semibold">Metadata</h3>
                         <input
                           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                           value={updateName}
@@ -470,7 +443,7 @@ export function ThemeAddPage(): JSX.Element {
                           disabled={!canEditSelectedTheme || isSubmitting}
                         />
                         <textarea
-                          className="min-h-20 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                          className="min-h-16 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                           value={updateDescription}
                           onChange={(event) =>
                             setUpdateDescription(event.target.value)
@@ -500,9 +473,7 @@ export function ThemeAddPage(): JSX.Element {
                         className="space-y-3"
                         onSubmit={(event) => void handlePublishVersion(event)}
                       >
-                        <h3 className="text-sm font-semibold">
-                          Publish new version
-                        </h3>
+                        <h3 className="text-sm font-semibold">New Version</h3>
                         <input
                           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                           placeholder="Version (e.g. 1.2.0)"
@@ -522,20 +493,16 @@ export function ThemeAddPage(): JSX.Element {
                           disabled={!canEditSelectedTheme || isSubmitting}
                         />
                         <textarea
-                          className="min-h-48 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm"
-                          placeholder='Or paste the next theme JSON here, for example: { "background": "#141a24" }'
+                          className="min-h-32 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs"
+                          placeholder="Or paste theme JSON"
                           value={publishThemeJson}
                           onChange={(event) =>
                             setPublishThemeJson(event.target.value)
                           }
                           disabled={!canEditSelectedTheme || isSubmitting}
                         />
-                        <p className="text-xs text-muted-foreground">
-                          Paste JSON or upload a file. Pasted JSON is used when
-                          both are provided.
-                        </p>
                         <textarea
-                          className="min-h-20 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                          className="min-h-16 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                           placeholder="Changelog"
                           value={publishChangelog}
                           onChange={(event) =>
@@ -562,13 +529,13 @@ export function ThemeAddPage(): JSX.Element {
 
                       <div>
                         <h3 className="mb-2 text-sm font-semibold">
-                          Version history
+                          Version History
                         </h3>
                         <div className="space-y-2">
                           {selectedVersions.map((version) => (
                             <div
                               key={version.id}
-                              className="rounded-lg border border-border/60 px-3 py-2"
+                              className="rounded-lg border border-border px-3 py-2"
                             >
                               <div className="flex items-center justify-between gap-3">
                                 <span className="font-medium">
@@ -577,14 +544,11 @@ export function ThemeAddPage(): JSX.Element {
                                 <span className="text-xs text-muted-foreground">
                                   {new Date(
                                     version.publishedAt,
-                                  ).toLocaleString()}
+                                  ).toLocaleDateString()}
                                 </span>
                               </div>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {version.fileKey}
-                              </p>
                               {version.changelog && (
-                                <p className="mt-2 text-sm text-muted-foreground">
+                                <p className="mt-1 text-sm text-muted-foreground">
                                   {version.changelog}
                                 </p>
                               )}
@@ -592,7 +556,7 @@ export function ThemeAddPage(): JSX.Element {
                           ))}
                           {selectedVersions.length === 0 && (
                             <p className="text-sm text-muted-foreground">
-                              No versions published yet.
+                              No versions published.
                             </p>
                           )}
                         </div>

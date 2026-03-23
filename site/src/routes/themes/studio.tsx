@@ -57,43 +57,27 @@ function ThemeStudioPage(): JSX.Element {
   }
 
   return (
-    <section className="pt-28 pb-16">
-      <div className="mx-auto max-w-6xl space-y-6">
-        {/* Hero */}
-        <div className="text-center max-w-3xl mx-auto px-6">
-          <h1
-            className="text-4xl md:text-6xl font-bold tracking-tight animate-blur-in"
-            style={{ animationDelay: "0ms" }}
-          >
-            Build a theme{" "}
-            <span className="gradient-text">live.</span>
-          </h1>
-          <p
-            className="mt-4 text-lg text-muted-foreground animate-blur-in"
-            style={{ animationDelay: "100ms" }}
-          >
-            Tune every color and see the terminal preview update instantly.
+    <section className="pt-24 pb-16">
+      <div className="mx-auto max-w-6xl">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl md:text-4xl font-bold">Theme Studio</h1>
+          <p className="mt-2 text-muted-foreground">
+            Build a theme and preview it live.
           </p>
-          <div
-            className="mt-6 flex flex-wrap items-center justify-center gap-3 animate-blur-in"
-            style={{ animationDelay: "200ms" }}
-          >
-            <Button asChild variant="outline">
-              <Link to="/themes">Back to store</Link>
-            </Button>
-          </div>
         </div>
 
-        {/* Content grid */}
-        <div
-          className="grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)] animate-blur-in"
-          style={{ animationDelay: "300ms" }}
-        >
-          <Card className="border-border/60">
+        <Button asChild variant="outline" className="mb-6">
+          <Link to="/themes">Back to store</Link>
+        </Button>
+
+        {/* Content */}
+        <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+          <Card>
             <CardHeader>
               <CardTitle>Palette</CardTitle>
             </CardHeader>
-            <CardContent className="max-h-[400px] sm:max-h-[700px] space-y-3 overflow-auto pr-1">
+            <CardContent className="space-y-3">
               {paletteFields.map((field) => (
                 <label key={field} className="grid grid-cols-[1fr_auto] gap-3">
                   <div>
@@ -112,7 +96,7 @@ function ThemeStudioPage(): JSX.Element {
                     onChange={(event) =>
                       handleColorChange(field, event.target.value)
                     }
-                    className="mt-6 h-8 w-8 sm:h-10 sm:w-10 cursor-pointer rounded border border-border bg-background p-1"
+                    className="mt-6 h-8 w-8 cursor-pointer rounded border border-border bg-background p-1"
                     aria-label={`Select ${field} color`}
                   />
                 </label>
@@ -121,47 +105,39 @@ function ThemeStudioPage(): JSX.Element {
           </Card>
 
           <div className="space-y-6">
+            {/* Preview */}
             <div
-              className="terminal-window"
+              className="rounded-lg border overflow-hidden"
               style={{
                 background: palette.background,
                 borderColor: palette.bright_black,
-                boxShadow:
-                  "0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03)",
               }}
             >
               <div
-                className="terminal-header"
+                className="flex items-center gap-2 px-4 py-2 border-b"
                 style={{
                   background: palette.black,
-                  borderBottomColor: palette.bright_black,
+                  borderColor: palette.bright_black,
                 }}
               >
-                <div className="terminal-dots">
-                  <div
-                    className="terminal-dot"
-                    style={{ background: palette.red }}
-                  />
-                  <div
-                    className="terminal-dot"
-                    style={{ background: palette.yellow }}
-                  />
-                  <div
-                    className="terminal-dot"
-                    style={{ background: palette.green }}
-                  />
-                </div>
-                <span
-                  className="terminal-header-title"
-                  style={{ color: palette.foreground }}
-                >
-                  studio-preview
-                </span>
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ background: palette.red }}
+                />
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ background: palette.yellow }}
+                />
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ background: palette.green }}
+                />
               </div>
               <StudioTerminalPreview palette={palette} />
             </div>
 
-            <Card className="border-border/60">
+            {/* JSON Output */}
+            <Card>
               <CardHeader>
                 <CardTitle>Theme JSON</CardTitle>
               </CardHeader>
@@ -169,7 +145,7 @@ function ThemeStudioPage(): JSX.Element {
                 <textarea
                   readOnly
                   value={schemaJson}
-                  className="h-80 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs"
+                  className="h-64 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs"
                 />
               </CardContent>
             </Card>
@@ -210,7 +186,7 @@ function StudioTerminalPreview({
 
   return (
     <div
-      className="terminal-body"
+      className="p-4 font-mono text-sm"
       style={{ background: palette.background, color: palette.foreground }}
     >
       <div className="space-y-1">
@@ -225,12 +201,12 @@ function StudioTerminalPreview({
         </div>
       </div>
 
-      <div className="mt-4 font-mono text-[12px] leading-tight">
+      <div className="mt-4 space-y-1 text-xs">
         <div style={{ color: palette.red }}>error: sample error line</div>
         <div style={{ color: palette.yellow }}>warn: sample warning line</div>
         <div style={{ color: palette.green }}>ok: sample success line</div>
         <div style={{ color: palette.cyan }}>info: sample info line</div>
-        <div style={{ color: palette.white }}>text: regular foreground text</div>
+        <div style={{ color: palette.white }}>text: regular text</div>
       </div>
 
       <div className="mt-4 space-y-1">
@@ -239,7 +215,7 @@ function StudioTerminalPreview({
             {row.map((color, colorIndex) => (
               <span
                 key={colorIndex}
-                className="inline-block h-5 w-8"
+                className="inline-block h-4 w-6"
                 style={{ backgroundColor: color }}
               />
             ))}
