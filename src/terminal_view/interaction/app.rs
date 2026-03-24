@@ -15,7 +15,6 @@ impl TerminalView {
                 self.prettify_config_action(cx);
                 true
             }
-            CommandAction::ImportThemeStoreAuth => true,
             CommandAction::ImportColors => {
                 self.import_colors_action(cx);
                 true

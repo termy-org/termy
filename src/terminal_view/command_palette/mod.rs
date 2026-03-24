@@ -1362,7 +1362,7 @@ impl TerminalView {
             CommandAction::ZoomIn => termy_toast::info("Zoomed in"),
             CommandAction::ZoomOut => termy_toast::info("Zoomed out"),
             CommandAction::ZoomReset => termy_toast::info("Zoom reset"),
-            CommandAction::ImportThemeStoreAuth | CommandAction::ImportColors => {}
+            CommandAction::ImportColors => {}
             CommandAction::Quit
             | CommandAction::SwitchTheme
             | CommandAction::ManageTmuxSessions

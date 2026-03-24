@@ -737,7 +737,6 @@ define_commands!(
         )),
         None
     ),
-    (ImportThemeStoreAuth, GLOBAL_CONTEXT, None, None),
     (
         ImportColors,
         TERMINAL_CONTEXT,
