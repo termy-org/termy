@@ -201,7 +201,8 @@ const EMPTY_BLOCK_RECT: BlockRectSpec = BlockRectSpec::new(0.0, 0.0, 0.0, 0.0, 0
 
 /// Collected set of cell-relative rectangles that compose a single block-element
 /// or box-drawing character. Fixed-capacity array (max 8 rects) to avoid heap
-/// allocation — the most complex case (double-line cross U+256C) uses 4 rects.
+/// allocation — the most complex box-drawing connectors expand to 8 rects
+/// before overlapping collinear runs are merged back together.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct BlockElementGeometry {
     rects: [BlockRectSpec; 8],
@@ -244,6 +245,47 @@ impl BlockElementGeometry {
     fn rects(&self) -> &[BlockRectSpec] {
         &self.rects[..self.rect_count]
     }
+
+    fn merge_collinear_overlaps(&mut self) {
+        const EPSILON: f32 = 1e-6;
+
+        let mut i = 0;
+        while i < self.rect_count {
+            let mut j = i + 1;
+            while j < self.rect_count {
+                let a = self.rects[i];
+                let b = self.rects[j];
+
+                let same_vertical_track = (a.left - b.left).abs() <= EPSILON
+                    && (a.right - b.right).abs() <= EPSILON
+                    && a.top <= b.bottom + EPSILON
+                    && b.top <= a.bottom + EPSILON;
+                let same_horizontal_track = (a.top - b.top).abs() <= EPSILON
+                    && (a.bottom - b.bottom).abs() <= EPSILON
+                    && a.left <= b.right + EPSILON
+                    && b.left <= a.right + EPSILON;
+
+                if same_vertical_track || same_horizontal_track {
+                    self.rects[i] = BlockRectSpec::new(
+                        a.left.min(b.left),
+                        a.top.min(b.top),
+                        a.right.max(b.right),
+                        a.bottom.max(b.bottom),
+                        a.alpha.max(b.alpha),
+                    );
+
+                    for k in j..(self.rect_count - 1) {
+                        self.rects[k] = self.rects[k + 1];
+                    }
+                    self.rects[self.rect_count - 1] = EMPTY_BLOCK_RECT;
+                    self.rect_count -= 1;
+                } else {
+                    j += 1;
+                }
+            }
+            i += 1;
+        }
+    }
 }
 
 /// Weight of a single arm in a box-drawing character.
@@ -263,6 +305,10 @@ enum BoxLineStyle {
 impl BoxLineStyle {
     fn is_double(self) -> bool {
         self == Self::Double
+    }
+
+    fn is_heavy(self) -> bool {
+        self == Self::Heavy
     }
 }
 
@@ -705,37 +751,37 @@ fn box_draw_segments(c: char) -> Option<BoxDrawSegments> {
     })
 }
 
-fn centered_vertical_rect(x_center: f32, width: f32, top: f32, bottom: f32) -> BlockRectSpec {
-    BlockRectSpec::new(
-        x_center - width / 2.0,
-        top,
-        x_center + width / 2.0,
-        bottom,
+fn push_box_rect_px(
+    geometry: &mut BlockElementGeometry,
+    left_px: f32,
+    top_px: f32,
+    right_px: f32,
+    bottom_px: f32,
+    cell_width: f32,
+    cell_height: f32,
+) {
+    let left = left_px.clamp(0.0, cell_width);
+    let right = right_px.clamp(0.0, cell_width);
+    let top = top_px.clamp(0.0, cell_height);
+    let bottom = bottom_px.clamp(0.0, cell_height);
+
+    if right <= left || bottom <= top {
+        return;
+    }
+
+    geometry.push_rect(BlockRectSpec::new(
+        left / cell_width,
+        top / cell_height,
+        right / cell_width,
+        bottom / cell_height,
         1.0,
-    )
+    ));
 }
 
-fn centered_horizontal_rect(y_center: f32, height: f32, left: f32, right: f32) -> BlockRectSpec {
-    BlockRectSpec::new(
-        left,
-        y_center - height / 2.0,
-        right,
-        y_center + height / 2.0,
-        1.0,
-    )
-}
-
-/// Converts a `BoxDrawSegments` descriptor into pixel-snappable rectangles.
-///
-/// Stroke widths scale from `font_size`: light = `ceil(font_size * 0.0675)` pixels
-/// (minimum 1.0), heavy = 2x light. All coordinates are in cell-relative [0.0, 1.0]
-/// space; `cell_width` / `cell_height` are used only to convert pixel widths to
-/// fractional coordinates.
-///
-/// Double lines are two parallel light strokes centered around the cell midpoint
-/// with a gap equal to the light stroke width. When a double horizontal arm meets
-/// a double vertical arm, the horizontal strokes break at the vertical gap to
-/// avoid a filled center — matching the Unicode reference glyphs.
+/// Converts a `BoxDrawSegments` descriptor into pixel-snappable rectangles using
+/// Ghostty's `linesChar` edge placement. Each arm is built independently, then
+/// overlapping collinear runs are merged back together so simple glyphs stay
+/// compact while mixed light/heavy/double connectors keep Ghostty's join logic.
 fn box_draw_geometry(
     segments: BoxDrawSegments,
     cell_width: f32,
@@ -745,137 +791,289 @@ fn box_draw_geometry(
     use BoxLineStyle::{Double, Heavy, Light, None as Empty};
 
     let light_px = (font_size * 0.0675).ceil().max(1.0);
-    let light_w = light_px / cell_width;
-    let light_h = light_px / cell_height;
-    let heavy_w = (light_px * 2.0) / cell_width;
-    let heavy_h = (light_px * 2.0) / cell_height;
-    let center_x = 0.5;
-    let center_y = 0.5;
-    let double_left_center = center_x - light_w;
-    let double_right_center = center_x + light_w;
-    let double_top_center = center_y - light_h;
-    let double_bottom_center = center_y + light_h;
-    let double_gap_left = center_x - light_w / 2.0;
-    let double_gap_right = center_x + light_w / 2.0;
-    let vertical_has_double = segments.up.is_double() || segments.down.is_double();
+    let heavy_px = light_px * 2.0;
+
+    let h_light_top = ((cell_height - light_px).max(0.0)) / 2.0;
+    let h_light_bottom = (h_light_top + light_px).min(cell_height);
+    let h_heavy_top = ((cell_height - heavy_px).max(0.0)) / 2.0;
+    let h_heavy_bottom = (h_heavy_top + heavy_px).min(cell_height);
+    let h_double_top = (h_light_top - light_px).max(0.0);
+    let h_double_bottom = (h_light_bottom + light_px).min(cell_height);
+
+    let v_light_left = ((cell_width - light_px).max(0.0)) / 2.0;
+    let v_light_right = (v_light_left + light_px).min(cell_width);
+    let v_heavy_left = ((cell_width - heavy_px).max(0.0)) / 2.0;
+    let v_heavy_right = (v_heavy_left + heavy_px).min(cell_width);
+    let v_double_left = (v_light_left - light_px).max(0.0);
+    let v_double_right = (v_light_right + light_px).min(cell_width);
+
+    let up_bottom = if segments.left.is_heavy() || segments.right.is_heavy() {
+        h_heavy_bottom
+    } else if segments.left != segments.right || segments.down == segments.up {
+        if segments.left.is_double() || segments.right.is_double() {
+            h_double_bottom
+        } else {
+            h_light_bottom
+        }
+    } else if segments.left == Empty && segments.right == Empty {
+        h_light_bottom
+    } else {
+        h_light_top
+    };
+
+    let down_top = if segments.left.is_heavy() || segments.right.is_heavy() {
+        h_heavy_top
+    } else if segments.left != segments.right || segments.up == segments.down {
+        if segments.left.is_double() || segments.right.is_double() {
+            h_double_top
+        } else {
+            h_light_top
+        }
+    } else if segments.left == Empty && segments.right == Empty {
+        h_light_top
+    } else {
+        h_light_bottom
+    };
+
+    let left_right = if segments.up.is_heavy() || segments.down.is_heavy() {
+        v_heavy_right
+    } else if segments.up != segments.down || segments.left == segments.right {
+        if segments.up.is_double() || segments.down.is_double() {
+            v_double_right
+        } else {
+            v_light_right
+        }
+    } else if segments.up == Empty && segments.down == Empty {
+        v_light_right
+    } else {
+        v_light_left
+    };
+
+    let right_left = if segments.up.is_heavy() || segments.down.is_heavy() {
+        v_heavy_left
+    } else if segments.up != segments.down || segments.right == segments.left {
+        if segments.up.is_double() || segments.down.is_double() {
+            v_double_left
+        } else {
+            v_light_left
+        }
+    } else if segments.up == Empty && segments.down == Empty {
+        v_light_left
+    } else {
+        v_light_right
+    };
 
     let mut geometry = BlockElementGeometry::empty();
 
-    match (segments.up, segments.down) {
-        (Light, Light) => {
-            geometry.push_rect(centered_vertical_rect(center_x, light_w, 0.0, 1.0));
-        }
-        (Heavy, Heavy) => {
-            geometry.push_rect(centered_vertical_rect(center_x, heavy_w, 0.0, 1.0));
-        }
-        (Double, Double) => {
-            geometry.push_rect(centered_vertical_rect(
-                double_left_center,
-                light_w,
-                0.0,
-                1.0,
-            ));
-            geometry.push_rect(centered_vertical_rect(
-                double_right_center,
-                light_w,
-                0.0,
-                1.0,
-            ));
-        }
-        _ => {
-            match segments.up {
-                Light => {
-                    geometry.push_rect(centered_vertical_rect(center_x, light_w, 0.0, center_y))
-                }
-                Heavy => {
-                    geometry.push_rect(centered_vertical_rect(center_x, heavy_w, 0.0, center_y))
-                }
-                Double => {
-                    geometry.push_rect(centered_vertical_rect(
-                        double_left_center,
-                        light_w,
-                        0.0,
-                        center_y,
-                    ));
-                    geometry.push_rect(centered_vertical_rect(
-                        double_right_center,
-                        light_w,
-                        0.0,
-                        center_y,
-                    ));
-                }
-                Empty => {}
-            }
-
-            match segments.down {
-                Light => {
-                    geometry.push_rect(centered_vertical_rect(center_x, light_w, center_y, 1.0))
-                }
-                Heavy => {
-                    geometry.push_rect(centered_vertical_rect(center_x, heavy_w, center_y, 1.0))
-                }
-                Double => {
-                    geometry.push_rect(centered_vertical_rect(
-                        double_left_center,
-                        light_w,
-                        center_y,
-                        1.0,
-                    ));
-                    geometry.push_rect(centered_vertical_rect(
-                        double_right_center,
-                        light_w,
-                        center_y,
-                        1.0,
-                    ));
-                }
-                Empty => {}
-            }
-        }
-    }
-
-    let mut push_horizontal = |style: BoxLineStyle, left: f32, right: f32| match style {
-        Light => geometry.push_rect(centered_horizontal_rect(center_y, light_h, left, right)),
-        Heavy => geometry.push_rect(centered_horizontal_rect(center_y, heavy_h, left, right)),
-        Double => {
-            geometry.push_rect(centered_horizontal_rect(
-                double_top_center,
-                light_h,
-                left,
-                right,
-            ));
-            geometry.push_rect(centered_horizontal_rect(
-                double_bottom_center,
-                light_h,
-                left,
-                right,
-            ));
-        }
+    match segments.up {
         Empty => {}
-    };
-
-    match (segments.left, segments.right) {
-        (Light, Light) => push_horizontal(Light, 0.0, 1.0),
-        (Heavy, Heavy) => push_horizontal(Heavy, 0.0, 1.0),
-        (Double, Double) if vertical_has_double => {
-            push_horizontal(Double, 0.0, double_gap_left);
-            push_horizontal(Double, double_gap_right, 1.0);
-        }
-        (Double, Double) => push_horizontal(Double, 0.0, 1.0),
-        _ => {
-            let left_end = if vertical_has_double && segments.left == Double {
-                double_gap_left
+        Light => push_box_rect_px(
+            &mut geometry,
+            v_light_left,
+            0.0,
+            v_light_right,
+            up_bottom,
+            cell_width,
+            cell_height,
+        ),
+        Heavy => push_box_rect_px(
+            &mut geometry,
+            v_heavy_left,
+            0.0,
+            v_heavy_right,
+            up_bottom,
+            cell_width,
+            cell_height,
+        ),
+        Double => {
+            let left_bottom = if segments.left == Double {
+                h_light_top
             } else {
-                center_x
+                up_bottom
             };
-            let right_start = if vertical_has_double && segments.right == Double {
-                double_gap_right
+            let right_bottom = if segments.right == Double {
+                h_light_top
             } else {
-                center_x
+                up_bottom
             };
-            push_horizontal(segments.left, 0.0, left_end);
-            push_horizontal(segments.right, right_start, 1.0);
+            push_box_rect_px(
+                &mut geometry,
+                v_double_left,
+                0.0,
+                v_light_left,
+                left_bottom,
+                cell_width,
+                cell_height,
+            );
+            push_box_rect_px(
+                &mut geometry,
+                v_light_right,
+                0.0,
+                v_double_right,
+                right_bottom,
+                cell_width,
+                cell_height,
+            );
         }
     }
+
+    match segments.right {
+        Empty => {}
+        Light => push_box_rect_px(
+            &mut geometry,
+            right_left,
+            h_light_top,
+            cell_width,
+            h_light_bottom,
+            cell_width,
+            cell_height,
+        ),
+        Heavy => push_box_rect_px(
+            &mut geometry,
+            right_left,
+            h_heavy_top,
+            cell_width,
+            h_heavy_bottom,
+            cell_width,
+            cell_height,
+        ),
+        Double => {
+            let top_left = if segments.up == Double {
+                v_light_right
+            } else {
+                right_left
+            };
+            let bottom_left = if segments.down == Double {
+                v_light_right
+            } else {
+                right_left
+            };
+            push_box_rect_px(
+                &mut geometry,
+                top_left,
+                h_double_top,
+                cell_width,
+                h_light_top,
+                cell_width,
+                cell_height,
+            );
+            push_box_rect_px(
+                &mut geometry,
+                bottom_left,
+                h_light_bottom,
+                cell_width,
+                h_double_bottom,
+                cell_width,
+                cell_height,
+            );
+        }
+    }
+
+    match segments.down {
+        Empty => {}
+        Light => push_box_rect_px(
+            &mut geometry,
+            v_light_left,
+            down_top,
+            v_light_right,
+            cell_height,
+            cell_width,
+            cell_height,
+        ),
+        Heavy => push_box_rect_px(
+            &mut geometry,
+            v_heavy_left,
+            down_top,
+            v_heavy_right,
+            cell_height,
+            cell_width,
+            cell_height,
+        ),
+        Double => {
+            let left_top = if segments.left == Double {
+                h_light_bottom
+            } else {
+                down_top
+            };
+            let right_top = if segments.right == Double {
+                h_light_bottom
+            } else {
+                down_top
+            };
+            push_box_rect_px(
+                &mut geometry,
+                v_double_left,
+                left_top,
+                v_light_left,
+                cell_height,
+                cell_width,
+                cell_height,
+            );
+            push_box_rect_px(
+                &mut geometry,
+                v_light_right,
+                right_top,
+                v_double_right,
+                cell_height,
+                cell_width,
+                cell_height,
+            );
+        }
+    }
+
+    match segments.left {
+        Empty => {}
+        Light => push_box_rect_px(
+            &mut geometry,
+            0.0,
+            h_light_top,
+            left_right,
+            h_light_bottom,
+            cell_width,
+            cell_height,
+        ),
+        Heavy => push_box_rect_px(
+            &mut geometry,
+            0.0,
+            h_heavy_top,
+            left_right,
+            h_heavy_bottom,
+            cell_width,
+            cell_height,
+        ),
+        Double => {
+            let top_right = if segments.up == Double {
+                v_light_left
+            } else {
+                left_right
+            };
+            let bottom_right = if segments.down == Double {
+                v_light_left
+            } else {
+                left_right
+            };
+            push_box_rect_px(
+                &mut geometry,
+                0.0,
+                h_double_top,
+                top_right,
+                h_light_top,
+                cell_width,
+                cell_height,
+            );
+            push_box_rect_px(
+                &mut geometry,
+                0.0,
+                h_light_bottom,
+                bottom_right,
+                h_double_bottom,
+                cell_width,
+                cell_height,
+            );
+        }
+    }
+
+    geometry.merge_collinear_overlaps();
 
     geometry
 }
@@ -2304,31 +2502,83 @@ mod tests {
         let geometry =
             box_draw_geometry_for_char('\u{256C}', 10.0, 20.0, 14.0).expect("expected geometry");
 
-        assert_eq!(geometry.rect_count, 6);
+        assert_eq!(geometry.rect_count, 8);
 
-        let left_vertical = geometry.rects()[0];
-        assert_f32_eq(left_vertical.left, 0.35);
-        assert_f32_eq(left_vertical.right, 0.45);
-        assert_f32_eq(left_vertical.top, 0.0);
-        assert_f32_eq(left_vertical.bottom, 1.0);
+        let top_left_vertical = geometry.rects()[0];
+        assert_f32_eq(top_left_vertical.left, 0.35);
+        assert_f32_eq(top_left_vertical.right, 0.45);
+        assert_f32_eq(top_left_vertical.top, 0.0);
+        assert_f32_eq(top_left_vertical.bottom, 0.475);
 
-        let right_vertical = geometry.rects()[1];
-        assert_f32_eq(right_vertical.left, 0.55);
-        assert_f32_eq(right_vertical.right, 0.65);
-        assert_f32_eq(right_vertical.top, 0.0);
-        assert_f32_eq(right_vertical.bottom, 1.0);
+        let top_right_vertical = geometry.rects()[1];
+        assert_f32_eq(top_right_vertical.left, 0.55);
+        assert_f32_eq(top_right_vertical.right, 0.65);
+        assert_f32_eq(top_right_vertical.top, 0.0);
+        assert_f32_eq(top_right_vertical.bottom, 0.475);
 
-        let top_left = geometry.rects()[2];
-        assert_f32_eq(top_left.left, 0.0);
-        assert_f32_eq(top_left.right, 0.45);
-        assert_f32_eq(top_left.top, 0.425);
-        assert_f32_eq(top_left.bottom, 0.475);
+        let top_right = geometry.rects()[2];
+        assert_f32_eq(top_right.left, 0.55);
+        assert_f32_eq(top_right.right, 1.0);
+        assert_f32_eq(top_right.top, 0.425);
+        assert_f32_eq(top_right.bottom, 0.475);
 
-        let bottom_right = geometry.rects()[5];
+        let bottom_left = geometry.rects()[7];
+        assert_f32_eq(bottom_left.left, 0.0);
+        assert_f32_eq(bottom_left.right, 0.45);
+        assert_f32_eq(bottom_left.top, 0.525);
+        assert_f32_eq(bottom_left.bottom, 0.575);
+
+        let bottom_right = geometry.rects()[3];
         assert_f32_eq(bottom_right.left, 0.55);
         assert_f32_eq(bottom_right.right, 1.0);
         assert_f32_eq(bottom_right.top, 0.525);
         assert_f32_eq(bottom_right.bottom, 0.575);
+    }
+
+    #[test]
+    fn box_draw_light_to_heavy_connector_matches_ghostty_join_extents() {
+        let geometry =
+            box_draw_geometry_for_char('\u{251D}', 10.0, 20.0, 14.0).expect("expected geometry");
+
+        assert_eq!(geometry.rect_count, 2);
+
+        let vertical = geometry.rects()[0];
+        assert_f32_eq(vertical.left, 0.45);
+        assert_f32_eq(vertical.right, 0.55);
+        assert_f32_eq(vertical.top, 0.0);
+        assert_f32_eq(vertical.bottom, 1.0);
+
+        let horizontal = geometry.rects()[1];
+        assert_f32_eq(horizontal.left, 0.55);
+        assert_f32_eq(horizontal.right, 1.0);
+        assert_f32_eq(horizontal.top, 0.45);
+        assert_f32_eq(horizontal.bottom, 0.55);
+    }
+
+    #[test]
+    fn box_draw_light_to_double_connector_matches_ghostty_join_extents() {
+        let geometry =
+            box_draw_geometry_for_char('\u{255E}', 10.0, 20.0, 14.0).expect("expected geometry");
+
+        assert_eq!(geometry.rect_count, 3);
+
+        let vertical = geometry.rects()[0];
+        assert_f32_eq(vertical.left, 0.45);
+        assert_f32_eq(vertical.right, 0.55);
+        assert_f32_eq(vertical.top, 0.0);
+        assert_f32_eq(vertical.bottom, 1.0);
+
+        let top_double = geometry.rects()[1];
+        assert_f32_eq(top_double.left, 0.55);
+        assert_f32_eq(top_double.right, 1.0);
+        assert_f32_eq(top_double.top, 0.425);
+        assert_f32_eq(top_double.bottom, 0.475);
+
+        let bottom_double = geometry.rects()[2];
+        assert_f32_eq(bottom_double.left, 0.55);
+        assert_f32_eq(bottom_double.right, 1.0);
+        assert_f32_eq(bottom_double.top, 0.525);
+        assert_f32_eq(bottom_double.bottom, 0.575);
     }
 
     #[test]
