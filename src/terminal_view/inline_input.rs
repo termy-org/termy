@@ -1,8 +1,8 @@
 use super::*;
 use gpui::{
-    Bounds, ElementInputHandler, Entity, EntityInputHandler, Font, Hsla, IntoElement, PaintQuad,
-    Pixels, ShapedLine, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, canvas, fill,
-    point, px, size,
+    Bounds, ContentMask, ElementInputHandler, Entity, EntityInputHandler, Font, Hsla, IntoElement,
+    PaintQuad, Pixels, ShapedLine, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window,
+    canvas, fill, point, px, size,
 };
 use std::ops::Range;
 
@@ -756,8 +756,30 @@ impl IntoElement for InlineInputElement {
                     .as_ref()
                     .map(|line| line.x_for_index(text.len()))
                     .unwrap_or(px(0.0));
+                let cursor_utf8_early = cursor_offset.min(text.len());
                 let line_offset_x = match alignment {
-                    InlineInputAlignment::Left => px(0.0),
+                    InlineInputAlignment::Left => {
+                        let available_width: f32 = line_bounds.size.width.into();
+                        let prev_offset: f32 = prepaint_view
+                            .read(cx)
+                            .active_inline_input_state()
+                            .map(|s| -> f32 { s.last_line_offset_x.into() })
+                            .unwrap_or(0.0);
+                        let cursor_x: f32 = line
+                            .as_ref()
+                            .map(|l| -> f32 { l.x_for_index(cursor_utf8_early).into() })
+                            .unwrap_or(0.0);
+                        let visible_cursor_x = cursor_x + prev_offset;
+                        let padding = 4.0_f32;
+                        let new_offset = if visible_cursor_x < 0.0 {
+                            -(cursor_x - padding).max(0.0)
+                        } else if visible_cursor_x > available_width - padding {
+                            -(cursor_x - available_width + padding)
+                        } else {
+                            prev_offset
+                        };
+                        px(new_offset.round())
+                    }
                     InlineInputAlignment::Center => {
                         let available_width: f32 = line_bounds.size.width.into();
                         let text_width: f32 = line_width.into();
@@ -858,31 +880,36 @@ impl IntoElement for InlineInputElement {
                     cx,
                 );
 
-                if let Some(selection) = prepaint.selection.take() {
-                    window.paint_quad(selection);
-                }
+                let line =
+                    window.with_content_mask(Some(ContentMask { bounds: prepaint.line_bounds }), |window| {
+                        if let Some(selection) = prepaint.selection.take() {
+                            window.paint_quad(selection);
+                        }
 
-                let line = if let Some(line) = prepaint.line.take() {
-                    line.paint(
-                        point(
-                            prepaint.line_bounds.left() + prepaint.line_offset_x,
-                            prepaint.line_bounds.top(),
-                        ),
-                        prepaint.line_bounds.size.height,
-                        TextAlign::Left,
-                        None,
-                        window,
-                        cx,
-                    )
-                    .expect("failed to paint inline input text");
-                    Some(line)
-                } else {
-                    None
-                };
+                        let line = if let Some(line) = prepaint.line.take() {
+                            line.paint(
+                                point(
+                                    prepaint.line_bounds.left() + prepaint.line_offset_x,
+                                    prepaint.line_bounds.top(),
+                                ),
+                                prepaint.line_bounds.size.height,
+                                TextAlign::Left,
+                                None,
+                                window,
+                                cx,
+                            )
+                            .expect("failed to paint inline input text");
+                            Some(line)
+                        } else {
+                            None
+                        };
 
-                if let Some(cursor) = prepaint.cursor.take() {
-                    window.paint_quad(cursor);
-                }
+                        if let Some(cursor) = prepaint.cursor.take() {
+                            window.paint_quad(cursor);
+                        }
+
+                        line
+                    });
 
                 view.update(cx, |this, _cx| {
                     if let Some(state) = this.active_inline_input_state_mut() {
