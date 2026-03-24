@@ -18,10 +18,12 @@ impl TerminalView {
 
         let explicit_title = Self::truncate_tab_title(&explicit_title);
         if self.tabs[index].explicit_title.as_deref() == Some(explicit_title.as_str()) {
+            self.tabs[index].explicit_title_is_prediction = false;
             return false;
         }
 
         self.tabs[index].explicit_title = Some(explicit_title);
+        self.tabs[index].explicit_title_is_prediction = false;
         self.refresh_tab_title(index)
     }
 
@@ -88,10 +90,12 @@ impl TerminalView {
         };
 
         if tab.explicit_title.as_deref() == Some(command_title.as_str()) {
+            tab.explicit_title_is_prediction = false;
             return false;
         }
 
         tab.explicit_title = Some(command_title);
+        tab.explicit_title_is_prediction = false;
         self.refresh_tab_title(index)
     }
 }

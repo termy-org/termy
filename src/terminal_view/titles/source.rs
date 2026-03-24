@@ -151,12 +151,16 @@ impl TerminalView {
         source: TabTitleSource,
         manual_title: Option<&'a str>,
         explicit_title: Option<&'a str>,
+        explicit_title_is_prediction: bool,
         shell_title: Option<&'a str>,
         fallback_title: &'a str,
         smart_mode_shell_fallback: bool,
     ) -> Option<&'a str> {
         match source {
             TabTitleSource::Manual => manual_title,
+            TabTitleSource::Explicit if explicit_title_is_prediction => {
+                shell_title.or(explicit_title)
+            }
             TabTitleSource::Explicit if smart_mode_shell_fallback => {
                 // Smart mode seeds an explicit title before the shell emits a title.
                 // When shell integration is disabled, prefer live shell titles once
@@ -220,6 +224,7 @@ impl TerminalView {
                 *source,
                 tab.manual_title.as_deref(),
                 tab.explicit_title.as_deref(),
+                tab.explicit_title_is_prediction,
                 tab.shell_title.as_deref(),
                 fallback_title,
                 smart_mode_shell_fallback,
@@ -310,6 +315,7 @@ impl TerminalView {
         tab.current_command = None;
         let had_shell = tab.shell_title.take().is_some();
         let had_explicit = tab.explicit_title.take().is_some();
+        tab.explicit_title_is_prediction = false;
         if !had_shell && !had_explicit {
             return false;
         }
@@ -423,6 +429,7 @@ mod tests {
             TabTitleSource::Explicit,
             None,
             Some("explicit"),
+            false,
             Some("shell"),
             "fallback",
             true,
@@ -436,11 +443,26 @@ mod tests {
             TabTitleSource::Explicit,
             None,
             Some("explicit"),
+            false,
             None,
             "fallback",
             true,
         );
         assert_eq!(candidate, Some("explicit"));
+    }
+
+    #[test]
+    fn title_source_candidate_prefers_shell_over_predicted_explicit_title() {
+        let candidate = TerminalView::title_source_candidate(
+            TabTitleSource::Explicit,
+            None,
+            Some("predicted"),
+            true,
+            Some("shell"),
+            "fallback",
+            false,
+        );
+        assert_eq!(candidate, Some("shell"));
     }
 
     #[test]

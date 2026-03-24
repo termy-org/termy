@@ -121,6 +121,7 @@ impl TerminalTab {
             pinned: false,
             manual_title: None,
             explicit_title: None,
+            explicit_title_is_prediction: false,
             shell_title: None,
             current_command: None,
             pending_command_title: None,
