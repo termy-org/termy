@@ -203,6 +203,16 @@ impl BlockElementGeometry {
         &self.rects[..self.rect_count]
     }
 
+    /// Merges any pair of rects that share the same axis track and overlap or touch.
+    ///
+    /// Two rects are "collinear" if they have the same left/right (vertical track)
+    /// or the same top/bottom (horizontal track) and their perpendicular extents
+    /// overlap within `EPSILON`. The merged rect takes the union of both bounding
+    /// boxes and the maximum alpha.
+    ///
+    /// Called once after all arms of a box-drawing connector have been pushed, so
+    /// that a simple light-cross (which pushes one vertical + one horizontal rect
+    /// overlapping at center) stays as two rects rather than fragmenting into four.
     fn merge_collinear_overlaps(&mut self) {
         const EPSILON: f32 = 1e-6;
 
@@ -245,6 +255,11 @@ impl BlockElementGeometry {
     }
 }
 
+/// Stroke weight for one arm of a box-drawing connector.
+///
+/// Maps directly to the Unicode box-drawing naming convention: light strokes are
+/// 1x the base width, heavy strokes are 2x, and double strokes are two
+/// parallel light lines separated by one light-width gap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BoxLineStyle {
     None,
@@ -263,6 +278,14 @@ impl BoxLineStyle {
     }
 }
 
+/// Four-arm style descriptor for a rectangular box-drawing character.
+///
+/// Each field declares whether the character extends a line in that cardinal
+/// direction and, if so, which stroke weight it uses. `box_draw_geometry`
+/// converts this into concrete pixel rectangles sized to the terminal cell.
+///
+/// Rounded corners (U+256D-U+2570) and diagonals (U+2571-U+2573) are not
+/// representable here and return `None` from `box_draw_segments`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct BoxDrawSegments {
     up: BoxLineStyle,
@@ -296,6 +319,9 @@ struct TextBatch {
     fg: Hsla,
     underline: Option<UnderlineStyle>,
     cell_len: usize,
+    /// When true, this batch must not coalesce with adjacent cells. Set for
+    /// characters (e.g. emoji) whose variable glyph width would misalign
+    /// subsequent characters if they shared a single `ShapedLine`.
     isolated: bool,
 }
 
@@ -308,6 +334,11 @@ struct BlockDraw {
     fg: Hsla,
 }
 
+/// Deferred paint operation for a rounded-corner box-drawing glyph (U+256D-U+2570).
+///
+/// Unlike `BlockDraw`, these are painted as stroked cubic Bézier paths rather
+/// than axis-aligned quads, so the glyph codepoint is stored and resolved to a
+/// path at paint time.
 #[derive(Clone, Copy)]
 struct RoundedCornerDraw {
     #[allow(dead_code)]
@@ -317,6 +348,10 @@ struct RoundedCornerDraw {
     fg: Hsla,
 }
 
+/// Deferred paint operation for a diagonal box-drawing glyph (U+2571-U+2573).
+///
+/// Diagonals are painted as stroked straight lines with slope-dependent
+/// overshoot past cell boundaries to avoid pixel gaps at adjacent-cell seams.
 #[derive(Clone, Copy)]
 struct DiagonalDraw {
     #[allow(dead_code)]
@@ -554,6 +589,10 @@ const fn box_segments(
     BoxDrawSegments::new(up, down, left, right)
 }
 
+/// Looks up the four-arm style descriptor for a box-drawing codepoint.
+///
+/// Returns `None` for rounded corners (U+256D-U+2570), diagonals
+/// (U+2571-U+2573), and anything outside U+2500..U+257F.
 #[allow(clippy::too_many_lines)]
 fn box_draw_segments(c: char) -> Option<BoxDrawSegments> {
     use BoxLineStyle::{Double, Heavy, Light, None as Empty};
@@ -687,6 +726,9 @@ fn box_draw_segments(c: char) -> Option<BoxDrawSegments> {
     })
 }
 
+/// Pushes a rectangle into `geometry`, converting absolute pixel coordinates to
+/// cell-relative fractions (0.0..1.0). Clamps to cell bounds and silently
+/// discards zero-area results.
 fn push_box_rect_px(
     geometry: &mut BlockElementGeometry,
     left_px: f32,
@@ -1014,6 +1056,10 @@ fn box_draw_geometry(
     geometry
 }
 
+/// Convenience wrapper: looks up `box_draw_segments` and, if the codepoint is a
+/// rectangular connector, converts the descriptor into cell-relative geometry.
+///
+/// Returns `None` for rounded corners, diagonals, and non-box-drawing characters.
 fn box_draw_geometry_for_char(
     c: char,
     cell_width: f32,
@@ -1112,6 +1158,12 @@ fn diagonal_char(c: char) -> bool {
     matches!(c, '\u{2571}' | '\u{2572}' | '\u{2573}')
 }
 
+/// Resolved path geometry for a rounded-corner box-drawing glyph.
+///
+/// The path is: `start` → straight to `curve_start` → cubic Bézier
+/// (`control_a`, `control_b`) → `curve_end` → straight to `end`. This gives
+/// a short stub on each cell edge that aligns with adjacent straight box lines,
+/// connected by a quarter-circle arc in the cell interior.
 #[derive(Clone, Copy, Debug)]
 struct RoundedCornerPathSpec {
     start: gpui::Point<Pixels>,
@@ -1123,6 +1175,11 @@ struct RoundedCornerPathSpec {
     stroke_width: Pixels,
 }
 
+/// Resolved path geometry for a diagonal box-drawing glyph.
+///
+/// A single line segment from `start` to `end`. Both endpoints intentionally
+/// overshoot the cell boundary by a slope-dependent amount so that adjacent
+/// diagonal cells join seamlessly without pixel gaps.
 #[derive(Clone, Copy, Debug)]
 struct DiagonalPathSpec {
     start: gpui::Point<Pixels>,
@@ -1130,6 +1187,10 @@ struct DiagonalPathSpec {
     stroke_width: Pixels,
 }
 
+/// Computes the midpoint of a stroke that is pixel-snapped to integer boundaries.
+///
+/// Rounds both edges of the stroke independently, then returns their average.
+/// This prevents sub-pixel shimmer on odd-width strokes across HiDPI scales.
 fn snapped_stroke_center(origin: Pixels, size: Pixels, stroke_width: Pixels) -> Pixels {
     let origin_px: f32 = origin.into();
     let size_px: f32 = size.into();
@@ -1345,6 +1406,7 @@ fn text_draw_ops_match_without_row(lhs: &TextDrawOp, rhs: &TextDrawOp) -> bool {
     }
 }
 
+/// Returns the inclusive column range `(first_col, last_col)` covered by a draw op.
 fn draw_op_col_range(op: &TextDrawOp) -> (usize, usize) {
     match op {
         TextDrawOp::Batch(b) => (b.start_col, b.start_col + b.cell_len.saturating_sub(1)),
@@ -2081,6 +2143,10 @@ impl TerminalGrid {
         cell.render_text && cell.char != ' ' && cell.char != '\0' && !cell.char.is_control()
     }
 
+    /// Returns true for characters that must not be coalesced into a multi-cell
+    /// text batch. Covers Miscellaneous Symbols through Dingbats (U+2600..U+27BF)
+    /// and Supplemental Symbols/Pictographs (U+1F000..U+1FAFF). These ranges are
+    /// a heuristic — see `.aidocs/risks.md` for coverage gaps.
     fn char_requires_isolated_batch(c: char) -> bool {
         matches!(c as u32, 0x2600..=0x27BF | 0x1F000..=0x1FAFF)
     }
