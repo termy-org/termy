@@ -152,8 +152,12 @@ fn overlay_owns_terminal_input_state(
     command_palette_open: bool,
     search_open: bool,
     renaming_tab: Option<usize>,
+    renaming_agent_thread_id: Option<&str>,
 ) -> bool {
-    command_palette_open || search_open || renaming_tab.is_some()
+    command_palette_open
+        || search_open
+        || renaming_tab.is_some()
+        || renaming_agent_thread_id.is_some()
 }
 
 fn terminal_modifier_transition_events(
@@ -205,6 +209,7 @@ impl TerminalView {
             self.is_command_palette_open(),
             self.search_open,
             self.renaming_tab,
+            self.renaming_agent_thread_id.as_deref(),
         )
     }
 
@@ -635,12 +640,20 @@ impl TerminalView {
 
             match key {
                 "enter" => {
-                    self.commit_rename_tab(cx);
+                    if self.renaming_agent_thread_id.is_some() {
+                        self.commit_rename_agent_thread(cx);
+                    } else {
+                        self.commit_rename_tab(cx);
+                    }
                     self.remember_consumed_key_release(key);
                     return;
                 }
                 "escape" => {
-                    self.cancel_rename_tab(cx);
+                    if self.renaming_agent_thread_id.is_some() {
+                        self.cancel_rename_agent_thread(cx);
+                    } else {
+                        self.cancel_rename_tab(cx);
+                    }
                     self.remember_consumed_key_release(key);
                     return;
                 }

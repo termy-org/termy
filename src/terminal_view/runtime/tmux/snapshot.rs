@@ -147,6 +147,40 @@ impl TerminalView {
             .iter()
             .map(|tab| (tab.window_id.clone(), tab.pinned))
             .collect::<std::collections::HashMap<_, _>>();
+        let previous_agent_threads = self
+            .tabs
+            .iter()
+            .filter_map(|tab| {
+                tab.agent_thread_id
+                    .as_ref()
+                    .map(|thread_id| (tab.window_id.clone(), thread_id.clone()))
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        let previous_agent_snapshots = self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                let snapshot = self.agent_thread_archive_snapshot_for_tab(index);
+                (
+                    tab.window_id.clone(),
+                    snapshot
+                        .as_ref()
+                        .and_then(|value| value.0.clone())
+                        .or_else(|| tab.agent_thread_id.clone()),
+                    snapshot
+                        .as_ref()
+                        .map(|value| value.1.clone())
+                        .unwrap_or_else(|| tab.title.clone()),
+                    snapshot
+                        .as_ref()
+                        .and_then(|value| value.2.clone())
+                        .or_else(|| tab.current_command.clone()),
+                    snapshot.as_ref().and_then(|value| value.3.clone()),
+                    snapshot.and_then(|value| value.4),
+                )
+            })
+            .collect::<Vec<_>>();
 
         let mut existing_terminals = std::collections::HashMap::<String, Terminal>::new();
         let old_tabs = std::mem::take(&mut self.tabs);
@@ -228,6 +262,7 @@ impl TerminalView {
 
             let mut tab = TerminalTab::from_tmux_window(tab_id, window, panes);
             tab.pinned = previous_pins.get(&window.id).copied().unwrap_or(false);
+            tab.agent_thread_id = previous_agent_threads.get(&window.id).cloned();
             tab.manual_title = manual_title;
             tab.shell_title = shell_title;
             tab.current_command = current_command;
@@ -236,6 +271,23 @@ impl TerminalView {
         }
 
         new_tabs.sort_by_key(|tab| tab.window_index);
+        let surviving_window_ids = new_tabs
+            .iter()
+            .map(|tab| tab.window_id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        for (window_id, thread_id, title, current_command, status_label, status_detail) in
+            previous_agent_snapshots
+        {
+            if !surviving_window_ids.contains(window_id.as_str()) {
+                self.archive_agent_thread_snapshot(
+                    thread_id.as_deref(),
+                    title.as_str(),
+                    current_command.as_deref(),
+                    status_label.as_deref(),
+                    status_detail.as_deref(),
+                );
+            }
+        }
         self.tabs = new_tabs;
         let tab_window_order = self
             .tabs
@@ -289,6 +341,7 @@ impl TerminalView {
             }
         }
         self.mark_tab_strip_layout_dirty();
+        self.sync_agent_workspace_to_active_tab();
         self.sync_tab_strip_for_active_tab();
 
         if let Some(message) = tmux_hydration_warning_message(&hydration_failures) {

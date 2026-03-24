@@ -46,12 +46,26 @@ pub enum TabContextMenuAction {
     Unpin,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentProjectContextMenuAction {
+    NewSession,
+    DeleteProject,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentThreadContextMenuAction {
+    DeleteThread,
+}
+
 const CONTEXT_MENU_COPY_ID: i32 = 1;
 const CONTEXT_MENU_PASTE_ID: i32 = 2;
 const CONTEXT_MENU_OPEN_SEARCH_ID: i32 = 3;
 const CONTEXT_MENU_COPY_BUFFER_POSITION_ID: i32 = 4;
 const TAB_CONTEXT_MENU_PIN_ID: i32 = 101;
 const TAB_CONTEXT_MENU_UNPIN_ID: i32 = 102;
+const AGENT_PROJECT_CONTEXT_MENU_NEW_SESSION_ID: i32 = 201;
+const AGENT_PROJECT_CONTEXT_MENU_DELETE_ID: i32 = 202;
+const AGENT_THREAD_CONTEXT_MENU_DELETE_ID: i32 = 301;
 
 #[cfg(target_os = "macos")]
 static CONTEXT_MENU_SELECTION: AtomicI32 = AtomicI32::new(0);
@@ -479,6 +493,221 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
     ))]
     {
         let _ = pinned;
+        None
+    }
+}
+
+pub fn show_agent_project_context_menu() -> Option<AgentProjectContextMenuAction> {
+    #[cfg(target_os = "macos")]
+    {
+        fn show_agent_project_context_menu_on_main(
+            mtm: MainThreadMarker,
+        ) -> Option<AgentProjectContextMenuAction> {
+            let app = NSApplication::sharedApplication(mtm);
+            let Some(_current_event) = app.currentEvent() else {
+                return None;
+            };
+
+            let menu = NSMenu::new(mtm);
+            menu.setAutoenablesItems(false);
+
+            let new_session_item = TermyContextMenuItem::new_with_action_id(
+                mtm,
+                "New Session",
+                AGENT_PROJECT_CONTEXT_MENU_NEW_SESSION_ID,
+                true,
+            );
+            let delete_item = TermyContextMenuItem::new_with_action_id(
+                mtm,
+                "Delete Project",
+                AGENT_PROJECT_CONTEXT_MENU_DELETE_ID,
+                true,
+            );
+            menu.addItem(&new_session_item);
+            menu.addItem(&delete_item);
+
+            CONTEXT_MENU_SELECTION.store(0, Ordering::Relaxed);
+            let location: NSPoint = NSEvent::mouseLocation();
+            let _ = menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
+
+            match CONTEXT_MENU_SELECTION.swap(0, Ordering::Relaxed) {
+                AGENT_PROJECT_CONTEXT_MENU_NEW_SESSION_ID => {
+                    Some(AgentProjectContextMenuAction::NewSession)
+                }
+                AGENT_PROJECT_CONTEXT_MENU_DELETE_ID => {
+                    Some(AgentProjectContextMenuAction::DeleteProject)
+                }
+                _ => None,
+            }
+        }
+
+        if let Some(mtm) = MainThreadMarker::new() {
+            return show_agent_project_context_menu_on_main(mtm);
+        }
+        return run_on_main(show_agent_project_context_menu_on_main);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let menu = unsafe { CreatePopupMenu().ok()? };
+        struct MenuGuard(windows::Win32::UI::WindowsAndMessaging::HMENU);
+        impl Drop for MenuGuard {
+            fn drop(&mut self) {
+                let _ = unsafe { DestroyMenu(self.0) };
+            }
+        }
+        let _menu_guard = MenuGuard(menu);
+
+        let new_session = wide_string("New Session");
+        let delete_project = wide_string("Delete Project");
+
+        unsafe {
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                AGENT_PROJECT_CONTEXT_MENU_NEW_SESSION_ID as usize,
+                windows::core::PCWSTR(new_session.as_ptr()),
+            )
+            .ok()?;
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                AGENT_PROJECT_CONTEXT_MENU_DELETE_ID as usize,
+                windows::core::PCWSTR(delete_project.as_ptr()),
+            )
+            .ok()?;
+        }
+
+        let mut cursor = POINT::default();
+        unsafe {
+            GetCursorPos(&mut cursor).ok()?;
+        }
+        let owner: HWND = unsafe { GetForegroundWindow() };
+        let result = unsafe {
+            TrackPopupMenu(
+                menu,
+                TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                cursor.x,
+                cursor.y,
+                Some(0),
+                owner,
+                None,
+            )
+            .0
+        };
+
+        return match result {
+            AGENT_PROJECT_CONTEXT_MENU_NEW_SESSION_ID => {
+                Some(AgentProjectContextMenuAction::NewSession)
+            }
+            AGENT_PROJECT_CONTEXT_MENU_DELETE_ID => {
+                Some(AgentProjectContextMenuAction::DeleteProject)
+            }
+            _ => None,
+        };
+    }
+
+    #[cfg(any(
+        target_os = "linux",
+        not(any(target_os = "macos", target_os = "windows"))
+    ))]
+    {
+        None
+    }
+}
+
+pub fn show_agent_thread_context_menu() -> Option<AgentThreadContextMenuAction> {
+    #[cfg(target_os = "macos")]
+    {
+        fn show_agent_thread_context_menu_on_main(
+            mtm: MainThreadMarker,
+        ) -> Option<AgentThreadContextMenuAction> {
+            let app = NSApplication::sharedApplication(mtm);
+            let Some(_current_event) = app.currentEvent() else {
+                return None;
+            };
+
+            let menu = NSMenu::new(mtm);
+            menu.setAutoenablesItems(false);
+
+            let delete_item = TermyContextMenuItem::new_with_action_id(
+                mtm,
+                "Delete Thread",
+                AGENT_THREAD_CONTEXT_MENU_DELETE_ID,
+                true,
+            );
+            menu.addItem(&delete_item);
+
+            CONTEXT_MENU_SELECTION.store(0, Ordering::Relaxed);
+            let location: NSPoint = NSEvent::mouseLocation();
+            let _ = menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
+
+            match CONTEXT_MENU_SELECTION.swap(0, Ordering::Relaxed) {
+                AGENT_THREAD_CONTEXT_MENU_DELETE_ID => {
+                    Some(AgentThreadContextMenuAction::DeleteThread)
+                }
+                _ => None,
+            }
+        }
+
+        if let Some(mtm) = MainThreadMarker::new() {
+            return show_agent_thread_context_menu_on_main(mtm);
+        }
+        return run_on_main(show_agent_thread_context_menu_on_main);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let menu = unsafe { CreatePopupMenu().ok()? };
+        struct MenuGuard(windows::Win32::UI::WindowsAndMessaging::HMENU);
+        impl Drop for MenuGuard {
+            fn drop(&mut self) {
+                let _ = unsafe { DestroyMenu(self.0) };
+            }
+        }
+        let _menu_guard = MenuGuard(menu);
+
+        let delete_thread = wide_string("Delete Thread");
+
+        unsafe {
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                AGENT_THREAD_CONTEXT_MENU_DELETE_ID as usize,
+                windows::core::PCWSTR(delete_thread.as_ptr()),
+            )
+            .ok()?;
+        }
+
+        let mut cursor = POINT::default();
+        unsafe {
+            GetCursorPos(&mut cursor).ok()?;
+        }
+        let owner: HWND = unsafe { GetForegroundWindow() };
+        let result = unsafe {
+            TrackPopupMenu(
+                menu,
+                TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                cursor.x,
+                cursor.y,
+                Some(0),
+                owner,
+                None,
+            )
+            .0
+        };
+
+        return match result {
+            AGENT_THREAD_CONTEXT_MENU_DELETE_ID => Some(AgentThreadContextMenuAction::DeleteThread),
+            _ => None,
+        };
+    }
+
+    #[cfg(any(
+        target_os = "linux",
+        not(any(target_os = "macos", target_os = "windows"))
+    ))]
+    {
         None
     }
 }

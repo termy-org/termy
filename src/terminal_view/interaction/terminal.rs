@@ -277,7 +277,7 @@ impl TerminalView {
             return;
         }
 
-        let sidebar_width = self.tab_strip_sidebar_width();
+        let sidebar_width = self.terminal_left_sidebar_width();
         let content_top_inset = self.terminal_content_top_inset();
         let backend_mode = self.runtime_kind();
         let runtime_uses_tmux = matches!(backend_mode, RuntimeKind::Tmux);
@@ -440,6 +440,7 @@ mod tests {
             window_index: 0,
             panes: vec![test_pane("%native-1"), test_pane("%native-2")],
             active_pane_id: "%missing".to_string(),
+            agent_thread_id: None,
             pinned: false,
             manual_title: None,
             explicit_title: None,

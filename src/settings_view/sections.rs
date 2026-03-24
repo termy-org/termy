@@ -600,6 +600,7 @@ impl SettingsWindow {
         let show_switch_hints = self.config.tab_switch_modifier_hints;
         let vertical_tabs = self.config.vertical_tabs;
         let vertical_tabs_minimized = self.config.vertical_tabs_minimized;
+        let agent_sidebar_enabled = self.config.agent_sidebar_enabled;
         let auto_hide_tabbar = self.config.auto_hide_tabbar;
         let close_visibility_meta = Self::setting_metadata_or_fallback("tab_close_visibility");
         let width_mode_meta = Self::setting_metadata_or_fallback("tab_width_mode");
@@ -650,6 +651,14 @@ impl SettingsWindow {
                 "vertical_tabs_minimized-toggle",
                 RootSettingId::VerticalTabsMinimized,
                 vertical_tabs_minimized,
+                "Saved",
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "agent_sidebar_enabled",
+                "agent_sidebar_enabled-toggle",
+                RootSettingId::AgentSidebarEnabled,
+                agent_sidebar_enabled,
                 "Saved",
                 cx,
             ),

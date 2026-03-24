@@ -55,6 +55,8 @@ vertical_tabs = false
 vertical_tabs_width = 220
 # Start vertical tabs in the collapsed state
 vertical_tabs_minimized = false
+# Enable the persisted AI agent projects and threads sidebar
+agent_sidebar_enabled = false
 # Hide the tab bar when only one tab is open
 auto_hide_tabbar = true
 # Show or hide the termy branding in the titlebar

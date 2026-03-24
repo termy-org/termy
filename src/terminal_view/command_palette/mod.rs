@@ -5,6 +5,7 @@ use state::{
     CommandPaletteCommandIntent, CommandPaletteItem, CommandPaletteItemKind,
     command_palette_next_scroll_y, command_palette_target_scroll_y, ordered_theme_ids_for_palette,
 };
+use std::path::Path;
 use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavailableReason};
 
 mod render;
@@ -14,7 +15,7 @@ mod state_tmux;
 pub(super) mod style;
 mod tmux_sessions;
 
-pub(super) use state::{CommandPaletteMode, CommandPaletteState, TaskIntent};
+pub(super) use state::{AiAgentPreset, CommandPaletteMode, CommandPaletteState, TaskIntent};
 pub(super) use state_layouts::SavedLayoutIntent;
 pub(super) use state_tmux::TmuxSessionIntent;
 
@@ -22,6 +23,7 @@ pub(super) use state_tmux::TmuxSessionIntent;
 enum CommandPaletteEscapeAction {
     ClosePalette,
     BackToCommands,
+    BackToAgentProjects,
     BackToTmuxRenameSelect,
     BackToSavedLayoutRenameSelect,
     BackToTaskBrowse,
@@ -185,19 +187,67 @@ impl TerminalView {
     }
 
     fn command_palette_command_items_for_state(
-        &self,
         install_cli_available: bool,
         tmux_enabled: bool,
     ) -> Vec<CommandPaletteItem> {
-        Self::command_palette_core_command_items_for_state(install_cli_available, tmux_enabled)
+        let mut items =
+            Self::command_palette_core_command_items_for_state(install_cli_available, tmux_enabled);
+        let insert_index = items
+            .iter()
+            .position(|item| {
+                matches!(
+                    item.kind,
+                    CommandPaletteItemKind::Command(CommandAction::RunTask)
+                )
+            })
+            .map(|index| index + 1)
+            .unwrap_or(items.len());
+        items.insert(
+            insert_index.min(items.len()),
+            CommandPaletteItem::ai_agent_open_mode(),
+        );
+        items
     }
 
-    fn command_palette_items_for_mode(&self, mode: CommandPaletteMode) -> Vec<CommandPaletteItem> {
+    fn command_palette_ai_agent_project_items(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Vec<CommandPaletteItem> {
+        let working_dir = self
+            .normalized_agent_working_dir(cx)
+            .map(|path| Self::display_working_directory_for_prompt(Path::new(&path)))
+            .unwrap_or_else(|| "Current Folder".to_string());
+        let mut items = vec![CommandPaletteItem::ai_agent_current_folder(&working_dir)];
+
+        let mut projects = self.agent_projects.iter().collect::<Vec<_>>();
+        projects.sort_by_key(|project| std::cmp::Reverse(project.updated_at_ms));
+        items.extend(projects.into_iter().map(|project| {
+            let root_path =
+                Self::display_working_directory_for_prompt(Path::new(&project.root_path));
+            CommandPaletteItem::ai_agent_project(project.id.clone(), &project.name, &root_path)
+        }));
+        items
+    }
+
+    fn command_palette_ai_agent_items() -> Vec<CommandPaletteItem> {
+        AiAgentPreset::ALL
+            .into_iter()
+            .map(CommandPaletteItem::ai_agent)
+            .collect()
+    }
+
+    fn command_palette_items_for_mode(
+        &mut self,
+        mode: CommandPaletteMode,
+        cx: &mut Context<Self>,
+    ) -> Vec<CommandPaletteItem> {
         match mode {
-            CommandPaletteMode::Commands => self.command_palette_command_items_for_state(
+            CommandPaletteMode::Commands => Self::command_palette_command_items_for_state(
                 self.install_cli_available(),
                 self.runtime_uses_tmux(),
             ),
+            CommandPaletteMode::AgentProjects => self.command_palette_ai_agent_project_items(cx),
+            CommandPaletteMode::Agents => Self::command_palette_ai_agent_items(),
             CommandPaletteMode::Themes => self.command_palette_theme_items(),
             CommandPaletteMode::TmuxSessions => self.command_palette.tmux_session_items_for_query(
                 self.command_palette.input().text(),
@@ -499,7 +549,7 @@ impl TerminalView {
         {
             termy_toast::error(format!("Failed to load saved layouts: {error}"));
         }
-        let items = self.command_palette_items_for_mode(mode);
+        let items = self.command_palette_items_for_mode(mode, cx);
         self.command_palette.set_items(items);
         self.inline_input_selecting = false;
 
@@ -560,6 +610,30 @@ impl TerminalView {
 
     pub(super) fn open_tasks_palette(&mut self, cx: &mut Context<Self>) {
         self.open_command_palette_in_mode(CommandPaletteMode::Tasks, cx);
+    }
+
+    fn open_ai_agent_projects_palette_from_palette(&mut self, cx: &mut Context<Self>) {
+        let query = self.command_palette.input().text().trim().to_string();
+        self.command_palette.set_agent_launch_project_id(None);
+        self.set_command_palette_mode(CommandPaletteMode::AgentProjects, false, cx);
+
+        if query.is_empty() {
+            return;
+        }
+
+        self.command_palette.input_mut().set_text(query);
+        self.refresh_command_palette_matches(false, cx);
+        self.reset_cursor_blink_phase();
+        self.notify_overlay(cx);
+    }
+
+    fn open_ai_agents_palette_for_project(
+        &mut self,
+        project_id: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.command_palette.set_agent_launch_project_id(project_id);
+        self.set_command_palette_mode(CommandPaletteMode::Agents, false, cx);
     }
 
     pub(super) fn close_command_palette(&mut self, cx: &mut Context<Self>) {
@@ -744,7 +818,11 @@ impl TerminalView {
                 ) {
                     CommandPaletteEscapeAction::ClosePalette => self.close_command_palette(cx),
                     CommandPaletteEscapeAction::BackToCommands => {
+                        self.command_palette.set_agent_launch_project_id(None);
                         self.set_command_palette_mode(CommandPaletteMode::Commands, false, cx);
+                    }
+                    CommandPaletteEscapeAction::BackToAgentProjects => {
+                        self.set_command_palette_mode(CommandPaletteMode::AgentProjects, false, cx);
                     }
                     CommandPaletteEscapeAction::BackToTmuxRenameSelect => {
                         if self.command_palette.back_from_tmux_rename_input() {
@@ -814,6 +892,8 @@ impl TerminalView {
     ) -> CommandPaletteEscapeAction {
         match mode {
             CommandPaletteMode::Commands => CommandPaletteEscapeAction::ClosePalette,
+            CommandPaletteMode::AgentProjects => CommandPaletteEscapeAction::BackToCommands,
+            CommandPaletteMode::Agents => CommandPaletteEscapeAction::BackToAgentProjects,
             CommandPaletteMode::Themes => CommandPaletteEscapeAction::BackToCommands,
             CommandPaletteMode::TmuxSessions
                 if tmux_session_intent == TmuxSessionIntent::RenameInput =>
@@ -880,6 +960,18 @@ impl TerminalView {
                     return;
                 }
                 self.execute_command_palette_action(action, window, cx)
+            }
+            CommandPaletteItemKind::AiAgentOpenMode => {
+                self.open_ai_agent_projects_palette_from_palette(cx)
+            }
+            CommandPaletteItemKind::AiAgentSelectCurrentFolder => {
+                self.open_ai_agents_palette_for_project(None, cx)
+            }
+            CommandPaletteItemKind::AiAgentSelectProject { project_id } => {
+                self.open_ai_agents_palette_for_project(Some(project_id), cx)
+            }
+            CommandPaletteItemKind::AiAgentSpawn(agent) => {
+                self.spawn_ai_agent_from_palette(agent, cx)
             }
             CommandPaletteItemKind::Theme(theme_id) => {
                 self.select_theme_from_palette(theme_id.as_str(), cx)
@@ -1006,6 +1098,24 @@ impl TerminalView {
                 layout_name.as_deref(),
                 cx,
             ),
+        }
+    }
+
+    fn spawn_ai_agent_from_palette(&mut self, agent: AiAgentPreset, cx: &mut Context<Self>) {
+        let project_id = self
+            .command_palette
+            .agent_launch_project_id()
+            .map(ToOwned::to_owned);
+        self.close_command_palette(cx);
+        match self.launch_ai_agent_from_palette(agent, project_id.as_deref(), cx) {
+            Ok(()) => {
+                termy_toast::success(format!("Started {} in a new tab", agent.title()));
+                self.notify_overlay(cx);
+            }
+            Err(error) => {
+                termy_toast::error(error);
+                self.notify_overlay(cx);
+            }
         }
     }
 
@@ -1412,7 +1522,8 @@ impl TerminalView {
             | CommandAction::MinimizeWindow
             | CommandAction::InstallCli
             | CommandAction::ToggleTabBarVisibility
-            | CommandAction::ToggleVerticalTabSidebar => {}
+            | CommandAction::ToggleVerticalTabSidebar
+            | CommandAction::ToggleAgentSidebar => {}
         }
     }
 
@@ -1442,6 +1553,26 @@ mod tests {
                 TaskIntent::Browse,
             ),
             CommandPaletteEscapeAction::ClosePalette
+        );
+        assert_eq!(
+            TerminalView::command_palette_escape_action(
+                CommandPaletteMode::AgentProjects,
+                TmuxSessionIntent::AttachOrSwitch,
+                CommandPaletteCommandIntent::Browse,
+                SavedLayoutIntent::Browse,
+                TaskIntent::Browse,
+            ),
+            CommandPaletteEscapeAction::BackToCommands
+        );
+        assert_eq!(
+            TerminalView::command_palette_escape_action(
+                CommandPaletteMode::Agents,
+                TmuxSessionIntent::AttachOrSwitch,
+                CommandPaletteCommandIntent::Browse,
+                SavedLayoutIntent::Browse,
+                TaskIntent::Browse,
+            ),
+            CommandPaletteEscapeAction::BackToAgentProjects
         );
         assert_eq!(
             TerminalView::command_palette_escape_action(
@@ -1635,6 +1766,45 @@ mod tests {
                 false,
             ),
             "Command is currently unavailable"
+        );
+    }
+
+    #[test]
+    fn ai_agent_command_is_inserted_after_run_task() {
+        let items = TerminalView::command_palette_command_items_for_state(true, true);
+        let run_task_index = items
+            .iter()
+            .position(|item| {
+                matches!(
+                    item.kind,
+                    CommandPaletteItemKind::Command(CommandAction::RunTask)
+                )
+            })
+            .expect("missing Run Task entry");
+        let ai_agent_index = items
+            .iter()
+            .position(|item| matches!(item.kind, CommandPaletteItemKind::AiAgentOpenMode))
+            .expect("missing AI agent entry");
+
+        assert_eq!(ai_agent_index, run_task_index + 1);
+    }
+
+    #[test]
+    fn ai_agent_palette_items_cover_expected_presets() {
+        let items = TerminalView::command_palette_ai_agent_items();
+        let titles = items
+            .iter()
+            .map(|item| item.title.as_str())
+            .collect::<Vec<_>>();
+        let commands = items
+            .iter()
+            .map(|item| item.status_hint)
+            .collect::<Vec<_>>();
+
+        assert_eq!(titles, ["Codex", "Claude", "OpenCode", "Pi"]);
+        assert_eq!(
+            commands,
+            [Some("codex"), Some("claude"), Some("opencode"), Some("pi")]
         );
     }
 

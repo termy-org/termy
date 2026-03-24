@@ -976,6 +976,16 @@ define_commands!(
             MenuActionRole::Normal
         ))
     ),
+    (
+        ToggleAgentSidebar,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Toggle Agent Sidebar",
+            "ai agent sidebar projects threads cmux workspace",
+            CommandPaletteVisibility::Always
+        )),
+        None
+    ),
 );
 
 termy_command_core::termy_command_catalog!(impl_command_action_id_mapping);

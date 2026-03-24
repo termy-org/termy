@@ -118,6 +118,7 @@ impl TerminalTab {
                 .or_else(|| panes.first().map(|pane| pane.id.clone()))
                 .unwrap_or_default(),
             panes,
+            agent_thread_id: None,
             pinned: false,
             manual_title: None,
             explicit_title: None,

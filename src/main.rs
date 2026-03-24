@@ -296,7 +296,6 @@ fn start_theme_install_from_deeplink(cx: &mut App, slug: String) {
     .detach();
 }
 
-
 fn dispatch_deeplink(
     cx: &mut App,
     route: DeepLinkRoute,

@@ -37,6 +37,8 @@ use sysinfo::{ProcessesToUpdate, System, get_current_pid};
 use termy_auto_update::{AutoUpdater, UpdateState};
 use termy_config_core::{MAX_LINE_HEIGHT, MIN_LINE_HEIGHT};
 use termy_search::SearchState;
+#[cfg(debug_assertions)]
+use termy_terminal_ui::terminal_ui_render_metrics_reset;
 use termy_terminal_ui::{
     CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
     TerminalClipboardTarget, TerminalCursorState, TerminalCursorStyle, TerminalDamageSnapshot,
@@ -47,13 +49,10 @@ use termy_terminal_ui::{
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
     normalize_working_directory_candidate, resolve_launch_working_directory,
 };
-use termy_terminal_ui::{
-    TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_snapshot,
-};
-#[cfg(debug_assertions)]
-use termy_terminal_ui::terminal_ui_render_metrics_reset;
+use termy_terminal_ui::{TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_snapshot};
 use termy_toast::ToastManager;
 
+mod agents;
 mod benchmark;
 mod command_palette;
 mod inline_input;
@@ -1088,6 +1087,7 @@ struct TerminalTab {
     window_index: i32,
     panes: Vec<TerminalPane>,
     active_pane_id: String,
+    agent_thread_id: Option<String>,
     pinned: bool,
     manual_title: Option<String>,
     explicit_title: Option<String>,
@@ -1463,6 +1463,8 @@ pub struct TerminalView {
     active_tab: usize,
     renaming_tab: Option<usize>,
     rename_input: InlineInputState,
+    renaming_agent_thread_id: Option<String>,
+    agent_thread_rename_input: InlineInputState,
     event_wakeup_tx: Sender<()>,
     focus_handle: FocusHandle,
     theme_id: String,
@@ -1477,6 +1479,12 @@ pub struct TerminalView {
     vertical_tabs: bool,
     vertical_tabs_width: f32,
     vertical_tabs_minimized: bool,
+    agent_sidebar_enabled: bool,
+    agent_sidebar_open: bool,
+    active_agent_project_id: Option<String>,
+    collapsed_agent_project_ids: HashSet<String>,
+    agent_projects: Vec<agents::AgentProject>,
+    agent_threads: Vec<agents::AgentThread>,
     auto_hide_tabbar: bool,
     tab_bar_visibility: TabBarVisibility,
     new_tab_animation_tab_id: Option<TabId>,
@@ -1972,6 +1980,7 @@ impl TerminalView {
             window_index: 0,
             panes: vec![pane],
             active_pane_id: pane_id,
+            agent_thread_id: None,
             pinned: false,
             manual_title: None,
             explicit_title: predicted_prompt_title,
@@ -2394,7 +2403,7 @@ impl TerminalView {
         TerminalContentRect::new(
             0.0,
             0.0,
-            viewport_width - self.tab_strip_sidebar_width(),
+            viewport_width - self.terminal_left_sidebar_width(),
             viewport_height - self.terminal_content_top_inset(),
         )
     }
@@ -2929,6 +2938,8 @@ impl TerminalView {
             active_tab: 0,
             renaming_tab: None,
             rename_input: InlineInputState::new(String::new()),
+            renaming_agent_thread_id: None,
+            agent_thread_rename_input: InlineInputState::new(String::new()),
             event_wakeup_tx,
             focus_handle,
             theme_id,
@@ -2945,6 +2956,12 @@ impl TerminalView {
                 config.vertical_tabs_width,
             ),
             vertical_tabs_minimized: config.vertical_tabs_minimized,
+            agent_sidebar_enabled: config.agent_sidebar_enabled,
+            agent_sidebar_open: false,
+            active_agent_project_id: None,
+            collapsed_agent_project_ids: HashSet::new(),
+            agent_projects: Vec::new(),
+            agent_threads: Vec::new(),
             auto_hide_tabbar: config.auto_hide_tabbar,
             tab_bar_visibility: TabBarVisibility::FollowConfig,
             new_tab_animation_tab_id: None,
@@ -3065,6 +3082,7 @@ impl TerminalView {
             // Surface explicit feedback when a synced/shared config requests tmux on Windows.
             termy_toast::warning(TMUX_UNSUPPORTED_WINDOWS_TOAST);
         }
+        view.restore_persisted_agent_workspace();
         let restored_native_workspace = if resolved_runtime_kind == RuntimeKind::Native {
             match view.restore_persisted_native_workspace(cx) {
                 Ok(restored) => restored,
@@ -3223,6 +3241,12 @@ impl TerminalView {
         self.vertical_tabs = config.vertical_tabs;
         self.vertical_tabs_width = vertical_tabs_width;
         self.vertical_tabs_minimized = config.vertical_tabs_minimized;
+        self.agent_sidebar_enabled = config.agent_sidebar_enabled;
+        if !self.agent_sidebar_enabled {
+            self.agent_sidebar_open = false;
+        } else if self.agent_projects.is_empty() && self.agent_threads.is_empty() {
+            self.agent_sidebar_open = true;
+        }
         self.auto_hide_tabbar = config.auto_hide_tabbar;
         self.show_termy_in_titlebar = config.show_termy_in_titlebar;
         self.show_debug_overlay = config.show_debug_overlay;

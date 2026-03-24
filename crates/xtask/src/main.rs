@@ -137,7 +137,7 @@ fn render_keybindings_doc() -> String {
 
     output.push_str("`secondary` maps to `cmd` on macOS and `ctrl` on non-macOS platforms.\n\n");
     output.push_str("Notes:\n\n");
-    output.push_str("- `toggle_agent_sidebar` is bound by default, but it only works when `agent_sidebar_enabled = true` in `~/.config/termy/config.txt`.\n");
+    output.push_str("- `toggle_agent_sidebar` only works when `agent_sidebar_enabled = true` in `~/.config/termy/config.txt`.\n");
     output.push_str("- `toggle_vertical_tab_sidebar` only works when `vertical_tabs = true`; enable it in Settings > Tabs or in `~/.config/termy/config.txt`.\n\n");
 
     output.push_str("## Config Syntax\n\n");

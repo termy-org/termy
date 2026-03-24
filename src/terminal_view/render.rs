@@ -2388,15 +2388,11 @@ impl Render for TerminalView {
                     cols,
                     rows,
                 );
-                let (cursor_cell, cursor_paint_visible, pane_cursor_style) =
-                    match pane_cursor_state {
-                        Some(cursor) => (
-                            Some((cursor.col, cursor.row)),
-                            cursor_visible,
-                            cursor.style,
-                        ),
-                        None => (None, false, configured_cursor_style),
-                    };
+                let (cursor_cell, cursor_paint_visible, pane_cursor_style) = match pane_cursor_state
+                {
+                    Some(cursor) => (Some((cursor.col, cursor.row)), cursor_visible, cursor.style),
+                    None => (None, false, configured_cursor_style),
+                };
 
                 let terminal_grid = self.build_terminal_grid_from_cache(
                     pane_cells,
@@ -2610,6 +2606,7 @@ impl Render for TerminalView {
         .flatten();
         let vertical_tab_strip = (self.vertical_tabs && show_tab_strip_chrome)
             .then(|| self.render_vertical_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
+        let agent_sidebar = self.render_agent_sidebar(cx);
         #[cfg(target_os = "macos")]
         let update_banner_layout = self.update_banner_layout();
 
@@ -2852,6 +2849,7 @@ impl Render for TerminalView {
                     })
                     .on_action(cx.listener(Self::handle_toggle_tab_bar_visibility_action))
                     .on_action(cx.listener(Self::handle_toggle_vertical_tab_sidebar_action))
+                    .on_action(cx.listener(Self::handle_toggle_agent_sidebar_action))
                     .on_action(cx.listener(Self::handle_inline_backspace_action))
                     .on_action(cx.listener(Self::handle_inline_delete_action))
                     .on_action(cx.listener(Self::handle_inline_move_left_action))
@@ -2879,6 +2877,7 @@ impl Render for TerminalView {
                             .w_full()
                             .h_full()
                             .children(vertical_tab_strip)
+                            .children(agent_sidebar)
                             .child(
                                 div()
                                     .id("terminal-pane")

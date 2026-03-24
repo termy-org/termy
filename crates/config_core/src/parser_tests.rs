@@ -304,6 +304,7 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::TabSwitchModifierHints => Some(config.tab_switch_modifier_hints),
         RootSettingId::VerticalTabs => Some(config.vertical_tabs),
         RootSettingId::VerticalTabsMinimized => Some(config.vertical_tabs_minimized),
+        RootSettingId::AgentSidebarEnabled => Some(config.agent_sidebar_enabled),
         RootSettingId::AutoHideTabbar => Some(config.auto_hide_tabbar),
         RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar),
         RootSettingId::CursorBlink => Some(config.cursor_blink),

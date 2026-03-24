@@ -456,6 +456,13 @@ impl AppConfig {
                         config.vertical_tabs_minimized = parsed;
                     }
                 }
+                RootSettingId::AgentSidebarEnabled => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.agent_sidebar_enabled = parsed;
+                    }
+                }
                 RootSettingId::AutoHideTabbar => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)

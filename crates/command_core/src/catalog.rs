@@ -61,6 +61,7 @@ macro_rules! termy_command_catalog {
             (InstallCli, "install_cli"),
             (ToggleTabBarVisibility, "toggle_tab_bar_visibility"),
             (ToggleVerticalTabSidebar, "toggle_vertical_tab_sidebar"),
+            (ToggleAgentSidebar, "toggle_agent_sidebar"),
         }
     };
 }
