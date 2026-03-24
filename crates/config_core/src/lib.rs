@@ -35,6 +35,10 @@ pub use types::{
     TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
 };
 
+/// Formats a `line_height` value as a fixed two-decimal string (e.g., `1.40`).
+///
+/// Used by both the settings stepper and the text-input apply path to ensure
+/// the config file always contains a consistent representation.
 pub fn format_line_height(value: f32) -> String {
     format!("{value:.2}")
 }

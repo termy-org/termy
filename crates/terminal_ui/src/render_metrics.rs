@@ -2,6 +2,12 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Point-in-time snapshot of terminal UI rendering counters.
+///
+/// All counters are monotonically increasing from process start. Use
+/// `saturating_sub` to compute a delta between two snapshots. The `span_*_us`
+/// fields are cumulative microseconds spent in each rendering phase — divide by
+/// frame count to get per-frame averages for the debug overlay.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TerminalUiRenderMetricsSnapshot {
     pub grid_paint_count: u64,
@@ -9,9 +15,13 @@ pub struct TerminalUiRenderMetricsSnapshot {
     pub shaped_line_cache_hits: u64,
     pub shaped_line_cache_misses: u64,
     pub runtime_wakeup_count: u64,
+    /// Cumulative microseconds spent converting dirty spans to `TerminalGridPaintDamage`.
     pub span_damage_compute_us: u64,
+    /// Cumulative microseconds spent rebuilding `CachedRowPaintOps` for dirty rows.
     pub span_row_ops_rebuild_us: u64,
+    /// Cumulative microseconds spent in `window.text_system().shape_line()`.
     pub span_text_shaping_us: u64,
+    /// Cumulative microseconds spent in the full `TerminalGrid::paint()` pass.
     pub span_grid_paint_us: u64,
 }
 

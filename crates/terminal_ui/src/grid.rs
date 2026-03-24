@@ -9,7 +9,12 @@ use gpui::{
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, time::Instant};
 
-/// Info needed to render a single cell.
+/// Everything the grid painter needs to know about a single terminal cell.
+///
+/// Built by the app crate from alacritty's render state and passed into
+/// `TerminalGrid` as a flat per-row vector. The grid element never
+/// modifies these — it reads them during `paint()` to decide backgrounds,
+/// foreground colors, text batches, and block/box-drawing quads.
 #[derive(Clone)]
 pub struct CellRenderInfo {
     pub col: usize,
@@ -37,14 +42,26 @@ pub enum TerminalCursorStyle {
 pub type TerminalGridRow = Arc<Vec<CellRenderInfo>>;
 pub type TerminalGridRows = Arc<Vec<TerminalGridRow>>;
 
+/// Describes which parts of the grid changed since the last paint.
+///
+/// The grid element always repaints every row (GPUI does not preserve pixels
+/// across frames), but damage controls which cached `CachedRowPaintOps` are
+/// *rebuilt*. Rows not listed in the damage reuse their previous ops and
+/// `ShapedLine` objects, avoiding expensive text-shaping calls.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum TerminalGridPaintDamage {
+    /// Nothing changed — all cached row ops are reused as-is.
     #[default]
     None,
+    /// Everything changed — rebuild ops for every row.
     Full,
+    /// Only the listed rows changed; ops for unlisted rows are reused.
     Rows(Arc<[usize]>),
     /// Row damage with column bounds `(row, left_col_inclusive, right_col_inclusive)`.
+    ///
     /// Emitted when alacritty reports partial damage with column-level granularity.
+    /// Enables per-op `ShapedLine` reuse: text batches whose column range does not
+    /// overlap the dirty columns keep their shaped line from the previous frame.
     RowRanges(Arc<[(usize, usize, usize)]>),
 }
 
@@ -69,6 +86,21 @@ impl TerminalGridPaintCacheHandle {
     }
 }
 
+/// Custom GPUI element that renders the terminal grid.
+///
+/// Constructed fresh every frame by `TerminalView::build_terminal_grid_from_cache`.
+/// Owns the cell data, damage descriptor, and style parameters for a single paint
+/// pass. The heavy state — cached `ShapedLine` objects and row ops — lives in the
+/// `paint_cache` handle and survives across frames.
+///
+/// Rendering is split into three phases inside `paint()`:
+/// 1. **Damage resolution** — `dirty_rows_for_pass` merges paint damage with
+///    cursor/hover transitions to produce the set of rows that need op rebuilds.
+/// 2. **Row-ops rebuild** — `rebuild_cached_rows_for_pass` rebuilds background
+///    spans and text/block draw ops for dirty rows, reusing `ShapedLine` objects
+///    from the previous frame where column-level damage allows.
+/// 3. **Row painting** — all rows are painted (GPUI clears every frame), using
+///    cached ops.
 pub struct TerminalGrid {
     pub cells: TerminalGridRows,
     pub paint_cache: TerminalGridPaintCacheHandle,
@@ -85,7 +117,13 @@ pub struct TerminalGrid {
     pub search_match_bg: Hsla,
     pub search_current_bg: Hsla,
     pub hovered_link_range: Option<(usize, usize, usize)>,
+    /// Grid coordinates `(col, row)` of the cursor, or `None` if the cursor is
+    /// off-screen. Always set when a pane has focus, even if `cursor_visible` is
+    /// false (the position is needed for damage tracking).
     pub cursor_cell: Option<(usize, usize)>,
+    /// Whether the cursor should be painted this frame. Driven by blink state.
+    /// When false, `cursor_cell` is still `Some` so the grid knows *where* the
+    /// cursor is for damage tracking, but no cursor quad is drawn.
     pub cursor_visible: bool,
     pub font_family: SharedString,
     pub font_size: Pixels,
@@ -131,6 +169,11 @@ const QUAD_UPPER_RIGHT: u8 = 0b0010;
 const QUAD_LOWER_LEFT: u8 = 0b0100;
 const QUAD_LOWER_RIGHT: u8 = 0b1000;
 
+/// A single rectangle within a block-element or box-drawing cell, expressed in
+/// **cell-relative coordinates** (0.0 = left/top edge, 1.0 = right/bottom edge).
+///
+/// `alpha` scales the foreground color's opacity — used for shade characters
+/// (U+2591 = 25%, U+2592 = 50%, U+2593 = 75%).
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct BlockRectSpec {
     left: f32,
@@ -154,6 +197,9 @@ impl BlockRectSpec {
 
 const EMPTY_BLOCK_RECT: BlockRectSpec = BlockRectSpec::new(0.0, 0.0, 0.0, 0.0, 0.0);
 
+/// Collected set of cell-relative rectangles that compose a single block-element
+/// or box-drawing character. Fixed-capacity array (max 8 rects) to avoid heap
+/// allocation — the most complex case (double-line cross U+256C) uses 4 rects.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct BlockElementGeometry {
     rects: [BlockRectSpec; 8],
@@ -198,6 +244,12 @@ impl BlockElementGeometry {
     }
 }
 
+/// Weight of a single arm in a box-drawing character.
+///
+/// Maps directly to the Unicode box-drawing naming convention:
+/// - **Light** — thin stroke (e.g., `─` U+2500)
+/// - **Heavy** — thick stroke, 2x light width (e.g., `━` U+2501)
+/// - **Double** — two parallel light strokes (e.g., `═` U+2550)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BoxLineStyle {
     None,
@@ -212,6 +264,11 @@ impl BoxLineStyle {
     }
 }
 
+/// The four directional arms of a box-drawing character, each with its own
+/// `BoxLineStyle`. For example, `┼` (U+253C) has all four arms set to `Light`.
+///
+/// This is an intermediate representation between the Unicode codepoint lookup
+/// (`box_draw_segments`) and the geometry builder (`box_draw_geometry`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct BoxDrawSegments {
     up: BoxLineStyle,
@@ -270,6 +327,12 @@ struct BackgroundSpan {
     color: Hsla,
 }
 
+/// Cached paint operations for a single terminal row.
+///
+/// Rebuilt when the row is in the dirty set; otherwise reused across frames.
+/// `shaped_lines` is parallel to `draw_ops` — each `TextDrawOp::Batch` has a
+/// corresponding `Some(ShapedLine)` (populated on first paint or reused from a
+/// previous frame), while `TextDrawOp::Block` entries have `None`.
 #[derive(Clone, Default)]
 struct CachedRowPaintOps {
     background_spans: Vec<BackgroundSpan>,
@@ -294,6 +357,16 @@ struct GridPaintStyleKey {
     font_size_bits: u32,
 }
 
+/// Long-lived paint cache shared across frames via `TerminalGridPaintCacheHandle`.
+///
+/// Survives frame boundaries (owned by the `TerminalView`, not the per-frame
+/// `TerminalGrid`). On each paint pass:
+/// 1. `ensure_row_capacity` resizes vectors to match the current grid dimensions.
+/// 2. `dirty_rows_for_pass` populates `dirty_col_ranges` from `RowRanges` damage.
+/// 3. `rebuild_cached_rows_for_pass` rebuilds `row_ops` for dirty rows, reusing
+///    `ShapedLine` objects from the previous frame where column damage allows.
+///
+/// Invariant: `row_ops.len()` == `dirty_col_ranges.len()` == grid row count.
 #[derive(Default)]
 struct TerminalGridPaintCache {
     row_ops: Vec<CachedRowPaintOps>,
@@ -629,6 +702,17 @@ fn centered_horizontal_rect(y_center: f32, height: f32, left: f32, right: f32) -
     )
 }
 
+/// Converts a `BoxDrawSegments` descriptor into pixel-snappable rectangles.
+///
+/// Stroke widths scale from `font_size`: light = `ceil(font_size * 0.0675)` pixels
+/// (minimum 1.0), heavy = 2x light. All coordinates are in cell-relative [0.0, 1.0]
+/// space; `cell_width` / `cell_height` are used only to convert pixel widths to
+/// fractional coordinates.
+///
+/// Double lines are two parallel light strokes centered around the cell midpoint
+/// with a gap equal to the light stroke width. When a double horizontal arm meets
+/// a double vertical arm, the horizontal strokes break at the vertical gap to
+/// avoid a filled center — matching the Unicode reference glyphs.
 fn box_draw_geometry(
     segments: BoxDrawSegments,
     cell_width: f32,

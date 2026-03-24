@@ -145,11 +145,22 @@ fn finalized_cache_update_strategy(
     }
 }
 
+// Reusable scratch buffer for dirty-span-to-damage conversion. Thread-local to
+// avoid per-frame heap allocation. Grows to the high-water mark of dirty spans
+// and persists for the thread's lifetime — acceptable because the rendering
+// thread is long-lived and the buffer is small.
 thread_local! {
     static DIRTY_SPAN_RANGES: std::cell::RefCell<Vec<(usize, usize, usize)>> =
         std::cell::RefCell::new(Vec::with_capacity(128));
 }
 
+/// Converts alacritty's dirty-span list into `TerminalGridPaintDamage::RowRanges`.
+///
+/// Spans are filtered to `row < row_count`, sorted by row, and merged per-row via
+/// `dedup_by` (expanding the right bound to form the union). The merge relies on
+/// the sort placing same-row spans adjacent — if this invariant breaks, the
+/// downstream `dirty_col_ranges` merge in `TerminalGridPaintCache` still produces
+/// correct rendering, but the `RowRanges` vec will contain redundant entries.
 fn paint_damage_from_dirty_spans(
     spans: &[TerminalDirtySpan],
     row_count: usize,
@@ -1606,6 +1617,12 @@ impl TerminalView {
         )
     }
 
+    /// Renders a small translucent overlay at the bottom-left showing the URL
+    /// of the currently hovered hyperlink. `file:///` URLs are contracted to
+    /// `~/...` paths. Long URLs are truncated to 80 characters with an ellipsis.
+    ///
+    /// Returns `None` when no link is hovered — the caller uses `.children()` so
+    /// the overlay is simply absent from the element tree.
     fn render_link_preview_overlay(&self) -> Option<AnyElement> {
         let link = self.hovered_link.as_ref()?;
         let overlay_style = self.overlay_style();
