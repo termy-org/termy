@@ -151,11 +151,13 @@ fn modifier_transition_events(
 fn overlay_owns_terminal_input_state(
     command_palette_open: bool,
     search_open: bool,
+    agent_sidebar_search_active: bool,
     renaming_tab: Option<usize>,
     renaming_agent_thread_id: Option<&str>,
 ) -> bool {
     command_palette_open
         || search_open
+        || agent_sidebar_search_active
         || renaming_tab.is_some()
         || renaming_agent_thread_id.is_some()
 }
@@ -208,6 +210,7 @@ impl TerminalView {
         overlay_owns_terminal_input_state(
             self.is_command_palette_open(),
             self.search_open,
+            self.agent_sidebar_search_active,
             self.renaming_tab,
             self.renaming_agent_thread_id.as_deref(),
         )
@@ -634,6 +637,21 @@ impl TerminalView {
             if self.search_open {
                 if self.handle_search_key_down(key, event.keystroke.modifiers.shift, cx) {
                     self.remember_consumed_key_release(key);
+                }
+                return;
+            }
+
+            if self.agent_sidebar_search_active {
+                match key {
+                    "escape" => {
+                        self.dismiss_agent_sidebar_search(cx);
+                        self.remember_consumed_key_release(key);
+                    }
+                    "enter" => {
+                        self.open_first_matching_agent_thread(cx);
+                        self.remember_consumed_key_release(key);
+                    }
+                    _ => {}
                 }
                 return;
             }

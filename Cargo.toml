@@ -66,6 +66,7 @@ url = "2.5"
 # File I/O
 tempfile = "3"
 fs4 = { version = "0.13.1", features = ["sync"] }
+libsqlite3-sys = "0.30.1"
 ureq = { version = "2", features = ["json"] }
 webbrowser = "1.0"
 sysinfo = "0.37"

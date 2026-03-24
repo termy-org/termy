@@ -1,18 +1,23 @@
 use super::*;
 use alacritty_terminal::grid::Dimensions;
 use gpui::{ObjectFit, StatefulInteractiveElement, StyledImage, img};
+use libsqlite3_sys as sqlite3;
 use serde::{Deserialize, Serialize};
+use std::ffi::{CStr, CString};
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::ptr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tempfile::NamedTempFile;
 
-const AGENT_WORKSPACE_STATE_FILE: &str = "agents.json";
-const AGENT_WORKSPACE_STATE_VERSION: u64 = 1;
+const AGENT_WORKSPACE_DB_FILE: &str = "agents.sqlite3";
+const LEGACY_AGENT_WORKSPACE_STATE_FILE: &str = "agents.json";
+const AGENT_WORKSPACE_SCHEMA_VERSION: u64 = 1;
+const LEGACY_AGENT_WORKSPACE_STATE_VERSION: u64 = 1;
+const AGENT_WORKSPACE_STATE_ROW_KEY: &str = "state";
 const AGENT_SIDEBAR_WIDTH: f32 = 252.0;
 const AGENT_SIDEBAR_HEADER_HEIGHT: f32 = 36.0;
+const AGENT_SIDEBAR_SEARCH_HEIGHT: f32 = 34.0;
 const AGENT_SIDEBAR_PROJECT_ROW_HEIGHT: f32 = 30.0;
 const AGENT_STATUS_VISIBLE_LINE_COUNT: i32 = 6;
 static NEXT_AGENT_ENTITY_ID: AtomicU64 = AtomicU64::new(1);
@@ -63,7 +68,7 @@ struct PersistedAgentWorkspaceState {
 impl Default for PersistedAgentWorkspaceState {
     fn default() -> Self {
         Self {
-            version: AGENT_WORKSPACE_STATE_VERSION,
+            version: AGENT_WORKSPACE_SCHEMA_VERSION,
             sidebar_open: false,
             active_project_id: None,
             collapsed_project_ids: Vec::new(),
@@ -123,6 +128,311 @@ fn now_unix_ms() -> u64 {
     .unwrap_or(u64::MAX)
 }
 
+struct AgentWorkspaceDb {
+    raw: *mut sqlite3::sqlite3,
+}
+
+struct AgentWorkspaceStatement<'db> {
+    db: &'db AgentWorkspaceDb,
+    raw: *mut sqlite3::sqlite3_stmt,
+}
+
+impl AgentWorkspaceDb {
+    fn open(path: &Path) -> Result<Self, String> {
+        let parent = path
+            .parent()
+            .ok_or_else(|| format!("Invalid agent workspace path '{}'", path.display()))?;
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create '{}': {}", parent.display(), error))?;
+
+        let path_string = path.to_string_lossy().into_owned();
+        let path_cstr =
+            CString::new(path_string.clone()).map_err(|_| "Invalid SQLite path".to_string())?;
+
+        let mut raw = ptr::null_mut();
+        let open_status = unsafe {
+            sqlite3::sqlite3_open_v2(
+                path_cstr.as_ptr(),
+                &mut raw,
+                sqlite3::SQLITE_OPEN_READWRITE | sqlite3::SQLITE_OPEN_CREATE,
+                ptr::null(),
+            )
+        };
+        if open_status != sqlite3::SQLITE_OK {
+            let error = sqlite_error_message(raw);
+            if !raw.is_null() {
+                unsafe {
+                    sqlite3::sqlite3_close(raw);
+                }
+            }
+            return Err(format!(
+                "Failed to open agent workspace database '{}': {}",
+                path.display(),
+                error
+            ));
+        }
+
+        let db = Self { raw };
+        db.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS agent_workspace_meta (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL
+            );
+            ",
+        )?;
+        Ok(db)
+    }
+
+    fn execute_batch(&self, sql: &str) -> Result<(), String> {
+        let sql_cstr = CString::new(sql)
+            .map_err(|_| "SQLite statement contains an embedded NUL byte".to_string())?;
+        let mut error_message = ptr::null_mut();
+        let status = unsafe {
+            sqlite3::sqlite3_exec(
+                self.raw,
+                sql_cstr.as_ptr(),
+                None,
+                ptr::null_mut(),
+                &mut error_message,
+            )
+        };
+        if status == sqlite3::SQLITE_OK {
+            return Ok(());
+        }
+
+        Err(format!(
+            "SQLite statement failed: {}",
+            sqlite_exec_error_message(error_message)
+        ))
+    }
+
+    fn prepare(&self, sql: &str) -> Result<AgentWorkspaceStatement<'_>, String> {
+        let sql_cstr = CString::new(sql)
+            .map_err(|_| "SQLite statement contains an embedded NUL byte".to_string())?;
+        let mut statement = ptr::null_mut();
+        let status = unsafe {
+            sqlite3::sqlite3_prepare_v2(
+                self.raw,
+                sql_cstr.as_ptr(),
+                -1,
+                &mut statement,
+                ptr::null_mut(),
+            )
+        };
+        if status != sqlite3::SQLITE_OK {
+            return Err(format!(
+                "Failed to prepare SQLite statement: {}",
+                sqlite_error_message(self.raw)
+            ));
+        }
+
+        Ok(AgentWorkspaceStatement {
+            db: self,
+            raw: statement,
+        })
+    }
+
+    fn meta_value(&self, key: &str) -> Result<Option<String>, String> {
+        let mut statement =
+            self.prepare("SELECT value FROM agent_workspace_meta WHERE key = ?1 LIMIT 1")?;
+        statement.bind_text(1, key)?;
+        match statement.step()? {
+            sqlite3::SQLITE_ROW => statement.column_text(0).map(Some),
+            sqlite3::SQLITE_DONE => Ok(None),
+            _ => unreachable!(),
+        }
+    }
+
+    fn set_meta_value(&self, key: &str, value: &str) -> Result<(), String> {
+        let mut statement = self.prepare(
+            "
+            INSERT INTO agent_workspace_meta (key, value) VALUES (?1, ?2)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            ",
+        )?;
+        statement.bind_text(1, key)?;
+        statement.bind_text(2, value)?;
+        statement.step_done()
+    }
+}
+
+impl Drop for AgentWorkspaceDb {
+    fn drop(&mut self) {
+        if !self.raw.is_null() {
+            unsafe {
+                sqlite3::sqlite3_close(self.raw);
+            }
+        }
+    }
+}
+
+impl AgentWorkspaceStatement<'_> {
+    fn bind_text(&mut self, index: i32, value: &str) -> Result<(), String> {
+        let value_cstr = CString::new(value)
+            .map_err(|_| "SQLite bind value contains an embedded NUL byte".to_string())?;
+        let status = unsafe {
+            sqlite3::sqlite3_bind_text(
+                self.raw,
+                index,
+                value_cstr.as_ptr(),
+                -1,
+                sqlite3::SQLITE_TRANSIENT(),
+            )
+        };
+        if status == sqlite3::SQLITE_OK {
+            Ok(())
+        } else {
+            Err(format!(
+                "Failed to bind SQLite text parameter: {}",
+                sqlite_error_message(self.db.raw)
+            ))
+        }
+    }
+
+    fn step(&mut self) -> Result<i32, String> {
+        let status = unsafe { sqlite3::sqlite3_step(self.raw) };
+        match status {
+            sqlite3::SQLITE_ROW | sqlite3::SQLITE_DONE => Ok(status),
+            _ => Err(format!(
+                "SQLite statement execution failed: {}",
+                sqlite_error_message(self.db.raw)
+            )),
+        }
+    }
+
+    fn step_done(&mut self) -> Result<(), String> {
+        match self.step()? {
+            sqlite3::SQLITE_DONE => Ok(()),
+            sqlite3::SQLITE_ROW => Err("SQLite statement unexpectedly returned a row".to_string()),
+            _ => unreachable!(),
+        }
+    }
+
+    fn column_text(&self, index: i32) -> Result<String, String> {
+        let value = unsafe { sqlite3::sqlite3_column_text(self.raw, index) };
+        if value.is_null() {
+            return Err("SQLite column was NULL when text was expected".to_string());
+        }
+
+        Ok(unsafe { CStr::from_ptr(value.cast()) }
+            .to_string_lossy()
+            .into_owned())
+    }
+}
+
+impl Drop for AgentWorkspaceStatement<'_> {
+    fn drop(&mut self) {
+        if !self.raw.is_null() {
+            unsafe {
+                sqlite3::sqlite3_finalize(self.raw);
+            }
+        }
+    }
+}
+
+fn sqlite_error_message(raw: *mut sqlite3::sqlite3) -> String {
+    if raw.is_null() {
+        return "Unknown SQLite error".to_string();
+    }
+
+    unsafe { CStr::from_ptr(sqlite3::sqlite3_errmsg(raw)) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn sqlite_exec_error_message(error_message: *mut i8) -> String {
+    if error_message.is_null() {
+        return "Unknown SQLite error".to_string();
+    }
+
+    let message = unsafe { CStr::from_ptr(error_message) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe {
+        sqlite3::sqlite3_free(error_message.cast());
+    }
+    message
+}
+
+fn load_legacy_agent_workspace_state(path: &Path) -> Result<PersistedAgentWorkspaceState, String> {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(PersistedAgentWorkspaceState::default());
+        }
+        Err(error) => {
+            return Err(format!(
+                "Failed to read legacy agent workspace state '{}': {}",
+                path.display(),
+                error
+            ));
+        }
+    };
+
+    let mut state: PersistedAgentWorkspaceState = serde_json::from_str(&contents)
+        .map_err(|error| format!("Invalid legacy agent workspace JSON: {}", error))?;
+    if state.version != LEGACY_AGENT_WORKSPACE_STATE_VERSION {
+        return Err(format!(
+            "Unsupported legacy agent workspace state version {}",
+            state.version
+        ));
+    }
+    for thread in &mut state.threads {
+        thread.linked_tab_id = None;
+    }
+    Ok(state)
+}
+
+fn decode_agent_workspace_state(contents: &str) -> Result<PersistedAgentWorkspaceState, String> {
+    let mut state: PersistedAgentWorkspaceState = serde_json::from_str(contents)
+        .map_err(|error| format!("Invalid agent workspace database payload: {}", error))?;
+    if state.version != AGENT_WORKSPACE_SCHEMA_VERSION {
+        return Err(format!(
+            "Unsupported agent workspace schema version {}",
+            state.version
+        ));
+    }
+    for thread in &mut state.threads {
+        thread.linked_tab_id = None;
+    }
+    Ok(state)
+}
+
+fn load_agent_workspace_state_from_db(
+    db: &AgentWorkspaceDb,
+) -> Result<Option<PersistedAgentWorkspaceState>, String> {
+    db.meta_value(AGENT_WORKSPACE_STATE_ROW_KEY)?
+        .map(|contents| decode_agent_workspace_state(&contents))
+        .transpose()
+}
+
+fn store_agent_workspace_state_to_db(
+    db: &AgentWorkspaceDb,
+    state: &PersistedAgentWorkspaceState,
+) -> Result<(), String> {
+    let contents = serde_json::to_string_pretty(state)
+        .map_err(|error| format!("Failed to encode agent workspace state: {}", error))?;
+    db.set_meta_value(AGENT_WORKSPACE_STATE_ROW_KEY, &contents)
+}
+
+fn load_or_migrate_agent_workspace_state(
+    db: &AgentWorkspaceDb,
+    legacy_path: &Path,
+) -> Result<PersistedAgentWorkspaceState, String> {
+    if let Some(state) = load_agent_workspace_state_from_db(db)? {
+        return Ok(state);
+    }
+
+    if legacy_path.exists() {
+        let state = load_legacy_agent_workspace_state(legacy_path)?;
+        store_agent_workspace_state_to_db(db, &state)?;
+        return Ok(state);
+    }
+
+    Ok(PersistedAgentWorkspaceState::default())
+}
+
 impl TerminalView {
     pub(in super::super) fn agent_sidebar_width(&self) -> f32 {
         if self.should_render_agent_sidebar() {
@@ -140,54 +450,33 @@ impl TerminalView {
         self.agent_sidebar_enabled && self.agent_sidebar_open
     }
 
-    fn persisted_agent_workspace_path() -> Result<PathBuf, String> {
+    fn persisted_agent_workspace_db_path() -> Result<PathBuf, String> {
         let config_path = crate::config::ensure_config_file().map_err(|error| error.to_string())?;
         let parent = config_path
             .parent()
             .ok_or_else(|| format!("Invalid config path '{}'", config_path.display()))?;
-        Ok(parent.join(AGENT_WORKSPACE_STATE_FILE))
+        Ok(parent.join(AGENT_WORKSPACE_DB_FILE))
+    }
+
+    fn legacy_agent_workspace_json_path() -> Result<PathBuf, String> {
+        let db_path = Self::persisted_agent_workspace_db_path()?;
+        let parent = db_path
+            .parent()
+            .ok_or_else(|| format!("Invalid agent workspace path '{}'", db_path.display()))?;
+        Ok(parent.join(LEGACY_AGENT_WORKSPACE_STATE_FILE))
     }
 
     fn load_persisted_agent_workspace_state() -> Result<PersistedAgentWorkspaceState, String> {
-        let path = Self::persisted_agent_workspace_path()?;
-        let contents = match fs::read_to_string(&path) {
-            Ok(contents) => contents,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(PersistedAgentWorkspaceState::default());
-            }
-            Err(error) => {
-                return Err(format!(
-                    "Failed to read agent workspace state '{}': {}",
-                    path.display(),
-                    error
-                ));
-            }
-        };
-
-        let mut state: PersistedAgentWorkspaceState = serde_json::from_str(&contents)
-            .map_err(|error| format!("Invalid agent workspace JSON: {}", error))?;
-        if state.version != AGENT_WORKSPACE_STATE_VERSION {
-            return Err(format!(
-                "Unsupported agent workspace state version {}",
-                state.version
-            ));
-        }
-        for thread in &mut state.threads {
-            thread.linked_tab_id = None;
-        }
-        Ok(state)
+        let db_path = Self::persisted_agent_workspace_db_path()?;
+        let legacy_path = Self::legacy_agent_workspace_json_path()?;
+        let db = AgentWorkspaceDb::open(&db_path)?;
+        load_or_migrate_agent_workspace_state(&db, &legacy_path)
     }
 
     fn store_persisted_agent_workspace_state(&self) -> Result<(), String> {
-        let path = Self::persisted_agent_workspace_path()?;
-        let parent = path
-            .parent()
-            .ok_or_else(|| format!("Invalid agent workspace state path '{}'", path.display()))?;
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create '{}': {}", parent.display(), error))?;
-
+        let path = Self::persisted_agent_workspace_db_path()?;
         let state = PersistedAgentWorkspaceState {
-            version: AGENT_WORKSPACE_STATE_VERSION,
+            version: AGENT_WORKSPACE_SCHEMA_VERSION,
             sidebar_open: self.agent_sidebar_open,
             active_project_id: self.active_agent_project_id.clone(),
             collapsed_project_ids: {
@@ -210,31 +499,8 @@ impl TerminalView {
                 })
                 .collect(),
         };
-        let contents = serde_json::to_string_pretty(&state)
-            .map_err(|error| format!("Failed to encode agent workspace: {}", error))?;
-
-        let mut temp = NamedTempFile::new_in(parent).map_err(|error| {
-            format!(
-                "Failed to create temp file in '{}': {}",
-                parent.display(),
-                error
-            )
-        })?;
-        temp.write_all(contents.as_bytes())
-            .map_err(|error| format!("Failed to write agent workspace: {}", error))?;
-        temp.flush()
-            .map_err(|error| format!("Failed to flush agent workspace: {}", error))?;
-        temp.as_file()
-            .sync_all()
-            .map_err(|error| format!("Failed to sync agent workspace: {}", error))?;
-        temp.persist(&path).map_err(|error| {
-            format!(
-                "Failed to persist agent workspace '{}': {}",
-                path.display(),
-                error.error
-            )
-        })?;
-        Ok(())
+        let db = AgentWorkspaceDb::open(&path)?;
+        store_agent_workspace_state_to_db(&db, &state)
     }
 
     pub(super) fn restore_persisted_agent_workspace(&mut self) {
@@ -711,6 +977,42 @@ impl TerminalView {
         self.active_agent_project_id = Some(project_id);
     }
 
+    fn begin_agent_sidebar_search(&mut self, cx: &mut Context<Self>) {
+        if self.is_command_palette_open() {
+            self.close_command_palette(cx);
+        }
+        if self.search_open {
+            self.close_search(cx);
+        }
+        if self.renaming_tab.is_some() {
+            self.cancel_rename_tab(cx);
+        }
+        if self.renaming_agent_thread_id.is_some() {
+            self.cancel_rename_agent_thread(cx);
+        }
+
+        self.agent_sidebar_search_active = true;
+        self.reset_cursor_blink_phase();
+        self.inline_input_selecting = false;
+        cx.notify();
+    }
+
+    pub(super) fn dismiss_agent_sidebar_search(&mut self, cx: &mut Context<Self>) {
+        let had_query = !self.agent_sidebar_search_input.text().is_empty();
+        let was_active = self.agent_sidebar_search_active;
+        if !had_query && !was_active {
+            return;
+        }
+
+        if had_query {
+            self.agent_sidebar_search_input.clear();
+        } else {
+            self.agent_sidebar_search_active = false;
+        }
+        self.inline_input_selecting = false;
+        cx.notify();
+    }
+
     fn thread_project_id(&self, thread_id: &str) -> Option<&str> {
         self.agent_threads
             .iter()
@@ -739,6 +1041,7 @@ impl TerminalView {
         if self.search_open {
             self.close_search(cx);
         }
+        self.agent_sidebar_search_active = false;
 
         self.renaming_agent_thread_id = Some(thread_id.to_string());
         self.agent_thread_rename_input.set_text(initial_title);
@@ -1285,6 +1588,115 @@ impl TerminalView {
         threads
     }
 
+    fn agent_sidebar_search_terms(&self) -> Vec<String> {
+        self.agent_sidebar_search_input
+            .text()
+            .split_whitespace()
+            .map(|term| term.trim().to_ascii_lowercase())
+            .filter(|term| !term.is_empty())
+            .collect()
+    }
+
+    fn agent_sidebar_query_matches_text(text: &str, terms: &[String]) -> bool {
+        if terms.is_empty() {
+            return true;
+        }
+
+        let normalized = text.to_ascii_lowercase();
+        terms.iter().all(|term| normalized.contains(term))
+    }
+
+    fn agent_sidebar_project_matches_terms(project: &AgentProject, terms: &[String]) -> bool {
+        Self::agent_sidebar_query_matches_text(
+            format!("{} {}", project.name, project.root_path).as_str(),
+            terms,
+        )
+    }
+
+    fn agent_sidebar_thread_matches_terms(&self, thread: &AgentThread, terms: &[String]) -> bool {
+        if terms.is_empty() {
+            return true;
+        }
+
+        let mut haystack = vec![
+            self.agent_thread_display_title(thread),
+            thread.title.clone(),
+            thread.agent.title().to_string(),
+            thread.agent.keywords().to_string(),
+            thread.launch_command.clone(),
+            thread.working_dir.clone(),
+        ];
+        if let Some(custom_title) = thread.custom_title.as_deref() {
+            haystack.push(custom_title.to_string());
+        }
+        if let Some(title) = thread.last_seen_title.as_deref() {
+            haystack.push(title.to_string());
+        }
+        if let Some(command) = thread.last_seen_command.as_deref() {
+            haystack.push(command.to_string());
+        }
+        if let Some(label) = thread.last_status_label.as_deref() {
+            haystack.push(label.to_string());
+        }
+        if let Some(detail) = thread.last_status_detail.as_deref() {
+            haystack.push(detail.to_string());
+        }
+
+        Self::agent_sidebar_query_matches_text(haystack.join("\n").as_str(), terms)
+    }
+
+    fn filtered_agent_projects_for_sidebar(&self) -> Vec<(&AgentProject, Vec<&AgentThread>)> {
+        let terms = self.agent_sidebar_search_terms();
+
+        self.sorted_agent_projects()
+            .into_iter()
+            .filter_map(|project| {
+                let project_matches = Self::agent_sidebar_project_matches_terms(project, &terms);
+                let mut threads = self.sorted_agent_threads_for_project(project.id.as_str());
+
+                if !terms.is_empty() && !project_matches {
+                    threads
+                        .retain(|thread| self.agent_sidebar_thread_matches_terms(thread, &terms));
+                }
+
+                if !terms.is_empty() && !project_matches && threads.is_empty() {
+                    return None;
+                }
+
+                Some((project, threads))
+            })
+            .collect()
+    }
+
+    pub(super) fn open_first_matching_agent_thread(&mut self, cx: &mut Context<Self>) {
+        let Some(thread_id) = self
+            .filtered_agent_projects_for_sidebar()
+            .into_iter()
+            .flat_map(|(_, threads)| threads.into_iter())
+            .map(|thread| thread.id.clone())
+            .next()
+        else {
+            return;
+        };
+
+        let linked_tab_id = self
+            .agent_threads
+            .iter()
+            .find(|thread| thread.id == thread_id)
+            .and_then(|thread| thread.linked_tab_id);
+
+        if let Some(tab_index) = linked_tab_id.and_then(|tab_id| self.tab_index_by_id(tab_id)) {
+            self.switch_tab(tab_index, cx);
+        } else if let Err(error) = self.resume_saved_agent_thread(thread_id.as_str(), cx) {
+            termy_toast::error(error);
+            self.notify_overlay(cx);
+            return;
+        }
+
+        self.agent_sidebar_search_active = false;
+        cx.notify();
+    }
+
     fn agent_thread_relative_age(updated_at_ms: u64) -> String {
         let now = now_unix_ms();
         let elapsed_seconds = now
@@ -1420,6 +1832,43 @@ impl TerminalView {
             .into_any_element()
     }
 
+    fn render_agent_sidebar_search_icon(stroke: gpui::Rgba) -> AnyElement {
+        div()
+            .relative()
+            .flex_none()
+            .w(px(14.0))
+            .h(px(14.0))
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .w(px(9.0))
+                    .h(px(9.0))
+                    .border_1()
+                    .border_color(stroke),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(px(8.0))
+                    .top(px(8.0))
+                    .w(px(1.5))
+                    .h(px(4.0))
+                    .bg(stroke),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(px(8.0))
+                    .top(px(11.0))
+                    .w(px(4.0))
+                    .h(px(1.5))
+                    .bg(stroke),
+            )
+            .into_any_element()
+    }
+
     fn render_agent_sidebar_new_session_icon(stroke: gpui::Rgba, bg: gpui::Rgba) -> AnyElement {
         div()
             .relative()
@@ -1529,19 +1978,40 @@ impl TerminalView {
             .get(self.active_tab)
             .and_then(|tab| tab.agent_thread_id.as_deref())
             .map(str::to_string);
-        let project_groups = self
-            .sorted_agent_projects()
+        let search_query = self.agent_sidebar_search_input.text().trim().to_string();
+        let show_filtered_history = !search_query.is_empty();
+        let filtered_projects = self.filtered_agent_projects_for_sidebar();
+        let filtered_thread_count = filtered_projects
+            .iter()
+            .map(|(_, threads)| threads.len())
+            .sum::<usize>();
+        let history_thread_count = self.agent_threads.len();
+        let history_summary = if show_filtered_history {
+            format!(
+                "{} match{}",
+                filtered_thread_count,
+                if filtered_thread_count == 1 { "" } else { "es" }
+            )
+        } else {
+            format!(
+                "{} thread{}",
+                history_thread_count,
+                if history_thread_count == 1 { "" } else { "s" }
+            )
+        };
+        let project_groups = filtered_projects
             .into_iter()
             .enumerate()
-            .map(|(index, project)| {
+            .map(|(index, (project, project_threads))| {
                 let project_id = project.id.clone();
                 let project_context_menu_id = project.id.clone();
                 let is_project_active =
                     self.active_agent_project_id.as_deref() == Some(project_id.as_str());
-                let is_collapsed = self
-                    .collapsed_agent_project_ids
-                    .contains(project_id.as_str());
-                let project_threads = self.sorted_agent_threads_for_project(project_id.as_str());
+                let allow_collapse_toggle = !show_filtered_history;
+                let is_collapsed = allow_collapse_toggle
+                    && self
+                        .collapsed_agent_project_ids
+                        .contains(project_id.as_str());
 
                 let project_row = div()
                     .id(SharedString::from(format!("agent-project-{}", project.id)))
@@ -1559,7 +2029,7 @@ impl TerminalView {
                             let was_active = view.active_agent_project_id.as_deref()
                                 == Some(project_id.as_str());
                             view.active_agent_project_id = Some(project_id.clone());
-                            if was_active {
+                            if allow_collapse_toggle && was_active {
                                 view.toggle_agent_project_collapsed(project_id.as_str(), cx);
                             } else {
                                 view.collapsed_agent_project_ids.remove(project_id.as_str());
@@ -1642,6 +2112,7 @@ impl TerminalView {
                                     if event.click_count >= 2 {
                                         view.begin_rename_agent_thread(thread_id.as_str(), cx);
                                     } else {
+                                        view.agent_sidebar_search_active = false;
                                         if let Some(tab_index) = linked_tab_id
                                             .and_then(|tab_id| view.tab_index_by_id(tab_id))
                                         {
@@ -1773,12 +2244,17 @@ impl TerminalView {
             .collect::<Vec<_>>();
 
         let empty_state = project_groups.is_empty().then(|| {
+            let message = if show_filtered_history {
+                format!("No history matches \"{}\".", search_query)
+            } else {
+                "No threads yet. Start an agent to create a project.".to_string()
+            };
             div()
                 .px(px(14.0))
                 .py(px(12.0))
                 .text_size(px(12.0))
                 .text_color(muted)
-                .child("No threads yet. Start an agent to create a project.")
+                .child(message)
                 .into_any_element()
         });
 
@@ -1852,11 +2328,129 @@ impl TerminalView {
                                             cx.listener(|view, _event, _window, cx| {
                                                 view.agent_sidebar_open = false;
                                                 view.sync_persisted_agent_workspace();
-                                            cx.notify();
-                                            cx.stop_propagation();
-                                        }),
-                                    ),
+                                                cx.notify();
+                                                cx.stop_propagation();
+                                            }),
+                                        ),
                                 ),
+                        ),
+                )
+                .child(
+                    div()
+                        .h(px(AGENT_SIDEBAR_SEARCH_HEIGHT))
+                        .px(px(14.0))
+                        .pb(px(6.0))
+                        .flex_none()
+                        .child(
+                            div()
+                                .id("agent-sidebar-search")
+                                .relative()
+                                .w_full()
+                                .h_full()
+                                .px(px(10.0))
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .border_1()
+                                .border_color(border)
+                                .bg(if self.agent_sidebar_search_active {
+                                    selected_bg
+                                } else {
+                                    input_bg
+                                })
+                                .cursor(gpui::CursorStyle::IBeam)
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _event, _window, cx| {
+                                        view.begin_agent_sidebar_search(cx);
+                                        cx.stop_propagation();
+                                    }),
+                                )
+                                .child(Self::render_agent_sidebar_search_icon(muted))
+                                .child(
+                                    div()
+                                        .relative()
+                                        .flex_1()
+                                        .h_full()
+                                        .flex()
+                                        .items_center()
+                                        .children(
+                                            (!self.agent_sidebar_search_active
+                                                && self
+                                                    .agent_sidebar_search_input
+                                                    .text()
+                                                    .trim()
+                                                    .is_empty())
+                                            .then(|| {
+                                                div()
+                                                    .truncate()
+                                                    .text_size(px(12.0))
+                                                    .text_color(muted)
+                                                    .child("Search history")
+                                                    .into_any_element()
+                                            }),
+                                        )
+                                        .children(
+                                            (!self.agent_sidebar_search_active
+                                                && !self
+                                                    .agent_sidebar_search_input
+                                                    .text()
+                                                    .trim()
+                                                    .is_empty())
+                                            .then(|| {
+                                                div()
+                                                    .truncate()
+                                                    .text_size(px(12.0))
+                                                    .text_color(text)
+                                                    .child(
+                                                        self.agent_sidebar_search_input
+                                                            .text()
+                                                            .to_string(),
+                                                    )
+                                                    .into_any_element()
+                                            }),
+                                        )
+                                        .children(self.agent_sidebar_search_active.then(|| {
+                                            self.render_inline_input_layer(
+                                                Font {
+                                                    family: self.font_family.clone(),
+                                                    weight: FontWeight::NORMAL,
+                                                    ..Default::default()
+                                                },
+                                                px(12.0),
+                                                text.into(),
+                                                selected_bg.into(),
+                                                InlineInputAlignment::Left,
+                                                cx,
+                                            )
+                                        })),
+                                ),
+                        ),
+                )
+                .child(
+                    div()
+                        .px(px(14.0))
+                        .pt(px(4.0))
+                        .pb(px(2.0))
+                        .flex_none()
+                        .flex()
+                        .justify_between()
+                        .gap(px(8.0))
+                        .child(
+                            div()
+                                .text_size(px(10.5))
+                                .text_color(muted)
+                                .child(if show_filtered_history {
+                                    "Search Results"
+                                } else {
+                                    "History"
+                                }),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(10.5))
+                                .text_color(muted)
+                                .child(history_summary),
                         ),
                 )
                 .child(
@@ -1867,6 +2461,7 @@ impl TerminalView {
                         .child(
                             div()
                                 .w_full()
+                                .pb(px(8.0))
                                 .flex()
                                 .flex_col()
                                 .children(project_groups)
@@ -1881,9 +2476,51 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     fn lines(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    fn sample_workspace_state() -> PersistedAgentWorkspaceState {
+        PersistedAgentWorkspaceState {
+            version: AGENT_WORKSPACE_SCHEMA_VERSION,
+            sidebar_open: true,
+            active_project_id: Some("project-1".to_string()),
+            collapsed_project_ids: vec!["project-2".to_string()],
+            projects: vec![
+                AgentProject {
+                    id: "project-1".to_string(),
+                    name: "termy".to_string(),
+                    root_path: "/Users/lasse/dev/termy".to_string(),
+                    created_at_ms: 10,
+                    updated_at_ms: 40,
+                },
+                AgentProject {
+                    id: "project-2".to_string(),
+                    name: "playground".to_string(),
+                    root_path: "/Users/lasse/dev/playground".to_string(),
+                    created_at_ms: 20,
+                    updated_at_ms: 30,
+                },
+            ],
+            threads: vec![AgentThread {
+                id: "thread-1".to_string(),
+                project_id: "project-1".to_string(),
+                agent: command_palette::AiAgentPreset::Codex,
+                title: "Codex termy".to_string(),
+                custom_title: Some("sqlite migration".to_string()),
+                launch_command: "codex".to_string(),
+                working_dir: "/Users/lasse/dev/termy".to_string(),
+                last_seen_title: Some("sqlite migration".to_string()),
+                last_seen_command: Some("cargo check".to_string()),
+                last_status_label: Some("ready".to_string()),
+                last_status_detail: Some("workspace synced".to_string()),
+                created_at_ms: 11,
+                updated_at_ms: 41,
+                linked_tab_id: None,
+            }],
+        }
     }
 
     #[test]
@@ -1936,5 +2573,39 @@ mod tests {
             Some("Failed to connect to api.anthropic.com: ECONNREFUSED")
         );
         assert_eq!(status.tone, AgentThreadStatusTone::Error);
+    }
+
+    #[test]
+    fn agent_workspace_sqlite_roundtrip_preserves_state() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("agents.sqlite3");
+        let state = sample_workspace_state();
+
+        let db = AgentWorkspaceDb::open(&path).expect("open db");
+        store_agent_workspace_state_to_db(&db, &state).expect("store state");
+
+        let loaded = load_agent_workspace_state_from_db(&db)
+            .expect("load state")
+            .expect("stored state");
+        assert_eq!(loaded, state);
+    }
+
+    #[test]
+    fn agent_workspace_migrates_legacy_json_into_sqlite() {
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("agents.sqlite3");
+        let legacy_path = dir.path().join("agents.json");
+        let state = sample_workspace_state();
+
+        fs::write(
+            &legacy_path,
+            serde_json::to_string_pretty(&state).expect("serialize state"),
+        )
+        .expect("write legacy json");
+
+        let db = AgentWorkspaceDb::open(&db_path).expect("open db");
+        let loaded =
+            load_or_migrate_agent_workspace_state(&db, &legacy_path).expect("migrate legacy state");
+        assert_eq!(loaded, state);
     }
 }

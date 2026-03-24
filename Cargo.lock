@@ -7349,6 +7349,7 @@ dependencies = [
  "fs4",
  "futures",
  "gpui",
+ "libsqlite3-sys",
  "log",
  "objc",
  "parking_lot",
