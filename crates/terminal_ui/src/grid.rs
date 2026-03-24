@@ -109,6 +109,21 @@ impl IntoElement for TerminalGrid {
 //   those semi-transparent edge pixels can show up as faint seams/lines.
 // - Drawing exact geometry with snapped bounds gives deterministic, hard edges
 //   and eliminates the artifact.
+//
+// NOTE: We also render Unicode box-drawing characters (U+2500..U+257F) as
+// pixel-snapped quads instead of shaped font glyphs.
+//
+// Why:
+// - Font glyphs are sized to the font's natural cell height, not the terminal's
+//   cell height. When line_height > 1.0, this leaves visible gaps between rows.
+// - Even at line_height = 1.0, built-in rendering gives crisper and more
+//   consistent results across fonts, for the same reasons as block elements.
+// - This matches Ghostty's unconditional sprite-rendering policy.
+//
+// Excluded: rounded corners (U+256D-U+2570) and diagonals (U+2571-U+2573)
+// still use font glyphs because they require curves or diagonal strokes.
+const BOX_DRAWING_START: u32 = 0x2500;
+const BOX_DRAWING_END: u32 = 0x257F;
 const BLOCK_ELEMENTS_START: u32 = 0x2580;
 const BLOCK_ELEMENTS_END: u32 = 0x259F;
 const QUAD_UPPER_LEFT: u8 = 0b0001;
@@ -141,20 +156,83 @@ const EMPTY_BLOCK_RECT: BlockRectSpec = BlockRectSpec::new(0.0, 0.0, 0.0, 0.0, 0
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct BlockElementGeometry {
-    rects: [BlockRectSpec; 4],
+    rects: [BlockRectSpec; 8],
     rect_count: usize,
 }
 
 impl BlockElementGeometry {
+    const fn empty() -> Self {
+        Self {
+            rects: [EMPTY_BLOCK_RECT; 8],
+            rect_count: 0,
+        }
+    }
+
     const fn one(rect: BlockRectSpec) -> Self {
         Self {
-            rects: [rect, EMPTY_BLOCK_RECT, EMPTY_BLOCK_RECT, EMPTY_BLOCK_RECT],
+            rects: [
+                rect,
+                EMPTY_BLOCK_RECT,
+                EMPTY_BLOCK_RECT,
+                EMPTY_BLOCK_RECT,
+                EMPTY_BLOCK_RECT,
+                EMPTY_BLOCK_RECT,
+                EMPTY_BLOCK_RECT,
+                EMPTY_BLOCK_RECT,
+            ],
             rect_count: 1,
         }
     }
 
+    fn push_rect(&mut self, rect: BlockRectSpec) {
+        assert!(
+            self.rect_count < self.rects.len(),
+            "box geometry exceeded rect capacity"
+        );
+        self.rects[self.rect_count] = rect;
+        self.rect_count += 1;
+    }
+
     fn rects(&self) -> &[BlockRectSpec] {
         &self.rects[..self.rect_count]
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BoxLineStyle {
+    None,
+    Light,
+    Heavy,
+    Double,
+}
+
+impl BoxLineStyle {
+    fn is_double(self) -> bool {
+        self == Self::Double
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BoxDrawSegments {
+    up: BoxLineStyle,
+    down: BoxLineStyle,
+    left: BoxLineStyle,
+    right: BoxLineStyle,
+}
+
+impl BoxDrawSegments {
+    const fn new(
+        up: BoxLineStyle,
+        down: BoxLineStyle,
+        left: BoxLineStyle,
+        right: BoxLineStyle,
+    ) -> Self {
+        Self {
+            up,
+            down,
+            left,
+            right,
+        }
     }
 }
 
@@ -167,6 +245,7 @@ struct TextBatch {
     fg: Hsla,
     underline: Option<UnderlineStyle>,
     cell_len: usize,
+    isolated: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -280,6 +359,7 @@ impl TextBatch {
             fg: key.fg,
             underline,
             cell_len: 1,
+            isolated: TerminalGrid::char_requires_isolated_batch(c),
         }
     }
 
@@ -287,11 +367,14 @@ impl TextBatch {
         &self,
         col: usize,
         row: usize,
+        c: char,
         key: TextBatchKey,
         underline: &Option<UnderlineStyle>,
     ) -> bool {
         self.row == row
             && self.start_col + self.cell_len == col
+            && !self.isolated
+            && !TerminalGrid::char_requires_isolated_batch(c)
             && self.bold == key.bold
             && self.fg == key.fg
             && self.underline == *underline
@@ -316,7 +399,7 @@ fn horizontal_fill_from_left(fraction: f32) -> BlockElementGeometry {
 }
 
 fn quadrants(mask: u8) -> BlockElementGeometry {
-    let mut rects = [EMPTY_BLOCK_RECT; 4];
+    let mut rects = [EMPTY_BLOCK_RECT; 8];
     let mut count = 0;
 
     if mask & QUAD_UPPER_LEFT != 0 {
@@ -383,6 +466,321 @@ fn block_element_geometry(c: char) -> Option<BlockElementGeometry> {
         '\u{259F}' => quadrants(QUAD_UPPER_RIGHT | QUAD_LOWER_LEFT | QUAD_LOWER_RIGHT),
         _ => return None,
     })
+}
+
+const fn box_segments(
+    up: BoxLineStyle,
+    down: BoxLineStyle,
+    left: BoxLineStyle,
+    right: BoxLineStyle,
+) -> BoxDrawSegments {
+    BoxDrawSegments::new(up, down, left, right)
+}
+
+#[allow(clippy::too_many_lines)]
+fn box_draw_segments(c: char) -> Option<BoxDrawSegments> {
+    use BoxLineStyle::{Double, Heavy, Light, None as Empty};
+
+    let codepoint = c as u32;
+    if !(BOX_DRAWING_START..=BOX_DRAWING_END).contains(&codepoint) {
+        return None;
+    }
+
+    Some(match c {
+        '\u{2500}' | '\u{2504}' | '\u{2508}' | '\u{254C}' => {
+            box_segments(Empty, Empty, Light, Light)
+        }
+        '\u{2501}' | '\u{2505}' | '\u{2509}' | '\u{254D}' => {
+            box_segments(Empty, Empty, Heavy, Heavy)
+        }
+        '\u{2502}' | '\u{2506}' | '\u{250A}' | '\u{254E}' => {
+            box_segments(Light, Light, Empty, Empty)
+        }
+        '\u{2503}' | '\u{2507}' | '\u{250B}' | '\u{254F}' => {
+            box_segments(Heavy, Heavy, Empty, Empty)
+        }
+        '\u{250C}' => box_segments(Empty, Light, Empty, Light),
+        '\u{250D}' => box_segments(Empty, Light, Empty, Heavy),
+        '\u{250E}' => box_segments(Empty, Heavy, Empty, Light),
+        '\u{250F}' => box_segments(Empty, Heavy, Empty, Heavy),
+        '\u{2510}' => box_segments(Empty, Light, Light, Empty),
+        '\u{2511}' => box_segments(Empty, Light, Heavy, Empty),
+        '\u{2512}' => box_segments(Empty, Heavy, Light, Empty),
+        '\u{2513}' => box_segments(Empty, Heavy, Heavy, Empty),
+        '\u{2514}' => box_segments(Light, Empty, Empty, Light),
+        '\u{2515}' => box_segments(Light, Empty, Empty, Heavy),
+        '\u{2516}' => box_segments(Heavy, Empty, Empty, Light),
+        '\u{2517}' => box_segments(Heavy, Empty, Empty, Heavy),
+        '\u{2518}' => box_segments(Light, Empty, Light, Empty),
+        '\u{2519}' => box_segments(Light, Empty, Heavy, Empty),
+        '\u{251A}' => box_segments(Heavy, Empty, Light, Empty),
+        '\u{251B}' => box_segments(Heavy, Empty, Heavy, Empty),
+        '\u{251C}' => box_segments(Light, Light, Empty, Light),
+        '\u{251D}' => box_segments(Light, Light, Empty, Heavy),
+        '\u{251E}' => box_segments(Heavy, Light, Empty, Light),
+        '\u{251F}' => box_segments(Light, Heavy, Empty, Light),
+        '\u{2520}' => box_segments(Heavy, Heavy, Empty, Light),
+        '\u{2521}' => box_segments(Light, Heavy, Empty, Heavy),
+        '\u{2522}' => box_segments(Heavy, Light, Empty, Heavy),
+        '\u{2523}' => box_segments(Heavy, Heavy, Empty, Heavy),
+        '\u{2524}' => box_segments(Light, Light, Light, Empty),
+        '\u{2525}' => box_segments(Light, Light, Heavy, Empty),
+        '\u{2526}' => box_segments(Heavy, Light, Light, Empty),
+        '\u{2527}' => box_segments(Light, Heavy, Light, Empty),
+        '\u{2528}' => box_segments(Heavy, Heavy, Light, Empty),
+        '\u{2529}' => box_segments(Light, Heavy, Heavy, Empty),
+        '\u{252A}' => box_segments(Heavy, Light, Heavy, Empty),
+        '\u{252B}' => box_segments(Heavy, Heavy, Heavy, Empty),
+        '\u{252C}' => box_segments(Empty, Light, Light, Light),
+        '\u{252D}' => box_segments(Empty, Light, Heavy, Light),
+        '\u{252E}' => box_segments(Empty, Light, Light, Heavy),
+        '\u{252F}' => box_segments(Empty, Light, Heavy, Heavy),
+        '\u{2530}' => box_segments(Empty, Heavy, Light, Light),
+        '\u{2531}' => box_segments(Empty, Heavy, Heavy, Light),
+        '\u{2532}' => box_segments(Empty, Heavy, Light, Heavy),
+        '\u{2533}' => box_segments(Empty, Heavy, Heavy, Heavy),
+        '\u{2534}' => box_segments(Light, Empty, Light, Light),
+        '\u{2535}' => box_segments(Light, Empty, Heavy, Light),
+        '\u{2536}' => box_segments(Light, Empty, Light, Heavy),
+        '\u{2537}' => box_segments(Light, Empty, Heavy, Heavy),
+        '\u{2538}' => box_segments(Heavy, Empty, Light, Light),
+        '\u{2539}' => box_segments(Heavy, Empty, Heavy, Light),
+        '\u{253A}' => box_segments(Heavy, Empty, Light, Heavy),
+        '\u{253B}' => box_segments(Heavy, Empty, Heavy, Heavy),
+        '\u{253C}' => box_segments(Light, Light, Light, Light),
+        '\u{253D}' => box_segments(Light, Light, Heavy, Light),
+        '\u{253E}' => box_segments(Light, Light, Light, Heavy),
+        '\u{253F}' => box_segments(Light, Light, Heavy, Heavy),
+        '\u{2540}' => box_segments(Heavy, Light, Light, Light),
+        '\u{2541}' => box_segments(Light, Heavy, Light, Light),
+        '\u{2542}' => box_segments(Heavy, Heavy, Light, Light),
+        '\u{2543}' => box_segments(Heavy, Light, Heavy, Light),
+        '\u{2544}' => box_segments(Heavy, Light, Light, Heavy),
+        '\u{2545}' => box_segments(Light, Heavy, Heavy, Light),
+        '\u{2546}' => box_segments(Light, Heavy, Light, Heavy),
+        '\u{2547}' => box_segments(Light, Heavy, Heavy, Heavy),
+        '\u{2548}' => box_segments(Heavy, Light, Heavy, Heavy),
+        '\u{2549}' => box_segments(Heavy, Heavy, Heavy, Light),
+        '\u{254A}' => box_segments(Heavy, Heavy, Light, Heavy),
+        '\u{254B}' => box_segments(Heavy, Heavy, Heavy, Heavy),
+        '\u{2550}' => box_segments(Empty, Empty, Double, Double),
+        '\u{2551}' => box_segments(Double, Double, Empty, Empty),
+        '\u{2552}' => box_segments(Empty, Light, Empty, Double),
+        '\u{2553}' => box_segments(Empty, Double, Empty, Light),
+        '\u{2554}' => box_segments(Empty, Double, Empty, Double),
+        '\u{2555}' => box_segments(Empty, Light, Double, Empty),
+        '\u{2556}' => box_segments(Empty, Double, Light, Empty),
+        '\u{2557}' => box_segments(Empty, Double, Double, Empty),
+        '\u{2558}' => box_segments(Light, Empty, Empty, Double),
+        '\u{2559}' => box_segments(Double, Empty, Empty, Light),
+        '\u{255A}' => box_segments(Double, Empty, Empty, Double),
+        '\u{255B}' => box_segments(Light, Empty, Double, Empty),
+        '\u{255C}' => box_segments(Double, Empty, Light, Empty),
+        '\u{255D}' => box_segments(Double, Empty, Double, Empty),
+        '\u{255E}' => box_segments(Light, Light, Empty, Double),
+        '\u{255F}' => box_segments(Double, Double, Empty, Light),
+        '\u{2560}' => box_segments(Double, Double, Empty, Double),
+        '\u{2561}' => box_segments(Light, Light, Double, Empty),
+        '\u{2562}' => box_segments(Double, Double, Light, Empty),
+        '\u{2563}' => box_segments(Double, Double, Double, Empty),
+        '\u{2564}' => box_segments(Empty, Light, Double, Double),
+        '\u{2565}' => box_segments(Empty, Double, Light, Light),
+        '\u{2566}' => box_segments(Empty, Double, Double, Double),
+        '\u{2567}' => box_segments(Light, Empty, Double, Double),
+        '\u{2568}' => box_segments(Double, Empty, Light, Light),
+        '\u{2569}' => box_segments(Double, Empty, Double, Double),
+        '\u{256A}' => box_segments(Light, Light, Double, Double),
+        '\u{256B}' => box_segments(Double, Double, Light, Light),
+        '\u{256C}' => box_segments(Double, Double, Double, Double),
+        '\u{256D}'..='\u{2573}' => return None,
+        '\u{2574}' => box_segments(Empty, Empty, Light, Empty),
+        '\u{2575}' => box_segments(Light, Empty, Empty, Empty),
+        '\u{2576}' => box_segments(Empty, Empty, Empty, Light),
+        '\u{2577}' => box_segments(Empty, Light, Empty, Empty),
+        '\u{2578}' => box_segments(Empty, Empty, Heavy, Empty),
+        '\u{2579}' => box_segments(Heavy, Empty, Empty, Empty),
+        '\u{257A}' => box_segments(Empty, Empty, Empty, Heavy),
+        '\u{257B}' => box_segments(Empty, Heavy, Empty, Empty),
+        '\u{257C}' => box_segments(Empty, Empty, Light, Heavy),
+        '\u{257D}' => box_segments(Light, Heavy, Empty, Empty),
+        '\u{257E}' => box_segments(Empty, Empty, Heavy, Light),
+        '\u{257F}' => box_segments(Heavy, Light, Empty, Empty),
+        _ => return None,
+    })
+}
+
+fn centered_vertical_rect(x_center: f32, width: f32, top: f32, bottom: f32) -> BlockRectSpec {
+    BlockRectSpec::new(
+        x_center - width / 2.0,
+        top,
+        x_center + width / 2.0,
+        bottom,
+        1.0,
+    )
+}
+
+fn centered_horizontal_rect(y_center: f32, height: f32, left: f32, right: f32) -> BlockRectSpec {
+    BlockRectSpec::new(
+        left,
+        y_center - height / 2.0,
+        right,
+        y_center + height / 2.0,
+        1.0,
+    )
+}
+
+fn box_draw_geometry(
+    segments: BoxDrawSegments,
+    cell_width: f32,
+    cell_height: f32,
+    font_size: f32,
+) -> BlockElementGeometry {
+    use BoxLineStyle::{Double, Heavy, Light, None as Empty};
+
+    let light_px = (font_size * 0.0675).ceil().max(1.0);
+    let light_w = light_px / cell_width;
+    let light_h = light_px / cell_height;
+    let heavy_w = (light_px * 2.0) / cell_width;
+    let heavy_h = (light_px * 2.0) / cell_height;
+    let center_x = 0.5;
+    let center_y = 0.5;
+    let double_left_center = center_x - light_w;
+    let double_right_center = center_x + light_w;
+    let double_top_center = center_y - light_h;
+    let double_bottom_center = center_y + light_h;
+    let double_gap_left = center_x - light_w / 2.0;
+    let double_gap_right = center_x + light_w / 2.0;
+    let vertical_has_double = segments.up.is_double() || segments.down.is_double();
+
+    let mut geometry = BlockElementGeometry::empty();
+
+    match (segments.up, segments.down) {
+        (Light, Light) => {
+            geometry.push_rect(centered_vertical_rect(center_x, light_w, 0.0, 1.0));
+        }
+        (Heavy, Heavy) => {
+            geometry.push_rect(centered_vertical_rect(center_x, heavy_w, 0.0, 1.0));
+        }
+        (Double, Double) => {
+            geometry.push_rect(centered_vertical_rect(
+                double_left_center,
+                light_w,
+                0.0,
+                1.0,
+            ));
+            geometry.push_rect(centered_vertical_rect(
+                double_right_center,
+                light_w,
+                0.0,
+                1.0,
+            ));
+        }
+        _ => {
+            match segments.up {
+                Light => {
+                    geometry.push_rect(centered_vertical_rect(center_x, light_w, 0.0, center_y))
+                }
+                Heavy => {
+                    geometry.push_rect(centered_vertical_rect(center_x, heavy_w, 0.0, center_y))
+                }
+                Double => {
+                    geometry.push_rect(centered_vertical_rect(
+                        double_left_center,
+                        light_w,
+                        0.0,
+                        center_y,
+                    ));
+                    geometry.push_rect(centered_vertical_rect(
+                        double_right_center,
+                        light_w,
+                        0.0,
+                        center_y,
+                    ));
+                }
+                Empty => {}
+            }
+
+            match segments.down {
+                Light => {
+                    geometry.push_rect(centered_vertical_rect(center_x, light_w, center_y, 1.0))
+                }
+                Heavy => {
+                    geometry.push_rect(centered_vertical_rect(center_x, heavy_w, center_y, 1.0))
+                }
+                Double => {
+                    geometry.push_rect(centered_vertical_rect(
+                        double_left_center,
+                        light_w,
+                        center_y,
+                        1.0,
+                    ));
+                    geometry.push_rect(centered_vertical_rect(
+                        double_right_center,
+                        light_w,
+                        center_y,
+                        1.0,
+                    ));
+                }
+                Empty => {}
+            }
+        }
+    }
+
+    let mut push_horizontal = |style: BoxLineStyle, left: f32, right: f32| match style {
+        Light => geometry.push_rect(centered_horizontal_rect(center_y, light_h, left, right)),
+        Heavy => geometry.push_rect(centered_horizontal_rect(center_y, heavy_h, left, right)),
+        Double => {
+            geometry.push_rect(centered_horizontal_rect(
+                double_top_center,
+                light_h,
+                left,
+                right,
+            ));
+            geometry.push_rect(centered_horizontal_rect(
+                double_bottom_center,
+                light_h,
+                left,
+                right,
+            ));
+        }
+        Empty => {}
+    };
+
+    match (segments.left, segments.right) {
+        (Light, Light) => push_horizontal(Light, 0.0, 1.0),
+        (Heavy, Heavy) => push_horizontal(Heavy, 0.0, 1.0),
+        (Double, Double) if vertical_has_double => {
+            push_horizontal(Double, 0.0, double_gap_left);
+            push_horizontal(Double, double_gap_right, 1.0);
+        }
+        (Double, Double) => push_horizontal(Double, 0.0, 1.0),
+        _ => {
+            let left_end = if vertical_has_double && segments.left == Double {
+                double_gap_left
+            } else {
+                center_x
+            };
+            let right_start = if vertical_has_double && segments.right == Double {
+                double_gap_right
+            } else {
+                center_x
+            };
+            push_horizontal(segments.left, 0.0, left_end);
+            push_horizontal(segments.right, right_start, 1.0);
+        }
+    }
+
+    geometry
+}
+
+fn box_draw_geometry_for_char(
+    c: char,
+    cell_width: f32,
+    cell_height: f32,
+    font_size: f32,
+) -> Option<BlockElementGeometry> {
+    box_draw_segments(c)
+        .map(|segments| box_draw_geometry(segments, cell_width, cell_height, font_size))
 }
 
 fn snapped_block_rect_bounds(
@@ -732,6 +1130,9 @@ impl TerminalGrid {
     ) -> Vec<TextDrawOp> {
         let mut ops = Vec::with_capacity(row_cells.len());
         let mut current: Option<TextBatch> = None;
+        let cell_w: f32 = self.cell_size.width.into();
+        let cell_h: f32 = self.cell_size.height.into();
+        let font_sz: f32 = self.font_size.into();
 
         for cell in row_cells {
             if !Self::cell_is_drawable_text(cell) {
@@ -739,8 +1140,15 @@ impl TerminalGrid {
                 continue;
             }
 
+            if Self::char_requires_isolated_batch(cell.char) {
+                Self::push_pending_text_batch(&mut current, &mut ops);
+                continue;
+            }
+
             let fg = self.cell_fg_color(cell, cursor_fg, highlight_fg);
-            if let Some(geometry) = block_element_geometry(cell.char) {
+            if let Some(geometry) = block_element_geometry(cell.char)
+                .or_else(|| box_draw_geometry_for_char(cell.char, cell_w, cell_h, font_sz))
+            {
                 Self::push_pending_text_batch(&mut current, &mut ops);
                 ops.push(TextDrawOp::Block(BlockDraw {
                     row: cell.row,
@@ -757,9 +1165,9 @@ impl TerminalGrid {
                 fg,
             };
 
-            let should_append = current
-                .as_ref()
-                .is_some_and(|batch| batch.can_append(cell.col, cell.row, key, &underline));
+            let should_append = current.as_ref().is_some_and(|batch| {
+                batch.can_append(cell.col, cell.row, cell.char, key, &underline)
+            });
             if should_append {
                 if let Some(batch) = current.as_mut() {
                     batch.append_char(cell.char);
@@ -1187,6 +1595,10 @@ impl TerminalGrid {
         cell.render_text && cell.char != ' ' && cell.char != '\0' && !cell.char.is_control()
     }
 
+    fn char_requires_isolated_batch(c: char) -> bool {
+        matches!(c as u32, 0x2600..=0x27BF | 0x1F000..=0x1FAFF)
+    }
+
     fn cell_fg_color(&self, cell: &CellRenderInfo, cursor_fg: Hsla, highlight_fg: Hsla) -> Hsla {
         if self.cursor_cell == Some((cell.col, cell.row))
             && self.cursor_style == TerminalCursorStyle::Block
@@ -1227,6 +1639,9 @@ impl TerminalGrid {
     fn collect_draw_ops(&self, cursor_fg: Hsla, highlight_fg: Hsla) -> Vec<TextDrawOp> {
         let mut ops = Vec::with_capacity(self.cell_count());
         let mut current: Option<TextBatch> = None;
+        let cell_w: f32 = self.cell_size.width.into();
+        let cell_h: f32 = self.cell_size.height.into();
+        let font_sz: f32 = self.font_size.into();
 
         for cell in self.cells.iter().flat_map(|row| row.iter()) {
             if !Self::cell_is_drawable_text(cell) {
@@ -1234,8 +1649,15 @@ impl TerminalGrid {
                 continue;
             }
 
+            if Self::char_requires_isolated_batch(cell.char) {
+                Self::push_pending_text_batch(&mut current, &mut ops);
+                continue;
+            }
+
             let fg = self.cell_fg_color(cell, cursor_fg, highlight_fg);
-            if let Some(geometry) = block_element_geometry(cell.char) {
+            if let Some(geometry) = block_element_geometry(cell.char)
+                .or_else(|| box_draw_geometry_for_char(cell.char, cell_w, cell_h, font_sz))
+            {
                 Self::push_pending_text_batch(&mut current, &mut ops);
                 ops.push(TextDrawOp::Block(BlockDraw {
                     row: cell.row,
@@ -1252,9 +1674,9 @@ impl TerminalGrid {
                 fg,
             };
 
-            let should_append = current
-                .as_ref()
-                .is_some_and(|batch| batch.can_append(cell.col, cell.row, key, &underline));
+            let should_append = current.as_ref().is_some_and(|batch| {
+                batch.can_append(cell.col, cell.row, cell.char, key, &underline)
+            });
 
             if should_append {
                 if let Some(batch) = current.as_mut() {
@@ -1279,6 +1701,13 @@ impl TerminalGrid {
 mod tests {
     use super::*;
     use gpui::{Bounds, Size, point, px};
+
+    fn assert_f32_eq(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= 1e-6,
+            "expected {expected}, got {actual}"
+        );
+    }
 
     fn test_color(h: f32, s: f32, l: f32) -> Hsla {
         Hsla { h, s, l, a: 1.0 }
@@ -1378,6 +1807,19 @@ mod tests {
     }
 
     #[test]
+    fn box_draw_segments_covers_expected_range() {
+        for codepoint in BOX_DRAWING_START..=BOX_DRAWING_END {
+            let glyph = char::from_u32(codepoint).expect("valid box-drawing codepoint");
+            let excluded = matches!(codepoint, 0x256D..=0x2573);
+            assert_eq!(
+                box_draw_segments(glyph).is_some(),
+                !excluded,
+                "unexpected box-drawing coverage for U+{codepoint:04X}"
+            );
+        }
+    }
+
+    #[test]
     fn upper_half_block_geometry_covers_top_half() {
         let geometry = block_element_geometry('\u{2580}').expect("expected block geometry");
         assert_eq!(geometry.rect_count, 1);
@@ -1447,6 +1889,92 @@ mod tests {
     }
 
     #[test]
+    fn box_draw_light_horizontal_geometry() {
+        let geometry =
+            box_draw_geometry_for_char('\u{2500}', 10.0, 20.0, 14.0).expect("expected geometry");
+
+        assert_eq!(geometry.rect_count, 1);
+        let rect = geometry.rects()[0];
+        assert_f32_eq(rect.left, 0.0);
+        assert_f32_eq(rect.right, 1.0);
+        assert_f32_eq(rect.top, 0.475);
+        assert_f32_eq(rect.bottom, 0.525);
+        assert_eq!(rect.alpha, 1.0);
+    }
+
+    #[test]
+    fn box_draw_light_cross_geometry() {
+        let geometry =
+            box_draw_geometry_for_char('\u{253C}', 10.0, 20.0, 14.0).expect("expected geometry");
+
+        assert_eq!(geometry.rect_count, 2);
+        let vertical = geometry.rects()[0];
+        assert_f32_eq(vertical.left, 0.45);
+        assert_f32_eq(vertical.top, 0.0);
+        assert_f32_eq(vertical.right, 0.55);
+        assert_f32_eq(vertical.bottom, 1.0);
+
+        let horizontal = geometry.rects()[1];
+        assert_f32_eq(horizontal.left, 0.0);
+        assert_f32_eq(horizontal.top, 0.475);
+        assert_f32_eq(horizontal.right, 1.0);
+        assert_f32_eq(horizontal.bottom, 0.525);
+    }
+
+    #[test]
+    fn box_draw_double_cross_geometry() {
+        let geometry =
+            box_draw_geometry_for_char('\u{256C}', 10.0, 20.0, 14.0).expect("expected geometry");
+
+        assert_eq!(geometry.rect_count, 6);
+
+        let left_vertical = geometry.rects()[0];
+        assert_f32_eq(left_vertical.left, 0.35);
+        assert_f32_eq(left_vertical.right, 0.45);
+        assert_f32_eq(left_vertical.top, 0.0);
+        assert_f32_eq(left_vertical.bottom, 1.0);
+
+        let right_vertical = geometry.rects()[1];
+        assert_f32_eq(right_vertical.left, 0.55);
+        assert_f32_eq(right_vertical.right, 0.65);
+        assert_f32_eq(right_vertical.top, 0.0);
+        assert_f32_eq(right_vertical.bottom, 1.0);
+
+        let top_left = geometry.rects()[2];
+        assert_f32_eq(top_left.left, 0.0);
+        assert_f32_eq(top_left.right, 0.45);
+        assert_f32_eq(top_left.top, 0.425);
+        assert_f32_eq(top_left.bottom, 0.475);
+
+        let bottom_right = geometry.rects()[5];
+        assert_f32_eq(bottom_right.left, 0.55);
+        assert_f32_eq(bottom_right.right, 1.0);
+        assert_f32_eq(bottom_right.top, 0.525);
+        assert_f32_eq(bottom_right.bottom, 0.575);
+    }
+
+    #[test]
+    fn box_draw_lines_extend_to_cell_edges() {
+        let vertical =
+            box_draw_geometry_for_char('\u{2551}', 10.0, 20.0, 14.0).expect("expected geometry");
+        assert!(
+            vertical
+                .rects()
+                .iter()
+                .all(|rect| rect.top == 0.0 && rect.bottom == 1.0)
+        );
+
+        let horizontal =
+            box_draw_geometry_for_char('\u{2550}', 10.0, 20.0, 14.0).expect("expected geometry");
+        assert!(
+            horizontal
+                .rects()
+                .iter()
+                .all(|rect| rect.left == 0.0 && rect.right == 1.0)
+        );
+    }
+
+    #[test]
     fn batches_merge_adjacent_cells_with_same_style() {
         let grid = test_grid(vec![test_cell(0, 0, 'a'), test_cell(1, 0, 'b')], None);
         let batches = collect_batches(&grid);
@@ -1498,6 +2026,52 @@ mod tests {
         assert!(batches[0].underline.is_none());
         assert_eq!(batches[1].text, "bc");
         assert!(batches[1].underline.is_some());
+    }
+
+    #[test]
+    fn batches_split_on_emoji_boundary() {
+        let grid = test_grid(
+            vec![
+                test_cell(0, 0, 'a'),
+                test_cell(1, 0, '📦'),
+                test_cell(2, 0, 'b'),
+            ],
+            None,
+        );
+        let batches = collect_batches(&grid);
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].text, "a");
+        assert_eq!(batches[0].start_col, 0);
+        assert_eq!(batches[1].text, "b");
+        assert_eq!(batches[1].start_col, 2);
+    }
+
+    #[test]
+    fn draw_ops_skip_emoji_cells() {
+        let grid = test_grid(
+            vec![
+                test_cell(0, 0, 'a'),
+                test_cell(1, 0, '📦'),
+                test_cell(2, 0, 'b'),
+            ],
+            None,
+        );
+        let ops = grid.collect_draw_ops(test_color(0.0, 0.0, 1.0), test_color(0.0, 0.0, 1.0));
+        assert_eq!(ops.len(), 2);
+        match &ops[0] {
+            TextDrawOp::Batch(batch) => {
+                assert_eq!(batch.text, "a");
+                assert_eq!(batch.start_col, 0);
+            }
+            TextDrawOp::Block(_) => panic!("expected first op to be batch"),
+        }
+        match &ops[1] {
+            TextDrawOp::Batch(batch) => {
+                assert_eq!(batch.text, "b");
+                assert_eq!(batch.start_col, 2);
+            }
+            TextDrawOp::Block(_) => panic!("expected second op to be batch"),
+        }
     }
 
     #[test]
@@ -1586,6 +2160,25 @@ mod tests {
         assert_eq!(ops.len(), 3);
         assert!(matches!(&ops[0], TextDrawOp::Batch(batch) if batch.text == "ab"));
         assert!(matches!(&ops[1], TextDrawOp::Block(_)));
+        assert!(matches!(&ops[2], TextDrawOp::Batch(batch) if batch.text == "cd"));
+    }
+
+    #[test]
+    fn draw_ops_flush_batch_before_box_draw() {
+        let grid = test_grid(
+            vec![
+                test_cell(0, 0, 'a'),
+                test_cell(1, 0, 'b'),
+                test_cell(2, 0, '\u{2502}'),
+                test_cell(3, 0, 'c'),
+                test_cell(4, 0, 'd'),
+            ],
+            None,
+        );
+        let ops = collect_draw_ops(&grid);
+        assert_eq!(ops.len(), 3);
+        assert!(matches!(&ops[0], TextDrawOp::Batch(batch) if batch.text == "ab"));
+        assert!(matches!(&ops[1], TextDrawOp::Block(block) if block.col == 2));
         assert!(matches!(&ops[2], TextDrawOp::Batch(batch) if batch.text == "cd"));
     }
 
