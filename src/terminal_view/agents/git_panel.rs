@@ -13,22 +13,24 @@ impl TerminalView {
         if self.agent_git_panel_poll_task.is_some() {
             return;
         }
-        let task = cx.spawn(async move |this, cx: &mut AsyncApp| loop {
-            smol::Timer::after(std::time::Duration::from_secs(3)).await;
-            let still_open = cx
-                .update(|cx| {
-                    this.update(cx, |view, cx| {
-                        if view.agent_git_panel.open {
-                            view.refresh_agent_git_panel(cx);
-                            true
-                        } else {
-                            false
-                        }
+        let task = cx.spawn(async move |this, cx: &mut AsyncApp| {
+            loop {
+                smol::Timer::after(std::time::Duration::from_secs(3)).await;
+                let still_open = cx
+                    .update(|cx| {
+                        this.update(cx, |view, cx| {
+                            if view.agent_git_panel.open {
+                                view.refresh_agent_git_panel(cx);
+                                true
+                            } else {
+                                false
+                            }
+                        })
                     })
-                })
-                .unwrap_or(false);
-            if !still_open {
-                break;
+                    .unwrap_or(false);
+                if !still_open {
+                    break;
+                }
             }
         });
         self.agent_git_panel_poll_task = Some(task);
@@ -207,7 +209,9 @@ impl TerminalView {
             if line.len() < 3 {
                 continue;
             }
-            entries.push(AgentGitPanelEntry::from_status_line(&line[..2], &line[3..]));
+            let status = line.get(0..2).unwrap_or("");
+            let path = line.get(3..).unwrap_or("");
+            entries.push(AgentGitPanelEntry::from_status_line(status, path));
         }
 
         let last_commit =

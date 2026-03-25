@@ -1,4 +1,5 @@
 use super::*;
+use crate::terminal_view::agents::AgentGitPanelInputMode;
 
 fn should_defer_key_down_to_ime(keystroke: &gpui::Keystroke) -> bool {
     let key = keystroke.key.as_str();
@@ -664,7 +665,14 @@ impl TerminalView {
 
             match key {
                 "enter" => {
-                    if self.agent_git_panel_input_mode.is_some() {
+                    if self.agent_git_panel_input_mode == Some(AgentGitPanelInputMode::Commit)
+                        && event.keystroke.modifiers.shift
+                    {
+                        self.agent_git_panel_input.replace_text_in_range(None, "\n");
+                        cx.notify();
+                        self.remember_consumed_key_release(key);
+                        return;
+                    } else if self.agent_git_panel_input_mode.is_some() {
                         self.commit_agent_git_panel_input(cx);
                     } else if self.renaming_agent_project_id.is_some() {
                         self.commit_rename_agent_project(cx);

@@ -2231,8 +2231,9 @@ impl Render for TerminalView {
         self.sync_terminal_size(window, layout_cell_size, cx);
         let active_pane_id = self.active_pane_id().map(ToOwned::to_owned);
         let now = frame_now;
-        self.last_viewport_width = window.viewport_size().width.into();
-        self.track_window_resize_indicator(window.viewport_size(), now);
+        let viewport = window.viewport_size();
+        self.last_viewport_width = viewport.width.into();
+        self.track_window_resize_indicator(viewport, now);
         let pane_focus_config = self.pane_focus_config();
         let command_palette_open = self.is_command_palette_open();
         let palette_backdrop_transform =

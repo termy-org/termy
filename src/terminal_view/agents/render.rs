@@ -686,10 +686,17 @@ impl TerminalView {
                     .text_color(muted)
                     .child(active_mode.title()),
             )
-            .child(
+            .child({
+                let line_count = if active_mode == AgentGitPanelInputMode::Commit {
+                    input_text.lines().count().max(1)
+                } else {
+                    1
+                };
+                let input_height = px(8.0 + line_count as f32 * 20.0_f32);
                 div()
                     .relative()
-                    .h(px(36.0))
+                    .min_h(px(36.0))
+                    .h(input_height)
                     .px(px(8.0))
                     .flex()
                     .items_center()
@@ -701,13 +708,7 @@ impl TerminalView {
                         MouseButton::Left,
                         cx.listener(move |view, _event, _window, cx| {
                             if view.agent_git_panel_input_mode != Some(active_mode) {
-                                let initial =
-                                    if view.agent_git_panel_input_mode == Some(active_mode) {
-                                        view.agent_git_panel_input.text().to_string()
-                                    } else {
-                                        String::new()
-                                    };
-                                view.begin_agent_git_panel_input(active_mode, initial, cx);
+                                view.begin_agent_git_panel_input(active_mode, String::new(), cx);
                             }
                             cx.stop_propagation();
                         }),
@@ -736,14 +737,23 @@ impl TerminalView {
                         .into_any_element()
                     }))
                     .children((input_mode != Some(active_mode) && has_value).then(|| {
-                        div()
-                            .truncate()
-                            .text_size(px(12.5))
-                            .text_color(text)
-                            .child(input_text.to_string())
-                            .into_any_element()
-                    })),
-            )
+                        if active_mode == AgentGitPanelInputMode::Commit {
+                            div()
+                                .whitespace_normal()
+                                .text_size(px(12.5))
+                                .text_color(text)
+                                .child(input_text.to_string())
+                                .into_any_element()
+                        } else {
+                            div()
+                                .truncate()
+                                .text_size(px(12.5))
+                                .text_color(text)
+                                .child(input_text.to_string())
+                                .into_any_element()
+                        }
+                    }))
+            })
             .child(
                 div()
                     .flex()
@@ -1259,7 +1269,11 @@ impl TerminalView {
                                         .child(Self::render_agent_sidebar_chip(
                                             branch,
                                             border,
-                                            if branch_dropdown_open { selected_bg } else { input_bg },
+                                            if branch_dropdown_open {
+                                                selected_bg
+                                            } else {
+                                                input_bg
+                                            },
                                             if branch_dropdown_open { text } else { muted },
                                         ))
                                         .into_any_element()

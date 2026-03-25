@@ -150,14 +150,7 @@ impl TerminalView {
             .get(active_tab)
             .and_then(TerminalTab::active_terminal)
             .and_then(Terminal::child_pid)
-            .and_then(|pid| {
-                self.cached_or_queued_working_dir_for_child_pid(pid, cx)
-                    .or_else(|| {
-                        let value = Self::working_dir_for_child_pid_blocking(pid);
-                        self.complete_child_working_dir_lookup(pid, value.clone());
-                        value
-                    })
-            });
+            .and_then(|pid| self.cached_or_queued_working_dir_for_child_pid(pid, cx));
         let title_cwd = self
             .tabs
             .get(active_tab)
@@ -536,21 +529,34 @@ impl TerminalView {
     }
 
     pub(in super::super) fn detach_agent_thread_from_live_tab(&mut self, thread_id: &str) {
-        let linked_tab_id = self
+        let Some(thread_index) = self
             .agent_threads
             .iter()
-            .find(|thread| thread.id == thread_id)
-            .and_then(|thread| thread.linked_tab_id);
-        let Some(tab_id) = linked_tab_id else {
+            .position(|thread| thread.id == thread_id)
+        else {
             return;
         };
-        let Some(tab_index) = self.tab_index_by_id(tab_id) else {
+        let Some(tab_id) = self.agent_threads[thread_index].linked_tab_id else {
             return;
         };
-        if let Some(tab) = self.tabs.get_mut(tab_index)
-            && tab.agent_thread_id.as_deref() == Some(thread_id)
-        {
-            tab.agent_thread_id = None;
+
+        let mut clear_thread_link = false;
+        match self.tab_index_by_id(tab_id) {
+            Some(tab_index) => {
+                if let Some(tab) = self.tabs.get_mut(tab_index)
+                    && tab.agent_thread_id.as_deref() == Some(thread_id)
+                {
+                    tab.agent_thread_id = None;
+                    clear_thread_link = true;
+                }
+            }
+            None => {
+                clear_thread_link = true;
+            }
+        }
+
+        if clear_thread_link && let Some(thread) = self.agent_threads.get_mut(thread_index) {
+            thread.linked_tab_id = None;
         }
     }
 
@@ -604,6 +610,7 @@ impl TerminalView {
         self.agent_threads
             .retain(|thread| thread.project_id != project_id);
         self.agent_projects.remove(project_index);
+        self.collapsed_agent_project_ids.remove(project_id);
 
         if self.active_agent_project_id.as_deref() == Some(project_id) {
             self.active_agent_project_id = self

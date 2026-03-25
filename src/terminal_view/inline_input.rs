@@ -69,6 +69,9 @@ pub(super) struct InlineInputState {
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
     last_line_offset_x: Pixels,
+    // Per-line layout cache for multiline support (line_start_byte, bounds, offset_x)
+    last_line_metas: Vec<(usize, Bounds<Pixels>, Pixels)>,
+    last_line_layouts: Vec<Option<ShapedLine>>,
 }
 
 impl InlineInputState {
@@ -92,6 +95,8 @@ impl InlineInputState {
             last_layout: None,
             last_bounds: None,
             last_line_offset_x: px(0.0),
+            last_line_metas: Vec::new(),
+            last_line_layouts: Vec::new(),
         };
         state.move_to_end();
         state
@@ -388,6 +393,8 @@ impl InlineInputState {
 
     fn invalidate_layout(&mut self) {
         self.last_layout = None;
+        self.last_line_metas.clear();
+        self.last_line_layouts.clear();
     }
 
     fn update_layout_cache(
@@ -395,10 +402,14 @@ impl InlineInputState {
         bounds: Bounds<Pixels>,
         layout: Option<ShapedLine>,
         line_offset_x: Pixels,
+        line_metas: Vec<(usize, Bounds<Pixels>, Pixels)>,
+        line_layouts: Vec<Option<ShapedLine>>,
     ) {
         self.last_bounds = Some(bounds);
         self.last_layout = layout;
         self.last_line_offset_x = line_offset_x;
+        self.last_line_metas = line_metas;
+        self.last_line_layouts = line_layouts;
     }
 
     fn clamp_utf8_index(text: &str, index: usize) -> usize {
@@ -528,6 +539,45 @@ impl InlineInputState {
             return 0;
         }
 
+        // Multiline-aware path: find which row the point is on
+        if !self.last_line_metas.is_empty() {
+            // Find the matching row by y coordinate
+            let row_idx = self
+                .last_line_metas
+                .iter()
+                .enumerate()
+                .find(|(_, (_, bounds, _))| point.y >= bounds.top() && point.y <= bounds.bottom())
+                .map(|(i, _)| i)
+                .unwrap_or_else(|| {
+                    if point.y
+                        < self
+                            .last_line_metas
+                            .first()
+                            .map(|(_, b, _)| b.top())
+                            .unwrap_or(px(0.0))
+                    {
+                        0
+                    } else {
+                        self.last_line_metas.len() - 1
+                    }
+                });
+
+            let (line_start_byte, row_bounds, offset_x) = &self.last_line_metas[row_idx];
+            let layout = self.last_line_layouts.get(row_idx).and_then(|l| l.as_ref());
+
+            let text_left = row_bounds.left() + *offset_x;
+            let local_x = if point.x <= text_left {
+                px(0.0)
+            } else {
+                point.x - text_left
+            };
+
+            let utf8_index_in_row = layout.map(|l| l.closest_index_for_x(local_x)).unwrap_or(0);
+            let abs_utf8 = line_start_byte + utf8_index_in_row;
+            return self.utf8_to_utf16(abs_utf8);
+        }
+
+        // Single-line fallback
         let Some(bounds) = self.last_bounds else {
             return self.range_to_utf16(&self.selected_range).start;
         };
@@ -639,11 +689,13 @@ impl InlineInputElement {
 }
 
 pub(super) struct InlineInputPrepaintState {
-    line: Option<ShapedLine>,
-    line_bounds: Bounds<Pixels>,
-    line_offset_x: Pixels,
+    lines: Vec<Option<ShapedLine>>,
+    line_bounds_vec: Vec<Bounds<Pixels>>,
+    line_offset_xs: Vec<Pixels>,
+    all_bounds: Bounds<Pixels>,
     selection: Option<PaintQuad>,
     cursor: Option<PaintQuad>,
+    cursor_row: usize,
 }
 
 impl IntoElement for InlineInputElement {
@@ -663,17 +715,8 @@ impl IntoElement for InlineInputElement {
         canvas(
             move |bounds, window, cx| {
                 let font_size_value: f32 = font_size.into();
-                let bounds_height: f32 = bounds.size.height.into();
-                let target_line_height = (font_size_value * INLINE_INPUT_LINE_HEIGHT_MULTIPLIER)
-                    .round()
-                    .clamp(1.0, bounds_height.max(1.0));
-                let line_height = px(target_line_height);
-                let extra_height: f32 = (bounds.size.height - line_height).into();
-                let vertical_offset = px(extra_height.max(0.0) * 0.5);
-                let line_bounds = Bounds::new(
-                    point(bounds.left(), bounds.top() + vertical_offset),
-                    size(bounds.size.width, line_height),
-                );
+                let line_height =
+                    px((font_size_value * INLINE_INPUT_LINE_HEIGHT_MULTIPLIER).round());
 
                 let (
                     text,
@@ -705,146 +748,273 @@ impl IntoElement for InlineInputElement {
                         })
                 };
 
-                let line = if text.is_empty() {
-                    None
+                // Split text into lines for multiline support
+                let raw_lines: Vec<&str> = if text.is_empty() {
+                    vec![""]
                 } else {
-                    let base_run = TextRun {
-                        len: text.len(),
-                        font: font.clone(),
-                        color: text_color,
-                        background_color: None,
-                        underline: None,
-                        strikethrough: None,
-                    };
-
-                    let runs = if let Some(marked_range) = marked_range {
-                        let marked_start = marked_range.start.min(text.len());
-                        let marked_end = marked_range.end.min(text.len()).max(marked_start);
-                        let mut runs = Vec::with_capacity(3);
-                        if marked_start > 0 {
-                            runs.push(TextRun {
-                                len: marked_start,
-                                ..base_run.clone()
-                            });
-                        }
-                        if marked_end > marked_start {
-                            runs.push(TextRun {
-                                len: marked_end - marked_start,
-                                underline: Some(UnderlineStyle {
-                                    color: Some(text_color),
-                                    thickness: px(1.0),
-                                    wavy: false,
-                                }),
-                                ..base_run.clone()
-                            });
-                        }
-                        if marked_end < text.len() {
-                            runs.push(TextRun {
-                                len: text.len() - marked_end,
-                                ..base_run.clone()
-                            });
-                        }
-                        runs
-                    } else {
-                        vec![base_run]
-                    };
-
-                    Some(window.text_system().shape_line(
-                        text.clone().into(),
-                        font_size,
-                        &runs,
-                        None,
-                    ))
+                    text.split('\n').collect()
                 };
-                let line_width = line
-                    .as_ref()
-                    .map(|line| line.x_for_index(text.len()))
-                    .unwrap_or(px(0.0));
+                let num_lines = raw_lines.len();
+
+                // Compute byte offset for each line start
+                let mut line_start_bytes: Vec<usize> = Vec::with_capacity(num_lines);
+                {
+                    let mut offset = 0usize;
+                    for (i, line_str) in raw_lines.iter().enumerate() {
+                        line_start_bytes.push(offset);
+                        offset += line_str.len();
+                        if i + 1 < num_lines {
+                            offset += 1; // newline byte
+                        }
+                    }
+                }
+
+                // Determine vertical start: center only for single-line, start from top for multi
+                let bounds_height: f32 = bounds.size.height.into();
+                let vertical_start = if num_lines == 1 {
+                    let extra_height: f32 = (bounds.size.height - line_height).into();
+                    bounds.top() + px(extra_height.max(0.0) * 0.5)
+                } else {
+                    bounds.top()
+                };
+
+                // Build per-row bounds
+                let mut line_bounds_vec: Vec<Bounds<Pixels>> = Vec::with_capacity(num_lines);
+                for i in 0..num_lines {
+                    let row_top = vertical_start + line_height * i as f32;
+                    // Clamp height so last row doesn't exceed bounds
+                    let available = px(bounds_height) - (row_top - bounds.top());
+                    let row_height = line_height.min(available.max(px(1.0)));
+                    line_bounds_vec.push(Bounds::new(
+                        point(bounds.left(), row_top),
+                        size(bounds.size.width, row_height),
+                    ));
+                }
+
+                // Determine cursor row and column within that row
                 let cursor_utf8_early = cursor_offset.min(text.len());
-                let line_offset_x = match alignment {
-                    InlineInputAlignment::Left => {
-                        let available_width: f32 = line_bounds.size.width.into();
-                        let prev_offset: f32 = prepaint_view
-                            .read(cx)
-                            .active_inline_input_state()
-                            .map(|s| -> f32 { s.last_line_offset_x.into() })
-                            .unwrap_or(0.0);
-                        let cursor_x: f32 = line
-                            .as_ref()
-                            .map(|l| -> f32 { l.x_for_index(cursor_utf8_early).into() })
-                            .unwrap_or(0.0);
-                        let visible_cursor_x = cursor_x + prev_offset;
-                        let padding = 4.0_f32;
-                        let new_offset = if visible_cursor_x < 0.0 {
-                            -(cursor_x - padding).max(0.0)
-                        } else if visible_cursor_x > available_width - padding {
-                            -(cursor_x - available_width + padding)
-                        } else {
-                            prev_offset
-                        };
-                        px(new_offset.round())
-                    }
-                    InlineInputAlignment::Center => {
-                        let available_width: f32 = line_bounds.size.width.into();
-                        let text_width: f32 = line_width.into();
-                        px(((available_width - text_width).max(0.0) * 0.5).round())
-                    }
+                let cursor_row = line_start_bytes
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .find(|&(_, start)| *start <= cursor_utf8_early)
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                let cursor_col_in_row = cursor_utf8_early - line_start_bytes[cursor_row];
+
+                // Get previous per-line offsets for scroll continuity
+                let prev_line_offset_xs: Vec<f32> = {
+                    let view = prepaint_view.read(cx);
+                    view.active_inline_input_state()
+                        .map(|s| {
+                            s.last_line_metas
+                                .iter()
+                                .map(|(_, _, ox)| -> f32 { (*ox).into() })
+                                .collect()
+                        })
+                        .unwrap_or_default()
                 };
 
-                let cursor_utf8 = cursor_offset.min(text.len());
+                // Shape each line and compute per-row offset_x
+                let mut shaped_lines: Vec<Option<ShapedLine>> = Vec::with_capacity(num_lines);
+                let mut line_offset_xs: Vec<Pixels> = Vec::with_capacity(num_lines);
+
+                for (row_idx, line_str) in raw_lines.iter().enumerate() {
+                    let shaped = if line_str.is_empty() {
+                        None
+                    } else {
+                        let line_start = line_start_bytes[row_idx];
+                        let line_end = line_start + line_str.len();
+
+                        let base_run = TextRun {
+                            len: line_str.len(),
+                            font: font.clone(),
+                            color: text_color,
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        };
+
+                        let runs = if let Some(ref marked_range) = marked_range {
+                            // Clip marked range to this line
+                            let marked_start_abs = marked_range.start.min(text.len());
+                            let marked_end_abs =
+                                marked_range.end.min(text.len()).max(marked_start_abs);
+                            if marked_end_abs <= line_start || marked_start_abs >= line_end {
+                                vec![base_run]
+                            } else {
+                                let ms = marked_start_abs
+                                    .saturating_sub(line_start)
+                                    .min(line_str.len());
+                                let me = (marked_end_abs - line_start).min(line_str.len());
+                                let mut runs = Vec::with_capacity(3);
+                                if ms > 0 {
+                                    runs.push(TextRun {
+                                        len: ms,
+                                        ..base_run.clone()
+                                    });
+                                }
+                                if me > ms {
+                                    runs.push(TextRun {
+                                        len: me - ms,
+                                        underline: Some(UnderlineStyle {
+                                            color: Some(text_color),
+                                            thickness: px(1.0),
+                                            wavy: false,
+                                        }),
+                                        ..base_run.clone()
+                                    });
+                                }
+                                if me < line_str.len() {
+                                    runs.push(TextRun {
+                                        len: line_str.len() - me,
+                                        ..base_run.clone()
+                                    });
+                                }
+                                runs
+                            }
+                        } else {
+                            vec![base_run]
+                        };
+
+                        Some(window.text_system().shape_line(
+                            (*line_str).to_string().into(),
+                            font_size,
+                            &runs,
+                            None,
+                        ))
+                    };
+
+                    // Compute offset_x for this row
+                    let row_bounds = &line_bounds_vec[row_idx];
+                    let offset_x = if row_idx == cursor_row {
+                        match alignment {
+                            InlineInputAlignment::Left => {
+                                let available_width: f32 = row_bounds.size.width.into();
+                                let prev_offset: f32 =
+                                    prev_line_offset_xs.get(row_idx).copied().unwrap_or(0.0);
+                                let cursor_x: f32 = shaped
+                                    .as_ref()
+                                    .map(|l| -> f32 { l.x_for_index(cursor_col_in_row).into() })
+                                    .unwrap_or(0.0);
+                                let visible_cursor_x = cursor_x + prev_offset;
+                                let padding = 4.0_f32;
+                                let new_offset = if visible_cursor_x < 0.0 {
+                                    -(cursor_x - padding).max(0.0)
+                                } else if visible_cursor_x > available_width - padding {
+                                    -(cursor_x - available_width + padding)
+                                } else {
+                                    prev_offset
+                                };
+                                px(new_offset.round())
+                            }
+                            InlineInputAlignment::Center => {
+                                let available_width: f32 = row_bounds.size.width.into();
+                                let text_width: f32 = shaped
+                                    .as_ref()
+                                    .map(|l| -> f32 { l.x_for_index(line_str.len()).into() })
+                                    .unwrap_or(0.0);
+                                px(((available_width - text_width).max(0.0) * 0.5).round())
+                            }
+                        }
+                    } else {
+                        px(0.0)
+                    };
+
+                    line_offset_xs.push(offset_x);
+                    shaped_lines.push(shaped);
+                }
+
+                // all_bounds covers all rows
+                let all_bounds = if line_bounds_vec.is_empty() {
+                    bounds
+                } else {
+                    Bounds::from_corners(
+                        line_bounds_vec.first().unwrap().origin,
+                        point(
+                            line_bounds_vec.last().unwrap().right(),
+                            line_bounds_vec.last().unwrap().bottom(),
+                        ),
+                    )
+                };
+
                 let selection_start = selected_range.start.min(text.len());
                 let selection_end = selected_range.end.min(text.len());
 
+                // Determine selection row extents (only support single-row selection visually)
                 let selection = if selection_start < selection_end {
-                    let start_x = line
-                        .as_ref()
-                        .map(|line| line.x_for_index(selection_start))
-                        .unwrap_or(px(0.0));
-                    let end_x = line
-                        .as_ref()
-                        .map(|line| line.x_for_index(selection_end))
-                        .unwrap_or(px(0.0));
-                    Some(fill(
-                        Bounds::from_corners(
-                            point(
-                                line_bounds.left() + line_offset_x + start_x,
-                                line_bounds.top(),
+                    // Find which rows the selection spans
+                    let sel_start_row = line_start_bytes
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|&(_, s)| *s <= selection_start)
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    let sel_end_row = line_start_bytes
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .find(|&(_, s)| *s <= selection_end)
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+
+                    if sel_start_row == sel_end_row {
+                        let row_bounds = &line_bounds_vec[sel_start_row];
+                        let offset_x = line_offset_xs[sel_start_row];
+                        let row_start_byte = line_start_bytes[sel_start_row];
+                        let start_col = selection_start - row_start_byte;
+                        let end_col = selection_end - row_start_byte;
+                        let start_x = shaped_lines[sel_start_row]
+                            .as_ref()
+                            .map(|l| l.x_for_index(start_col))
+                            .unwrap_or(px(0.0));
+                        let end_x = shaped_lines[sel_start_row]
+                            .as_ref()
+                            .map(|l| l.x_for_index(end_col))
+                            .unwrap_or(px(0.0));
+                        Some(fill(
+                            Bounds::from_corners(
+                                point(row_bounds.left() + offset_x + start_x, row_bounds.top()),
+                                point(row_bounds.left() + offset_x + end_x, row_bounds.bottom()),
                             ),
-                            point(
-                                line_bounds.left() + line_offset_x + end_x,
-                                line_bounds.bottom(),
-                            ),
-                        ),
-                        selection_color,
-                    ))
+                            selection_color,
+                        ))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 };
 
                 let cursor = if focused && cursor_visible && selection_start == selection_end {
-                    let cursor_x = line
+                    let cursor_row_bounds = &line_bounds_vec[cursor_row];
+                    let offset_x = line_offset_xs[cursor_row];
+                    let cursor_x_in_row = shaped_lines[cursor_row]
                         .as_ref()
-                        .map(|line| line.x_for_index(cursor_utf8))
+                        .map(|l| l.x_for_index(cursor_col_in_row))
                         .unwrap_or(px(0.0));
                     let cursor_x = px({
-                        let x: f32 = cursor_x.into();
+                        let x: f32 = cursor_x_in_row.into();
                         x.round()
                     });
                     let cursor_width = match cursor_style {
                         AppCursorStyle::Line => px(1.0),
                         AppCursorStyle::Block => {
                             let fallback_width = (font_size_value * 0.62).round().max(1.0);
-                            let width = text
-                                .get(cursor_utf8..)
+                            let row_text = raw_lines[cursor_row];
+                            let width = row_text
+                                .get(cursor_col_in_row..)
                                 .and_then(|slice| slice.chars().next())
-                                .map(|ch| cursor_utf8 + ch.len_utf8())
-                                .and_then(|next_utf8| {
-                                    line.as_ref()
-                                        .map(|line| line.x_for_index(next_utf8) - cursor_x)
+                                .map(|ch| cursor_col_in_row + ch.len_utf8())
+                                .and_then(|next_col| {
+                                    shaped_lines[cursor_row]
+                                        .as_ref()
+                                        .map(|l| l.x_for_index(next_col) - cursor_x_in_row)
                                 })
                                 .map(|delta| {
-                                    let width: f32 = delta.into();
-                                    width.max(1.0)
+                                    let w: f32 = delta.into();
+                                    w.max(1.0)
                                 })
                                 .unwrap_or(fallback_width);
                             px(width)
@@ -854,14 +1024,13 @@ impl IntoElement for InlineInputElement {
                         AppCursorStyle::Line => text_color,
                         AppCursorStyle::Block => selection_color,
                     };
-
                     Some(fill(
                         Bounds::new(
                             point(
-                                line_bounds.left() + line_offset_x + cursor_x,
-                                line_bounds.top(),
+                                cursor_row_bounds.left() + offset_x + cursor_x,
+                                cursor_row_bounds.top(),
                             ),
-                            size(cursor_width, line_bounds.size.height),
+                            size(cursor_width, cursor_row_bounds.size.height),
                         ),
                         cursor_color,
                     ))
@@ -870,11 +1039,13 @@ impl IntoElement for InlineInputElement {
                 };
 
                 InlineInputPrepaintState {
-                    line,
-                    line_bounds,
+                    lines: shaped_lines,
+                    line_bounds_vec,
+                    line_offset_xs,
+                    all_bounds,
                     selection,
                     cursor,
-                    line_offset_x,
+                    cursor_row,
                 }
             },
             move |bounds, mut prepaint, window, cx| {
@@ -884,47 +1055,88 @@ impl IntoElement for InlineInputElement {
                     cx,
                 );
 
-                let line = window.with_content_mask(
-                    Some(ContentMask {
-                        bounds: prepaint.line_bounds,
-                    }),
-                    |window| {
+                // Collect layout data before painting (avoid borrow issues)
+                let num_lines = prepaint.lines.len();
+                let all_bounds = prepaint.all_bounds;
+
+                let painted_lines =
+                    window.with_content_mask(Some(ContentMask { bounds: all_bounds }), |window| {
                         if let Some(selection) = prepaint.selection.take() {
                             window.paint_quad(selection);
                         }
 
-                        let line = if let Some(line) = prepaint.line.take() {
-                            line.paint(
-                                point(
-                                    prepaint.line_bounds.left() + prepaint.line_offset_x,
-                                    prepaint.line_bounds.top(),
-                                ),
-                                prepaint.line_bounds.size.height,
-                                TextAlign::Left,
-                                None,
-                                window,
-                                cx,
-                            )
-                            .expect("failed to paint inline input text");
-                            Some(line)
-                        } else {
-                            None
-                        };
+                        let mut result_lines: Vec<Option<ShapedLine>> =
+                            Vec::with_capacity(num_lines);
+
+                        for i in 0..num_lines {
+                            let row_bounds = prepaint.line_bounds_vec[i];
+                            let offset_x = prepaint.line_offset_xs[i];
+                            let shaped = prepaint.lines[i].take();
+
+                            let painted = if let Some(line) = shaped {
+                                line.paint(
+                                    point(row_bounds.left() + offset_x, row_bounds.top()),
+                                    row_bounds.size.height,
+                                    TextAlign::Left,
+                                    None,
+                                    window,
+                                    cx,
+                                )
+                                .expect("failed to paint inline input text");
+                                Some(line)
+                            } else {
+                                None
+                            };
+                            result_lines.push(painted);
+                        }
 
                         if let Some(cursor) = prepaint.cursor.take() {
                             window.paint_quad(cursor);
                         }
 
-                        line
-                    },
-                );
+                        result_lines
+                    });
+
+                // Build metas for cache
+                let line_metas: Vec<(usize, Bounds<Pixels>, Pixels)> = {
+                    let mut byte_offset = 0usize;
+                    prepaint
+                        .line_bounds_vec
+                        .iter()
+                        .zip(prepaint.line_offset_xs.iter())
+                        .zip(painted_lines.iter())
+                        .enumerate()
+                        .map(|(_, ((rb, &ox), pl))| {
+                            let start = byte_offset;
+                            if let Some(line) = pl {
+                                byte_offset += line.len;
+                                byte_offset += 1; // newline separator
+                            }
+                            (start, *rb, ox)
+                        })
+                        .collect()
+                };
+
+                // Use cursor row's data for backward-compat single-line fields
+                let cursor_row = prepaint.cursor_row;
+                let (cursor_bounds, cursor_offset_x) = line_metas
+                    .get(cursor_row)
+                    .map(|(_, b, ox)| (*b, *ox))
+                    .unwrap_or((all_bounds, px(0.0)));
+                let cursor_line = painted_lines.into_iter().nth(cursor_row).flatten();
 
                 view.update(cx, |this, _cx| {
                     if let Some(state) = this.active_inline_input_state_mut() {
                         state.update_layout_cache(
-                            prepaint.line_bounds,
-                            line,
-                            prepaint.line_offset_x,
+                            cursor_bounds,
+                            cursor_line,
+                            cursor_offset_x,
+                            line_metas,
+                            prepaint
+                                .line_bounds_vec
+                                .iter()
+                                .map(|_| None::<ShapedLine>)
+                                .collect(),
                         );
                     }
                 });

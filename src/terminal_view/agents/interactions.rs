@@ -251,18 +251,24 @@ impl TerminalView {
                 termy_native_sdk::AgentProjectContextMenuAction::CollapseProject => {
                     let _ = cx.update(|cx| {
                         this.update(cx, |view, cx| {
-                            view.collapsed_agent_project_ids.insert(project_id.clone());
-                            view.sync_persisted_agent_workspace();
-                            cx.notify();
+                            if !view
+                                .collapsed_agent_project_ids
+                                .contains(project_id.as_str())
+                            {
+                                view.toggle_agent_project_collapsed(project_id.as_str(), cx);
+                            }
                         })
                     });
                 }
                 termy_native_sdk::AgentProjectContextMenuAction::ExpandProject => {
                     let _ = cx.update(|cx| {
                         this.update(cx, |view, cx| {
-                            view.collapsed_agent_project_ids.remove(project_id.as_str());
-                            view.sync_persisted_agent_workspace();
-                            cx.notify();
+                            if view
+                                .collapsed_agent_project_ids
+                                .contains(project_id.as_str())
+                            {
+                                view.toggle_agent_project_collapsed(project_id.as_str(), cx);
+                            }
                         })
                     });
                 }
