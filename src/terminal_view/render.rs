@@ -2597,7 +2597,7 @@ impl Render for TerminalView {
         let tabs_row = show_horizontal_tabbar
             .then(|| self.render_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
         let hidden_titlebar_branding = Self::should_render_hidden_titlebar_branding(
-            self.auto_hide_tabbar,
+            self.effective_auto_hide_tabbar(),
             self.tabs.len(),
             self.tab_bar_visibility,
             self.show_termy_in_titlebar,

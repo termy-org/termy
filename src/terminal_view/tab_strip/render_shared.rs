@@ -54,6 +54,19 @@ mod tests {
     }
 
     #[test]
+    fn effective_auto_hide_tabbar_disables_auto_hide_while_agent_sidebar_is_visible() {
+        assert!(!TerminalView::effective_auto_hide_tabbar_for_state(
+            true, true
+        ));
+        assert!(TerminalView::effective_auto_hide_tabbar_for_state(
+            true, false
+        ));
+        assert!(!TerminalView::effective_auto_hide_tabbar_for_state(
+            false, true
+        ));
+    }
+
+    #[test]
     fn tab_strip_chrome_visible_force_visible_overrides_hidden_single_tab_strip() {
         assert!(TerminalView::tab_strip_chrome_visible(
             true,
@@ -173,6 +186,20 @@ impl TerminalView {
         }
     }
 
+    pub(crate) fn effective_auto_hide_tabbar_for_state(
+        auto_hide_tabbar: bool,
+        agent_sidebar_visible: bool,
+    ) -> bool {
+        auto_hide_tabbar && !agent_sidebar_visible
+    }
+
+    pub(crate) fn effective_auto_hide_tabbar(&self) -> bool {
+        Self::effective_auto_hide_tabbar_for_state(
+            self.auto_hide_tabbar,
+            self.should_render_agent_sidebar(),
+        )
+    }
+
     pub(crate) fn should_render_hidden_titlebar_branding(
         auto_hide_tabbar: bool,
         tab_count: usize,
@@ -185,7 +212,7 @@ impl TerminalView {
 
     pub(crate) fn should_render_tab_strip_chrome(&self) -> bool {
         Self::tab_strip_chrome_visible(
-            self.auto_hide_tabbar,
+            self.effective_auto_hide_tabbar(),
             self.tabs.len(),
             self.tab_bar_visibility,
         )

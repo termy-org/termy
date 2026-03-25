@@ -29,7 +29,13 @@ pub(in super::super) enum AiAgentPreset {
 }
 
 impl AiAgentPreset {
-    pub(super) const ALL: [Self; 5] = [Self::Codex, Self::Claude, Self::Cursor, Self::OpenCode, Self::Pi];
+    pub(super) const ALL: [Self; 5] = [
+        Self::Codex,
+        Self::Claude,
+        Self::Cursor,
+        Self::OpenCode,
+        Self::Pi,
+    ];
 
     pub(in super::super) fn title(self) -> &'static str {
         match self {
