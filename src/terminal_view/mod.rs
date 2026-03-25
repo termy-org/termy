@@ -1095,6 +1095,13 @@ struct TerminalTab {
     pinned: bool,
     manual_title: Option<String>,
     explicit_title: Option<String>,
+    /// When `true`, `explicit_title` is a speculative seed derived from the
+    /// initial working directory at tab creation—not a title confirmed by shell
+    /// integration.  While this flag is set, `title_source_candidate` prefers a
+    /// live `shell_title` over the prediction.  Cleared to `false` by any real
+    /// explicit-title event (`set_explicit_title`, `activate_pending_command_title`)
+    /// or by `clear_terminal_titles`.
+    explicit_title_is_prediction: bool,
     shell_title: Option<String>,
     current_command: Option<String>,
     pending_command_title: Option<String>,
@@ -1966,6 +1973,7 @@ impl TerminalView {
         rows: u16,
         predicted_prompt_title: Option<String>,
     ) -> TerminalTab {
+        let explicit_title_is_prediction = predicted_prompt_title.is_some();
         let title = predicted_prompt_title
             .as_deref()
             .unwrap_or(DEFAULT_TAB_TITLE)
@@ -1992,6 +2000,7 @@ impl TerminalView {
             pinned: false,
             manual_title: None,
             explicit_title: predicted_prompt_title,
+            explicit_title_is_prediction,
             shell_title: None,
             current_command: None,
             pending_command_title: None,
