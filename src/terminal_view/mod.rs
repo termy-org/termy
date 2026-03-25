@@ -1489,6 +1489,7 @@ pub struct TerminalView {
     agent_sidebar_search_input: InlineInputState,
     agent_git_panel_input_mode: Option<agents::AgentGitPanelInputMode>,
     agent_git_panel_input: InlineInputState,
+    agent_git_panel_branch_dropdown_open: bool,
     event_wakeup_tx: Sender<()>,
     focus_handle: FocusHandle,
     theme_id: String,
@@ -2981,6 +2982,7 @@ impl TerminalView {
             agent_sidebar_search_input: InlineInputState::new(String::new()),
             agent_git_panel_input_mode: None,
             agent_git_panel_input: InlineInputState::new(String::new()),
+            agent_git_panel_branch_dropdown_open: false,
             event_wakeup_tx,
             focus_handle,
             theme_id,
@@ -3305,6 +3307,7 @@ impl TerminalView {
             self.agent_git_panel = agents::AgentGitPanelState::default();
             self.agent_git_panel_input_mode = None;
             self.agent_git_panel_input.clear();
+            self.agent_git_panel_branch_dropdown_open = false;
             self.renaming_agent_project_id = None;
             self.renaming_agent_thread_id = None;
         } else if self.agent_projects.is_empty() && self.agent_threads.is_empty() {

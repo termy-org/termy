@@ -753,7 +753,6 @@ impl TerminalView {
                         div().flex().flex_wrap().gap(px(4.0)).children(
                             [
                                 (AgentGitPanelInputMode::Commit, "commit", text),
-                                (AgentGitPanelInputMode::CreateBranch, "branch", info),
                                 (AgentGitPanelInputMode::SaveStash, "stash", muted),
                             ]
                             .into_iter()
@@ -893,9 +892,11 @@ impl TerminalView {
         let preview_diff_lines = self.agent_git_panel.preview_diff_lines.clone();
         let preview_history = self.agent_git_panel.preview_history.clone();
         let branches = self.agent_git_panel.branches.clone();
+        let branches_for_dropdown = branches.clone();
         let stashes = self.agent_git_panel.stashes.clone();
         let input_mode = self.agent_git_panel_input_mode;
         let input_text = self.agent_git_panel_input.text().to_string();
+        let branch_dropdown_open = self.agent_git_panel_branch_dropdown_open;
 
         let total_changes = self.agent_git_panel.entries.len();
         let all_staged = total_changes > 0
@@ -982,64 +983,6 @@ impl TerminalView {
                 cx,
             ) {
                 sections.push(section);
-            }
-            if !branches.is_empty() {
-                sections.push(
-                    div()
-                        .px(px(8.0))
-                        .pb(px(8.0))
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.0))
-                        .child(
-                            div()
-                                .px(px(2.0))
-                                .text_size(px(11.5))
-                                .text_color(muted)
-                                .child("Branches"),
-                        )
-                        .child(div().flex().flex_wrap().gap(px(4.0)).children(
-                            branches.into_iter().map(|branch_name| {
-                                let is_current = current_branch_for_branches.as_deref()
-                                    == Some(branch_name.as_str());
-                                if is_current {
-                                    Self::render_agent_sidebar_chip(
-                                        branch_name,
-                                        border,
-                                        selected_bg,
-                                        text,
-                                    )
-                                    .into_any_element()
-                                } else {
-                                    let checkout_branch = branch_name.clone();
-                                    div()
-                                        .cursor_pointer()
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(move |view, _event, _window, cx| {
-                                                view.run_agent_git_mutation(
-                                                    vec![
-                                                        "checkout".to_string(),
-                                                        checkout_branch.clone(),
-                                                    ],
-                                                    "Switched branch",
-                                                    cx,
-                                                );
-                                                cx.stop_propagation();
-                                            }),
-                                        )
-                                        .child(Self::render_agent_sidebar_chip(
-                                            branch_name,
-                                            border,
-                                            input_bg,
-                                            muted,
-                                        ))
-                                        .into_any_element()
-                                }
-                            }),
-                        ))
-                        .into_any_element(),
-                );
             }
             if !stashes.is_empty() {
                 sections.push(
@@ -1284,10 +1227,96 @@ impl TerminalView {
                                         .child(repo_name),
                                 )
                                 .children(current_branch.map(|branch| {
-                                    Self::render_agent_sidebar_chip(branch, border, input_bg, muted)
+                                    div()
+                                        .cursor_pointer()
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(move |view, _event, _window, cx| {
+                                                view.agent_git_panel_branch_dropdown_open =
+                                                    !view.agent_git_panel_branch_dropdown_open;
+                                                cx.notify();
+                                                cx.stop_propagation();
+                                            }),
+                                        )
+                                        .child(Self::render_agent_sidebar_chip(
+                                            branch,
+                                            border,
+                                            if branch_dropdown_open { selected_bg } else { input_bg },
+                                            if branch_dropdown_open { text } else { muted },
+                                        ))
                                         .into_any_element()
                                 })),
                         )
+                        .children(branch_dropdown_open.then(|| {
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(4.0))
+                                .pt(px(2.0))
+                                .child(
+                                    div()
+                                        .cursor_pointer()
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(move |view, _event, _window, cx| {
+                                                view.agent_git_panel_branch_dropdown_open = false;
+                                                view.begin_agent_git_panel_input(
+                                                    AgentGitPanelInputMode::CreateBranch,
+                                                    String::new(),
+                                                    cx,
+                                                );
+                                                cx.stop_propagation();
+                                            }),
+                                        )
+                                        .child(Self::render_agent_sidebar_chip(
+                                            "new branch",
+                                            border,
+                                            input_bg,
+                                            info,
+                                        )),
+                                )
+                                .children(branches_for_dropdown.into_iter().map(|branch_name| {
+                                    let is_current = current_branch_for_branches.as_deref()
+                                        == Some(branch_name.as_str());
+                                    if is_current {
+                                        Self::render_agent_sidebar_chip(
+                                            branch_name,
+                                            border,
+                                            selected_bg,
+                                            text,
+                                        )
+                                        .into_any_element()
+                                    } else {
+                                        let checkout_branch = branch_name.clone();
+                                        div()
+                                            .cursor_pointer()
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(move |view, _event, _window, cx| {
+                                                    view.agent_git_panel_branch_dropdown_open =
+                                                        false;
+                                                    view.run_agent_git_mutation(
+                                                        vec![
+                                                            "checkout".to_string(),
+                                                            checkout_branch.clone(),
+                                                        ],
+                                                        "Switched branch",
+                                                        cx,
+                                                    );
+                                                    cx.stop_propagation();
+                                                }),
+                                            )
+                                            .child(Self::render_agent_sidebar_chip(
+                                                branch_name,
+                                                border,
+                                                input_bg,
+                                                muted,
+                                            ))
+                                            .into_any_element()
+                                    }
+                                }))
+                                .into_any_element()
+                        }))
                         .child(
                             div()
                                 .flex()

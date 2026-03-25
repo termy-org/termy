@@ -5,6 +5,7 @@ impl TerminalView {
         self.agent_git_panel = AgentGitPanelState::default();
         self.agent_git_panel_input_mode = None;
         self.agent_git_panel_input.clear();
+        self.agent_git_panel_branch_dropdown_open = false;
     }
 
     pub(in super::super) fn cancel_agent_git_panel_input(&mut self, cx: &mut Context<Self>) {
