@@ -67,7 +67,6 @@ url = "2.5"
 # File I/O
 tempfile = "3"
 fs4 = { version = "0.13.1", features = ["sync"] }
-libsqlite3-sys = "0.30.1"
 ureq = { version = "2", features = ["json"] }
 webbrowser = "1.0"
 sysinfo = "0.37"
@@ -83,6 +82,9 @@ termy_native_sdk = { path = "crates/native_sdk" }
 termy_config_core = { path = "crates/config_core" }
 termy_command_core = { path = "crates/command_core" }
 termy_cli_install_core = { path = "crates/cli_install_core" }
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+libsqlite3-sys = "0.30.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Pin core-text to 21.0.0 to avoid core-graphics version conflict on macOS.

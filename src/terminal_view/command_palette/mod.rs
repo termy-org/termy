@@ -192,20 +192,22 @@ impl TerminalView {
     ) -> Vec<CommandPaletteItem> {
         let mut items =
             Self::command_palette_core_command_items_for_state(install_cli_available, tmux_enabled);
-        let insert_index = items
-            .iter()
-            .position(|item| {
-                matches!(
-                    item.kind,
-                    CommandPaletteItemKind::Command(CommandAction::RunTask)
-                )
-            })
-            .map(|index| index + 1)
-            .unwrap_or(items.len());
-        items.insert(
-            insert_index.min(items.len()),
-            CommandPaletteItem::ai_agent_open_mode(),
-        );
+        if !cfg!(target_os = "windows") {
+            let insert_index = items
+                .iter()
+                .position(|item| {
+                    matches!(
+                        item.kind,
+                        CommandPaletteItemKind::Command(CommandAction::RunTask)
+                    )
+                })
+                .map(|index| index + 1)
+                .unwrap_or(items.len());
+            items.insert(
+                insert_index.min(items.len()),
+                CommandPaletteItem::ai_agent_open_mode(),
+            );
+        }
         items
     }
 
@@ -1768,21 +1770,26 @@ mod tests {
     #[test]
     fn ai_agent_command_is_inserted_after_run_task() {
         let items = TerminalView::command_palette_command_items_for_state(true, true);
-        let run_task_index = items
-            .iter()
-            .position(|item| {
-                matches!(
-                    item.kind,
-                    CommandPaletteItemKind::Command(CommandAction::RunTask)
-                )
-            })
-            .expect("missing Run Task entry");
         let ai_agent_index = items
             .iter()
-            .position(|item| matches!(item.kind, CommandPaletteItemKind::AiAgentOpenMode))
-            .expect("missing AI agent entry");
+            .position(|item| matches!(item.kind, CommandPaletteItemKind::AiAgentOpenMode));
 
-        assert_eq!(ai_agent_index, run_task_index + 1);
+        #[cfg(not(target_os = "windows"))]
+        {
+            let run_task_index = items
+                .iter()
+                .position(|item| {
+                    matches!(
+                        item.kind,
+                        CommandPaletteItemKind::Command(CommandAction::RunTask)
+                    )
+                })
+                .expect("missing Run Task entry");
+            assert_eq!(ai_agent_index, Some(run_task_index + 1));
+        }
+
+        #[cfg(target_os = "windows")]
+        assert_eq!(ai_agent_index, None);
     }
 
     #[test]
@@ -1800,7 +1807,13 @@ mod tests {
         assert_eq!(titles, ["Codex", "Claude", "Cursor", "OpenCode", "Pi"]);
         assert_eq!(
             commands,
-            [Some("codex"), Some("claude"), Some("agent"), Some("opencode"), Some("pi")]
+            [
+                Some("codex"),
+                Some("claude"),
+                Some("agent"),
+                Some("opencode"),
+                Some("pi")
+            ]
         );
     }
 

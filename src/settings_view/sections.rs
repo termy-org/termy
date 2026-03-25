@@ -225,7 +225,7 @@ impl SettingsWindow {
     }
 
     pub(super) fn render_terminal_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut section = div()
+        let section = div()
             .flex()
             .flex_col()
             .gap_2()
@@ -239,9 +239,7 @@ impl SettingsWindow {
             .child(self.render_terminal_shell_group(cx));
 
         #[cfg(not(target_os = "windows"))]
-        {
-            section = section.child(self.render_terminal_tmux_group(cx));
-        }
+        let section = section.child(self.render_terminal_tmux_group(cx));
 
         section
             .child(self.render_terminal_scrolling_group(cx))
@@ -605,7 +603,7 @@ impl SettingsWindow {
         let close_visibility_meta = Self::setting_metadata_or_fallback("tab_close_visibility");
         let width_mode_meta = Self::setting_metadata_or_fallback("tab_width_mode");
         let vertical_width_meta = Self::setting_metadata_or_fallback("vertical_tabs_width");
-        let rows = vec![
+        let mut rows = vec![
             self.render_editable_row(
                 "tab_close_visibility",
                 EditableField::TabCloseVisibility,
@@ -654,23 +652,27 @@ impl SettingsWindow {
                 "Saved",
                 cx,
             ),
-            self.render_root_bool_setting_row(
+        ];
+
+        if !cfg!(target_os = "windows") {
+            rows.push(self.render_root_bool_setting_row(
                 "agent_sidebar_enabled",
                 "agent_sidebar_enabled-toggle",
                 RootSettingId::AgentSidebarEnabled,
                 agent_sidebar_enabled,
                 "Saved",
                 cx,
-            ),
-            self.render_root_bool_setting_row(
-                "auto_hide_tabbar",
-                "auto_hide_tabbar-toggle",
-                RootSettingId::AutoHideTabbar,
-                auto_hide_tabbar,
-                "Saved",
-                cx,
-            ),
-        ];
+            ));
+        }
+
+        rows.push(self.render_root_bool_setting_row(
+            "auto_hide_tabbar",
+            "auto_hide_tabbar-toggle",
+            RootSettingId::AutoHideTabbar,
+            auto_hide_tabbar,
+            "Saved",
+            cx,
+        ));
 
         self.render_settings_group("TAB STRIP", rows)
     }

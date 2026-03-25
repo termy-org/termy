@@ -52,6 +52,10 @@ use termy_terminal_ui::{
 use termy_terminal_ui::{TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_snapshot};
 use termy_toast::ToastManager;
 
+#[cfg(not(target_os = "windows"))]
+mod agents;
+#[cfg(target_os = "windows")]
+#[path = "agents_windows.rs"]
 mod agents;
 mod benchmark;
 mod command_palette;
@@ -2963,7 +2967,11 @@ impl TerminalView {
                 config.vertical_tabs_width,
             ),
             vertical_tabs_minimized: config.vertical_tabs_minimized,
-            agent_sidebar_enabled: config.agent_sidebar_enabled,
+            agent_sidebar_enabled: if cfg!(target_os = "windows") {
+                false
+            } else {
+                config.agent_sidebar_enabled
+            },
             agent_sidebar_width: agents::clamp_agent_sidebar_width(config.agent_sidebar_width),
             agent_sidebar_open: false,
             active_agent_project_id: None,
@@ -3249,7 +3257,11 @@ impl TerminalView {
         self.vertical_tabs = config.vertical_tabs;
         self.vertical_tabs_width = vertical_tabs_width;
         self.vertical_tabs_minimized = config.vertical_tabs_minimized;
-        self.agent_sidebar_enabled = config.agent_sidebar_enabled;
+        self.agent_sidebar_enabled = if cfg!(target_os = "windows") {
+            false
+        } else {
+            config.agent_sidebar_enabled
+        };
         self.agent_sidebar_width = agents::clamp_agent_sidebar_width(config.agent_sidebar_width);
         if !self.agent_sidebar_enabled {
             self.agent_sidebar_open = false;

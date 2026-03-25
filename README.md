@@ -22,6 +22,10 @@
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, validation commands, and PR expectations.
 
+## Platform Notes
+
+- Windows: the Agent Sidebar/Workspace is currently disabled.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

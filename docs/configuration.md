@@ -6,6 +6,8 @@ Termy reads configuration from `~/.config/termy/config.txt`.
 
 Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode by default. Use `tmux Sessions…` from the command palette or File menu to attach, switch, create, and manage sessions at runtime.
 
+Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows builds.
+
 ## Appearance
 
 `theme`
@@ -29,7 +31,7 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - Group: `FONT`
 
 `line_height`
-- Default: `1.4`
+- Default: `1.40`
 - Terminal line height multiplier (0.8 to 2.5)
 - Group: `FONT`
 
@@ -222,6 +224,16 @@ Tmux integration is an add-on. Set `tmux_enabled = true` to start in tmux mode b
 - Default: `false`
 - Start vertical tabs in the collapsed state
 - Group: `TAB STRIP`
+
+`agent_sidebar_enabled`
+- Default: `false`
+- Enable the persisted agent projects and threads sidebar (currently unavailable on Windows)
+- Group: `AGENTS`
+
+`agent_sidebar_width`
+- Default: `252`
+- Width for the agent sidebar in pixels (currently unavailable on Windows)
+- Group: `AGENTS`
 
 `auto_hide_tabbar`
 - Default: `true`
