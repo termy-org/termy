@@ -133,7 +133,7 @@ impl TerminalView {
             .border_1()
             .border_color(border)
             .bg(bg)
-            .text_size(px(9.0))
+            .text_size(px(10.5))
             .text_color(badge_text)
             .child(label.to_ascii_lowercase())
             .into_any_element()
@@ -300,13 +300,13 @@ impl TerminalView {
             let discard_entry = entry.clone();
             let preview_body = if preview_loading {
                 div()
-                    .text_size(px(10.0))
+                    .text_size(px(11.5))
                     .text_color(muted)
                     .child("Loading diff preview...")
                     .into_any_element()
             } else if let Some(error) = preview_error {
                 div()
-                    .text_size(px(10.0))
+                    .text_size(px(11.5))
                     .text_color(muted)
                     .child(error.to_string())
                     .into_any_element()
@@ -456,7 +456,7 @@ impl TerminalView {
                                 };
                                 div()
                                     .truncate()
-                                    .text_size(px(9.5))
+                                    .text_size(px(12.5))
                                     .text_color(tone)
                                     .child(line.clone())
                                     .into_any_element()
@@ -465,7 +465,7 @@ impl TerminalView {
                     }))
                     .children((preview_history.is_empty()).then(|| {
                         div()
-                            .text_size(px(10.0))
+                            .text_size(px(11.5))
                             .text_color(muted)
                             .child("No file history yet.")
                             .into_any_element()
@@ -475,11 +475,11 @@ impl TerminalView {
                             .flex()
                             .flex_col()
                             .gap(px(3.0))
-                            .child(div().text_size(px(10.0)).text_color(muted).child("History"))
+                            .child(div().text_size(px(11.5)).text_color(muted).child("History"))
                             .children(preview_history.iter().take(6).map(|entry| {
                                 div()
                                     .truncate()
-                                    .text_size(px(10.0))
+                                    .text_size(px(11.5))
                                     .text_color(text)
                                     .child(entry.summary.clone())
                                     .into_any_element()
@@ -493,7 +493,7 @@ impl TerminalView {
                 .mx(px(8.0))
                 .mb(px(8.0))
                 .px(px(8.0))
-                .py(px(8.0))
+                .py(px(10.0))
                 .flex()
                 .flex_col()
                 .gap(px(6.0))
@@ -512,7 +512,7 @@ impl TerminalView {
                 div()
                     .w_full()
                     .px(px(8.0))
-                    .py(px(6.0))
+                    .py(px(10.0))
                     .flex()
                     .items_center()
                     .gap(px(6.0))
@@ -544,14 +544,14 @@ impl TerminalView {
                                     .flex_1()
                                     .min_w(px(0.0))
                                     .truncate()
-                                    .text_size(px(11.0))
+                                    .text_size(px(12.5))
                                     .text_color(text)
                                     .child(entry.path.clone()),
                             )
                             .child(
                                 div()
                                     .flex_none()
-                                    .text_size(px(9.5))
+                                    .text_size(px(12.5))
                                     .text_color(muted)
                                     .child(entry.status.clone()),
                             ),
@@ -602,13 +602,13 @@ impl TerminalView {
                         .justify_between()
                         .child(
                             div()
-                                .text_size(px(10.0))
+                                .text_size(px(11.5))
                                 .text_color(muted)
                                 .child(title.to_string()),
                         )
                         .child(
                             div()
-                                .text_size(px(9.5))
+                                .text_size(px(12.5))
                                 .text_color(muted)
                                 .child(count.to_string()),
                         ),
@@ -676,20 +676,20 @@ impl TerminalView {
             .flex_col()
             .gap(px(6.0))
             .px(px(8.0))
-            .py(px(8.0))
+            .py(px(10.0))
             .border_t_1()
             .border_color(border)
             .bg(panel_bg)
             .child(
                 div()
-                    .text_size(px(10.0))
+                    .text_size(px(11.5))
                     .text_color(muted)
                     .child(active_mode.title()),
             )
             .child(
                 div()
                     .relative()
-                    .h(px(32.0))
+                    .h(px(36.0))
                     .px(px(8.0))
                     .flex()
                     .items_center()
@@ -715,7 +715,7 @@ impl TerminalView {
                     .children((!has_value).then(|| {
                         div()
                             .truncate()
-                            .text_size(px(11.0))
+                            .text_size(px(12.5))
                             .text_color(muted)
                             .child(active_mode.placeholder())
                             .into_any_element()
@@ -738,7 +738,7 @@ impl TerminalView {
                     .children((input_mode != Some(active_mode) && has_value).then(|| {
                         div()
                             .truncate()
-                            .text_size(px(11.0))
+                            .text_size(px(12.5))
                             .text_color(text)
                             .child(input_text.to_string())
                             .into_any_element()
@@ -892,7 +892,6 @@ impl TerminalView {
         let preview_error = self.agent_git_panel.preview_error.clone();
         let preview_diff_lines = self.agent_git_panel.preview_diff_lines.clone();
         let preview_history = self.agent_git_panel.preview_history.clone();
-        let project_history = self.agent_git_panel.project_history.clone();
         let branches = self.agent_git_panel.branches.clone();
         let stashes = self.agent_git_panel.stashes.clone();
         let input_mode = self.agent_git_panel_input_mode;
@@ -915,7 +914,7 @@ impl TerminalView {
             div()
                 .px(px(10.0))
                 .py(px(12.0))
-                .text_size(px(11.0))
+                .text_size(px(12.5))
                 .text_color(muted)
                 .child("Loading git changes...")
                 .into_any_element()
@@ -923,7 +922,7 @@ impl TerminalView {
             div()
                 .px(px(10.0))
                 .py(px(12.0))
-                .text_size(px(11.0))
+                .text_size(px(12.5))
                 .text_color(muted)
                 .child(error)
                 .into_any_element()
@@ -934,7 +933,7 @@ impl TerminalView {
                     div()
                         .px(px(10.0))
                         .py(px(10.0))
-                        .text_size(px(11.0))
+                        .text_size(px(12.5))
                         .text_color(muted)
                         .child("No files match the current filter.")
                         .into_any_element(),
@@ -995,7 +994,7 @@ impl TerminalView {
                         .child(
                             div()
                                 .px(px(2.0))
-                                .text_size(px(10.0))
+                                .text_size(px(11.5))
                                 .text_color(muted)
                                 .child("Branches"),
                         )
@@ -1053,7 +1052,7 @@ impl TerminalView {
                         .child(
                             div()
                                 .px(px(2.0))
-                                .text_size(px(10.0))
+                                .text_size(px(11.5))
                                 .text_color(muted)
                                 .child("Stashes"),
                         )
@@ -1070,7 +1069,7 @@ impl TerminalView {
                                         .flex_1()
                                         .min_w(px(0.0))
                                         .truncate()
-                                        .text_size(px(10.0))
+                                        .text_size(px(11.5))
                                         .text_color(text)
                                         .child(format!("{} {}", stash.name, stash.summary)),
                                 )
@@ -1123,33 +1122,7 @@ impl TerminalView {
                         .into_any_element(),
                 );
             }
-            if selected_repo_path.is_none() && !project_history.is_empty() {
-                sections.push(
-                    div()
-                        .px(px(8.0))
-                        .pb(px(8.0))
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.0))
-                        .child(
-                            div()
-                                .px(px(2.0))
-                                .text_size(px(10.0))
-                                .text_color(muted)
-                                .child("Recent commits"),
-                        )
-                        .children(project_history.iter().take(8).map(|entry| {
-                            div()
-                                .px(px(2.0))
-                                .truncate()
-                                .text_size(px(10.0))
-                                .text_color(text)
-                                .child(entry.summary.clone())
-                                .into_any_element()
-                        }))
-                        .into_any_element(),
-                );
-            }
+
             div()
                 .w_full()
                 .flex()
@@ -1206,7 +1179,7 @@ impl TerminalView {
                                 .flex_1()
                                 .min_w(px(0.0))
                                 .truncate()
-                                .text_size(px(11.0))
+                                .text_size(px(12.5))
                                 .text_color(muted)
                                 .child(change_summary),
                         )
@@ -1306,7 +1279,7 @@ impl TerminalView {
                                         .flex_1()
                                         .min_w(px(0.0))
                                         .truncate()
-                                        .text_size(px(10.0))
+                                        .text_size(px(11.5))
                                         .text_color(text)
                                         .child(repo_name),
                                 )
@@ -1712,7 +1685,7 @@ impl TerminalView {
                                                                     .flex_1()
                                                                     .min_w(px(0.0))
                                                                     .truncate()
-                                                                    .text_size(px(9.5))
+                                                                    .text_size(px(11.0))
                                                                     .text_color(muted)
                                                                     .child(detail)
                                                             })),
@@ -1722,7 +1695,7 @@ impl TerminalView {
                                     .child(
                                         div()
                                             .flex_none()
-                                            .text_size(px(9.5))
+                                            .text_size(px(11.0))
                                             .text_color(muted)
                                             .child(age),
                                     ),
@@ -1755,7 +1728,7 @@ impl TerminalView {
             div()
                 .px(px(10.0))
                 .py(px(8.0))
-                .text_size(px(11.0))
+                .text_size(px(12.5))
                 .text_color(muted)
                 .child(message)
                 .into_any_element()
@@ -1935,7 +1908,7 @@ impl TerminalView {
                                             .then(|| {
                                                 div()
                                                     .truncate()
-                                                    .text_size(px(11.0))
+                                                    .text_size(px(12.5))
                                                     .text_color(muted)
                                                     .child("Search history")
                                                     .into_any_element()
@@ -1951,7 +1924,7 @@ impl TerminalView {
                                             .then(|| {
                                                 div()
                                                     .truncate()
-                                                    .text_size(px(11.0))
+                                                    .text_size(px(12.5))
                                                     .text_color(text)
                                                     .child(
                                                         self.agent_sidebar_search_input
@@ -2017,7 +1990,7 @@ impl TerminalView {
                         .gap(px(6.0))
                         .child(
                             div()
-                                .text_size(px(9.5))
+                                .text_size(px(11.0))
                                 .text_color(muted)
                                 .child(if show_filtered_history {
                                     "Search Results"
@@ -2053,7 +2026,7 @@ impl TerminalView {
                                 }))
                                 .child(
                                     div()
-                                        .text_size(px(9.5))
+                                        .text_size(px(11.0))
                                         .text_color(muted)
                                         .child(history_summary),
                                 ),
