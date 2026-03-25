@@ -6,6 +6,32 @@ impl TerminalView {
         self.agent_git_panel_input_mode = None;
         self.agent_git_panel_input.clear();
         self.agent_git_panel_branch_dropdown_open = false;
+        self.agent_git_panel_poll_task = None;
+    }
+
+    pub(in super::super) fn start_agent_git_panel_poll(&mut self, cx: &mut Context<Self>) {
+        if self.agent_git_panel_poll_task.is_some() {
+            return;
+        }
+        let task = cx.spawn(async move |this, cx: &mut AsyncApp| loop {
+            smol::Timer::after(std::time::Duration::from_secs(3)).await;
+            let still_open = cx
+                .update(|cx| {
+                    this.update(cx, |view, cx| {
+                        if view.agent_git_panel.open {
+                            view.refresh_agent_git_panel(cx);
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                })
+                .unwrap_or(false);
+            if !still_open {
+                break;
+            }
+        });
+        self.agent_git_panel_poll_task = Some(task);
     }
 
     pub(in super::super) fn cancel_agent_git_panel_input(&mut self, cx: &mut Context<Self>) {
@@ -278,7 +304,10 @@ impl TerminalView {
         };
 
         self.agent_git_panel.open = true;
-        self.agent_git_panel.loading = true;
+        let show_loading = self.agent_git_panel.repo_root.is_none();
+        if show_loading {
+            self.agent_git_panel.loading = true;
+        }
         self.agent_git_panel.error = None;
         cx.notify();
 
@@ -346,6 +375,7 @@ impl TerminalView {
         })
         .detach();
         let _ = label;
+        self.start_agent_git_panel_poll(cx);
     }
 
     pub(in super::super) fn clear_agent_git_panel_preview(&mut self) {

@@ -125,15 +125,15 @@ impl TerminalView {
 
         div()
             .flex_none()
-            .h(px(14.0))
-            .px(px(4.0))
+            .h(px(22.0))
+            .px(px(8.0))
             .flex()
             .items_center()
             .justify_center()
             .border_1()
             .border_color(border)
             .bg(bg)
-            .text_size(px(10.5))
+            .text_size(px(12.0))
             .text_color(badge_text)
             .child(label.to_ascii_lowercase())
             .into_any_element()
@@ -148,15 +148,15 @@ impl TerminalView {
         let label: SharedString = label.into();
         div()
             .flex_none()
-            .h(px(14.0))
-            .px(px(4.0))
+            .h(px(22.0))
+            .px(px(8.0))
             .flex()
             .items_center()
             .justify_center()
             .border_1()
             .border_color(border)
             .bg(bg)
-            .text_size(px(8.5))
+            .text_size(px(12.0))
             .text_color(text)
             .child(label)
             .into_any_element()
@@ -1183,6 +1183,24 @@ impl TerminalView {
                                         )
                                         .child(Self::render_agent_sidebar_chip(
                                             "refresh", border, input_bg, text,
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .cursor_pointer()
+                                        .on_mouse_down(
+                                            MouseButton::Left,
+                                            cx.listener(|view, _event, _window, cx| {
+                                                view.run_agent_git_mutation(
+                                                    vec!["push".to_string()],
+                                                    "Pushed to remote",
+                                                    cx,
+                                                );
+                                                cx.stop_propagation();
+                                            }),
+                                        )
+                                        .child(Self::render_agent_sidebar_chip(
+                                            "push", border, input_bg, info,
                                         )),
                                 )
                                 .child(
