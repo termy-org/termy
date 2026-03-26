@@ -2,6 +2,9 @@ use super::*;
 
 const AGENT_SIDEBAR_MIN_WIDTH: f32 = 180.0;
 const AGENT_SIDEBAR_MAX_WIDTH: f32 = 500.0;
+pub(super) const AGENT_GIT_PANEL_DEFAULT_WIDTH: f32 = 320.0;
+const AGENT_GIT_PANEL_MIN_WIDTH: f32 = 220.0;
+const AGENT_GIT_PANEL_MAX_WIDTH: f32 = 600.0;
 const AGENT_SIDEBAR_UNAVAILABLE_MESSAGE: &str =
     "Agent sidebar is currently unavailable on Windows builds.";
 
@@ -44,6 +47,10 @@ pub(super) struct AgentThread;
 
 pub(super) fn clamp_agent_sidebar_width(width: f32) -> f32 {
     width.clamp(AGENT_SIDEBAR_MIN_WIDTH, AGENT_SIDEBAR_MAX_WIDTH)
+}
+
+pub(super) fn clamp_agent_git_panel_width(width: f32) -> f32 {
+    width.clamp(AGENT_GIT_PANEL_MIN_WIDTH, AGENT_GIT_PANEL_MAX_WIDTH)
 }
 
 impl TerminalView {
@@ -128,6 +135,8 @@ impl TerminalView {
     pub(super) fn delete_agent_project(&mut self, _project_id: &str) -> Result<usize, String> {
         Err(AGENT_SIDEBAR_UNAVAILABLE_MESSAGE.to_string())
     }
+
+    pub(in super::super) fn capture_agent_session_id_for_tab(&mut self, _index: usize) {}
 
     pub(super) fn agent_thread_archive_snapshot_for_tab(
         &self,
