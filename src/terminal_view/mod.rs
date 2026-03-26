@@ -2439,7 +2439,7 @@ impl TerminalView {
         TerminalContentRect::new(
             0.0,
             0.0,
-            viewport_width - self.terminal_left_sidebar_width(),
+            viewport_width - self.terminal_left_sidebar_width() - self.terminal_right_panel_width(),
             viewport_height - self.terminal_content_top_inset(),
         )
     }

@@ -55,6 +55,10 @@ impl TerminalView {
         self.tab_strip_sidebar_width()
     }
 
+    pub(in super::super) fn terminal_right_panel_width(&self) -> f32 {
+        0.0
+    }
+
     pub(super) fn should_render_agent_sidebar(&self) -> bool {
         false
     }

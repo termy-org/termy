@@ -285,11 +285,12 @@ impl TerminalView {
             .tabs
             .get(self.active_tab)
             .map_or(0, |tab| tab.panes.len());
+        let total_sidebar_width = sidebar_width + self.terminal_right_panel_width();
         let (cols, rows) = Self::terminal_grid_size_for_pane_count(
             active_pane_count,
             viewport_width,
             viewport_height,
-            sidebar_width,
+            total_sidebar_width,
             content_top_inset,
             self.padding_x,
             self.padding_y,
@@ -319,7 +320,7 @@ impl TerminalView {
                         tab.panes.len(),
                         viewport_width,
                         viewport_height,
-                        sidebar_width,
+                        total_sidebar_width,
                         content_top_inset,
                         self.padding_x,
                         self.padding_y,
