@@ -726,11 +726,7 @@ impl TerminalView {
             );
         } else {
             self.run_agent_git_mutation(
-                vec![
-                    "add".to_string(),
-                    "--".to_string(),
-                    entry.repo_path.clone(),
-                ],
+                vec!["add".to_string(), "--".to_string(), entry.repo_path.clone()],
                 "Staged file",
                 cx,
             );
