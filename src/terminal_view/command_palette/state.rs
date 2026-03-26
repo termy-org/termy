@@ -23,6 +23,7 @@ pub(in super::super) enum CommandPaletteMode {
 pub(in super::super) enum AiAgentPreset {
     Codex,
     Claude,
+    Copilot,
     Cursor,
     Kiro,
     OpenCode,
@@ -30,9 +31,10 @@ pub(in super::super) enum AiAgentPreset {
 }
 
 impl AiAgentPreset {
-    pub(super) const ALL: [Self; 6] = [
+    pub(super) const ALL: [Self; 7] = [
         Self::Codex,
         Self::Claude,
+        Self::Copilot,
         Self::Cursor,
         Self::Kiro,
         Self::OpenCode,
@@ -43,6 +45,7 @@ impl AiAgentPreset {
         match self {
             Self::Codex => "Codex",
             Self::Claude => "Claude",
+            Self::Copilot => "Copilot",
             Self::Cursor => "Cursor",
             Self::Kiro => "Kiro",
             Self::OpenCode => "OpenCode",
@@ -54,6 +57,7 @@ impl AiAgentPreset {
         match self {
             Self::Codex => "ai agent assistant codex openai code",
             Self::Claude => "ai agent assistant claude anthropic code",
+            Self::Copilot => "ai agent assistant copilot github code",
             Self::Cursor => "ai agent assistant cursor code",
             Self::Kiro => "ai agent assistant kiro amazon aws",
             Self::OpenCode => "ai agent assistant opencode open code",
@@ -65,6 +69,7 @@ impl AiAgentPreset {
         match self {
             Self::Codex => "codex",
             Self::Claude => "claude",
+            Self::Copilot => "copilot",
             Self::Cursor => "agent",
             Self::Kiro => "kiro-cli",
             Self::OpenCode => "opencode",
@@ -77,6 +82,7 @@ impl AiAgentPreset {
             .arg(self.launch_command())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
+            .env("PATH", resolve_user_path())
             .status()
             .is_ok_and(|s| s.success())
     }
@@ -85,6 +91,7 @@ impl AiAgentPreset {
         match self {
             Self::Codex => "CX",
             Self::Claude => "CL",
+            Self::Copilot => "CP",
             Self::Cursor => "CU",
             Self::Kiro => "KI",
             Self::OpenCode => "OC",
@@ -97,6 +104,9 @@ impl AiAgentPreset {
             Self::Codex => concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/openai.svg"),
             Self::Claude => {
                 concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/claude.svg")
+            }
+            Self::Copilot => {
+                concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/copilot.svg")
             }
             Self::Cursor => {
                 concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/cursor.svg")
@@ -780,6 +790,38 @@ pub(super) fn command_palette_next_scroll_y(
     } else {
         next_y
     }
+}
+
+/// Resolves the user's full login shell PATH, cached for the process lifetime.
+/// On macOS GUI apps launched from Finder/Dock, the process inherits a minimal
+/// PATH (`/usr/bin:/bin:/usr/sbin:/sbin`). This function runs the user's login
+/// shell to get their real PATH including `~/.local/bin`, `~/.cargo/bin`,
+/// nvm paths, homebrew, etc.
+fn resolve_user_path() -> String {
+    use std::sync::OnceLock;
+    static CACHED: OnceLock<String> = OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            resolve_user_path_from_shell()
+                .unwrap_or_else(|| std::env::var("PATH").unwrap_or_default())
+        })
+        .clone()
+}
+
+fn resolve_user_path_from_shell() -> Option<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let output = std::process::Command::new(&shell)
+        .args(["-l", "-i", "-c", "echo $PATH"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() { None } else { Some(path) }
 }
 
 #[cfg(test)]

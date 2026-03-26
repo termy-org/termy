@@ -1764,16 +1764,33 @@ impl TerminalView {
                                         .child("☰")
                                         .on_mouse_down(
                                             MouseButton::Left,
-                                            cx.listener(|view, _event, _window, cx| {
-                                                view.agent_sidebar_open = false;
-                                                view.agent_sidebar_search_active = false;
-                                                view.cancel_rename_agent_project(cx);
-                                                view.cancel_rename_agent_thread(cx);
-                                                view.hovered_agent_thread_id = None;
-                                                view.close_agent_git_panel();
-                                                view.sync_persisted_agent_workspace();
-                                                cx.notify();
+                                            cx.listener(|_view, _event, _window, cx| {
                                                 cx.stop_propagation();
+                                                cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+                                                    let confirmed = smol::unblock(|| {
+                                                        termy_native_sdk::confirm(
+                                                            "Hide Threads",
+                                                            "Are you sure you want to hide the Threads sidebar?",
+                                                        )
+                                                    })
+                                                    .await;
+                                                    if !confirmed {
+                                                        return;
+                                                    }
+                                                    let _ = cx.update(|cx| {
+                                                        this.update(cx, |view, cx| {
+                                                            view.agent_sidebar_open = false;
+                                                            view.agent_sidebar_search_active = false;
+                                                            view.cancel_rename_agent_project(cx);
+                                                            view.cancel_rename_agent_thread(cx);
+                                                            view.hovered_agent_thread_id = None;
+                                                            view.close_agent_git_panel();
+                                                            view.sync_persisted_agent_workspace();
+                                                            cx.notify();
+                                                        })
+                                                    });
+                                                })
+                                                .detach();
                                             }),
                                         ),
                                 ),

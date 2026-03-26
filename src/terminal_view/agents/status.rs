@@ -333,6 +333,7 @@ impl TerminalView {
                 }
             }
             command_palette::AiAgentPreset::Cursor => {}
+            command_palette::AiAgentPreset::Copilot => {}
             command_palette::AiAgentPreset::Kiro => {}
         }
 
@@ -352,6 +353,7 @@ impl TerminalView {
             }
             command_palette::AiAgentPreset::Claude => None,
             command_palette::AiAgentPreset::Cursor => None,
+            command_palette::AiAgentPreset::Copilot => None,
             command_palette::AiAgentPreset::OpenCode => None,
             command_palette::AiAgentPreset::Codex => None,
             command_palette::AiAgentPreset::Kiro => None,
