@@ -520,9 +520,10 @@ impl Terminal {
         }
     }
 
-    fn drain_events(&self, host: &mut impl TerminalReplyHost) -> Vec<TerminalEvent> {
+    /// Drain pending events. Returns collected events and whether more remain.
+    fn drain_events(&self, host: &mut impl TerminalReplyHost) -> (Vec<TerminalEvent>, bool) {
         match self {
-            Self::Tmux(_) => Vec::new(),
+            Self::Tmux(_) => (Vec::new(), false),
             Self::Native(terminal) => terminal
                 .lock()
                 .map(|terminal| terminal.drain_events(host))
@@ -3637,9 +3638,12 @@ impl TerminalView {
             for pane_index in 0..self.tabs[index].panes.len() {
                 let pane_id = self.tabs[index].panes[pane_index].id.clone();
                 let pane_is_active = pane_id == active_pane_id;
-                let events = self.tabs[index].panes[pane_index]
+                let (events, has_more) = self.tabs[index].panes[pane_index]
                     .terminal
                     .drain_events(&mut reply_host);
+                if has_more {
+                    should_redraw = true;
+                }
 
                 for event in events {
                     match event {

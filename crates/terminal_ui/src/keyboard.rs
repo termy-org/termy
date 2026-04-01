@@ -165,6 +165,11 @@ fn basic_keystroke_to_input(
             let ctrl_char = (c.to_ascii_lowercase() as u8) - b'a' + 1;
             return Some(vec![ctrl_char]);
         }
+        // Handle CTRL with @, [, \, ], ^, _ (standard ASCII control range)
+        if matches!(c, '@'..='_') {
+            let ctrl_char = (c as u8) & 0x1F;
+            return Some(vec![ctrl_char]);
+        }
     }
 
     if !modifiers.control
@@ -942,6 +947,24 @@ mod tests {
                 true,
             ),
             Some(vec![0x14])
+        );
+    }
+
+    #[test]
+    fn legacy_mode_ctrl_right_bracket() {
+        let modifiers = Modifiers {
+            control: true,
+            ..Modifiers::default()
+        };
+
+        assert_eq!(
+            keystroke_to_input(
+                &keystroke("]", None, modifiers),
+                TerminalKeyEventKind::Press,
+                TerminalKeyboardMode::default(),
+                true,
+            ),
+            Some(vec![0x1D])
         );
     }
 

@@ -421,6 +421,9 @@ struct TerminalGridPaintCache {
     /// Avoids redundant float comparisons when many cells share the same default background.
     /// Cleared whenever the style key changes.
     color_cache: HashMap<[u32; 4], Option<Hsla>>,
+    /// Cached Font objects, rebuilt only when style_key changes.
+    cached_font_normal: Option<Font>,
+    cached_font_bold: Option<Font>,
 }
 
 impl TerminalGridPaintCache {
@@ -432,18 +435,19 @@ impl TerminalGridPaintCache {
         self.last_hovered_link_range = None;
         self.dirty_col_ranges.clear();
         self.color_cache.clear();
+        self.cached_font_normal = None;
+        self.cached_font_bold = None;
     }
 
     fn ensure_row_capacity(&mut self, row_count: usize) {
         if self.row_ops.len() != row_count {
             self.row_ops = vec![CachedRowPaintOps::default(); row_count];
         }
-        // dirty_col_ranges is per-pass scratch — resize and reset every frame
-        if self.dirty_col_ranges.len() != row_count {
-            self.dirty_col_ranges = vec![None; row_count];
-        } else {
-            self.dirty_col_ranges.fill(None);
-        }
+        // dirty_col_ranges is per-pass scratch — resize and reset every frame.
+        // Use resize + fill to reuse the existing allocation when row count is stable.
+        self.dirty_col_ranges.resize(row_count, None);
+        self.dirty_col_ranges.truncate(row_count);
+        self.dirty_col_ranges.fill(None);
     }
 }
 
@@ -2082,19 +2086,30 @@ impl TerminalGrid {
 
     fn paint_with_row_cache(&self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         let origin = bounds.origin;
-        let terminal_font_features = FontFeatures::disable_ligatures();
-        let font_normal = Font {
-            family: self.font_family.clone(),
-            features: terminal_font_features.clone(),
-            weight: FontWeight::NORMAL,
-            ..Default::default()
-        };
-        let font_bold = Font {
-            family: self.font_family.clone(),
-            features: terminal_font_features,
-            weight: FontWeight::BOLD,
-            ..Default::default()
-        };
+
+        let mut cache = self.paint_cache.0.borrow_mut();
+        cache.ensure_row_capacity(self.rows);
+        let (full_repaint, style_changed, dirty_rows) = self.dirty_rows_for_pass(&mut cache);
+
+        // Rebuild cached Font objects only when the style (font family) changes.
+        if style_changed || cache.cached_font_normal.is_none() {
+            let terminal_font_features = FontFeatures::disable_ligatures();
+            cache.cached_font_normal = Some(Font {
+                family: self.font_family.clone(),
+                features: terminal_font_features.clone(),
+                weight: FontWeight::NORMAL,
+                ..Default::default()
+            });
+            cache.cached_font_bold = Some(Font {
+                family: self.font_family.clone(),
+                features: terminal_font_features,
+                weight: FontWeight::BOLD,
+                ..Default::default()
+            });
+        }
+        let font_normal = cache.cached_font_normal.clone().unwrap();
+        let font_bold = cache.cached_font_bold.clone().unwrap();
+
         let cursor_fg = Hsla {
             h: 0.0,
             s: 0.0,
@@ -2108,9 +2123,6 @@ impl TerminalGrid {
             a: 1.0,
         };
 
-        let mut cache = self.paint_cache.0.borrow_mut();
-        cache.ensure_row_capacity(self.rows);
-        let (full_repaint, style_changed, dirty_rows) = self.dirty_rows_for_pass(&mut cache);
         self.rebuild_cached_rows_for_pass(
             &mut cache,
             full_repaint,
