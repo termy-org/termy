@@ -797,7 +797,8 @@ impl Terminal {
     }
 
     /// Drain pending Alacritty events, writing reply bytes back to the PTY when required.
-    pub fn drain_events(&self, host: &mut impl TerminalReplyHost) -> Vec<TerminalEvent> {
+    /// Returns the collected events and whether more events remain (batch limit hit).
+    pub fn drain_events(&self, host: &mut impl TerminalReplyHost) -> (Vec<TerminalEvent>, bool) {
         drain_runtime_events(
             &self.events_rx,
             self.size,
@@ -908,6 +909,12 @@ impl Terminal {
     }
 }
 
+/// Maximum number of alacritty events to drain in a single frame. Prevents
+/// massive output (e.g. `cat huge_file`) from blocking the render thread.
+const EVENT_DRAIN_BATCH_LIMIT: usize = 2048;
+
+/// Drain pending events, returning the collected terminal events and whether
+/// the batch limit was hit (indicating more events remain).
 fn drain_runtime_events<T: EventListener>(
     events_rx: &Receiver<AlacEvent>,
     size: TerminalSize,
@@ -915,9 +922,10 @@ fn drain_runtime_events<T: EventListener>(
     query_colors: TerminalQueryColors,
     host: &mut impl TerminalReplyHost,
     mut write_reply: impl FnMut(&[u8]),
-) -> Vec<TerminalEvent> {
+) -> (Vec<TerminalEvent>, bool) {
     let fallback_live_colors = alacritty_terminal::term::color::Colors::default();
     let mut events = Vec::new();
+    let mut drained = 0usize;
 
     while let Ok(event) = events_rx.try_recv() {
         let response = match &event {
@@ -935,9 +943,14 @@ fn drain_runtime_events<T: EventListener>(
         if let Some(event) = terminal_event_from_alacritty(event) {
             events.push(event);
         }
+
+        drained += 1;
+        if drained >= EVENT_DRAIN_BATCH_LIMIT {
+            return (events, true);
+        }
     }
 
-    events
+    (events, false)
 }
 
 fn terminal_event_from_alacritty(event: AlacEvent) -> Option<TerminalEvent> {
@@ -1167,7 +1180,7 @@ mod tests {
         };
         let mut replies = Vec::new();
 
-        let events = drain_runtime_events(
+        let (events, _has_more) = drain_runtime_events(
             &events_rx,
             test_terminal_size(),
             &term,

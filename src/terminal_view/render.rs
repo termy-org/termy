@@ -358,27 +358,22 @@ fn merge_pane_render_rows(
         return existing.clone();
     }
 
-    let mut touched_rows = vec![None; rows];
+    // Clone the outer vec of Arc pointers (cheap refcount bumps), then use
+    // Arc::make_mut on touched rows to avoid cloning the inner Vec when the
+    // Arc has a single owner.
+    let mut merged_rows: Vec<PaneRenderRow> = existing.as_ref().clone();
+    let mut any_touched = false;
+
     for (row, col, cell) in updates {
         if row >= rows || col >= cols {
             continue;
         }
-
-        let row_cells = touched_rows[row].get_or_insert_with(|| existing[row].as_ref().clone());
-        row_cells[col] = cell;
+        any_touched = true;
+        Arc::make_mut(&mut merged_rows[row])[col] = cell;
     }
 
-    if touched_rows.iter().all(Option::is_none) {
+    if !any_touched {
         return existing.clone();
-    }
-
-    let mut merged_rows = Vec::with_capacity(rows);
-    for row in 0..rows {
-        if let Some(next_row) = touched_rows[row].take() {
-            merged_rows.push(Arc::new(next_row));
-        } else {
-            merged_rows.push(existing[row].clone());
-        }
     }
 
     Arc::new(merged_rows)
@@ -649,23 +644,25 @@ impl TerminalView {
         context: PaneCellBuildContext<'_>,
     ) -> PaneRenderCells {
         let (default_fg, default_bg) = resolved_default_cell_colors(context);
-        let mut rows_cache = Vec::with_capacity(rows);
+        let default_cell = CellRenderInfo {
+            col: 0,
+            row: 0,
+            char: ' ',
+            fg: default_fg.into(),
+            bg: default_bg.into(),
+            uses_terminal_default_bg: true,
+            bold: false,
+            render_text: false,
+            selected: false,
+            search_current: false,
+            search_match: false,
+        };
+        let mut rows_cache: Vec<Vec<CellRenderInfo>> = Vec::with_capacity(rows);
         for row in 0..rows {
-            let mut row_cells = Vec::with_capacity(cols);
-            for col in 0..cols {
-                row_cells.push(CellRenderInfo {
-                    col,
-                    row,
-                    char: ' ',
-                    fg: default_fg.into(),
-                    bg: default_bg.into(),
-                    uses_terminal_default_bg: true,
-                    bold: false,
-                    render_text: false,
-                    selected: false,
-                    search_current: false,
-                    search_match: false,
-                });
+            let mut row_cells = vec![default_cell.clone(); cols];
+            for (col, cell) in row_cells.iter_mut().enumerate() {
+                cell.col = col;
+                cell.row = row;
             }
             rows_cache.push(row_cells);
         }
