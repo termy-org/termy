@@ -759,9 +759,11 @@ impl TerminalView {
             }
 
             let patched_cell_count = updates.len();
-            // Move the Vec out of the thread-local to release the borrow.
-            // Cheaper than drain().collect() which allocates a new Vec and copies.
-            let owned_updates = std::mem::take(&mut *updates);
+            // Swap the Vec out of the thread-local to release the borrow.
+            // Preserves the thread-local's capacity so subsequent calls
+            // don't re-grow from zero.
+            let cap = updates.capacity();
+            let owned_updates = std::mem::replace(&mut *updates, Vec::with_capacity(cap));
             Some((patched_cell_count, owned_updates))
         });
 
