@@ -31,11 +31,15 @@ impl TerminalView {
     }
 
     pub(crate) fn reset_tab_rename_state(&mut self) -> bool {
-        Self::reset_tab_rename_fields(
+        let changed = Self::reset_tab_rename_fields(
             &mut self.renaming_tab,
             &mut self.rename_input,
             &mut self.inline_input_selecting,
-        )
+        );
+        if changed {
+            self.reset_cursor_blink_phase();
+        }
+        changed
     }
 
     pub(crate) fn reset_tab_drag_state(&mut self) -> bool {

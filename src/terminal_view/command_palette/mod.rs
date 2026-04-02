@@ -664,6 +664,7 @@ impl TerminalView {
 
         self.command_palette.close();
         self.inline_input_selecting = false;
+        self.reset_cursor_blink_phase();
         self.notify_for_command_palette_event(CommandPaletteNotifyEvent::OpenCloseTransition, cx);
     }
 

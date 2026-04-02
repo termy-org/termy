@@ -1761,9 +1761,11 @@ impl TerminalGrid {
         self.collect_row_draw_ops_into(row_cells, cursor_fg, highlight_fg, scratch_ops);
         self.build_row_background_spans_into(row_cells, color_cache, scratch_bg);
         let ops_len = scratch_ops.len();
+        let bg_cap = scratch_bg.capacity();
+        let ops_cap = scratch_ops.capacity();
         CachedRowPaintOps {
-            background_spans: std::mem::take(scratch_bg),
-            draw_ops: std::mem::take(scratch_ops),
+            background_spans: std::mem::replace(scratch_bg, Vec::with_capacity(bg_cap)),
+            draw_ops: std::mem::replace(scratch_ops, Vec::with_capacity(ops_cap)),
             shaped_lines: vec![None; ops_len],
         }
     }
@@ -2057,13 +2059,26 @@ impl TerminalGrid {
         cursor_fg: Hsla,
         highlight_fg: Hsla,
     ) {
-        // Swap the previous row ops out instead of deep-cloning. This avoids
-        // copying every CachedRowPaintOps (with its Vecs of draw ops, background
-        // spans, and ShapedLine objects) on every paint pass. We replace with a
-        // correctly-sized default vec so rebuild_row can write into slots.
+        // Build a snapshot of previous row ops for ShapedLine reuse, without
+        // deep-cloning. For full repaints every slot will be rebuilt, so we swap
+        // the entire vec with defaults. For partial repaints we only take the
+        // dirty-row entries out of the cache so non-dirty rows keep their
+        // existing cached ops (GPUI clears pixels each frame and repaints every
+        // row from cache.row_ops, so wiping non-dirty rows would blank them).
         let previous_row_ops = if !style_changed && !cache.row_ops.is_empty() {
-            let replacement = vec![CachedRowPaintOps::default(); self.rows];
-            Some(std::mem::replace(&mut cache.row_ops, replacement))
+            if full_repaint {
+                let replacement = vec![CachedRowPaintOps::default(); self.rows];
+                Some(std::mem::replace(&mut cache.row_ops, replacement))
+            } else {
+                let len = cache.row_ops.len();
+                let mut previous = vec![CachedRowPaintOps::default(); len];
+                for &row in dirty_rows {
+                    if row < len {
+                        previous[row] = std::mem::take(&mut cache.row_ops[row]);
+                    }
+                }
+                Some(previous)
+            }
         } else {
             None
         };
