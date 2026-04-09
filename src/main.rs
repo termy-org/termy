@@ -192,7 +192,7 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
                     })
                     .unwrap_or(true)
             });
-            view
+            cx.new(|cx| gpui_component::Root::new(view.clone(), window, cx))
         },
     )
     .map(|_| ())
@@ -374,7 +374,7 @@ fn main() {
     env_logger::init();
 
     let (deeplink_tx, deeplink_rx) = flume::unbounded::<Vec<String>>();
-    let application = Application::new();
+    let application = Application::new().with_assets(gpui_component_assets::Assets);
 
     // On Windows, URL scheme launches pass the URL as a command-line argument
     // (argv[1]) instead of going through Application::on_open_urls(). Enqueue
@@ -404,6 +404,7 @@ fn main() {
         #[cfg(debug_assertions)]
         termy_native_sdk::set_dock_icon_from_png(include_bytes!("../assets/termy_icon@1024px.png"));
 
+        gpui_component::init(cx);
         spawn_deeplink_listener(cx, deeplink_rx);
 
         cx.on_action(|_: &OpenConfig, _cx| {

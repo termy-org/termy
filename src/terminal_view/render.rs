@@ -2010,7 +2010,7 @@ impl TerminalView {
 
     pub(super) fn render_overlay_layer(
         &mut self,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let now = Instant::now();
@@ -2222,6 +2222,9 @@ impl TerminalView {
             .children(debug_overlay)
             .children(toast_overlay)
             .children(link_preview_overlay)
+            .children(gpui_component::Root::render_sheet_layer(window, cx))
+            .children(gpui_component::Root::render_dialog_layer(window, cx))
+            .children(gpui_component::Root::render_notification_layer(window, cx))
             .into_any_element()
     }
 }

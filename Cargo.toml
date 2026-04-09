@@ -129,3 +129,8 @@ raw-window-handle = "0.6"
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1"
+
+[patch.crates-io]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "83de8a25e0ef71a8d762a148459bc863adaeb7e3", package = "gpui" }
+gpui-component = { path = "crates/vendor/gpui-component" }
+gpui-component-assets = { path = "crates/vendor/gpui-component-assets" }
