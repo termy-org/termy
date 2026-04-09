@@ -15,7 +15,7 @@ mod text_input;
 mod theme_store;
 mod ui;
 
-pub use termy_terminal_ui::gpui;
+pub use termy_terminal_ui::{alacritty_terminal, gpui};
 
 use commands::{OpenConfig, OpenSettings};
 use deeplink::{DeepLinkArgument, DeepLinkRoute};

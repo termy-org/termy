@@ -11,6 +11,7 @@ mod render_metrics;
 mod runtime;
 mod tmux;
 
+pub extern crate alacritty_terminal;
 pub extern crate gpui;
 
 // Intentionally re-exported for the app renderer adapter boundary. These types are the

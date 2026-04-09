@@ -1,6 +1,6 @@
 use super::*;
-use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Line};
+use crate::alacritty_terminal::grid::Dimensions;
+use crate::alacritty_terminal::index::{Column, Line};
 use serde_json::{Value, json};
 use std::fs;
 use std::io::Write;
@@ -56,7 +56,7 @@ struct PersistedNativeWorkspaceWriteRequest {
 
 impl TerminalView {
     fn extract_persisted_buffer_line(
-        grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
+        grid: &crate::alacritty_terminal::grid::Grid<crate::alacritty_terminal::term::cell::Cell>,
         line_idx: i32,
     ) -> Option<String> {
         let line = Line(line_idx);

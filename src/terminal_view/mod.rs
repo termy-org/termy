@@ -8,7 +8,7 @@ use crate::config::{
 };
 use crate::keybindings;
 use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
-use alacritty_terminal::term::cell::Flags;
+use crate::alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
 use crate::gpui::AppContext;
 use crate::gpui::{
@@ -682,7 +682,7 @@ impl Terminal {
 
     fn with_grid<R>(
         &self,
-        f: impl FnOnce(&alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>) -> R,
+        f: impl FnOnce(&crate::alacritty_terminal::grid::Grid<crate::alacritty_terminal::term::cell::Cell>) -> R,
     ) -> Option<R> {
         match self {
             Self::Tmux(terminal) => Some(terminal.with_term(|term| f(term.grid()))),
@@ -708,7 +708,7 @@ impl Terminal {
 
     fn for_each_renderable_cell(
         &self,
-        mut visitor: impl FnMut(usize, i32, usize, &alacritty_terminal::term::cell::Cell),
+        mut visitor: impl FnMut(usize, i32, usize, &crate::alacritty_terminal::term::cell::Cell),
     ) -> Option<usize> {
         macro_rules! visit_term_cells {
             ($term:expr) => {{
@@ -1757,9 +1757,9 @@ impl TerminalView {
         }
     }
 
-    fn ansi_rgb_from_rgba(color: crate::gpui::Rgba) -> alacritty_terminal::vte::ansi::Rgb {
+    fn ansi_rgb_from_rgba(color: crate::gpui::Rgba) -> crate::alacritty_terminal::vte::ansi::Rgb {
         let to_u8 = |component: f32| (component.clamp(0.0, 1.0) * 255.0).round() as u8;
-        alacritty_terminal::vte::ansi::Rgb {
+        crate::alacritty_terminal::vte::ansi::Rgb {
             r: to_u8(color.r),
             g: to_u8(color.g),
             b: to_u8(color.b),

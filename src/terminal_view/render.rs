@@ -1,9 +1,9 @@
 use super::scrollbar as terminal_scrollbar;
 use super::*;
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle};
-use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
+use crate::alacritty_terminal::grid::Dimensions;
+use crate::alacritty_terminal::index::{Column, Line};
+use crate::alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
 use crate::gpui::prelude::FluentBuilder;
 use crate::gpui::{ElementInputHandler, canvas};
 use std::sync::Arc;
@@ -225,7 +225,7 @@ fn resolved_default_cell_colors(context: PaneCellBuildContext<'_>) -> (crate::gp
 }
 
 fn resolve_cell_colors(
-    cell_content: &alacritty_terminal::term::cell::Cell,
+    cell_content: &crate::alacritty_terminal::term::cell::Cell,
     context: PaneCellBuildContext<'_>,
 ) -> ResolvedCellColors {
     let mut fg_source = cell_content.fg;
@@ -541,7 +541,7 @@ impl TerminalView {
         col: usize,
         row: usize,
         term_line: i32,
-        cell_content: &alacritty_terminal::term::cell::Cell,
+        cell_content: &crate::alacritty_terminal::term::cell::Cell,
         context: PaneCellBuildContext<'_>,
     ) -> CellRenderInfo {
         let resolved_colors = resolve_cell_colors(cell_content, context);
@@ -3067,8 +3067,8 @@ mod tests {
         fg: AnsiColor,
         bg: AnsiColor,
         flags: Flags,
-    ) -> alacritty_terminal::term::cell::Cell {
-        let mut cell = alacritty_terminal::term::cell::Cell::default();
+    ) -> crate::alacritty_terminal::term::cell::Cell {
+        let mut cell = crate::alacritty_terminal::term::cell::Cell::default();
         cell.fg = fg;
         cell.bg = bg;
         cell.flags = flags;
@@ -3413,7 +3413,7 @@ mod tests {
         let rgb_background = resolve_cell_colors(
             &test_term_cell(
                 AnsiColor::Named(NamedColor::Foreground),
-                AnsiColor::Spec(alacritty_terminal::vte::ansi::Rgb {
+                AnsiColor::Spec(crate::alacritty_terminal::vte::ansi::Rgb {
                     r: 12,
                     g: 34,
                     b: 56,
@@ -3455,7 +3455,7 @@ mod tests {
         let rgb_background = resolve_cell_colors(
             &test_term_cell(
                 AnsiColor::Named(NamedColor::Foreground),
-                AnsiColor::Spec(alacritty_terminal::vte::ansi::Rgb {
+                AnsiColor::Spec(crate::alacritty_terminal::vte::ansi::Rgb {
                     r: 12,
                     g: 34,
                     b: 56,

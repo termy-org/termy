@@ -1,5 +1,5 @@
 use super::*;
-use alacritty_terminal::grid::Dimensions;
+use crate::alacritty_terminal::grid::Dimensions;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SearchKeyAction {
@@ -448,10 +448,10 @@ fn collect_search_line_texts(
 
 /// Extract text from a terminal grid line
 fn extract_line_text(
-    grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
+    grid: &crate::alacritty_terminal::grid::Grid<crate::alacritty_terminal::term::cell::Cell>,
     line_idx: i32,
 ) -> Option<String> {
-    use alacritty_terminal::index::{Column, Line};
+    use crate::alacritty_terminal::index::{Column, Line};
 
     let line = Line(line_idx);
     let cols = grid.columns();
