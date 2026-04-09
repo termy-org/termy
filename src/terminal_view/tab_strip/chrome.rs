@@ -144,10 +144,10 @@ pub(super) fn inclusive_width(start_x: f32, end_x: f32) -> f32 {
 }
 
 pub(super) fn resolve_tab_stroke_color(
-    tabbar_background: gpui::Rgba,
-    foreground: gpui::Rgba,
+    tabbar_background: crate::gpui::Rgba,
+    foreground: crate::gpui::Rgba,
     foreground_mix: f32,
-) -> gpui::Rgba {
+) -> crate::gpui::Rgba {
     super::super::resolve_chrome_stroke_color(tabbar_background, foreground, foreground_mix)
 }
 

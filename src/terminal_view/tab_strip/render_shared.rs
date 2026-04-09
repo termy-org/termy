@@ -284,7 +284,7 @@ impl TerminalView {
         }
     }
 
-    pub(super) fn render_tab_stroke(stroke: chrome::StrokeRect, color: gpui::Rgba) -> AnyElement {
+    pub(super) fn render_tab_stroke(stroke: chrome::StrokeRect, color: crate::gpui::Rgba) -> AnyElement {
         div()
             .absolute()
             .left(px(stroke.x))
@@ -297,7 +297,7 @@ impl TerminalView {
 
     pub(super) fn render_baseline_segments(
         layout: &chrome::TabChromeLayout,
-        tab_stroke_color: gpui::Rgba,
+        tab_stroke_color: crate::gpui::Rgba,
     ) -> Vec<AnyElement> {
         let mut elements = Vec::with_capacity(layout.baseline_strokes.len() + 1);
         for segment in &layout.baseline_strokes {
@@ -326,7 +326,7 @@ impl TerminalView {
 
     pub(super) fn render_stroke_segments(
         strokes: &[chrome::StrokeRect],
-        tab_stroke_color: gpui::Rgba,
+        tab_stroke_color: crate::gpui::Rgba,
     ) -> Vec<AnyElement> {
         strokes
             .iter()

@@ -48,18 +48,18 @@ impl MouseTrackedButton {
     }
 }
 
-fn is_mouse_reporting_bypass(modifiers: gpui::Modifiers) -> bool {
+fn is_mouse_reporting_bypass(modifiers: crate::gpui::Modifiers) -> bool {
     modifiers.shift
 }
 
 fn should_skip_mouse_reporting_for_bypass(
-    modifiers: gpui::Modifiers,
+    modifiers: crate::gpui::Modifiers,
     has_forwarded_press: bool,
 ) -> bool {
     is_mouse_reporting_bypass(modifiers) && !has_forwarded_press
 }
 
-fn terminal_mouse_modifiers(modifiers: gpui::Modifiers) -> TerminalMouseModifiers {
+fn terminal_mouse_modifiers(modifiers: crate::gpui::Modifiers) -> TerminalMouseModifiers {
     TerminalMouseModifiers {
         shift: modifiers.shift,
         alt: modifiers.alt,
@@ -169,7 +169,7 @@ impl TerminalView {
         mode: TerminalMouseMode,
         event_kind: TerminalMouseEventKind,
         cell: CellPos,
-        modifiers: gpui::Modifiers,
+        modifiers: crate::gpui::Modifiers,
     ) -> Option<Vec<u8>> {
         encode_mouse_report(
             mode,
@@ -187,7 +187,7 @@ impl TerminalView {
         pane_id: &str,
         event_kind: TerminalMouseEventKind,
         cell: CellPos,
-        modifiers: gpui::Modifiers,
+        modifiers: crate::gpui::Modifiers,
     ) -> MouseForwardOutcome {
         let Some(mode) = self.pane_mouse_mode(pane_id) else {
             return MouseForwardOutcome::NotHandled;
@@ -233,7 +233,7 @@ impl TerminalView {
                 col: target.col,
                 row: target.row,
             },
-            gpui::Modifiers::default(),
+            crate::gpui::Modifiers::default(),
         );
     }
 
@@ -678,7 +678,7 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::Modifiers;
+    use crate::gpui::Modifiers;
     use termy_terminal_ui::TerminalMouseMode;
 
     fn enabled_mode() -> TerminalMouseMode {

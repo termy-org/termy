@@ -2,16 +2,16 @@ use super::*;
 
 #[derive(Clone, Copy)]
 pub(crate) struct GitPanelTheme {
-    pub(crate) panel_bg: gpui::Rgba,
-    pub(crate) input_bg: gpui::Rgba,
-    pub(crate) selected_bg: gpui::Rgba,
-    pub(crate) border: gpui::Rgba,
-    pub(crate) text: gpui::Rgba,
-    pub(crate) muted: gpui::Rgba,
-    pub(crate) success: gpui::Rgba,
-    pub(crate) warning: gpui::Rgba,
-    pub(crate) danger: gpui::Rgba,
-    pub(crate) info: gpui::Rgba,
+    pub(crate) panel_bg: crate::gpui::Rgba,
+    pub(crate) input_bg: crate::gpui::Rgba,
+    pub(crate) selected_bg: crate::gpui::Rgba,
+    pub(crate) border: crate::gpui::Rgba,
+    pub(crate) text: crate::gpui::Rgba,
+    pub(crate) muted: crate::gpui::Rgba,
+    pub(crate) success: crate::gpui::Rgba,
+    pub(crate) warning: crate::gpui::Rgba,
+    pub(crate) danger: crate::gpui::Rgba,
+    pub(crate) info: crate::gpui::Rgba,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -125,7 +125,7 @@ impl AgentGitPanelEntry {
         self.status.trim().to_lowercase().into()
     }
 
-    pub(crate) fn status_color(&self, theme: &GitPanelTheme) -> gpui::Rgba {
+    pub(crate) fn status_color(&self, theme: &GitPanelTheme) -> crate::gpui::Rgba {
         if self.is_untracked() || self.status.contains('A') {
             theme.success
         } else if self.status.contains('D') || self.status.contains('U') {
@@ -223,20 +223,20 @@ pub(crate) struct AgentThreadStatusPresentation {
 pub(crate) struct AgentSidebarTooltip {
     title: &'static str,
     detail: &'static str,
-    bg: gpui::Rgba,
-    border: gpui::Rgba,
-    text: gpui::Rgba,
-    muted: gpui::Rgba,
+    bg: crate::gpui::Rgba,
+    border: crate::gpui::Rgba,
+    text: crate::gpui::Rgba,
+    muted: crate::gpui::Rgba,
 }
 
 impl AgentSidebarTooltip {
     pub(crate) fn new(
         title: &'static str,
         detail: &'static str,
-        bg: gpui::Rgba,
-        border: gpui::Rgba,
-        text: gpui::Rgba,
-        muted: gpui::Rgba,
+        bg: crate::gpui::Rgba,
+        border: crate::gpui::Rgba,
+        text: crate::gpui::Rgba,
+        muted: crate::gpui::Rgba,
     ) -> Self {
         Self {
             title,

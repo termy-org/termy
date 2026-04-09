@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use gpui::Modifiers;
+use crate::gpui::Modifiers;
 
 use crate::commands::CommandAction;
 

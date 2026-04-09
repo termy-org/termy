@@ -2,7 +2,7 @@ use crate::config;
 use crate::settings_view::SettingsWindow;
 use crate::terminal_view::TerminalView;
 use crate::terminal_view::initial_window_background_appearance;
-use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use crate::gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 
 pub(crate) fn open_config_file() -> Result<(), String> {
     config::open_config_file().map_err(|error| error.to_string())
@@ -32,7 +32,7 @@ pub(crate) fn has_window<V: 'static>(cx: &App) -> bool {
 
 pub(crate) fn update_open_settings_windows(
     cx: &mut App,
-    mut update: impl FnMut(&mut SettingsWindow, &mut gpui::Context<SettingsWindow>),
+    mut update: impl FnMut(&mut SettingsWindow, &mut crate::gpui::Context<SettingsWindow>),
 ) {
     for settings_window in cx
         .windows()
@@ -87,19 +87,19 @@ pub(crate) fn open_settings_window(cx: &mut App) -> Result<(), String> {
     let window_background = initial_window_background_appearance(&settings_load.config);
 
     #[cfg(target_os = "macos")]
-    let titlebar = Some(gpui::TitlebarOptions {
+    let titlebar = Some(crate::gpui::TitlebarOptions {
         title: Some("Settings".into()),
         appears_transparent: true,
-        traffic_light_position: Some(gpui::point(px(12.0), px(10.0))),
+        traffic_light_position: Some(crate::gpui::point(px(12.0), px(10.0))),
     });
     #[cfg(target_os = "windows")]
-    let titlebar = Some(gpui::TitlebarOptions {
+    let titlebar = Some(crate::gpui::TitlebarOptions {
         title: Some("Settings".into()),
         appears_transparent: false,
         traffic_light_position: None,
     });
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    let titlebar = Some(gpui::TitlebarOptions {
+    let titlebar = Some(crate::gpui::TitlebarOptions {
         title: Some("Settings".into()),
         appears_transparent: true,
         traffic_light_position: None,
@@ -123,7 +123,7 @@ pub(crate) fn open_settings_window(cx: &mut App) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{AnyWindowHandle, TestAppContext};
+    use crate::gpui::{AnyWindowHandle, TestAppContext};
 
     fn settings_window_count(cx: &TestAppContext) -> usize {
         cx.windows()
@@ -132,7 +132,7 @@ mod tests {
             .count()
     }
 
-    #[gpui::test]
+    #[crate::gpui::test]
     fn open_settings_window_reuses_existing_window(cx: &mut TestAppContext) {
         assert_eq!(settings_window_count(cx), 0);
 
@@ -148,7 +148,7 @@ mod tests {
         assert_eq!(settings_window_count(cx), 1);
     }
 
-    #[gpui::test]
+    #[crate::gpui::test]
     fn open_settings_window_does_not_duplicate_when_called_from_settings_update(
         cx: &mut TestAppContext,
     ) {

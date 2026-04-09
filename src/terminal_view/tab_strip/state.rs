@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use gpui::ScrollHandle;
+use crate::gpui::ScrollHandle;
 
 use super::hints::TabSwitchHintState;
 use super::layout::TabStripLayoutSnapshot;

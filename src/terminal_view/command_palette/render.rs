@@ -5,8 +5,8 @@ use super::style::{
 };
 use super::*;
 use crate::ui::scrollbar::{self, ScrollbarPaintStyle, ScrollbarRange};
-use gpui::uniform_list;
-use gpui::{ObjectFit, StyledImage, img, prelude::FluentBuilder};
+use crate::gpui::uniform_list;
+use crate::gpui::{ObjectFit, StyledImage, img, prelude::FluentBuilder};
 use std::ops::Range;
 use std::path::Path;
 

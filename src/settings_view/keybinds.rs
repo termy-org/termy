@@ -155,7 +155,7 @@ impl SettingsWindow {
         cx.notify();
     }
 
-    fn has_no_modifiers(modifiers: gpui::Modifiers) -> bool {
+    fn has_no_modifiers(modifiers: crate::gpui::Modifiers) -> bool {
         !modifiers.control
             && !modifiers.alt
             && !modifiers.shift
@@ -183,7 +183,7 @@ impl SettingsWindow {
 
     fn canonicalize_captured_trigger(
         key: &str,
-        modifiers: gpui::Modifiers,
+        modifiers: crate::gpui::Modifiers,
     ) -> Result<Option<String>, String> {
         let normalized_key = key.trim().to_ascii_lowercase();
         if normalized_key.is_empty() || Self::is_modifier_only_key(&normalized_key) {
@@ -406,7 +406,7 @@ impl SettingsWindow {
             .child(
                 div()
                     .text_sm()
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .font_weight(crate::gpui::FontWeight::MEDIUM)
                     .text_color(text_primary)
                     .child(action_title),
             )
@@ -472,7 +472,7 @@ impl SettingsWindow {
                     .rounded(px(0.0))
                     .bg(input_bg)
                     .text_sm()
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .font_weight(crate::gpui::FontWeight::MEDIUM)
                     .text_color(text_secondary)
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover_bg).text_color(text_primary))
@@ -512,7 +512,7 @@ impl SettingsWindow {
                 div().flex().items_center().mt_4().mb_2().child(
                     div()
                         .text_xs()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(crate::gpui::FontWeight::SEMIBOLD)
                         .text_color(text_muted)
                         .child("SHORTCUTS"),
                 ),
@@ -622,7 +622,7 @@ mod tests {
 
     #[test]
     fn canonicalize_captured_trigger_supports_modifier_combos() {
-        let modifiers = gpui::Modifiers {
+        let modifiers = crate::gpui::Modifiers {
             alt: true,
             shift: true,
             ..Default::default()
@@ -635,7 +635,7 @@ mod tests {
 
     #[test]
     fn canonicalize_captured_trigger_ignores_modifier_only_keys() {
-        let modifiers = gpui::Modifiers {
+        let modifiers = crate::gpui::Modifiers {
             shift: true,
             ..Default::default()
         };

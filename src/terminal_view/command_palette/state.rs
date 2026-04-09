@@ -2,7 +2,7 @@ use super::super::*;
 use super::state_layouts::SavedLayoutIntent;
 use super::state_tmux::{TmuxSessionIntent, TmuxSessionRow, TmuxSessionStatusHint};
 use crate::config::SHELL_DECIDE_THEME_ID;
-use gpui::{Rgba, UniformListScrollHandle};
+use crate::gpui::{Rgba, UniformListScrollHandle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use termy_terminal_ui::TmuxSocketTarget;
@@ -563,7 +563,7 @@ impl CommandPaletteState {
         self.set_selected_filtered_index(selected + 1)
     }
 
-    pub(super) fn base_scroll_handle(&self) -> gpui::ScrollHandle {
+    pub(super) fn base_scroll_handle(&self) -> crate::gpui::ScrollHandle {
         self.scroll_handle.0.borrow().base_handle.clone()
     }
 

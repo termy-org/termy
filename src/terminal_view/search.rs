@@ -298,7 +298,7 @@ impl TerminalView {
         };
 
         let has_error = self.search_state.error().is_some();
-        let error_color = gpui::Rgba {
+        let error_color = crate::gpui::Rgba {
             r: 0.98,
             g: 0.48,
             b: 0.48,

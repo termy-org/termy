@@ -328,7 +328,7 @@ impl TerminalView {
 
     pub(in super::super) fn position_to_pane_cell(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<(String, CellPos)> {
         let tab = self.tabs.get(self.active_tab)?;
@@ -354,7 +354,7 @@ impl TerminalView {
     pub(in super::super) fn position_to_cell_in_pane(
         &self,
         pane_id: &str,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<CellPos> {
         let tab = self.tabs.get(self.active_tab)?;
@@ -429,7 +429,7 @@ impl TerminalView {
 
     pub(in super::super) fn position_to_cell(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<CellPos> {
         let (pane_id, cell) = self.position_to_pane_cell(position, clamp)?;
@@ -438,7 +438,7 @@ impl TerminalView {
 
     pub(in super::super) fn position_to_selection_pos(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<SelectionPos> {
         let cell = self.position_to_cell(position, clamp)?;
@@ -447,7 +447,7 @@ impl TerminalView {
 
     pub(in super::super) fn position_to_pane_selection_pos(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<(String, SelectionPos)> {
         let (pane_id, cell) = self.position_to_pane_cell(position, clamp)?;
@@ -676,7 +676,7 @@ impl TerminalView {
         }
     }
 
-    pub(in super::super) fn is_link_modifier(modifiers: gpui::Modifiers) -> bool {
+    pub(in super::super) fn is_link_modifier(modifiers: crate::gpui::Modifiers) -> bool {
         modifiers.secondary() && !modifiers.alt && !modifiers.function
     }
 }

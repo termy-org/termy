@@ -1,6 +1,6 @@
 use super::*;
 use alacritty_terminal::grid::Dimensions;
-use gpui::{ObjectFit, StatefulInteractiveElement, StyledImage, img, prelude::FluentBuilder};
+use crate::gpui::{ObjectFit, StatefulInteractiveElement, StyledImage, img, prelude::FluentBuilder};
 use libsqlite3_sys as sqlite3;
 use serde::{Deserialize, Serialize};
 use std::ffi::{CStr, CString};

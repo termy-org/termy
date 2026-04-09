@@ -10,8 +10,8 @@ use crate::keybindings;
 use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
 use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
-use gpui::AppContext;
-use gpui::{
+use crate::gpui::AppContext;
+use crate::gpui::{
     AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths, FocusHandle,
     Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, KeyUpEvent,
     ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
@@ -381,7 +381,7 @@ struct TerminalScrollbarHit {
 
 #[derive(Clone, Debug, PartialEq)]
 struct TerminalContextMenuState {
-    anchor_position: gpui::Point<Pixels>,
+    anchor_position: crate::gpui::Point<Pixels>,
     buffer_position: Option<SelectionPos>,
     can_copy: bool,
     can_paste: bool,
@@ -389,7 +389,7 @@ struct TerminalContextMenuState {
 
 #[derive(Clone, Debug, PartialEq)]
 struct TabContextMenuState {
-    anchor_position: gpui::Point<Pixels>,
+    anchor_position: crate::gpui::Point<Pixels>,
     tab_id: TabId,
     pinned: bool,
 }
@@ -1339,10 +1339,10 @@ fn adaptive_overlay_panel_alpha_with_floor_for_opacity(
     }
 }
 
-fn blend_rgba(base: gpui::Rgba, tint: gpui::Rgba, tint_factor: f32) -> gpui::Rgba {
+fn blend_rgba(base: crate::gpui::Rgba, tint: crate::gpui::Rgba, tint_factor: f32) -> crate::gpui::Rgba {
     let tint_factor = tint_factor.clamp(0.0, 1.0);
     let base_factor = 1.0 - tint_factor;
-    gpui::Rgba {
+    crate::gpui::Rgba {
         r: (base.r * base_factor) + (tint.r * tint_factor),
         g: (base.g * base_factor) + (tint.g * tint_factor),
         b: (base.b * base_factor) + (tint.b * tint_factor),
@@ -1351,14 +1351,14 @@ fn blend_rgba(base: gpui::Rgba, tint: gpui::Rgba, tint_factor: f32) -> gpui::Rgb
 }
 
 fn resolve_chrome_stroke_color(
-    chrome_background: gpui::Rgba,
-    foreground: gpui::Rgba,
+    chrome_background: crate::gpui::Rgba,
+    foreground: crate::gpui::Rgba,
     foreground_mix: f32,
-) -> gpui::Rgba {
+) -> crate::gpui::Rgba {
     let mix = foreground_mix.clamp(0.0, 1.0);
     let inv_mix = 1.0 - mix;
 
-    gpui::Rgba {
+    crate::gpui::Rgba {
         r: (chrome_background.r * inv_mix) + (foreground.r * mix),
         g: (chrome_background.g * inv_mix) + (foreground.g * mix),
         b: (chrome_background.b * inv_mix) + (foreground.b * mix),
@@ -1366,7 +1366,7 @@ fn resolve_chrome_stroke_color(
     }
 }
 
-fn pane_divider_color(chrome_background: gpui::Rgba, foreground: gpui::Rgba) -> gpui::Rgba {
+fn pane_divider_color(chrome_background: crate::gpui::Rgba, foreground: crate::gpui::Rgba) -> crate::gpui::Rgba {
     resolve_chrome_stroke_color(chrome_background, foreground, TAB_STROKE_FOREGROUND_MIX)
 }
 
@@ -1418,22 +1418,22 @@ impl<'a> OverlayStyleBuilder<'a> {
         }
     }
 
-    fn panel_background(self, base_alpha: f32) -> gpui::Rgba {
+    fn panel_background(self, base_alpha: f32) -> crate::gpui::Rgba {
         let alpha = adaptive_overlay_panel_alpha_for_opacity(base_alpha, self.background_opacity);
         self.with_alpha(self.colors.background, alpha)
     }
 
-    fn panel_cursor(self, base_alpha: f32) -> gpui::Rgba {
+    fn panel_cursor(self, base_alpha: f32) -> crate::gpui::Rgba {
         let alpha = adaptive_overlay_panel_alpha_for_opacity(base_alpha, self.background_opacity);
         self.with_alpha(self.colors.cursor, alpha)
     }
 
-    fn panel_foreground(self, base_alpha: f32) -> gpui::Rgba {
+    fn panel_foreground(self, base_alpha: f32) -> crate::gpui::Rgba {
         let alpha = adaptive_overlay_panel_alpha_for_opacity(base_alpha, self.background_opacity);
         self.with_alpha(self.colors.foreground, alpha)
     }
 
-    fn chrome_panel_background(self, base_alpha: f32) -> gpui::Rgba {
+    fn chrome_panel_background(self, base_alpha: f32) -> crate::gpui::Rgba {
         let alpha = adaptive_overlay_panel_alpha_for_opacity(
             self.contrast_profile.panel_surface_alpha(base_alpha),
             self.background_opacity,
@@ -1445,7 +1445,7 @@ impl<'a> OverlayStyleBuilder<'a> {
         self,
         base_alpha: f32,
         translucent_floor_alpha: f32,
-    ) -> gpui::Rgba {
+    ) -> crate::gpui::Rgba {
         let alpha = adaptive_overlay_panel_alpha_with_floor_for_opacity(
             self.contrast_profile.panel_surface_alpha(base_alpha),
             self.background_opacity,
@@ -1455,7 +1455,7 @@ impl<'a> OverlayStyleBuilder<'a> {
         self.with_alpha(self.colors.background, alpha)
     }
 
-    fn chrome_panel_cursor(self, base_alpha: f32) -> gpui::Rgba {
+    fn chrome_panel_cursor(self, base_alpha: f32) -> crate::gpui::Rgba {
         let alpha = adaptive_overlay_panel_alpha_for_opacity(
             self.contrast_profile.panel_accent_alpha(base_alpha),
             self.background_opacity,
@@ -1463,7 +1463,7 @@ impl<'a> OverlayStyleBuilder<'a> {
         self.with_alpha(self.colors.cursor, alpha)
     }
 
-    fn chrome_panel_neutral(self, base_alpha: f32) -> gpui::Rgba {
+    fn chrome_panel_neutral(self, base_alpha: f32) -> crate::gpui::Rgba {
         let alpha = adaptive_overlay_panel_alpha_for_opacity(
             self.contrast_profile.panel_neutral_alpha(base_alpha),
             self.background_opacity,
@@ -1471,11 +1471,11 @@ impl<'a> OverlayStyleBuilder<'a> {
         self.with_alpha(self.colors.foreground, alpha)
     }
 
-    fn transparent_background(self) -> gpui::Rgba {
+    fn transparent_background(self) -> crate::gpui::Rgba {
         self.with_alpha(self.colors.background, 0.0)
     }
 
-    fn with_alpha(self, mut color: gpui::Rgba, alpha: f32) -> gpui::Rgba {
+    fn with_alpha(self, mut color: crate::gpui::Rgba, alpha: f32) -> crate::gpui::Rgba {
         color.a = alpha.clamp(0.0, 1.0);
         color
     }
@@ -1517,7 +1517,7 @@ pub struct TerminalView {
     agent_git_panel_input_mode: Option<agents::AgentGitPanelInputMode>,
     agent_git_panel_input: InlineInputState,
     agent_git_panel_branch_dropdown_open: bool,
-    agent_git_panel_poll_task: Option<gpui::Task<()>>,
+    agent_git_panel_poll_task: Option<crate::gpui::Task<()>>,
     event_wakeup_tx: Sender<()>,
     focus_handle: FocusHandle,
     theme_id: String,
@@ -1590,7 +1590,7 @@ pub struct TerminalView {
     line_height: f32,
     copy_on_select: bool,
     copy_on_select_toast: bool,
-    last_terminal_modifiers: gpui::Modifiers,
+    last_terminal_modifiers: crate::gpui::Modifiers,
     pending_key_releases: HashMap<String, PendingKeyRelease>,
     deferred_ime_key_releases: HashSet<String>,
     selection_anchor: Option<SelectionPos>,
@@ -1757,7 +1757,7 @@ impl TerminalView {
         }
     }
 
-    fn ansi_rgb_from_rgba(color: gpui::Rgba) -> alacritty_terminal::vte::ansi::Rgb {
+    fn ansi_rgb_from_rgba(color: crate::gpui::Rgba) -> alacritty_terminal::vte::ansi::Rgb {
         let to_u8 = |component: f32| (component.clamp(0.0, 1.0) * 255.0).round() as u8;
         alacritty_terminal::vte::ansi::Rgb {
             r: to_u8(color.r),
@@ -2408,7 +2408,7 @@ impl TerminalView {
         &self,
         overlay_style: OverlayStyleBuilder<'_>,
         base_alpha: f32,
-    ) -> gpui::Rgba {
+    ) -> crate::gpui::Rgba {
         match self.terminal_scrollbar_style {
             TerminalScrollbarStyle::Neutral => overlay_style.panel_foreground(base_alpha),
             TerminalScrollbarStyle::MutedTheme => {
@@ -3098,7 +3098,7 @@ impl TerminalView {
             line_height: config.line_height.clamp(MIN_LINE_HEIGHT, MAX_LINE_HEIGHT),
             copy_on_select: config.copy_on_select,
             copy_on_select_toast: config.copy_on_select_toast,
-            last_terminal_modifiers: gpui::Modifiers::default(),
+            last_terminal_modifiers: crate::gpui::Modifiers::default(),
             pending_key_releases: HashMap::default(),
             deferred_ime_key_releases: HashSet::default(),
             selection_anchor: None,
@@ -4115,13 +4115,13 @@ mod tests {
 
     #[test]
     fn pane_divider_color_matches_shared_chrome_stroke_resolution() {
-        let chrome_surface_bg = gpui::Rgba {
+        let chrome_surface_bg = crate::gpui::Rgba {
             r: 0.04,
             g: 0.08,
             b: 0.13,
             a: 0.94,
         };
-        let foreground = gpui::Rgba {
+        let foreground = crate::gpui::Rgba {
             r: 0.82,
             g: 0.88,
             b: 0.93,

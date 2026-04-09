@@ -60,7 +60,7 @@ impl SettingsWindow {
                     .child(
                         div()
                             .text_xl()
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .font_weight(crate::gpui::FontWeight::BOLD)
                             .text_color(text_primary)
                             .child(title),
                     )
@@ -80,7 +80,7 @@ impl SettingsWindow {
                         disabled_border
                     })
                     .text_sm()
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .font_weight(crate::gpui::FontWeight::MEDIUM)
                     .text_color(if can_reset {
                         text_secondary
                     } else {
@@ -102,7 +102,7 @@ impl SettingsWindow {
     pub(super) fn render_group_header(&self, title: &'static str) -> impl IntoElement {
         div()
             .text_xs()
-            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .font_weight(crate::gpui::FontWeight::SEMIBOLD)
             .text_color(self.text_muted())
             .mt_4()
             .mb_2()
@@ -140,7 +140,7 @@ impl SettingsWindow {
                 disabled_border
             })
             .text_xs()
-            .font_weight(gpui::FontWeight::MEDIUM)
+            .font_weight(crate::gpui::FontWeight::MEDIUM)
             .text_color(if can_reset { text_muted } else { disabled_text })
             .when(can_reset, |s| {
                 s.cursor_pointer()
@@ -206,7 +206,7 @@ impl SettingsWindow {
                     .child(
                         div()
                             .text_sm()
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .font_weight(crate::gpui::FontWeight::MEDIUM)
                             .text_color(self.text_primary())
                             .child(title),
                     )
@@ -229,7 +229,7 @@ impl SettingsWindow {
                         div()
                             .w(px(24.0))
                             .text_xs()
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .font_weight(crate::gpui::FontWeight::MEDIUM)
                             .text_color(toggle_label_color)
                             .text_align(TextAlign::Center)
                             .child(if checked { "On" } else { "Off" }),
@@ -749,7 +749,7 @@ impl SettingsWindow {
                     .child(
                         div()
                             .text_sm()
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .font_weight(crate::gpui::FontWeight::MEDIUM)
                             .text_color(text_primary)
                             .child(title),
                     )
@@ -944,7 +944,7 @@ impl SettingsWindow {
             .border_1()
             .border_color(border_color)
             .text_color(text_primary)
-            .font_weight(gpui::FontWeight::BOLD)
+            .font_weight(crate::gpui::FontWeight::BOLD)
             .text_sm()
             .child(label)
             .on_click(cx.listener(move |view, _, _, cx| {
@@ -1187,7 +1187,7 @@ impl SettingsWindow {
                     .child(
                         div()
                             .text_sm()
-                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .font_weight(crate::gpui::FontWeight::MEDIUM)
                             .text_color(text_primary)
                             .child(title),
                     )

@@ -489,7 +489,7 @@ impl TerminalView {
         &self,
         orientation: TabStripOrientation,
         window: &Window,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
     ) -> TabStripDragPreview {
         match orientation {
             TabStripOrientation::Horizontal => {

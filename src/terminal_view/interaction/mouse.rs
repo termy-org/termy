@@ -4,7 +4,7 @@ const SELECTION_DRAG_AUTOSCROLL_MAX_LINES: i32 = 3;
 const CURSOR_MOVE_PREVIEW_MS: u64 = 75;
 
 impl TerminalView {
-    fn is_plain_click_cursor_move_gesture(modifiers: gpui::Modifiers, click_count: usize) -> bool {
+    fn is_plain_click_cursor_move_gesture(modifiers: crate::gpui::Modifiers, click_count: usize) -> bool {
         click_count == 1
             && !modifiers.control
             && !modifiers.alt
@@ -81,7 +81,7 @@ impl TerminalView {
 
     fn begin_selection_drag_from_pending_cursor_move(
         &mut self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
     ) -> bool {
         let Some(pending) = self.pending_cursor_move_click.as_ref() else {
             return false;
@@ -206,7 +206,7 @@ impl TerminalView {
         true
     }
 
-    fn apply_vertical_tab_strip_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
+    fn apply_vertical_tab_strip_resize_drag(&mut self, position: crate::gpui::Point<Pixels>) -> bool {
         if self.vertical_tab_strip_resize_drag.is_none() || self.vertical_tabs_minimized {
             return false;
         }
@@ -222,7 +222,7 @@ impl TerminalView {
         )
     }
 
-    fn apply_agent_sidebar_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
+    fn apply_agent_sidebar_resize_drag(&mut self, position: crate::gpui::Point<Pixels>) -> bool {
         if self.agent_sidebar_resize_drag.is_none() {
             return false;
         }
@@ -249,7 +249,7 @@ impl TerminalView {
         )
     }
 
-    fn apply_agent_git_panel_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
+    fn apply_agent_git_panel_resize_drag(&mut self, position: crate::gpui::Point<Pixels>) -> bool {
         if self.agent_git_panel_resize_drag.is_none() {
             return false;
         }
@@ -298,7 +298,7 @@ impl TerminalView {
         pane_id: &str,
         axis: PaneResizeAxis,
         edge: PaneResizeEdge,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
     ) -> bool {
         let (x, y) = self.terminal_content_position(position);
         self.pane_resize_drag = Some(PaneResizeDragState {
@@ -312,7 +312,7 @@ impl TerminalView {
         true
     }
 
-    fn pane_resize_hit_test(&self, position: gpui::Point<Pixels>) -> Option<PaneResizeDragState> {
+    fn pane_resize_hit_test(&self, position: crate::gpui::Point<Pixels>) -> Option<PaneResizeDragState> {
         const DIVIDER_HIT_MARGIN_PX: f32 = 4.0;
 
         let tab = self.tabs.get(self.active_tab)?;
@@ -610,7 +610,7 @@ impl TerminalView {
         true
     }
 
-    fn apply_pane_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
+    fn apply_pane_resize_drag(&mut self, position: crate::gpui::Point<Pixels>) -> bool {
         let Some(drag_state) = self.pane_resize_drag.as_ref() else {
             return false;
         };
@@ -711,7 +711,7 @@ impl TerminalView {
         )
     }
 
-    fn selection_drag_autoscroll_lines(&self, position: gpui::Point<Pixels>) -> i32 {
+    fn selection_drag_autoscroll_lines(&self, position: crate::gpui::Point<Pixels>) -> i32 {
         let Some(geometry) = self.terminal_viewport_geometry() else {
             return 0;
         };
@@ -727,7 +727,7 @@ impl TerminalView {
 
     fn update_selection_head_from_position(
         &mut self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> bool {
         let Some(next) = self.position_to_selection_pos(position, clamp) else {
@@ -747,7 +747,7 @@ impl TerminalView {
 
     fn handle_selection_drag_motion(
         &mut self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         allow_autoscroll: bool,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -782,7 +782,7 @@ impl TerminalView {
 
     fn finish_selection_drag_at_position(
         &mut self,
-        position: Option<gpui::Point<Pixels>>,
+        position: Option<crate::gpui::Point<Pixels>>,
         cx: &mut Context<Self>,
     ) -> bool {
         if !self.selection_dragging {
@@ -825,7 +825,7 @@ impl TerminalView {
         button == MouseButton::Left && selection_dragging
     }
 
-    fn is_terminal_context_menu_passthrough(modifiers: gpui::Modifiers) -> bool {
+    fn is_terminal_context_menu_passthrough(modifiers: crate::gpui::Modifiers) -> bool {
         modifiers.shift
     }
 
@@ -1291,11 +1291,11 @@ mod tests {
 
     #[test]
     fn terminal_context_menu_passthrough_requires_shift_modifier() {
-        let shifted = gpui::Modifiers {
+        let shifted = crate::gpui::Modifiers {
             shift: true,
-            ..gpui::Modifiers::default()
+            ..crate::gpui::Modifiers::default()
         };
-        let plain = gpui::Modifiers::default();
+        let plain = crate::gpui::Modifiers::default();
 
         assert!(TerminalView::is_terminal_context_menu_passthrough(shifted));
         assert!(!TerminalView::is_terminal_context_menu_passthrough(plain));

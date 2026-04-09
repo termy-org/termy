@@ -1,4 +1,4 @@
-use gpui::{AnyElement, InteractiveElement, IntoElement, ParentElement, Rgba, Styled, div, px};
+use crate::gpui::{AnyElement, InteractiveElement, IntoElement, ParentElement, Rgba, Styled, div, px};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq)]

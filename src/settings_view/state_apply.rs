@@ -580,9 +580,9 @@ impl SettingsWindow {
 mod tests {
     use super::super::test_utils::open_settings_window_handle;
     use super::*;
-    use gpui::TestAppContext;
+    use crate::gpui::TestAppContext;
 
-    #[gpui::test]
+    #[crate::gpui::test]
     fn vertical_tabs_width_rejects_values_below_shared_minimum(cx: &mut TestAppContext) {
         let settings = open_settings_window_handle(cx);
         settings
@@ -600,7 +600,7 @@ mod tests {
             .expect("settings window update should succeed");
     }
 
-    #[gpui::test]
+    #[crate::gpui::test]
     fn vertical_tabs_width_rejects_non_finite_values(cx: &mut TestAppContext) {
         let settings = open_settings_window_handle(cx);
         settings

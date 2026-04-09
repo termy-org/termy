@@ -18,7 +18,7 @@ pub(super) struct TabItemRenderInput {
     pub(super) close_slot_width: f32,
     pub(super) text_padding_x: f32,
     pub(super) label_centered: bool,
-    pub(super) trailing_divider_cover: Option<gpui::Rgba>,
+    pub(super) trailing_divider_cover: Option<crate::gpui::Rgba>,
     pub(super) drop_marker_side: Option<TabDropMarkerSide>,
     pub(super) open_anim_progress: Option<f32>,
 }
@@ -47,7 +47,7 @@ impl TerminalView {
         &self,
         input: &TabItemRenderInput,
         palette: &TabStripPalette,
-        close_text_color: gpui::Rgba,
+        close_text_color: crate::gpui::Rgba,
         hover_tab_index: usize,
         close_tab_index: usize,
         cx: &mut Context<Self>,

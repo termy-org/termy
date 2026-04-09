@@ -15,26 +15,26 @@ pub(super) const COMMAND_PALETTE_SHORTCUT_RADIUS: f32 = 0.0;
 
 #[derive(Clone, Copy)]
 pub(in super::super) struct CommandPaletteStyle {
-    pub(in super::super) panel_bg: gpui::Rgba,
-    pub(in super::super) panel_border: gpui::Rgba,
-    pub(in super::super) primary_text: gpui::Rgba,
-    pub(in super::super) muted_text: gpui::Rgba,
-    pub(in super::super) input_bg: gpui::Rgba,
-    pub(in super::super) input_selection: gpui::Rgba,
-    pub(super) selected_bg: gpui::Rgba,
-    pub(super) selected_border: gpui::Rgba,
-    pub(super) shortcut_bg: gpui::Rgba,
-    pub(super) shortcut_border: gpui::Rgba,
-    pub(super) shortcut_text: gpui::Rgba,
-    pub(super) scrollbar_track: gpui::Rgba,
-    pub(super) scrollbar_thumb: gpui::Rgba,
+    pub(in super::super) panel_bg: crate::gpui::Rgba,
+    pub(in super::super) panel_border: crate::gpui::Rgba,
+    pub(in super::super) primary_text: crate::gpui::Rgba,
+    pub(in super::super) muted_text: crate::gpui::Rgba,
+    pub(in super::super) input_bg: crate::gpui::Rgba,
+    pub(in super::super) input_selection: crate::gpui::Rgba,
+    pub(super) selected_bg: crate::gpui::Rgba,
+    pub(super) selected_border: crate::gpui::Rgba,
+    pub(super) shortcut_bg: crate::gpui::Rgba,
+    pub(super) shortcut_border: crate::gpui::Rgba,
+    pub(super) shortcut_text: crate::gpui::Rgba,
+    pub(super) scrollbar_track: crate::gpui::Rgba,
+    pub(super) scrollbar_thumb: crate::gpui::Rgba,
 }
 
 pub(super) fn command_palette_border_color(
-    chrome_surface_bg: gpui::Rgba,
-    foreground: gpui::Rgba,
+    chrome_surface_bg: crate::gpui::Rgba,
+    foreground: crate::gpui::Rgba,
     stroke_mix: f32,
-) -> gpui::Rgba {
+) -> crate::gpui::Rgba {
     resolve_chrome_stroke_color(chrome_surface_bg, foreground, stroke_mix)
 }
 
@@ -102,13 +102,13 @@ mod tests {
 
     #[test]
     fn command_palette_border_matches_shared_chrome_stroke_derivation() {
-        let chrome_surface_bg = gpui::Rgba {
+        let chrome_surface_bg = crate::gpui::Rgba {
             r: 0.02,
             g: 0.05,
             b: 0.12,
             a: 0.9,
         };
-        let foreground = gpui::Rgba {
+        let foreground = crate::gpui::Rgba {
             r: 0.8,
             g: 0.88,
             b: 0.93,

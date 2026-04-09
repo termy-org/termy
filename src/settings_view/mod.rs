@@ -3,7 +3,7 @@ use crate::config::{self, AppConfig};
 use crate::text_input::{TextInputAlignment, TextInputElement, TextInputProvider, TextInputState};
 use crate::theme_store::{self, ThemeStoreAuthSession, ThemeStoreAuthUser, ThemeStoreTheme};
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle, ScrollbarRange};
-use gpui::{
+use crate::gpui::{
     AnyElement, AsyncApp, Bounds, Context, FocusHandle, Font, InteractiveElement, IntoElement,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit,
     ParentElement, Pixels, Render, Rgba, ScrollAnchor, ScrollHandle, ScrollWheelEvent,
@@ -667,7 +667,7 @@ impl SettingsWindow {
             && event.keystroke.key.eq_ignore_ascii_case(key)
     }
 
-    fn cmd_only(modifiers: gpui::Modifiers) -> bool {
+    fn cmd_only(modifiers: crate::gpui::Modifiers) -> bool {
         modifiers.secondary() && !modifiers.alt && !modifiers.function
     }
 
@@ -985,13 +985,13 @@ impl TextInputProvider for SettingsWindow {
     }
 }
 
-impl gpui::EntityInputHandler for SettingsWindow {
+impl crate::gpui::EntityInputHandler for SettingsWindow {
     fn text_for_range(
         &mut self,
         range: std::ops::Range<usize>,
         adjusted_range: &mut Option<std::ops::Range<usize>>,
-        _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
+        _window: &mut crate::gpui::Window,
+        _cx: &mut crate::gpui::Context<Self>,
     ) -> Option<String> {
         let state = TextInputProvider::text_input_state(self)?;
         Some(state.text_for_range(range, adjusted_range))
@@ -1000,23 +1000,23 @@ impl gpui::EntityInputHandler for SettingsWindow {
     fn selected_text_range(
         &mut self,
         _ignore_disabled_input: bool,
-        _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
-    ) -> Option<gpui::UTF16Selection> {
+        _window: &mut crate::gpui::Window,
+        _cx: &mut crate::gpui::Context<Self>,
+    ) -> Option<crate::gpui::UTF16Selection> {
         let state = TextInputProvider::text_input_state(self)?;
         Some(state.selected_text_range())
     }
 
     fn marked_text_range(
         &self,
-        _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
+        _window: &mut crate::gpui::Window,
+        _cx: &mut crate::gpui::Context<Self>,
     ) -> Option<std::ops::Range<usize>> {
         let state = TextInputProvider::text_input_state(self)?;
         state.marked_text_range_utf16()
     }
 
-    fn unmark_text(&mut self, _window: &mut gpui::Window, _cx: &mut gpui::Context<Self>) {
+    fn unmark_text(&mut self, _window: &mut crate::gpui::Window, _cx: &mut crate::gpui::Context<Self>) {
         if let Some(state) = TextInputProvider::text_input_state_mut(self) {
             state.unmark_text();
         }
@@ -1026,8 +1026,8 @@ impl gpui::EntityInputHandler for SettingsWindow {
         &mut self,
         range: Option<std::ops::Range<usize>>,
         text: &str,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        window: &mut crate::gpui::Window,
+        cx: &mut crate::gpui::Context<Self>,
     ) {
         let mut changed = false;
         if let Some(state) = TextInputProvider::text_input_state_mut(self) {
@@ -1045,8 +1045,8 @@ impl gpui::EntityInputHandler for SettingsWindow {
         range: Option<std::ops::Range<usize>>,
         new_text: &str,
         new_selected_range: Option<std::ops::Range<usize>>,
-        window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        window: &mut crate::gpui::Window,
+        cx: &mut crate::gpui::Context<Self>,
     ) {
         let mut changed = false;
         if let Some(state) = TextInputProvider::text_input_state_mut(self) {
@@ -1062,19 +1062,19 @@ impl gpui::EntityInputHandler for SettingsWindow {
     fn bounds_for_range(
         &mut self,
         range_utf16: std::ops::Range<usize>,
-        element_bounds: gpui::Bounds<gpui::Pixels>,
-        _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
-    ) -> Option<gpui::Bounds<gpui::Pixels>> {
+        element_bounds: crate::gpui::Bounds<crate::gpui::Pixels>,
+        _window: &mut crate::gpui::Window,
+        _cx: &mut crate::gpui::Context<Self>,
+    ) -> Option<crate::gpui::Bounds<crate::gpui::Pixels>> {
         let state = TextInputProvider::text_input_state(self)?;
         Some(state.bounds_for_range(range_utf16, element_bounds))
     }
 
     fn character_index_for_point(
         &mut self,
-        point: gpui::Point<gpui::Pixels>,
-        _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
+        point: crate::gpui::Point<crate::gpui::Pixels>,
+        _window: &mut crate::gpui::Window,
+        _cx: &mut crate::gpui::Context<Self>,
     ) -> Option<usize> {
         let state = TextInputProvider::text_input_state(self)?;
         Some(state.character_index_for_point(point))
@@ -1082,8 +1082,8 @@ impl gpui::EntityInputHandler for SettingsWindow {
 
     fn accepts_text_input(
         &self,
-        _window: &mut gpui::Window,
-        _cx: &mut gpui::Context<Self>,
+        _window: &mut crate::gpui::Window,
+        _cx: &mut crate::gpui::Context<Self>,
     ) -> bool {
         TextInputProvider::text_input_state(self).is_some()
     }
@@ -1213,7 +1213,7 @@ impl Drop for SettingsWindow {
 mod tests {
     use super::test_utils::open_settings_window_handle;
     use super::*;
-    use gpui::TestAppContext;
+    use crate::gpui::TestAppContext;
 
     #[test]
     fn settings_effective_background_opacity_prefers_preview() {
@@ -1261,7 +1261,7 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[crate::gpui::test]
     fn apply_runtime_config_preserves_out_of_range_vertical_tab_width(cx: &mut TestAppContext) {
         let settings = open_settings_window_handle(cx);
         settings
