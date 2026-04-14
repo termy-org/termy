@@ -31,7 +31,7 @@ impl SettingsWindow {
     }
 
     fn render_root_bool_setting_row(
-        &self,
+        &mut self,
         setting_key: &'static str,
         toggle_id: &'static str,
         setting: RootSettingId,
@@ -220,7 +220,7 @@ impl SettingsWindow {
         // to avoid spacing drift and width forcing regressions.
         div()
             .child(self.render_group_header(title))
-            .children(rows)
+            .child(div().flex().flex_col().gap_2().children(rows))
             .into_any_element()
     }
 
@@ -507,7 +507,7 @@ impl SettingsWindow {
             .flex_col()
             .gap_2()
             .child(self.render_section_header(
-                "Theme Store",
+                "Themes",
                 "Browse and install community themes",
                 SettingsSection::ThemeStore,
                 cx,
@@ -756,7 +756,7 @@ impl SettingsWindow {
             .id("theme-store-search-input")
             .h(px(36.0))
             .px_3()
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_INPUT_RADIUS))
             .bg(bg_input)
             .border_1()
             .border_color(if is_search_active {
@@ -787,10 +787,17 @@ impl SettingsWindow {
                         .character_index_for_point(event.position);
                     if event.modifiers.shift {
                         view.theme_store_search_state.select_to_utf16(index);
+                    } else if event.click_count >= 3 {
+                        // Triple-click: select all
+                        view.theme_store_search_state.select_all();
+                    } else if event.click_count == 2 {
+                        // Double-click: select word at cursor
+                        view.theme_store_search_state.select_token_at_utf16(index);
                     } else {
                         view.theme_store_search_state.set_cursor_utf16(index);
                     }
-                    view.theme_store_search_selecting = true;
+                    // Only enable drag-selecting on single click
+                    view.theme_store_search_selecting = event.click_count == 1;
                     view.focus_handle.focus(window, cx);
                     cx.notify();
                 }),
@@ -1141,7 +1148,7 @@ impl SettingsWindow {
             } // end else (themes loaded, not error)
         }
 
-        self.render_settings_group("THEME STORE", rows)
+        self.render_settings_group("THEMES", rows)
     }
 
     pub(super) fn render_advanced_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1156,6 +1163,9 @@ impl SettingsWindow {
         let native_tab_persistence = self.config.native_tab_persistence;
         let native_layout_autosave = self.config.native_layout_autosave;
         let native_buffer_persistence = self.config.native_buffer_persistence;
+        let notifications_enabled = self.config.notifications_enabled;
+        let notify_only_unfocused = self.config.notify_only_unfocused;
+        let notification_min_duration = self.config.notification_min_duration;
         let show_debug_overlay = self.config.show_debug_overlay;
         let window_width = self.config.window_width;
         let window_height = self.config.window_height;
@@ -1169,6 +1179,8 @@ impl SettingsWindow {
         let button_hover_text = self.contrasting_text_for_fill(accent_hover, bg_card);
         let working_dir_meta = Self::setting_metadata_or_fallback("working_dir");
         let working_dir_fallback_meta = Self::setting_metadata_or_fallback("working_dir_fallback");
+        let notification_min_duration_meta =
+            Self::setting_metadata_or_fallback("notification_min_duration");
         let window_width_meta = Self::setting_metadata_or_fallback("window_width");
         let window_height_meta = Self::setting_metadata_or_fallback("window_height");
         let config_path_display = self
@@ -1242,6 +1254,34 @@ impl SettingsWindow {
         ];
         let safety_group = self.render_settings_group("SAFETY", safety_rows);
 
+        let notifications_rows = vec![
+            self.render_root_bool_setting_row(
+                "notifications_enabled",
+                "notifications-enabled-toggle",
+                RootSettingId::NotificationsEnabled,
+                notifications_enabled,
+                "Saved",
+                cx,
+            ),
+            self.render_editable_row(
+                "notification_min_duration",
+                EditableField::NotificationMinDuration,
+                notification_min_duration_meta.title,
+                notification_min_duration_meta.description,
+                format!("{notification_min_duration:.1}s"),
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "notify_only_unfocused",
+                "notify-only-unfocused-toggle",
+                RootSettingId::NotifyOnlyUnfocused,
+                notify_only_unfocused,
+                "Saved",
+                cx,
+            ),
+        ];
+        let notifications_group = self.render_settings_group("NOTIFICATIONS", notifications_rows);
+
         let window_rows = vec![
             self.render_editable_row(
                 "window_width",
@@ -1286,7 +1326,7 @@ impl SettingsWindow {
         let config_file_card = div()
             .py_4()
             .px_4()
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_INPUT_RADIUS))
             .bg(bg_card)
             .border_1()
             .border_color(border_color)
@@ -1311,7 +1351,7 @@ impl SettingsWindow {
                     .mt_2()
                     .px_4()
                     .py_2()
-                    .rounded(px(0.0))
+                    .rounded(px(SETTINGS_INPUT_RADIUS))
                     .bg(accent)
                     .text_sm()
                     .font_weight(gpui::FontWeight::MEDIUM)
@@ -1343,6 +1383,7 @@ impl SettingsWindow {
             ))
             .child(startup_group)
             .child(safety_group)
+            .child(notifications_group)
             .child(window_group)
             .child(ui_group)
             .child(updates_group)

@@ -71,7 +71,7 @@ impl SettingsWindow {
                     .id(SharedString::from(format!("reset-section-{section:?}")))
                     .px_3()
                     .py_2()
-                    .rounded(px(0.0))
+                    .rounded(px(SETTINGS_BUTTON_RADIUS))
                     .bg(if can_reset { bg_input } else { disabled_bg })
                     .border_1()
                     .border_color(if can_reset {
@@ -131,7 +131,7 @@ impl SettingsWindow {
             .id(SharedString::from(format!("reset-setting-{setting_key}")))
             .px_2()
             .py_1()
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_BUTTON_RADIUS))
             .bg(if can_reset { bg_input } else { disabled_bg })
             .border_1()
             .border_color(if can_reset {
@@ -156,7 +156,7 @@ impl SettingsWindow {
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn render_setting_row(
-        &self,
+        &mut self,
         search_key: &'static str,
         id: &'static str,
         title: &'static str,
@@ -192,7 +192,7 @@ impl SettingsWindow {
             .gap_4()
             .py_3()
             .px_4()
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_BUTTON_RADIUS))
             .bg(row_bg)
             .border_1()
             .border_color(row_border)
@@ -263,20 +263,18 @@ impl SettingsWindow {
             .id(id.into())
             .w(px(SETTINGS_SWITCH_WIDTH))
             .h(px(SETTINGS_SWITCH_HEIGHT))
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_SWITCH_RADIUS))
             .bg(track_color)
-            .border_1()
-            .border_color(self.border_color())
             .cursor_pointer()
             .relative()
             .child(
                 div()
                     .absolute()
-                    .top(px(2.0))
+                    .top(px(3.0))
                     .left(px(knob_left))
                     .w(px(SETTINGS_SWITCH_KNOB_SIZE))
                     .h(px(SETTINGS_SWITCH_KNOB_SIZE))
-                    .rounded(px(0.0))
+                    .rounded_full()
                     .bg(knob_color)
                     .shadow_sm(),
             )
@@ -370,7 +368,7 @@ impl SettingsWindow {
                     })
                     .overflow_scroll()
                     .overflow_x_hidden()
-                    .rounded(px(0.0))
+                    .rounded(px(SETTINGS_BUTTON_RADIUS))
                     .bg(dropdown_bg)
                     .border_1()
                     .border_color(border_color)
@@ -427,7 +425,7 @@ impl SettingsWindow {
                         .id(SharedString::from(format!("dec-{field:?}")))
                         .w(px(NUMERIC_STEP_BUTTON_SIZE))
                         .h(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .rounded(px(0.0))
+                        .rounded(px(SETTINGS_BUTTON_RADIUS))
                         .cursor_pointer()
                         .flex()
                         .items_center()
@@ -454,7 +452,7 @@ impl SettingsWindow {
                         .id(SharedString::from(format!("inc-{field:?}")))
                         .w(px(NUMERIC_STEP_BUTTON_SIZE))
                         .h(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .rounded(px(0.0))
+                        .rounded(px(SETTINGS_BUTTON_RADIUS))
                         .cursor_pointer()
                         .flex()
                         .items_center()
@@ -594,10 +592,17 @@ impl SettingsWindow {
                 let index = input.state.character_index_for_point(event.position);
                 if event.modifiers.shift {
                     input.state.select_to_utf16(index);
+                } else if event.click_count >= 3 {
+                    // Triple-click: select all
+                    input.state.select_all();
+                } else if event.click_count == 2 {
+                    // Double-click: select word at cursor
+                    input.state.select_token_at_utf16(index);
                 } else {
                     input.state.set_cursor_utf16(index);
                 }
-                input.selecting = true;
+                // Only enable drag-selecting on single click
+                input.selecting = event.click_count == 1;
             } else {
                 input.selecting = false;
             }
@@ -664,15 +669,16 @@ impl SettingsWindow {
         let bg_card = self.bg_card();
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
-        let row_border = if self.setting_matches_sidebar_query(search_key) {
+        let is_search_match = self.setting_matches_sidebar_query(search_key);
+        let row_border = if is_search_match {
             self.accent_with_alpha(0.55)
         } else {
-            self.border_color()
+            border_color
         };
-        let row_bg = if self.setting_matches_sidebar_query(search_key) {
+        let row_bg = if is_search_match {
             self.accent_with_alpha(0.08)
         } else {
-            self.bg_card()
+            bg_card
         };
         let dropdown_options = self.active_dropdown_options(field, is_active, uses_dropdown);
         let dropdown_open = is_active && uses_dropdown && !dropdown_options.is_empty();
@@ -705,7 +711,7 @@ impl SettingsWindow {
             .gap_4()
             .py_3()
             .px_4()
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_BUTTON_RADIUS))
             .bg(row_bg)
             .border_1()
             .border_color(if dropdown_open {
@@ -780,7 +786,7 @@ impl SettingsWindow {
                                 div()
                                     .h_full()
                                     .px_2()
-                                    .rounded(px(0.0))
+                                    .rounded(px(SETTINGS_BUTTON_RADIUS))
                                     .bg(input_bg)
                                     .border_1()
                                     .border_color(if is_active && accent_inner_border {
@@ -935,7 +941,7 @@ impl SettingsWindow {
             .id(id)
             .w(px(NUMERIC_STEP_BUTTON_SIZE))
             .h(px(NUMERIC_STEP_BUTTON_SIZE))
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_BUTTON_RADIUS))
             .cursor_pointer()
             .flex()
             .items_center()
@@ -1045,6 +1051,7 @@ impl SettingsWindow {
                     .left_0()
                     .w(px(slider_width))
                     .h(px(4.0))
+                    .rounded(px(2.0))
                     .bg(slider_track),
             )
             .child(
@@ -1054,6 +1061,7 @@ impl SettingsWindow {
                     .left_0()
                     .w(px(slider_fill_width))
                     .h(px(4.0))
+                    .rounded(px(2.0))
                     .bg(slider_fill),
             )
             .child(
@@ -1063,7 +1071,9 @@ impl SettingsWindow {
                     .left(px(slider_thumb_left))
                     .w(px(14.0))
                     .h(px(14.0))
-                    .bg(self.accent()),
+                    .rounded_full()
+                    .bg(self.accent())
+                    .shadow_sm(),
             )
             .into_any_element()
     }
@@ -1173,7 +1183,7 @@ impl SettingsWindow {
             .gap_4()
             .py_3()
             .px_4()
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_BUTTON_RADIUS))
             .bg(row_bg)
             .border_1()
             .border_color(row_border)
@@ -1211,7 +1221,7 @@ impl SettingsWindow {
                             .w(px(SETTINGS_CONTROL_WIDTH))
                             .h(px(SETTINGS_CONTROL_HEIGHT))
                             .px(px(SETTINGS_CONTROL_INNER_PADDING))
-                            .rounded(px(0.0))
+                            .rounded(px(SETTINGS_BUTTON_RADIUS))
                             .bg(input_bg)
                             .border_1()
                             .border_color(border_color)

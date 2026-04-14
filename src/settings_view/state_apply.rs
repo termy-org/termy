@@ -38,6 +38,7 @@ impl SettingsWindow {
             | EditableField::VerticalTabsWidth => self.apply_tabs_field(field, value),
             EditableField::WorkingDirectory
             | EditableField::WorkingDirFallback
+            | EditableField::NotificationMinDuration
             | EditableField::WindowWidth
             | EditableField::WindowHeight => self.apply_advanced_field(field, value),
             EditableField::Color(id) => self.apply_color_field(id, value),
@@ -536,6 +537,20 @@ impl SettingsWindow {
                 config::set_root_setting(
                     termy_config_core::RootSettingId::WindowWidth,
                     &parsed.to_string(),
+                )
+            }
+            EditableField::NotificationMinDuration => {
+                let parsed = value.parse::<f32>().map_err(|_| {
+                    "Minimum command duration must be a non-negative number".to_string()
+                })?;
+                if !parsed.is_finite() {
+                    return Err("Minimum command duration must be finite".to_string());
+                }
+                let parsed = parsed.clamp(0.0, 3600.0);
+                self.config.notification_min_duration = parsed;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::NotificationMinDuration,
+                    &format!("{parsed:.3}"),
                 )
             }
             EditableField::WindowHeight => {

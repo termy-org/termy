@@ -354,6 +354,11 @@ define_root_settings! {
     (CopyOnSelect, "copy_on_select", [], Terminal, "CLIPBOARD", "Copy On Select", "Automatically copy selected text to clipboard", ["copy", "select", "clipboard", "selection"], RootSettingValueKind::Boolean, false),
     (CopyOnSelectToast, "copy_on_select_toast", [], Terminal, "CLIPBOARD", "Copy On Select Toast", "Show a toast notification when text is copied on select", ["copy", "select", "toast", "notification"], RootSettingValueKind::Boolean, false),
     (CommandPaletteShowKeybinds, "command_palette_show_keybinds", [], Terminal, "UI", "Show Keybindings In Palette", "Show shortcut badges in command palette rows", ["palette", "keybinds", "shortcuts"], RootSettingValueKind::Boolean, false),
+    (NotificationsEnabled, "notifications_enabled", [], Advanced, "NOTIFICATIONS", "Enable Notifications", "Allow terminal commands to trigger desktop notifications via OSC 9/777", ["notifications", "alert", "desktop", "osc"], RootSettingValueKind::Boolean, false),
+    (NotificationMinDuration, "notification_min_duration", [], Advanced, "NOTIFICATIONS", "Minimum Command Duration", "Only notify for commands running longer than this (seconds)", ["notifications", "duration", "threshold", "long-running"], RootSettingValueKind::Numeric, false),
+    (NotifyOnlyUnfocused, "notify_only_unfocused", [], Advanced, "NOTIFICATIONS", "Notify Only When Unfocused", "Only show notifications when window is not focused", ["notifications", "focus", "background", "unfocused"], RootSettingValueKind::Boolean, false),
+    (ShellIntegrationEnabled, "shell_integration_enabled", [], Terminal, "SHELL", "Shell Integration", "Enable OSC 133 shell integration for command lifecycle tracking", ["shell", "integration", "osc", "133", "prompt", "command"], RootSettingValueKind::Boolean, false),
+    (ProgressIndicatorEnabled, "progress_indicator_enabled", [], Terminal, "UI", "Progress Indicators", "Show progress from OSC 9;4 sequences in tab badges", ["progress", "indicator", "tab", "badge", "osc"], RootSettingValueKind::Boolean, false),
     (Keybind, "keybind", [], Keybindings, "KEYBINDS", "Keybind Directive", "Keybinding override directive", ["keybind", "shortcut", "command"], RootSettingValueKind::Special, true),
 }
 
@@ -522,6 +527,17 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::CopyOnSelectToast => Some(config.copy_on_select_toast.to_string()),
         RootSettingId::CommandPaletteShowKeybinds => {
             Some(config.command_palette_show_keybinds.to_string())
+        }
+        RootSettingId::NotificationsEnabled => Some(config.notifications_enabled.to_string()),
+        RootSettingId::NotificationMinDuration => {
+            Some(config.notification_min_duration.to_string())
+        }
+        RootSettingId::NotifyOnlyUnfocused => Some(config.notify_only_unfocused.to_string()),
+        RootSettingId::ShellIntegrationEnabled => {
+            Some(config.shell_integration_enabled.to_string())
+        }
+        RootSettingId::ProgressIndicatorEnabled => {
+            Some(config.progress_indicator_enabled.to_string())
         }
         RootSettingId::Keybind => None,
     }

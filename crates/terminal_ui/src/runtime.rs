@@ -3,31 +3,39 @@ use crate::keyboard::TerminalKeyboardMode;
 #[cfg(unix)]
 use crate::locale::{Utf8LocaleOverridePlan, preferred_utf8_locale, utf8_locale_override_plan};
 use crate::mouse_protocol::TerminalMouseMode;
+use crate::osc_intercept::{OscEvent, OscInterceptor};
 #[cfg(not(target_os = "windows"))]
 use crate::path_env::normalized_path_env;
 use crate::protocol::{TerminalQueryColors, TerminalReplyHost, reply_bytes_for_event};
 use crate::render_metrics::increment_runtime_wakeup_count;
+use crate::shell_integration::ProgressState;
 use alacritty_terminal::{
-    event::{Event as AlacEvent, EventListener, WindowSize},
-    event_loop::{EventLoop, Msg, Notifier},
+    event::{Event as AlacEvent, EventListener, OnResize, WindowSize},
     grid::{Dimensions, Scroll},
     sync::FairMutex,
     term::{Config as TermConfig, LineDamageBounds, Term, TermDamage, TermMode},
-    tty::{self, Options as PtyOptions, Shell},
+    thread,
+    tty::{self, EventedPty, EventedReadWrite, Options as PtyOptions, Shell},
     vte::ansi::{self, CursorShape, CursorStyle as AlacrittyCursorStyle},
 };
 use flume::{Receiver, Sender, unbounded};
 use gpui::{Pixels, px};
+use polling::{Event as PollingEvent, Events, PollMode, Poller};
 #[cfg(not(target_os = "windows"))]
 use std::path::Path;
 use std::{
+    borrow::Cow,
     collections::HashMap,
     env,
+    io::{self, ErrorKind, Read, Write},
+    num::NonZeroUsize,
     path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver as StdReceiver, Sender as StdSender, TryRecvError},
     },
+    time::Instant,
 };
 
 #[derive(Debug, Clone)]
@@ -493,6 +501,30 @@ pub enum TerminalEvent {
     Exit,
     /// OSC 52 clipboard store request
     ClipboardStore(String),
+
+    // Shell integration events (OSC 133)
+    /// OSC 133;A - Shell prompt start
+    ShellPromptStart,
+    /// OSC 133;B - Command input start
+    ShellCommandStart,
+    /// OSC 133;C - Command executing
+    ShellCommandExecuting,
+    /// OSC 133;D - Command finished with optional exit code
+    ShellCommandFinished(Option<i32>),
+
+    // Notification events
+    /// OSC 777 - Desktop notification with title and body
+    Notification { title: String, body: String },
+    /// OSC 9 - Simple notification message
+    Notify(String),
+
+    // Progress indicator (OSC 9;4)
+    /// Progress state change from OSC 9;4
+    Progress(ProgressState),
+
+    // Working directory (OSC 7)
+    /// Working directory changed
+    WorkingDirectory(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -572,13 +604,13 @@ pub(crate) fn take_term_damage_snapshot<T: EventListener>(
 /// Event listener that forwards alacritty events to our channel
 #[derive(Clone)]
 pub struct JsonEventListener {
-    events_tx: Sender<AlacEvent>,
+    events_tx: Sender<RuntimeEvent>,
     wake_tx: Option<Sender<()>>,
     replay_suppressed: Arc<AtomicBool>,
 }
 
 impl JsonEventListener {
-    fn new(events_tx: Sender<AlacEvent>, wake_tx: Option<Sender<()>>) -> Self {
+    fn new(events_tx: Sender<RuntimeEvent>, wake_tx: Option<Sender<()>>) -> Self {
         Self {
             events_tx,
             wake_tx,
@@ -588,6 +620,13 @@ impl JsonEventListener {
 
     fn set_replay_suppressed(&self, suppressed: bool) {
         self.replay_suppressed.store(suppressed, Ordering::Release);
+    }
+
+    fn send_terminal_event(&self, event: TerminalEvent) {
+        let _ = self.events_tx.send(RuntimeEvent::Terminal(event));
+        if let Some(wake_tx) = &self.wake_tx {
+            let _ = wake_tx.try_send(());
+        }
     }
 }
 
@@ -599,11 +638,360 @@ impl EventListener for JsonEventListener {
         if matches!(event, AlacEvent::Wakeup) {
             increment_runtime_wakeup_count();
         }
-        let _ = self.events_tx.send(event);
+        let _ = self.events_tx.send(RuntimeEvent::Alacritty(event));
         if let Some(wake_tx) = &self.wake_tx {
             // This channel only nudges the UI thread to drain terminal events promptly.
             let _ = wake_tx.try_send(());
         }
+    }
+}
+
+const NATIVE_EVENT_LOOP_READ_BUFFER_SIZE: usize = 0x10_0000;
+const NATIVE_EVENT_LOOP_MAX_LOCKED_READ: usize = u16::MAX as usize;
+#[cfg(not(target_os = "windows"))]
+const NATIVE_EVENT_LOOP_READ_WRITE_TOKEN: usize = 0;
+#[cfg(not(target_os = "windows"))]
+const NATIVE_EVENT_LOOP_CHILD_EVENT_TOKEN: usize = 1;
+#[cfg(target_os = "windows")]
+const NATIVE_EVENT_LOOP_READ_WRITE_TOKEN: usize = 2;
+#[cfg(target_os = "windows")]
+const NATIVE_EVENT_LOOP_CHILD_EVENT_TOKEN: usize = 1;
+
+#[derive(Debug, Clone)]
+enum RuntimeEvent {
+    Alacritty(AlacEvent),
+    Terminal(TerminalEvent),
+}
+
+#[derive(Debug)]
+enum EventLoopMsg {
+    Input(Cow<'static, [u8]>),
+    Shutdown,
+    Resize(WindowSize),
+}
+
+#[derive(Clone)]
+struct EventLoopSender {
+    sender: StdSender<EventLoopMsg>,
+    poller: Arc<Poller>,
+}
+
+impl EventLoopSender {
+    fn send(&self, msg: EventLoopMsg) -> io::Result<()> {
+        self.sender
+            .send(msg)
+            .map_err(|error| io::Error::new(ErrorKind::BrokenPipe, error.to_string()))?;
+        self.poller.notify()
+    }
+}
+
+struct Writing {
+    source: Cow<'static, [u8]>,
+    written: usize,
+}
+
+impl Writing {
+    fn new(source: Cow<'static, [u8]>) -> Self {
+        Self { source, written: 0 }
+    }
+
+    fn advance(&mut self, count: usize) {
+        self.written += count;
+    }
+
+    fn remaining_bytes(&self) -> &[u8] {
+        &self.source[self.written..]
+    }
+
+    fn finished(&self) -> bool {
+        self.written >= self.source.len()
+    }
+}
+
+struct PeekableReceiver<T> {
+    rx: StdReceiver<T>,
+    peeked: Option<T>,
+}
+
+impl<T> PeekableReceiver<T> {
+    fn new(rx: StdReceiver<T>) -> Self {
+        Self { rx, peeked: None }
+    }
+
+    fn peek(&mut self) -> Option<&T> {
+        if self.peeked.is_none() {
+            self.peeked = self.rx.try_recv().ok();
+        }
+
+        self.peeked.as_ref()
+    }
+
+    fn recv(&mut self) -> Option<T> {
+        if self.peeked.is_some() {
+            self.peeked.take()
+        } else {
+            match self.rx.try_recv() {
+                Err(TryRecvError::Disconnected) => panic!("event loop channel closed"),
+                res => res.ok(),
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct NativeEventLoopState {
+    write_list: std::collections::VecDeque<Cow<'static, [u8]>>,
+    writing: Option<Writing>,
+    parser: ansi::Processor,
+    osc_interceptor: OscInterceptor,
+}
+
+impl NativeEventLoopState {
+    fn ensure_next(&mut self) {
+        if self.writing.is_none() {
+            self.goto_next();
+        }
+    }
+
+    fn goto_next(&mut self) {
+        self.writing = self.write_list.pop_front().map(Writing::new);
+    }
+
+    fn take_current(&mut self) -> Option<Writing> {
+        self.writing.take()
+    }
+
+    fn needs_write(&self) -> bool {
+        self.writing.is_some() || !self.write_list.is_empty()
+    }
+
+    fn set_current(&mut self, current: Option<Writing>) {
+        self.writing = current;
+    }
+}
+
+struct NativeEventLoop {
+    poll: Arc<Poller>,
+    pty: tty::Pty,
+    rx: PeekableReceiver<EventLoopMsg>,
+    tx: StdSender<EventLoopMsg>,
+    terminal: Arc<FairMutex<Term<JsonEventListener>>>,
+    event_proxy: JsonEventListener,
+    drain_on_exit: bool,
+}
+
+impl NativeEventLoop {
+    fn new(
+        terminal: Arc<FairMutex<Term<JsonEventListener>>>,
+        event_proxy: JsonEventListener,
+        pty: tty::Pty,
+        drain_on_exit: bool,
+    ) -> io::Result<Self> {
+        let (tx, rx) = mpsc::channel();
+        Ok(Self {
+            poll: Poller::new()?.into(),
+            pty,
+            rx: PeekableReceiver::new(rx),
+            tx,
+            terminal,
+            event_proxy,
+            drain_on_exit,
+        })
+    }
+
+    fn channel(&self) -> EventLoopSender {
+        EventLoopSender {
+            sender: self.tx.clone(),
+            poller: self.poll.clone(),
+        }
+    }
+
+    fn drain_recv_channel(&mut self, state: &mut NativeEventLoopState) -> bool {
+        while let Some(msg) = self.rx.recv() {
+            match msg {
+                EventLoopMsg::Input(input) => state.write_list.push_back(input),
+                EventLoopMsg::Resize(window_size) => self.pty.on_resize(window_size),
+                EventLoopMsg::Shutdown => return false,
+            }
+        }
+
+        true
+    }
+
+    fn handle_osc_events(&self, osc_events: Vec<OscEvent>) {
+        for osc_event in osc_events {
+            self.event_proxy
+                .send_terminal_event(terminal_event_from_osc(osc_event));
+        }
+    }
+
+    fn pty_read(&mut self, state: &mut NativeEventLoopState, buf: &mut [u8]) -> io::Result<()> {
+        let mut parsed = 0usize;
+        let mut unprocessed = 0usize;
+
+        let _terminal_lease = Some(self.terminal.lease());
+        let mut terminal = None;
+
+        loop {
+            match self.pty.reader().read(&mut buf[unprocessed..]) {
+                Ok(0) if unprocessed == 0 => break,
+                Ok(got) => unprocessed += got,
+                Err(err) => match err.kind() {
+                    ErrorKind::Interrupted | ErrorKind::WouldBlock => {
+                        if unprocessed == 0 {
+                            break;
+                        }
+                    }
+                    _ => return Err(err),
+                },
+            }
+
+            let terminal = match &mut terminal {
+                Some(terminal) => terminal,
+                None => terminal.insert(match self.terminal.try_lock_unfair() {
+                    None if unprocessed >= NATIVE_EVENT_LOOP_READ_BUFFER_SIZE => {
+                        self.terminal.lock_unfair()
+                    }
+                    None => continue,
+                    Some(terminal) => terminal,
+                }),
+            };
+
+            let (filtered, osc_events) = state.osc_interceptor.process(&buf[..unprocessed]);
+            self.handle_osc_events(osc_events);
+
+            if !filtered.is_empty() {
+                parsed += filtered.len();
+                state.parser.advance(&mut **terminal, &filtered);
+            }
+
+            unprocessed = 0;
+            if parsed >= NATIVE_EVENT_LOOP_MAX_LOCKED_READ {
+                break;
+            }
+        }
+
+        if state.parser.sync_bytes_count() < parsed && parsed > 0 {
+            self.event_proxy.send_event(AlacEvent::Wakeup);
+        }
+
+        Ok(())
+    }
+
+    fn pty_write(&mut self, state: &mut NativeEventLoopState) -> io::Result<()> {
+        state.ensure_next();
+
+        'write_many: while let Some(mut current) = state.take_current() {
+            'write_one: loop {
+                match self.pty.writer().write(current.remaining_bytes()) {
+                    Ok(0) => {
+                        state.set_current(Some(current));
+                        break 'write_many;
+                    }
+                    Ok(count) => {
+                        current.advance(count);
+                        if current.finished() {
+                            state.goto_next();
+                            break 'write_one;
+                        }
+                    }
+                    Err(err) => {
+                        state.set_current(Some(current));
+                        match err.kind() {
+                            ErrorKind::Interrupted | ErrorKind::WouldBlock => break 'write_many,
+                            _ => return Err(err),
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn spawn(mut self) {
+        let _ = thread::spawn_named("PTY reader", move || {
+            let mut state = NativeEventLoopState::default();
+            let mut buf = [0u8; NATIVE_EVENT_LOOP_READ_BUFFER_SIZE];
+            let poll_mode = PollMode::Level;
+            let mut interest = PollingEvent::readable(NATIVE_EVENT_LOOP_READ_WRITE_TOKEN);
+
+            if unsafe { self.pty.register(&self.poll, interest, poll_mode) }.is_err() {
+                return;
+            }
+
+            let mut events = Events::with_capacity(NonZeroUsize::new(1024).expect("non-zero"));
+
+            'event_loop: loop {
+                let timeout = self
+                    .rx
+                    .peek()
+                    .is_none()
+                    .then(|| state.parser.sync_timeout().sync_timeout())
+                    .flatten()
+                    .map(|deadline| deadline.saturating_duration_since(Instant::now()));
+
+                events.clear();
+                if self.poll.wait(&mut events, timeout).is_err() {
+                    break 'event_loop;
+                }
+
+                if events.is_empty() && self.rx.peek().is_none() {
+                    state.parser.stop_sync(&mut *self.terminal.lock());
+                    self.event_proxy.send_event(AlacEvent::Wakeup);
+                    continue;
+                }
+
+                if !self.drain_recv_channel(&mut state) {
+                    break 'event_loop;
+                }
+
+                for event in events.iter() {
+                    match event.key {
+                        NATIVE_EVENT_LOOP_CHILD_EVENT_TOKEN => {
+                            if let Some(tty::ChildEvent::Exited(_)) = self.pty.next_child_event() {
+                                if self.drain_on_exit {
+                                    let _ = self.pty_read(&mut state, &mut buf);
+                                }
+                                self.terminal.lock().exit();
+                                self.event_proxy.send_event(AlacEvent::Wakeup);
+                                break 'event_loop;
+                            }
+                        }
+                        NATIVE_EVENT_LOOP_READ_WRITE_TOKEN => {
+                            if event.is_interrupt() {
+                                continue;
+                            }
+
+                            if event.readable {
+                                if self.pty_read(&mut state, &mut buf).is_err() {
+                                    break 'event_loop;
+                                }
+                            }
+
+                            if event.writable && self.pty_write(&mut state).is_err() {
+                                break 'event_loop;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                let needs_write = state.needs_write();
+                if needs_write != interest.writable {
+                    interest.writable = needs_write;
+                    if self
+                        .pty
+                        .reregister(&self.poll, interest, poll_mode)
+                        .is_err()
+                    {
+                        break 'event_loop;
+                    }
+                }
+            }
+
+            let _ = self.pty.deregister(&self.poll);
+        });
     }
 }
 
@@ -676,9 +1064,9 @@ pub struct Terminal {
     /// Parser used for buffer rehydration without writing to the PTY.
     parser: FairMutex<ansi::Processor>,
     /// Channel to send input to the PTY
-    pty_tx: Notifier,
-    /// Channel to receive events from alacritty
-    events_rx: Receiver<AlacEvent>,
+    pty_tx: EventLoopSender,
+    /// Channel to receive events from the native PTY loop
+    events_rx: Receiver<RuntimeEvent>,
     /// Current terminal size
     size: TerminalSize,
     /// Colors returned to child processes that probe terminal palette state.
@@ -732,9 +1120,14 @@ impl Terminal {
         let child_pid = pty_child_pid(&pty);
 
         // Create and spawn the event loop
-        let event_loop = EventLoop::new(term.clone(), listener.clone(), pty, false, false)?;
-        let pty_tx = Notifier(event_loop.channel());
-        let _io_thread = event_loop.spawn();
+        let event_loop = NativeEventLoop::new(
+            term.clone(),
+            listener.clone(),
+            pty,
+            pty_options.drain_on_exit,
+        )?;
+        let pty_tx = event_loop.channel();
+        event_loop.spawn();
 
         Ok(Self {
             term,
@@ -754,7 +1147,7 @@ impl Terminal {
 
     /// Write bytes to the PTY (user input)
     pub fn write(&self, input: &[u8]) {
-        let _ = self.pty_tx.0.send(Msg::Input(input.to_vec().into()));
+        let _ = self.pty_tx.send(EventLoopMsg::Input(input.to_vec().into()));
     }
 
     /// Rehydrate saved terminal output into the in-memory grid without sending input to the PTY.
@@ -779,7 +1172,7 @@ impl Terminal {
     /// Resize the terminal
     pub fn resize(&mut self, new_size: TerminalSize) {
         self.size = new_size;
-        let _ = self.pty_tx.0.send(Msg::Resize(new_size.into()));
+        let _ = self.pty_tx.send(EventLoopMsg::Resize(new_size.into()));
         self.term.lock().resize(new_size);
     }
 
@@ -788,7 +1181,7 @@ impl Terminal {
     /// (e.g. lazygit) to refresh their display after an alternate-screen
     /// transition even though the actual dimensions have not changed.
     pub fn nudge_resize(&self) {
-        let _ = self.pty_tx.0.send(Msg::Resize(self.size.into()));
+        let _ = self.pty_tx.send(EventLoopMsg::Resize(self.size.into()));
     }
 
     /// Get the current terminal size
@@ -916,7 +1309,7 @@ const EVENT_DRAIN_BATCH_LIMIT: usize = 2048;
 /// Drain pending events, returning the collected terminal events and whether
 /// the batch limit was hit (indicating more events remain).
 fn drain_runtime_events<T: EventListener>(
-    events_rx: &Receiver<AlacEvent>,
+    events_rx: &Receiver<RuntimeEvent>,
     size: TerminalSize,
     term: &FairMutex<Term<T>>,
     query_colors: TerminalQueryColors,
@@ -927,21 +1320,32 @@ fn drain_runtime_events<T: EventListener>(
     let mut events = Vec::new();
     let mut drained = 0usize;
 
-    while let Ok(event) = events_rx.try_recv() {
-        let response = match &event {
-            AlacEvent::ColorRequest(_, _) => {
-                let term = term.lock();
-                reply_bytes_for_event(&event, size, term.colors(), query_colors, host)
+    while let Ok(runtime_event) = events_rx.try_recv() {
+        match runtime_event {
+            RuntimeEvent::Alacritty(event) => {
+                let response = match &event {
+                    AlacEvent::ColorRequest(_, _) => {
+                        let term = term.lock();
+                        reply_bytes_for_event(&event, size, term.colors(), query_colors, host)
+                    }
+                    _ => reply_bytes_for_event(
+                        &event,
+                        size,
+                        &fallback_live_colors,
+                        query_colors,
+                        host,
+                    ),
+                };
+
+                if let Some(response) = response {
+                    write_reply(&response);
+                }
+
+                if let Some(event) = terminal_event_from_alacritty(event) {
+                    events.push(event);
+                }
             }
-            _ => reply_bytes_for_event(&event, size, &fallback_live_colors, query_colors, host),
-        };
-
-        if let Some(response) = response {
-            write_reply(&response);
-        }
-
-        if let Some(event) = terminal_event_from_alacritty(event) {
-            events.push(event);
+            RuntimeEvent::Terminal(event) => events.push(event),
         }
 
         drained += 1;
@@ -965,10 +1369,23 @@ fn terminal_event_from_alacritty(event: AlacEvent) -> Option<TerminalEvent> {
     }
 }
 
+fn terminal_event_from_osc(event: OscEvent) -> TerminalEvent {
+    match event {
+        OscEvent::WorkingDirectory(path) => TerminalEvent::WorkingDirectory(path),
+        OscEvent::Notify(message) => TerminalEvent::Notify(message),
+        OscEvent::Progress(state) => TerminalEvent::Progress(state),
+        OscEvent::ShellPromptStart => TerminalEvent::ShellPromptStart,
+        OscEvent::ShellCommandStart => TerminalEvent::ShellCommandStart,
+        OscEvent::ShellCommandExecuting => TerminalEvent::ShellCommandExecuting,
+        OscEvent::ShellCommandFinished(code) => TerminalEvent::ShellCommandFinished(code),
+        OscEvent::Notification { title, body } => TerminalEvent::Notification { title, body },
+    }
+}
+
 impl Drop for Terminal {
     fn drop(&mut self) {
         // Ensure the PTY event loop exits so PTY drop can terminate/reap the child process.
-        let _ = self.pty_tx.0.send(Msg::Shutdown);
+        let _ = self.pty_tx.send(EventLoopMsg::Shutdown);
     }
 }
 
@@ -977,11 +1394,12 @@ mod tests {
     #[cfg(target_os = "windows")]
     use super::quote_shell_program_if_needed;
     use super::{
-        DEFAULT_TERM, TerminalCursorState, TerminalDamageSnapshot, TerminalEvent,
+        DEFAULT_TERM, RuntimeEvent, TerminalCursorState, TerminalDamageSnapshot, TerminalEvent,
         TerminalRuntimeConfig, TerminalSize, WorkingDirFallback, cursor_position_from_term,
         cursor_state_from_term, drain_runtime_events, normalize_working_directory_candidate,
         pty_env_overrides, resolve_launch_working_directory, resolve_shell_path,
-        take_term_damage_snapshot, termmode_to_terminal_mouse_mode, user_home_dir,
+        take_term_damage_snapshot, terminal_event_from_osc, termmode_to_terminal_mouse_mode,
+        user_home_dir,
     };
     use crate::grid::TerminalCursorStyle;
     use crate::keyboard::{TerminalKeyEventKind, TerminalKeyboardMode, keystroke_to_input};
@@ -1131,45 +1549,55 @@ mod tests {
     fn drain_runtime_events_replays_replies_and_collects_runtime_events() {
         let (events_tx, events_rx) = unbounded();
         events_tx
-            .send(alacritty_terminal::event::Event::PtyWrite(
-                "\x1b[?6c".to_string(),
+            .send(RuntimeEvent::Alacritty(
+                alacritty_terminal::event::Event::PtyWrite("\x1b[?6c".to_string()),
             ))
             .unwrap();
         events_tx
-            .send(alacritty_terminal::event::Event::TextAreaSizeRequest(
-                Arc::new(|window_size| {
+            .send(RuntimeEvent::Alacritty(
+                alacritty_terminal::event::Event::TextAreaSizeRequest(Arc::new(|window_size| {
                     format!("size:{}x{}", window_size.num_cols, window_size.num_lines)
-                }),
+                })),
             ))
             .unwrap();
         events_tx
-            .send(alacritty_terminal::event::Event::ClipboardLoad(
-                ClipboardType::Selection,
-                Arc::new(|text| format!("clip:{text}")),
+            .send(RuntimeEvent::Alacritty(
+                alacritty_terminal::event::Event::ClipboardLoad(
+                    ClipboardType::Selection,
+                    Arc::new(|text| format!("clip:{text}")),
+                ),
             ))
             .unwrap();
         events_tx
-            .send(alacritty_terminal::event::Event::ColorRequest(
-                NamedColor::Foreground as usize,
-                Arc::new(|color| format!("fg:{:02x}{:02x}{:02x}", color.r, color.g, color.b)),
+            .send(RuntimeEvent::Alacritty(
+                alacritty_terminal::event::Event::ColorRequest(
+                    NamedColor::Foreground as usize,
+                    Arc::new(|color| format!("fg:{:02x}{:02x}{:02x}", color.r, color.g, color.b)),
+                ),
             ))
             .unwrap();
         events_tx
-            .send(alacritty_terminal::event::Event::Wakeup)
-            .unwrap();
-        events_tx
-            .send(alacritty_terminal::event::Event::Title(
-                "shell title".to_string(),
+            .send(RuntimeEvent::Alacritty(
+                alacritty_terminal::event::Event::Wakeup,
             ))
             .unwrap();
         events_tx
-            .send(alacritty_terminal::event::Event::ClipboardStore(
-                ClipboardType::Clipboard,
-                "stored text".to_string(),
+            .send(RuntimeEvent::Alacritty(
+                alacritty_terminal::event::Event::Title("shell title".to_string()),
             ))
             .unwrap();
         events_tx
-            .send(alacritty_terminal::event::Event::Exit)
+            .send(RuntimeEvent::Alacritty(
+                alacritty_terminal::event::Event::ClipboardStore(
+                    ClipboardType::Clipboard,
+                    "stored text".to_string(),
+                ),
+            ))
+            .unwrap();
+        events_tx
+            .send(RuntimeEvent::Alacritty(
+                alacritty_terminal::event::Event::Exit,
+            ))
             .unwrap();
         drop(events_tx);
 
@@ -1211,6 +1639,46 @@ mod tests {
                 TerminalEvent::Exit,
             ] if title == "shell title" && text == "stored text"
         ));
+    }
+
+    #[test]
+    fn drain_runtime_events_includes_custom_osc_events() {
+        let (events_tx, events_rx) = unbounded();
+        events_tx
+            .send(RuntimeEvent::Terminal(terminal_event_from_osc(
+                crate::osc_intercept::OscEvent::Notification {
+                    title: "Build Complete".to_string(),
+                    body: "Project built successfully.".to_string(),
+                },
+            )))
+            .unwrap();
+        events_tx
+            .send(RuntimeEvent::Terminal(terminal_event_from_osc(
+                crate::osc_intercept::OscEvent::Notify("Heads up".to_string()),
+            )))
+            .unwrap();
+        drop(events_tx);
+
+        let term = FairMutex::new(term_after_bytes(b""));
+        let mut reply_host = RecordingReplyHost::default();
+
+        let (events, has_more) = drain_runtime_events(
+            &events_rx,
+            test_terminal_size(),
+            &term,
+            TerminalQueryColors::default(),
+            &mut reply_host,
+            |_| {},
+        );
+
+        assert!(!has_more);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            &events[0],
+            TerminalEvent::Notification { title, body }
+                if title == "Build Complete" && body == "Project built successfully."
+        ));
+        assert!(matches!(&events[1], TerminalEvent::Notify(message) if message == "Heads up"));
     }
 
     #[test]

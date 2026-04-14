@@ -138,7 +138,7 @@ static SETTINGS_METADATA: LazyLock<Vec<SettingMetadata>> = LazyLock::new(|| {
     entries.push(SettingMetadata {
         key: "theme_store",
         section: SettingsSection::ThemeStore,
-        title: "Theme Store",
+        title: "Themes",
         description: "Browse and install community themes from the online store.",
         keywords: &["theme", "store", "install", "colors"],
     });
@@ -161,7 +161,7 @@ impl SettingsWindow {
             SettingsSection::Appearance => "Appearance",
             SettingsSection::Terminal => "Terminal",
             SettingsSection::Tabs => "Tabs",
-            SettingsSection::ThemeStore => "Theme Store",
+            SettingsSection::ThemeStore => "Themes",
             SettingsSection::Advanced => "Advanced",
             SettingsSection::Colors => "Colors",
             SettingsSection::Keybindings => "Keybindings",
@@ -359,14 +359,32 @@ impl SettingsWindow {
             .collect()
     }
 
-    pub(super) fn setting_matches_sidebar_query(&self, setting_key: &'static str) -> bool {
-        let query = self.sidebar_search_state.text().trim().to_ascii_lowercase();
-        if query.is_empty() {
-            return false;
+    pub(super) fn setting_matches_sidebar_query(&mut self, setting_key: &'static str) -> bool {
+        self.ensure_sidebar_search_cache_valid();
+        self.sidebar_search_match_cache.contains(setting_key)
+    }
+
+    fn ensure_sidebar_search_cache_valid(&mut self) {
+        let current_query = self.sidebar_search_state.text().trim().to_ascii_lowercase();
+
+        if current_query == self.sidebar_search_cache_query {
+            return; // Cache is still valid
         }
-        let terms: Vec<&str> = query.split_whitespace().collect();
-        self.searchable_setting_by_key(setting_key)
-            .is_some_and(|setting| Self::setting_search_score(setting, &query, &terms).is_some())
+
+        // Rebuild cache
+        self.sidebar_search_match_cache.clear();
+        self.sidebar_search_cache_query = current_query.clone();
+
+        if current_query.is_empty() {
+            return;
+        }
+
+        let terms: Vec<&str> = current_query.split_whitespace().collect();
+        for setting in &self.searchable_settings {
+            if Self::setting_search_score(setting, &current_query, &terms).is_some() {
+                self.sidebar_search_match_cache.insert(setting.metadata.key);
+            }
+        }
     }
 
     pub(super) fn blur_sidebar_search(&mut self) {
@@ -568,7 +586,7 @@ impl SettingsWindow {
                     .child(self.render_sidebar_item("Appearance", SettingsSection::Appearance, cx))
                     .child(self.render_sidebar_item("Terminal", SettingsSection::Terminal, cx))
                     .child(self.render_sidebar_item("Tabs", SettingsSection::Tabs, cx))
-                    .child(self.render_sidebar_item("Theme Store", SettingsSection::ThemeStore, cx))
+                    .child(self.render_sidebar_item("Themes", SettingsSection::ThemeStore, cx))
                     .child(self.render_sidebar_item("Advanced", SettingsSection::Advanced, cx))
                     .child(self.render_sidebar_item("Colors", SettingsSection::Colors, cx))
                     .child(self.render_sidebar_item(
@@ -655,7 +673,7 @@ impl SettingsWindow {
                             .id("theme-store-logout-button")
                             .px_3()
                             .py(px(8.0))
-                            .rounded(px(0.0))
+                            .rounded(px(SETTINGS_BUTTON_RADIUS))
                             .border_1()
                             .border_color(button_border)
                             .bg(login_bg)
@@ -754,7 +772,7 @@ impl SettingsWindow {
             .id("settings-sidebar-search-input")
             .h(px(36.0))
             .px_3()
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_BUTTON_RADIUS))
             .bg(bg_input)
             .border_1()
             .border_color(if is_active { accent } else { border_color })
@@ -780,10 +798,17 @@ impl SettingsWindow {
                         .character_index_for_point(event.position);
                     if event.modifiers.shift {
                         view.sidebar_search_state.select_to_utf16(index);
+                    } else if event.click_count >= 3 {
+                        // Triple-click: select all
+                        view.sidebar_search_state.select_all();
+                    } else if event.click_count == 2 {
+                        // Double-click: select word at cursor
+                        view.sidebar_search_state.select_token_at_utf16(index);
                     } else {
                         view.sidebar_search_state.set_cursor_utf16(index);
                     }
-                    view.sidebar_search_selecting = true;
+                    // Only enable drag-selecting on single click
+                    view.sidebar_search_selecting = event.click_count == 1;
                     view.refresh_search_navigation(window, cx);
                     view.focus_handle.focus(window, cx);
                     cx.notify();
@@ -853,7 +878,7 @@ impl SettingsWindow {
                     .id(SharedString::from(format!("search-preview-{key}")))
                     .px_2()
                     .py_1()
-                    .rounded(px(0.0))
+                    .rounded(px(SETTINGS_BUTTON_RADIUS))
                     .bg(bg_input)
                     .border_1()
                     .border_color(border_color)
@@ -928,7 +953,7 @@ impl SettingsWindow {
             .id(SharedString::from(label))
             .px_3()
             .py(px(10.0))
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_BUTTON_RADIUS))
             .cursor_pointer()
             .flex()
             .items_center()
@@ -965,7 +990,7 @@ impl SettingsWindow {
                         .ml_auto()
                         .w(px(3.0))
                         .h(px(16.0))
-                        .rounded(px(0.0))
+                        .rounded(px(SETTINGS_BUTTON_RADIUS))
                         .bg(accent),
                 )
             })

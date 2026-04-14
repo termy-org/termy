@@ -746,9 +746,7 @@ impl TerminalView {
                         updates.push((
                             row,
                             col,
-                            self.build_cell_render_info(
-                                col, row, term_line, cell_content, context,
-                            ),
+                            self.build_cell_render_info(col, row, term_line, cell_content, context),
                         ));
                     }
                 }
@@ -1445,16 +1443,20 @@ impl TerminalView {
             let mut text = colors.foreground;
             text.a = 0.92 * opacity;
 
+            // Icon background with subtle accent tint
+            let mut icon_bg = accent;
+            icon_bg.a = 0.12 * opacity;
+
             container = container.child(
                 div()
                     .id(("toast", toast_id))
                     .max_w(px(480.0))
                     .mt(px(slide_offset))
-                    .rounded(px(TERMINAL_OVERLAY_GEOMETRY.panel_radius))
+                    .rounded(px(TOAST_GEOMETRY.panel_radius))
                     .bg(bg)
                     .border_1()
                     .border_color(border)
-                    .shadow_md()
+                    .shadow_lg()
                     .child(
                         div()
                             .px(px(14.0))
@@ -1462,13 +1464,19 @@ impl TerminalView {
                             .flex()
                             .items_start()
                             .gap(px(10.0))
-                            // Icon
+                            // Icon with rounded background
                             .child(
                                 div()
                                     .flex_shrink_0()
-                                    .text_size(px(14.0))
+                                    .w(px(24.0))
+                                    .h(px(24.0))
+                                    .rounded(px(6.0))
+                                    .bg(icon_bg)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_size(px(13.0))
                                     .text_color(accent)
-                                    .mt(px(1.0))
                                     .child(icon),
                             )
                             // Message - max width accounts for icon (24px) + copy btn (68px) + gaps (20px) + padding (28px)
@@ -1493,7 +1501,7 @@ impl TerminalView {
                                         let mut action_bg = accent;
                                         action_bg.a = 0.18;
                                         div()
-                                            .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
+                                            .rounded(px(TOAST_GEOMETRY.control_radius))
                                             .px(px(8.0))
                                             .py(px(4.0))
                                             .text_size(px(11.0))
@@ -1522,7 +1530,7 @@ impl TerminalView {
                                         let mut copied_bg = accent;
                                         copied_bg.a = 0.22;
                                         div()
-                                            .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
+                                            .rounded(px(TOAST_GEOMETRY.control_radius))
                                             .px(px(8.0))
                                             .py(px(4.0))
                                             .text_size(px(11.0))
@@ -1534,7 +1542,7 @@ impl TerminalView {
                                     .children((toast_action_label.is_none() && !is_copied && is_hovered).then(|| {
                                         let toast_message_for_copy = toast_message.clone();
                                         div()
-                                            .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
+                                            .rounded(px(TOAST_GEOMETRY.control_radius))
                                             .px(px(8.0))
                                             .py(px(4.0))
                                             .text_size(px(11.0))
@@ -1908,14 +1916,20 @@ impl TerminalView {
             let overlay_style = self.overlay_style();
             let menu_width = 180.0;
             let row_height = 30.0;
-            let menu_height = row_height + 8.0;
+            let menu_height = (row_height * 3.0) + 8.0; // 3 items + padding
             let (menu_x, menu_y) =
                 self.clamped_context_menu_origin(state.anchor_position, menu_width, menu_height);
             let panel_bg = overlay_style.chrome_panel_background(0.98);
             let panel_border = overlay_style.chrome_panel_neutral(0.22);
             let text_active = overlay_style.panel_foreground(0.95);
+            let text_danger = gpui::Rgba {
+                r: 0.95,
+                g: 0.4,
+                b: 0.4,
+                a: 1.0,
+            };
             let hover_bg = overlay_style.chrome_panel_cursor(0.22);
-            let label = if state.pinned { "Unpin Tab" } else { "Pin Tab" };
+            let pin_label = if state.pinned { "Unpin Tab" } else { "Pin Tab" };
 
             Some(
                 div()
@@ -1957,6 +1971,8 @@ impl TerminalView {
                             .bg(panel_bg)
                             .border_1()
                             .border_color(panel_border)
+                            .rounded(px(8.0))
+                            .shadow_lg()
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|_view, _event: &MouseDownEvent, _window, cx| {
@@ -1975,6 +1991,34 @@ impl TerminalView {
                                     cx.stop_propagation();
                                 }),
                             )
+                            // Rename Tab
+                            .child({
+                                let tab_id = state.tab_id;
+                                div()
+                                    .id("tab-context-menu-rename")
+                                    .h(px(row_height))
+                                    .px(px(10.0))
+                                    .flex()
+                                    .items_center()
+                                    .text_size(px(13.0))
+                                    .text_color(text_active)
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(hover_bg))
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |view, _event: &MouseDownEvent, _window, cx| {
+                                                if let Some(index) = view.tab_index_by_id(tab_id) {
+                                                    view.begin_rename_tab(index, cx);
+                                                }
+                                                let _ = view.close_tab_context_menu(cx);
+                                                cx.stop_propagation();
+                                            },
+                                        ),
+                                    )
+                                    .child("Rename Tab")
+                            })
+                            // Pin/Unpin Tab
                             .child(
                                 div()
                                     .id("tab-context-menu-toggle-pin")
@@ -2000,8 +2044,35 @@ impl TerminalView {
                                             },
                                         ),
                                     )
-                                    .child(label),
-                            ),
+                                    .child(pin_label),
+                            )
+                            // Close Tab
+                            .child({
+                                let tab_id = state.tab_id;
+                                div()
+                                    .id("tab-context-menu-close")
+                                    .h(px(row_height))
+                                    .px(px(10.0))
+                                    .flex()
+                                    .items_center()
+                                    .text_size(px(13.0))
+                                    .text_color(text_danger)
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(hover_bg))
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |view, _event: &MouseDownEvent, _window, cx| {
+                                                if let Some(index) = view.tab_index_by_id(tab_id) {
+                                                    view.close_tab(index, cx);
+                                                }
+                                                let _ = view.close_tab_context_menu(cx);
+                                                cx.stop_propagation();
+                                            },
+                                        ),
+                                    )
+                                    .child("Close Tab")
+                            }),
                     )
                     .into_any_element(),
             )
@@ -2454,14 +2525,42 @@ impl Render for TerminalView {
                     let handle_width = gap_px.max(8.0);
                     let handle_left = divider_left - ((handle_width - 1.0) * 0.5);
                     let pane_id = pane.id.clone();
+
+                    // Visual states for right edge divider
+                    let is_dragging_right = self
+                        .pane_resize_drag
+                        .as_ref()
+                        .is_some_and(|d| d.pane_id == pane.id && d.edge == PaneResizeEdge::Right);
+                    let is_hovered_right = self
+                        .hovered_pane_divider
+                        .as_ref()
+                        .is_some_and(|h| h.pane_id == pane.id && h.edge == PaneResizeEdge::Right);
+                    let cursor_color_hsla: gpui::Hsla = colors.cursor.into();
+                    let blocked_color = gpui::Hsla {
+                        h: 0.0,
+                        s: 0.7,
+                        l: 0.5,
+                        a: 1.0,
+                    }; // Red
+                    let (right_divider_width, right_divider_color) =
+                        if is_dragging_right && self.pane_resize_blocked {
+                            (3.0, blocked_color)
+                        } else if is_dragging_right {
+                            (3.0, cursor_color_hsla)
+                        } else if is_hovered_right {
+                            (2.0, cursor_color_hsla)
+                        } else {
+                            (1.0, divider_color)
+                        };
+
                     pane_dividers.push(
                         div()
                             .absolute()
-                            .left(px(divider_left))
+                            .left(px(divider_left - (right_divider_width - 1.0) * 0.5))
                             .top(px(pane_frame_top))
-                            .w(px(1.0))
+                            .w(px(right_divider_width))
                             .h(px(pane_frame_height))
-                            .bg(divider_color)
+                            .bg(right_divider_color)
                             .into_any_element(),
                     );
                     pane_resize_handles.push(
@@ -2497,14 +2596,42 @@ impl Render for TerminalView {
                     let handle_height = gap_px.max(8.0);
                     let handle_top = divider_top - ((handle_height - 1.0) * 0.5);
                     let pane_id = pane.id.clone();
+
+                    // Visual states for bottom edge divider
+                    let is_dragging_bottom = self
+                        .pane_resize_drag
+                        .as_ref()
+                        .is_some_and(|d| d.pane_id == pane.id && d.edge == PaneResizeEdge::Bottom);
+                    let is_hovered_bottom = self
+                        .hovered_pane_divider
+                        .as_ref()
+                        .is_some_and(|h| h.pane_id == pane.id && h.edge == PaneResizeEdge::Bottom);
+                    let cursor_color_hsla: gpui::Hsla = colors.cursor.into();
+                    let blocked_color = gpui::Hsla {
+                        h: 0.0,
+                        s: 0.7,
+                        l: 0.5,
+                        a: 1.0,
+                    }; // Red
+                    let (bottom_divider_height, bottom_divider_color) =
+                        if is_dragging_bottom && self.pane_resize_blocked {
+                            (3.0, blocked_color)
+                        } else if is_dragging_bottom {
+                            (3.0, cursor_color_hsla)
+                        } else if is_hovered_bottom {
+                            (2.0, cursor_color_hsla)
+                        } else {
+                            (1.0, divider_color)
+                        };
+
                     pane_dividers.push(
                         div()
                             .absolute()
                             .left(px(pane_frame_left))
-                            .top(px(divider_top))
+                            .top(px(divider_top - (bottom_divider_height - 1.0) * 0.5))
                             .w(px(pane_frame_width))
-                            .h(px(1.0))
-                            .bg(divider_color)
+                            .h(px(bottom_divider_height))
+                            .bg(bottom_divider_color)
                             .into_any_element(),
                     );
                     pane_resize_handles.push(
@@ -2935,16 +3062,21 @@ impl Render for TerminalView {
                                                 MouseButton::Right,
                                                 cx.listener(Self::handle_mouse_up),
                                             )
-                                            .when_some(self.pane_resize_drag.as_ref(), |s, drag| {
-                                                match drag.axis {
+                                            .when_some(
+                                                self.pane_resize_drag.as_ref().map(|d| d.axis).or(
+                                                    self.hovered_pane_divider
+                                                        .as_ref()
+                                                        .map(|h| h.axis),
+                                                ),
+                                                |s, axis| match axis {
                                                     PaneResizeAxis::Horizontal => {
                                                         s.cursor_col_resize()
                                                     }
                                                     PaneResizeAxis::Vertical => {
                                                         s.cursor_row_resize()
                                                     }
-                                                }
-                                            })
+                                                },
+                                            )
                                             .font_family(font_family.clone())
                                             .text_size(font_size)
                                             .child(ime_input_layer)
@@ -3096,11 +3228,11 @@ mod tests {
                     ..TerminalOptions::default()
                 },
             ),
-        render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
-        last_alternate_screen: std::cell::Cell::new(false),
-        cached_element_ids: PaneCachedElementIds::new(id),
+            render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
+            last_alternate_screen: std::cell::Cell::new(false),
+            cached_element_ids: PaneCachedElementIds::new(id),
+        }
     }
-}
 
     fn test_render_rows(rows: Vec<Vec<CellRenderInfo>>) -> PaneRenderCells {
         Arc::new(rows.into_iter().map(Arc::new).collect())

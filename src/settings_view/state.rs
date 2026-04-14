@@ -37,6 +37,7 @@ pub(super) enum EditableField {
     VerticalTabsWidth,
     WorkingDirectory,
     WorkingDirFallback,
+    NotificationMinDuration,
     WindowWidth,
     WindowHeight,
     Color(termy_config_core::ColorSettingId),
@@ -431,6 +432,7 @@ impl SettingsWindow {
             | EditableField::VerticalTabsWidth => Self::tabs_field_spec(field),
             EditableField::WorkingDirectory
             | EditableField::WorkingDirFallback
+            | EditableField::NotificationMinDuration
             | EditableField::WindowWidth
             | EditableField::WindowHeight => Self::advanced_field_spec(field),
             EditableField::Color(_) => FieldSpec {
@@ -606,6 +608,14 @@ impl SettingsWindow {
                     delta: 10.0,
                     min: 100.0,
                     max: 10000.0,
+                },
+            ),
+            EditableField::NotificationMinDuration => Self::numeric_field_spec(
+                RootSettingId::NotificationMinDuration,
+                NumericStepSpec {
+                    delta: 1.0,
+                    min: 0.0,
+                    max: 3600.0,
                 },
             ),
             EditableField::WindowHeight => Self::numeric_field_spec(
@@ -922,6 +932,9 @@ impl SettingsWindow {
                 termy_config_core::WorkingDirFallback::Process => "process",
             }
             .to_string(),
+            EditableField::NotificationMinDuration => {
+                format!("{:.3}", self.config.notification_min_duration)
+            }
             EditableField::WindowWidth => format!("{}", self.config.window_width.round() as i32),
             EditableField::WindowHeight => format!("{}", self.config.window_height.round() as i32),
             EditableField::Color(id) => self
@@ -1064,6 +1077,15 @@ impl SettingsWindow {
                 config::set_root_setting(
                     termy_config_core::RootSettingId::WindowWidth,
                     &next.to_string(),
+                )
+            }
+            EditableField::NotificationMinDuration => {
+                let next = (self.config.notification_min_duration + (delta as f32 * step.delta))
+                    .clamp(step.min, step.max);
+                self.config.notification_min_duration = next;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::NotificationMinDuration,
+                    &format!("{next:.3}"),
                 )
             }
             EditableField::WindowHeight => {
@@ -1223,6 +1245,7 @@ mod tests {
             EditableField::VerticalTabsWidth,
             EditableField::WorkingDirectory,
             EditableField::WorkingDirFallback,
+            EditableField::NotificationMinDuration,
             EditableField::WindowWidth,
             EditableField::WindowHeight,
             EditableField::Color(termy_config_core::ColorSettingId::Foreground),
@@ -1271,6 +1294,7 @@ mod tests {
             EditableField::InactiveTabScrollback,
             EditableField::ScrollMultiplier,
             EditableField::PaneFocusStrength,
+            EditableField::NotificationMinDuration,
             EditableField::WindowWidth,
             EditableField::WindowHeight,
             EditableField::VerticalTabsWidth,

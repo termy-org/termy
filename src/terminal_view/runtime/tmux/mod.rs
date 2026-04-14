@@ -1,6 +1,6 @@
 use super::super::*;
 use super::TmuxResizeWakeup;
-use termy_terminal_ui::{TmuxPaneState, TmuxWindowState};
+use termy_terminal_ui::{CommandLifecycle, ProgressState, TmuxPaneState, TmuxWindowState};
 
 mod actions;
 mod events;
@@ -136,6 +136,8 @@ impl TerminalTab {
             display_width,
             running_process: false,
             agent_command_has_started: false,
+            progress_state: ProgressState::default(),
+            command_lifecycle: CommandLifecycle::default(),
         }
     }
 }

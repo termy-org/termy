@@ -246,8 +246,7 @@ impl TerminalView {
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(move |view, _event, _window, cx| {
-                                            match view
-                                                .open_agent_git_file(open_repo_path.as_str())
+                                            match view.open_agent_git_file(open_repo_path.as_str())
                                             {
                                                 Ok(()) => {
                                                     termy_toast::success("Opened file");
@@ -292,9 +291,7 @@ impl TerminalView {
                                     )),
                             )
                             .children(
-                                (entry.is_untracked()
-                                    || entry.is_unstaged()
-                                    || entry.is_deleted())
+                                (entry.is_untracked() || entry.is_unstaged() || entry.is_deleted())
                                     .then(|| {
                                         let discard_entry = discard_entry.clone();
                                         div()
@@ -347,7 +344,12 @@ impl TerminalView {
                             .flex()
                             .flex_col()
                             .gap(px(3.0))
-                            .child(div().text_size(px(11.0)).text_color(t.muted).child("History"))
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(t.muted)
+                                    .child("History"),
+                            )
                             .children(preview_history.iter().take(6).map(|entry| {
                                 div()
                                     .truncate()
@@ -388,7 +390,11 @@ impl TerminalView {
                     .flex()
                     .items_center()
                     .gap(px(6.0))
-                    .bg(if is_selected { t.selected_bg } else { t.panel_bg })
+                    .bg(if is_selected {
+                        t.selected_bg
+                    } else {
+                        t.panel_bg
+                    })
                     .cursor_pointer()
                     .when(show_border, |this| this.border_b_1().border_color(t.border))
                     .on_mouse_down(
@@ -1108,7 +1114,11 @@ impl TerminalView {
                                             } else {
                                                 t.input_bg
                                             },
-                                            if branch_dropdown_open { t.text } else { t.muted },
+                                            if branch_dropdown_open {
+                                                t.text
+                                            } else {
+                                                t.muted
+                                            },
                                         ))
                                         .into_any_element()
                                 }))
@@ -1149,10 +1159,7 @@ impl TerminalView {
                                                     );
                                                 } else {
                                                     view.run_agent_git_mutation(
-                                                        vec![
-                                                            "add".to_string(),
-                                                            "-A".to_string(),
-                                                        ],
+                                                        vec!["add".to_string(), "-A".to_string()],
                                                         "Staged all",
                                                         cx,
                                                     );
@@ -1254,12 +1261,7 @@ impl TerminalView {
                         .child(div().w_full().py(px(6.0)).flex().flex_col().child(body)),
                 )
                 // Footer: commit editor
-                .child(self.render_agent_git_panel_footer(
-                    input_mode,
-                    input_text.as_str(),
-                    &t,
-                    cx,
-                ))
+                .child(self.render_agent_git_panel_footer(input_mode, input_text.as_str(), &t, cx))
                 .into_any_element(),
         )
     }
@@ -1410,8 +1412,7 @@ impl TerminalView {
                     }))
                     .into_any_element();
 
-                let thread_rows = (show_filtered_history
-                    || !is_collapsed)
+                let thread_rows = (show_filtered_history || !is_collapsed)
                     .then_some(project_threads)
                     .unwrap_or_default()
                     .into_iter()

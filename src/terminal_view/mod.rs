@@ -40,12 +40,12 @@ use termy_search::SearchState;
 #[cfg(debug_assertions)]
 use termy_terminal_ui::terminal_ui_render_metrics_reset;
 use termy_terminal_ui::{
-    CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
-    TerminalClipboardTarget, TerminalCursorState, TerminalCursorStyle, TerminalDamageSnapshot,
-    TerminalDirtySpan, TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle,
-    TerminalGridPaintDamage, TerminalGridRows, TerminalKeyEventKind, TerminalKeyboardMode,
-    TerminalMouseMode, TerminalOptions, TerminalQueryColors, TerminalReplyHost,
-    TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
+    CellRenderInfo, CommandLifecycle, PaneTerminal, ProgressState, TabTitleShellIntegration,
+    Terminal as NativeTerminal, TerminalClipboardTarget, TerminalCursorState, TerminalCursorStyle,
+    TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent, TerminalGrid,
+    TerminalGridPaintCacheHandle, TerminalGridPaintDamage, TerminalGridRows, TerminalKeyEventKind,
+    TerminalKeyboardMode, TerminalMouseMode, TerminalOptions, TerminalQueryColors,
+    TerminalReplyHost, TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
     normalize_working_directory_candidate, resolve_launch_working_directory,
 };
@@ -130,8 +130,8 @@ const TERMINAL_SCROLLBAR_TRACK_RADIUS: f32 = 0.0;
 const TERMINAL_SCROLLBAR_THUMB_RADIUS: f32 = 0.0;
 const TERMINAL_SCROLLBAR_THUMB_INSET: f32 = 1.0;
 const TERMINAL_SCROLLBAR_MUTED_THEME_BLEND: f32 = 0.38;
-const SEARCH_BAR_WIDTH: f32 = 320.0;
-const SEARCH_BAR_HEIGHT: f32 = 36.0;
+const SEARCH_BAR_WIDTH: f32 = 280.0;
+const SEARCH_BAR_HEIGHT: f32 = 40.0;
 const SEARCH_DEBOUNCE_MS: u64 = 50;
 const TMUX_RESIZE_ERROR_TOAST_DEBOUNCE_MS: u64 = 2000;
 const DEBUG_OVERLAY_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
@@ -141,10 +141,10 @@ const TMUX_UNSUPPORTED_WINDOWS_TOAST: &str =
 const INPUT_SCROLL_SUPPRESS_MS: u64 = 160;
 const TOAST_COPY_FEEDBACK_MS: u64 = 1200;
 const WINDOW_RESIZE_INDICATOR_MS: u64 = 850;
+const RESIZE_THROTTLE_MS: u64 = 32;
 const CHILD_WORKING_DIR_CACHE_TTL: Duration = Duration::from_millis(CHILD_WORKING_DIR_CACHE_TTL_MS);
 const BENCHMARK_EXIT_GRACE_DURATION: Duration = Duration::from_millis(250);
 const OVERLAY_PANEL_ALPHA_FLOOR_RATIO: f32 = 0.72;
-const OVERLAY_PANEL_BORDER_ALPHA: f32 = 0.24;
 const OVERLAY_PRIMARY_TEXT_ALPHA: f32 = 0.95;
 const OVERLAY_MUTED_TEXT_ALPHA: f32 = 0.62;
 const COMMAND_PALETTE_PANEL_SOLID_ALPHA: f32 = 0.90;
@@ -157,8 +157,8 @@ const COMMAND_PALETTE_INPUT_BG_ALPHA: f32 = 0.64;
 const COMMAND_PALETTE_INPUT_SELECTION_ALPHA: f32 = 0.28;
 const COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA: f32 = 0.10;
 const COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA: f32 = 0.42;
-const SEARCH_BAR_BG_ALPHA: f32 = 0.96;
-const SEARCH_INPUT_BG_ALPHA: f32 = 0.60;
+const SEARCH_BAR_BG_ALPHA: f32 = 0.92;
+const SEARCH_INPUT_BG_ALPHA: f32 = 0.15;
 const SEARCH_COUNTER_TEXT_ALPHA: f32 = 0.60;
 const SEARCH_BUTTON_TEXT_ALPHA: f32 = 0.70;
 const SEARCH_BUTTON_HOVER_BG_ALPHA: f32 = 0.20;
@@ -184,6 +184,20 @@ const TERMINAL_OVERLAY_GEOMETRY: TerminalOverlayGeometry = TerminalOverlayGeomet
     panel_radius: 0.0,
     input_radius: 0.0,
     control_radius: 0.0,
+};
+
+// Search bar uses rounded corners for a native macOS feel.
+const SEARCH_OVERLAY_GEOMETRY: TerminalOverlayGeometry = TerminalOverlayGeometry {
+    panel_radius: 10.0,
+    input_radius: 6.0,
+    control_radius: 6.0,
+};
+
+// Toast notifications use rounded corners for a softer, modern look.
+const TOAST_GEOMETRY: TerminalOverlayGeometry = TerminalOverlayGeometry {
+    panel_radius: 10.0,
+    input_radius: 6.0,
+    control_radius: 6.0,
 };
 
 type TabId = u64;
@@ -346,6 +360,20 @@ struct PaneResizeDragState {
     start_x: f32,
     start_y: f32,
     applied_steps: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct HoveredPaneDivider {
+    pane_id: String,
+    axis: PaneResizeAxis,
+    edge: PaneResizeEdge,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PaneResizeResult {
+    Applied,
+    BlockedByMinimum,
+    NoChange,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1146,6 +1174,8 @@ struct TerminalTab {
     display_width: f32,
     running_process: bool,
     agent_command_has_started: bool,
+    progress_state: ProgressState,
+    command_lifecycle: CommandLifecycle,
 }
 
 struct NativePaneZoomSnapshot {
@@ -1552,6 +1582,11 @@ pub struct TerminalView {
     new_tab_animation_scheduled: bool,
     show_termy_in_titlebar: bool,
     tab_shell_integration: TabTitleShellIntegration,
+    notifications_enabled: bool,
+    notification_min_duration: f32,
+    notify_only_unfocused: bool,
+    shell_integration_enabled: bool,
+    progress_indicator_enabled: bool,
     configured_working_dir: Option<String>,
     child_working_dir_cache: HashMap<u32, ChildWorkingDirCacheEntry>,
     child_working_dir_lookup_pending: HashSet<u32>,
@@ -1616,6 +1651,8 @@ pub struct TerminalView {
     resize_indicator_dims: Option<(u16, u16)>,
     resize_indicator_visible_until: Option<Instant>,
     resize_indicator_animation_scheduled: bool,
+    resize_throttle_task: Option<gpui::Task<()>>,
+    last_resize_applied_at: Option<Instant>,
     benchmark_session: Option<BenchmarkSession>,
     benchmark_exit_scheduled: bool,
     show_debug_overlay: bool,
@@ -1635,6 +1672,8 @@ pub struct TerminalView {
     terminal_scrollbar_track_hold: Option<TerminalScrollbarTrackHoldState>,
     terminal_scrollbar_track_hold_active: bool,
     pane_resize_drag: Option<PaneResizeDragState>,
+    hovered_pane_divider: Option<HoveredPaneDivider>,
+    pane_resize_blocked: bool,
     vertical_tab_strip_resize_drag: Option<VerticalTabStripResizeDragState>,
     agent_sidebar_resize_drag: Option<AgentSidebarResizeDragState>,
     terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache,
@@ -2058,6 +2097,8 @@ impl TerminalView {
             display_width,
             running_process: false,
             agent_command_has_started: false,
+            progress_state: ProgressState::default(),
+            command_lifecycle: CommandLifecycle::default(),
         }
     }
 
@@ -2387,6 +2428,28 @@ impl TerminalView {
             self.resize_indicator_visible_until =
                 Some(now + Duration::from_millis(WINDOW_RESIZE_INDICATOR_MS));
         }
+    }
+
+    /// Schedules a follow-up task to apply pending resize after the throttle window.
+    /// This ensures the final resize is applied even if no new frames are rendered.
+    fn schedule_resize_throttle_follow_up(&mut self, cx: &mut Context<Self>) {
+        // Only schedule if not already scheduled
+        if self.resize_throttle_task.is_some() {
+            return;
+        }
+
+        self.resize_throttle_task = Some(cx.spawn(async move |this, cx| {
+            smol::Timer::after(Duration::from_millis(RESIZE_THROTTLE_MS + 1)).await;
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    view.resize_throttle_task = None;
+                    // Clear the timestamp to allow immediate resize on next frame
+                    view.last_resize_applied_at = None;
+                    // Trigger a redraw to apply any pending resize
+                    cx.notify();
+                })
+            });
+        }));
     }
 
     #[cfg(target_os = "macos")]
@@ -3057,6 +3120,11 @@ impl TerminalView {
             new_tab_animation_scheduled: false,
             show_termy_in_titlebar: config.show_termy_in_titlebar,
             tab_shell_integration,
+            notifications_enabled: config.notifications_enabled,
+            notification_min_duration: config.notification_min_duration,
+            notify_only_unfocused: config.notify_only_unfocused,
+            shell_integration_enabled: config.shell_integration_enabled,
+            progress_indicator_enabled: config.progress_indicator_enabled,
             configured_working_dir,
             child_working_dir_cache: HashMap::new(),
             child_working_dir_lookup_pending: HashSet::new(),
@@ -3121,6 +3189,8 @@ impl TerminalView {
             resize_indicator_dims: None,
             resize_indicator_visible_until: None,
             resize_indicator_animation_scheduled: false,
+            resize_throttle_task: None,
+            last_resize_applied_at: None,
             benchmark_session: benchmark_config.map(BenchmarkSession::new),
             benchmark_exit_scheduled: false,
             show_debug_overlay: config.show_debug_overlay,
@@ -3140,6 +3210,8 @@ impl TerminalView {
             terminal_scrollbar_track_hold: None,
             terminal_scrollbar_track_hold_active: false,
             pane_resize_drag: None,
+            hovered_pane_divider: None,
+            pane_resize_blocked: false,
             vertical_tab_strip_resize_drag: None,
             agent_sidebar_resize_drag: None,
             terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache::default(),
@@ -3331,6 +3403,7 @@ impl TerminalView {
         let show_termy_in_titlebar_changed =
             self.show_termy_in_titlebar != config.show_termy_in_titlebar;
         let show_debug_overlay_changed = self.show_debug_overlay != config.show_debug_overlay;
+        let auto_hide_tabbar_changed = self.auto_hide_tabbar != config.auto_hide_tabbar;
         self.tab_close_visibility = config.tab_close_visibility;
         self.tab_width_mode = config.tab_width_mode;
         self.vertical_tabs = config.vertical_tabs;
@@ -3365,6 +3438,11 @@ impl TerminalView {
             enabled: self.tab_title.shell_integration,
             explicit_prefix: self.tab_title.explicit_prefix.clone(),
         };
+        self.notifications_enabled = config.notifications_enabled;
+        self.notification_min_duration = config.notification_min_duration;
+        self.notify_only_unfocused = config.notify_only_unfocused;
+        self.shell_integration_enabled = config.shell_integration_enabled;
+        self.progress_indicator_enabled = config.progress_indicator_enabled;
         #[cfg(target_os = "windows")]
         if !self.tmux_enabled_config && config.tmux_enabled {
             // Keep this visible on config reload so users understand why runtime did not switch.
@@ -3506,10 +3584,11 @@ impl TerminalView {
             || vertical_tabs_width_changed
             || vertical_tabs_minimized_changed
             || show_termy_in_titlebar_changed
+            || auto_hide_tabbar_changed
         {
             self.mark_tab_strip_layout_dirty();
         }
-        if tab_switch_modifier_hints_changed {
+        if tab_switch_modifier_hints_changed || auto_hide_tabbar_changed {
             cx.notify();
         }
 
@@ -3718,6 +3797,71 @@ impl TerminalView {
                                 should_redraw = true;
                             }
                         }
+                        // Shell integration events (OSC 133)
+                        TerminalEvent::ShellPromptStart => {
+                            if self.shell_integration_enabled {
+                                // Notify for long-running commands when prompt returns
+                                if let Some(duration) = self.tabs[index].command_lifecycle.elapsed()
+                                {
+                                    if duration.as_secs_f32() >= self.notification_min_duration
+                                        && self.notifications_enabled
+                                        && (!self.notify_only_unfocused
+                                            || !termy_native_sdk::is_app_active())
+                                    {
+                                        termy_native_sdk::show_notification(
+                                            "Command Complete",
+                                            "Long-running command finished",
+                                        );
+                                    }
+                                }
+                                self.tabs[index].command_lifecycle.prompt_start();
+                            }
+                        }
+                        TerminalEvent::ShellCommandStart => {
+                            if self.shell_integration_enabled {
+                                self.tabs[index].command_lifecycle.command_start();
+                            }
+                        }
+                        TerminalEvent::ShellCommandExecuting => {
+                            if self.shell_integration_enabled {
+                                self.tabs[index].command_lifecycle.command_executing();
+                            }
+                        }
+                        TerminalEvent::ShellCommandFinished(code) => {
+                            if self.shell_integration_enabled {
+                                self.tabs[index].command_lifecycle.command_finished(code);
+                            }
+                        }
+                        // Notification events (OSC 9, OSC 777)
+                        TerminalEvent::Notification { title, body } => {
+                            if self.notifications_enabled {
+                                let should_notify = !self.notify_only_unfocused
+                                    || !termy_native_sdk::is_app_active();
+                                if should_notify {
+                                    termy_native_sdk::show_notification(&title, &body);
+                                }
+                            }
+                        }
+                        TerminalEvent::Notify(msg) => {
+                            if self.notifications_enabled {
+                                let should_notify = !self.notify_only_unfocused
+                                    || !termy_native_sdk::is_app_active();
+                                if should_notify {
+                                    termy_native_sdk::show_notification("Terminal", &msg);
+                                }
+                            }
+                        }
+                        // Progress indicator (OSC 9;4)
+                        TerminalEvent::Progress(state) => {
+                            if self.progress_indicator_enabled {
+                                self.tabs[index].progress_state = state;
+                                should_redraw = true;
+                            }
+                        }
+                        // Working directory (OSC 7)
+                        TerminalEvent::WorkingDirectory(path) => {
+                            self.tabs[index].last_prompt_cwd = Some(path);
+                        }
                     }
                 }
             }
@@ -3786,6 +3930,13 @@ mod tests {
         assert_eq!(TERMINAL_OVERLAY_GEOMETRY.panel_radius, 0.0);
         assert_eq!(TERMINAL_OVERLAY_GEOMETRY.input_radius, 0.0);
         assert_eq!(TERMINAL_OVERLAY_GEOMETRY.control_radius, 0.0);
+    }
+
+    #[test]
+    fn toast_geometry_uses_rounded_corners() {
+        assert_eq!(TOAST_GEOMETRY.panel_radius, 10.0);
+        assert_eq!(TOAST_GEOMETRY.input_radius, 6.0);
+        assert_eq!(TOAST_GEOMETRY.control_radius, 6.0);
     }
 
     #[cfg(debug_assertions)]

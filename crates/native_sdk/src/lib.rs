@@ -22,9 +22,9 @@ use std::process::Command;
 use windows::Win32::Foundation::{HWND, POINT};
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, GetForegroundWindow, IDYES,
-    MB_ICONINFORMATION, MB_OK, MB_YESNO, MF_GRAYED, MF_STRING, MessageBoxW, TPM_NONOTIFY,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, GetForegroundWindow,
+    GetWindowThreadProcessId, IDYES, MB_ICONINFORMATION, MB_OK, MB_YESNO, MF_GRAYED, MF_SEPARATOR,
+    MF_STRING, MessageBoxW, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
 };
 
 #[cfg(target_os = "windows")]
@@ -42,8 +42,10 @@ pub enum ContextMenuAction {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TabContextMenuAction {
+    Rename,
     Pin,
     Unpin,
+    Close,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,6 +79,8 @@ const CONTEXT_MENU_OPEN_SEARCH_ID: i32 = 3;
 const CONTEXT_MENU_COPY_BUFFER_POSITION_ID: i32 = 4;
 const TAB_CONTEXT_MENU_PIN_ID: i32 = 101;
 const TAB_CONTEXT_MENU_UNPIN_ID: i32 = 102;
+const TAB_CONTEXT_MENU_RENAME_ID: i32 = 103;
+const TAB_CONTEXT_MENU_CLOSE_ID: i32 = 104;
 const AGENT_PROJECT_CONTEXT_MENU_NEW_SESSION_ID: i32 = 201;
 const AGENT_PROJECT_CONTEXT_MENU_RENAME_ID: i32 = 202;
 const AGENT_PROJECT_CONTEXT_MENU_TOGGLE_GIT_PANEL_ID: i32 = 203;
@@ -438,21 +442,46 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
             let menu = NSMenu::new(mtm);
             menu.setAutoenablesItems(false);
 
-            let (title, action_id) = if pinned {
+            // Rename Tab
+            let rename_item = TermyContextMenuItem::new_with_action_id(
+                mtm,
+                "Rename Tab",
+                TAB_CONTEXT_MENU_RENAME_ID,
+                true,
+            );
+            menu.addItem(&rename_item);
+
+            // Pin/Unpin Tab
+            let (pin_title, pin_action_id) = if pinned {
                 ("Unpin Tab", TAB_CONTEXT_MENU_UNPIN_ID)
             } else {
                 ("Pin Tab", TAB_CONTEXT_MENU_PIN_ID)
             };
-            let item = TermyContextMenuItem::new_with_action_id(mtm, title, action_id, true);
-            menu.addItem(&item);
+            let pin_item =
+                TermyContextMenuItem::new_with_action_id(mtm, pin_title, pin_action_id, true);
+            menu.addItem(&pin_item);
+
+            // Separator
+            menu.addItem(&NSMenuItem::separatorItem(mtm));
+
+            // Close Tab
+            let close_item = TermyContextMenuItem::new_with_action_id(
+                mtm,
+                "Close Tab",
+                TAB_CONTEXT_MENU_CLOSE_ID,
+                true,
+            );
+            menu.addItem(&close_item);
 
             CONTEXT_MENU_SELECTION.store(0, Ordering::Relaxed);
             let location: NSPoint = NSEvent::mouseLocation();
             let _ = menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
 
             match CONTEXT_MENU_SELECTION.swap(0, Ordering::Relaxed) {
+                TAB_CONTEXT_MENU_RENAME_ID => Some(TabContextMenuAction::Rename),
                 TAB_CONTEXT_MENU_PIN_ID => Some(TabContextMenuAction::Pin),
                 TAB_CONTEXT_MENU_UNPIN_ID => Some(TabContextMenuAction::Unpin),
+                TAB_CONTEXT_MENU_CLOSE_ID => Some(TabContextMenuAction::Close),
                 _ => None,
             }
         }
@@ -474,18 +503,47 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
         }
         let _menu_guard = MenuGuard(menu);
 
-        let (title, action_id) = if pinned {
-            (wide_string("Unpin Tab"), TAB_CONTEXT_MENU_UNPIN_ID)
-        } else {
-            (wide_string("Pin Tab"), TAB_CONTEXT_MENU_PIN_ID)
-        };
-
+        // Rename Tab
+        let rename_title = wide_string("Rename Tab");
         unsafe {
             AppendMenuW(
                 menu,
                 MF_STRING,
-                action_id as usize,
-                windows::core::PCWSTR(title.as_ptr()),
+                TAB_CONTEXT_MENU_RENAME_ID as usize,
+                windows::core::PCWSTR(rename_title.as_ptr()),
+            )
+            .ok()?;
+        }
+
+        // Pin/Unpin Tab
+        let (pin_title, pin_action_id) = if pinned {
+            (wide_string("Unpin Tab"), TAB_CONTEXT_MENU_UNPIN_ID)
+        } else {
+            (wide_string("Pin Tab"), TAB_CONTEXT_MENU_PIN_ID)
+        };
+        unsafe {
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                pin_action_id as usize,
+                windows::core::PCWSTR(pin_title.as_ptr()),
+            )
+            .ok()?;
+        }
+
+        // Separator
+        unsafe {
+            AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null()).ok()?;
+        }
+
+        // Close Tab
+        let close_title = wide_string("Close Tab");
+        unsafe {
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                TAB_CONTEXT_MENU_CLOSE_ID as usize,
+                windows::core::PCWSTR(close_title.as_ptr()),
             )
             .ok()?;
         }
@@ -509,8 +567,10 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
         };
 
         return match result {
+            TAB_CONTEXT_MENU_RENAME_ID => Some(TabContextMenuAction::Rename),
             TAB_CONTEXT_MENU_PIN_ID => Some(TabContextMenuAction::Pin),
             TAB_CONTEXT_MENU_UNPIN_ID => Some(TabContextMenuAction::Unpin),
+            TAB_CONTEXT_MENU_CLOSE_ID => Some(TabContextMenuAction::Close),
             _ => None,
         };
     }
@@ -1131,4 +1191,112 @@ pub fn confirm(title: &str, message: &str) -> bool {
         eprintln!("[native_sdk] confirm: {title}: {message}");
         false
     }
+}
+
+/// Show a desktop notification.
+///
+/// This is a best-effort operation - failures are silently ignored.
+/// On macOS, uses AppleScript/osascript for maximum compatibility.
+/// On Windows, uses PowerShell toast notifications.
+/// On Linux, uses notify-send or kdialog.
+pub fn show_notification(title: &str, body: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        // Use osascript for reliable notifications on macOS
+        // This works without requiring notification permissions setup
+        let script = format!(
+            r#"display notification "{}" with title "{}""#,
+            escape_applescript(body),
+            escape_applescript(title)
+        );
+        let _ = Command::new("osascript").args(["-e", &script]).output();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if has_command("notify-send") {
+            let _ = Command::new("notify-send").args([title, body]).output();
+        } else if has_command("kdialog") {
+            let _ = Command::new("kdialog")
+                .args(["--passivepopup", body, "5", "--title", title])
+                .output();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        // Use PowerShell for Windows toast notifications
+        let script = format!(
+            r#"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$textNodes = $template.GetElementsByTagName("text")
+$textNodes.Item(0).AppendChild($template.CreateTextNode("{}")) | Out-Null
+$textNodes.Item(1).AppendChild($template.CreateTextNode("{}")) | Out-Null
+$toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+$notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Termy")
+$notifier.Show($toast)"#,
+            escape_powershell(title),
+            escape_powershell(body)
+        );
+        let _ = Command::new("powershell")
+            .args(["-WindowStyle", "Hidden", "-Command", &script])
+            .output();
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = (title, body);
+    }
+}
+
+/// Check if the application is currently the active/focused application.
+///
+/// Returns `true` if the app is focused, `false` otherwise.
+/// On unsupported platforms, returns `true` (assume focused).
+pub fn is_app_active() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        run_on_main(|mtm| {
+            let app = NSApplication::sharedApplication(mtm);
+            app.isActive()
+        })
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, check if our process owns the foreground window
+        unsafe {
+            let foreground = GetForegroundWindow();
+            if foreground.is_invalid() {
+                return false;
+            }
+            let mut foreground_pid: u32 = 0;
+            GetWindowThreadProcessId(foreground, Some(&mut foreground_pid));
+            foreground_pid == std::process::id()
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // On Linux, there's no simple way to check focus without X11/Wayland bindings
+        // Return true as a safe default
+        true
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        true
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn escape_applescript(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(target_os = "windows")]
+fn escape_powershell(s: &str) -> String {
+    s.replace('`', "``").replace('"', "`\"").replace('$', "`$")
 }

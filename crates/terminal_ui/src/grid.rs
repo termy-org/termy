@@ -446,13 +446,18 @@ impl TerminalGridPaintCache {
     }
 
     fn ensure_row_capacity(&mut self, row_count: usize) {
-        if self.row_ops.len() != row_count {
-            self.row_ops = vec![CachedRowPaintOps::default(); row_count];
+        let old_len = self.row_ops.len();
+        if old_len < row_count {
+            // Growing: keep existing cached rows, add new default rows
+            self.row_ops
+                .resize_with(row_count, CachedRowPaintOps::default);
+        } else if old_len > row_count {
+            // Shrinking: truncate, existing rows still valid for their indices
+            self.row_ops.truncate(row_count);
         }
         // dirty_col_ranges is per-pass scratch — resize and reset every frame.
         // Use resize + fill to reuse the existing allocation when row count is stable.
         self.dirty_col_ranges.resize(row_count, None);
-        self.dirty_col_ranges.truncate(row_count);
         self.dirty_col_ranges.fill(None);
     }
 }
@@ -2284,10 +2289,7 @@ impl TerminalGrid {
             })
     }
 
-    fn push_pending_text_batch(
-        current: &mut Option<TextBatchBuilder>,
-        ops: &mut Vec<TextDrawOp>,
-    ) {
+    fn push_pending_text_batch(current: &mut Option<TextBatchBuilder>, ops: &mut Vec<TextDrawOp>) {
         if let Some(builder) = current.take() {
             ops.push(TextDrawOp::Batch(builder.finalize()));
         }
@@ -2298,7 +2300,12 @@ impl TerminalGrid {
         let mut ops = Vec::with_capacity(self.cell_count());
         let mut scratch = Vec::new();
         for row_cells in self.cells.iter() {
-            self.collect_row_draw_ops_into(row_cells.as_ref(), cursor_fg, highlight_fg, &mut scratch);
+            self.collect_row_draw_ops_into(
+                row_cells.as_ref(),
+                cursor_fg,
+                highlight_fg,
+                &mut scratch,
+            );
             ops.extend(scratch.drain(..));
         }
         ops
@@ -3171,7 +3178,11 @@ mod tests {
 
         let grid = test_grid(vec![first, second, third, fourth, fifth], None);
         let mut spans = Vec::new();
-        grid.build_row_background_spans_into(grid.cells[0].as_slice(), &mut HashMap::new(), &mut spans);
+        grid.build_row_background_spans_into(
+            grid.cells[0].as_slice(),
+            &mut HashMap::new(),
+            &mut spans,
+        );
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].start_col, 0);
         assert_eq!(spans[0].end_col_exclusive, 2);
@@ -3192,7 +3203,11 @@ mod tests {
         let mut grid = test_grid(vec![default_bg_cell, ansi_bg_cell], None);
         grid.terminal_surface_bg = test_color(0.2, 0.2, 0.2);
         let mut spans = Vec::new();
-        grid.build_row_background_spans_into(grid.cells[0].as_slice(), &mut HashMap::new(), &mut spans);
+        grid.build_row_background_spans_into(
+            grid.cells[0].as_slice(),
+            &mut HashMap::new(),
+            &mut spans,
+        );
 
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].start_col, 1);
@@ -3209,7 +3224,11 @@ mod tests {
         let mut grid = test_grid(vec![default_bg_cell], None);
         grid.terminal_surface_bg = test_color(0.1, 0.1, 0.1);
         let mut spans = Vec::new();
-        grid.build_row_background_spans_into(grid.cells[0].as_slice(), &mut HashMap::new(), &mut spans);
+        grid.build_row_background_spans_into(
+            grid.cells[0].as_slice(),
+            &mut HashMap::new(),
+            &mut spans,
+        );
 
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].start_col, 0);
@@ -3224,7 +3243,11 @@ mod tests {
 
         let grid = test_grid(vec![half_block], None);
         let mut spans = Vec::new();
-        grid.build_row_background_spans_into(grid.cells[0].as_slice(), &mut HashMap::new(), &mut spans);
+        grid.build_row_background_spans_into(
+            grid.cells[0].as_slice(),
+            &mut HashMap::new(),
+            &mut spans,
+        );
 
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].start_col, 0);
@@ -3455,16 +3478,19 @@ mod tests {
 
     #[test]
     fn draw_op_col_range_returns_correct_range_for_batch() {
-        let batch = TextDrawOp::Batch(TextBatch::new(
-            5, // start_col
-            0, // row
-            'a',
-            TextBatchKey {
-                bold: false,
-                fg: Hsla::transparent_black(),
-            },
-            None,
-        ));
+        let batch = TextDrawOp::Batch(
+            TextBatchBuilder::new(
+                5, // start_col
+                0, // row
+                'a',
+                TextBatchKey {
+                    bold: false,
+                    fg: Hsla::transparent_black(),
+                },
+                None,
+            )
+            .finalize(),
+        );
         // Single char batch: range is (5, 5)
         assert_eq!(draw_op_col_range(&batch), (5, 5));
     }

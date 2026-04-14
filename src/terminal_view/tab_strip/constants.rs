@@ -22,6 +22,7 @@ pub(crate) const VERTICAL_TAB_STRIP_MACOS_TRAILING_PADDING: f32 = 0.0;
 pub(crate) const TAB_HORIZONTAL_PADDING: f32 = 0.0;
 pub(crate) const TAB_ITEM_HEIGHT: f32 = 32.0;
 pub(crate) const TAB_ITEM_GAP: f32 = 0.0;
+pub(crate) const TAB_ITEM_RADIUS: f32 = 0.0;
 pub(crate) const TAB_TEXT_PADDING_X: f32 = 10.0;
 // Adds a small cushion to avoid early clipping from glyph/metrics variance.
 pub(crate) const TAB_TITLE_LAYOUT_SLACK_PX: f32 = 18.0;
@@ -57,3 +58,5 @@ pub(crate) const VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT: f32 =
     VERTICAL_TITLEBAR_CONTROL_BUTTON_SIZE + (VERTICAL_TAB_STRIP_PADDING * 2.0);
 pub(crate) const TAB_STRIP_SCROLL_EPSILON: f32 = 0.5;
 pub(crate) const TAB_STRIP_WHEEL_DELTA_LINE_REFERENCE_PX: f32 = 16.0;
+pub(crate) const TAB_PROGRESS_BADGE_SIZE: f32 = 8.0;
+pub(crate) const TAB_PROGRESS_BADGE_MARGIN: f32 = 6.0;

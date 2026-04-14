@@ -12,6 +12,7 @@ alacritty_terminal = "0.26"
 flume = "0.11"
 gpui = { git = "https://github.com/zed-industries/zed", rev = "83de8a25e0ef71a8d762a148459bc863adaeb7e3", package = "gpui" }
 dirs = "6.0"
+polling = "3.11"
 
 [target.'cfg(unix)'.dependencies]
 rustix-openpty = "0.2"

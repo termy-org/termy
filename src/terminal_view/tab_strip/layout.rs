@@ -906,6 +906,7 @@ mod tests {
                 tab_heights: vec![16.0, 48.0],
             });
 
+        // Row 1 bottom (16 + 48) minus list_height (40) = 24
         assert_eq!(snapshot.scroll_target_for_active_row(1, 0.0), Some(24.0));
     }
 }

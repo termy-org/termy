@@ -623,6 +623,7 @@ impl TerminalView {
         for index in 0..self.tabs.len() {
             let tab_title = self.tabs[index].title.clone();
             let pinned = self.tabs[index].pinned;
+            let progress_state = self.tabs[index].progress_state;
             let tab_height = vertical_layout.rows[index].height;
             let anim_progress =
                 (tab_height < TAB_ITEM_HEIGHT).then_some(tab_height / TAB_ITEM_HEIGHT);
@@ -696,6 +697,7 @@ impl TerminalView {
                     trailing_divider_cover: None,
                     drop_marker_side: self.tab_drop_marker_side(index),
                     open_anim_progress: anim_progress,
+                    progress_state,
                 },
                 font_family,
                 colors,

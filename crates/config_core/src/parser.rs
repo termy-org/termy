@@ -741,6 +741,45 @@ impl AppConfig {
                         config.command_palette_show_keybinds = parsed;
                     }
                 }
+                RootSettingId::NotificationsEnabled => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.notifications_enabled = parsed;
+                    }
+                }
+                RootSettingId::NotificationMinDuration => {
+                    if let Some(parsed) = parse_finite_f32_field(
+                        &mut diagnostics,
+                        line_number,
+                        key,
+                        value,
+                        "a non-negative number of seconds",
+                    ) {
+                        config.notification_min_duration = parsed.max(0.0);
+                    }
+                }
+                RootSettingId::NotifyOnlyUnfocused => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.notify_only_unfocused = parsed;
+                    }
+                }
+                RootSettingId::ShellIntegrationEnabled => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.shell_integration_enabled = parsed;
+                    }
+                }
+                RootSettingId::ProgressIndicatorEnabled => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.progress_indicator_enabled = parsed;
+                    }
+                }
                 RootSettingId::Keybind => {
                     if let Some(parsed) = parse_string_field(
                         &mut diagnostics,

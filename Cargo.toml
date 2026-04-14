@@ -57,7 +57,7 @@ unimplemented = "warn"
 
 [package]
 name = "termy"
-version = "0.1.74"
+version = "0.1.75"
 edition = "2024"
 
 [package.metadata.bundle]

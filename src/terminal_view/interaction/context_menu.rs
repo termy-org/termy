@@ -125,11 +125,21 @@ impl TerminalView {
 
         let _ = self.close_tab_context_menu(cx);
         match action {
+            termy_native_sdk::TabContextMenuAction::Rename => {
+                if let Some(index) = self.tab_index_by_id(tab_id) {
+                    self.begin_rename_tab(index, cx);
+                }
+            }
             termy_native_sdk::TabContextMenuAction::Pin => {
                 let _ = self.set_tab_pinned_by_id(tab_id, true, cx);
             }
             termy_native_sdk::TabContextMenuAction::Unpin => {
                 let _ = self.set_tab_pinned_by_id(tab_id, false, cx);
+            }
+            termy_native_sdk::TabContextMenuAction::Close => {
+                if let Some(index) = self.tab_index_by_id(tab_id) {
+                    self.close_tab(index, cx);
+                }
             }
         }
     }

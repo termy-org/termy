@@ -10,7 +10,7 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, StyledImage, TextAlign, WeakEntity, Window,
     WindowBackgroundAppearance, canvas, deferred, div, img, point, prelude::FluentBuilder, px,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{
@@ -64,6 +64,10 @@ const SETTINGS_SLIDER_VALUE_WIDTH: f32 = 60.0;
 const SETTINGS_OPACITY_STEP_RATIO: f32 = 0.05;
 const SETTINGS_CONTROL_INNER_PADDING: f32 = 8.0;
 const SETTINGS_OPACITY_CONTROL_GAP: f32 = 6.0;
+const SETTINGS_CARD_RADIUS: f32 = 8.0;
+const SETTINGS_INPUT_RADIUS: f32 = 6.0;
+const SETTINGS_BUTTON_RADIUS: f32 = 6.0;
+const SETTINGS_SWITCH_RADIUS: f32 = 13.0;
 static NEXT_BACKGROUND_OPACITY_PREVIEW_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum SettingsSection {
@@ -98,6 +102,8 @@ pub struct SettingsWindow {
     sidebar_search_state: TextInputState,
     sidebar_search_active: bool,
     sidebar_search_selecting: bool,
+    sidebar_search_cache_query: String,
+    sidebar_search_match_cache: HashSet<&'static str>,
     theme_store_search_state: TextInputState,
     theme_store_search_active: bool,
     theme_store_search_selecting: bool,
@@ -164,6 +170,8 @@ impl SettingsWindow {
             sidebar_search_state: TextInputState::new(String::new()),
             sidebar_search_active: true,
             sidebar_search_selecting: false,
+            sidebar_search_cache_query: String::new(),
+            sidebar_search_match_cache: HashSet::new(),
             theme_store_search_state: TextInputState::new(String::new()),
             theme_store_search_active: false,
             theme_store_search_selecting: false,

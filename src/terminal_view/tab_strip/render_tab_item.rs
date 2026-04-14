@@ -1,6 +1,7 @@
 use super::super::*;
 use super::render_palette::TabStripPalette;
 use super::state::{TabDropMarkerSide, TabStripOrientation};
+use termy_terminal_ui::ProgressState;
 
 pub(super) struct TabItemRenderInput {
     pub(super) orientation: TabStripOrientation,
@@ -21,6 +22,7 @@ pub(super) struct TabItemRenderInput {
     pub(super) trailing_divider_cover: Option<gpui::Rgba>,
     pub(super) drop_marker_side: Option<TabDropMarkerSide>,
     pub(super) open_anim_progress: Option<f32>,
+    pub(super) progress_state: ProgressState,
 }
 
 #[derive(Clone, Copy)]
@@ -239,6 +241,7 @@ impl TerminalView {
             .flex_none()
             .relative()
             .overflow_hidden()
+            .rounded(px(TAB_ITEM_RADIUS))
             .bg(tab_bg)
             .w(px(input.tab_primary_extent))
             .h(px(input.tab_cross_extent))
@@ -364,6 +367,32 @@ impl TerminalView {
                     .bg(cover_color)
             }))
             .children(drop_marker)
+            .children(Self::render_progress_badge(&input.progress_state, anim))
             .into_any_element()
+    }
+
+    fn render_progress_badge(state: &ProgressState, anim: f32) -> Option<impl IntoElement> {
+        if !state.is_active() {
+            return None;
+        }
+        let color = match state {
+            ProgressState::InProgress(_) => gpui::rgb(0x22c55e), // green
+            ProgressState::Error(_) => gpui::rgb(0xef4444),      // red
+            ProgressState::Warning(_) => gpui::rgb(0xf59e0b),    // yellow
+            ProgressState::Indeterminate => gpui::rgb(0x3b82f6), // blue
+            ProgressState::Clear => return None,
+        };
+        let mut bg_color: gpui::Rgba = color.into();
+        bg_color.a *= anim;
+        Some(
+            div()
+                .absolute()
+                .top(px(TAB_PROGRESS_BADGE_MARGIN))
+                .left(px(TAB_PROGRESS_BADGE_MARGIN))
+                .w(px(TAB_PROGRESS_BADGE_SIZE))
+                .h(px(TAB_PROGRESS_BADGE_SIZE))
+                .rounded_full()
+                .bg(bg_color),
+        )
     }
 }

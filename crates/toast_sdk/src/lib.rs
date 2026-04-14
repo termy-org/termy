@@ -11,9 +11,9 @@ pub enum ToastKind {
 }
 
 /// Duration of the fade-in animation in milliseconds
-pub const TOAST_FADE_IN_MS: u64 = 150;
+pub const TOAST_FADE_IN_MS: u64 = 180;
 /// Duration of the fade-out animation in milliseconds
-pub const TOAST_FADE_OUT_MS: u64 = 200;
+pub const TOAST_FADE_OUT_MS: u64 = 220;
 
 #[derive(Clone, Debug)]
 pub struct Toast {
@@ -66,9 +66,9 @@ impl Toast {
 
         if elapsed_ms < TOAST_FADE_IN_MS {
             let progress = elapsed_ms as f32 / TOAST_FADE_IN_MS as f32;
-            // Ease out cubic
-            let eased = 1.0 - (1.0 - progress).powi(3);
-            return 20.0 * (1.0 - eased);
+            // Ease out quart for smoother deceleration
+            let eased = 1.0 - (1.0 - progress).powi(4);
+            return 24.0 * (1.0 - eased);
         }
 
         0.0
