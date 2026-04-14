@@ -2,6 +2,7 @@ FROM rust:bookworm AS builder
 
 WORKDIR /app
 
+COPY Cargo.toml Cargo.toml
 COPY Cargo.lock Cargo.lock
 COPY crates/termy_api/Cargo.toml crates/termy_api/Cargo.toml
 COPY crates/termy_api/src crates/termy_api/src
