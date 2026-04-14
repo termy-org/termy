@@ -308,7 +308,6 @@ impl TerminalView {
         true
     }
 
-
     pub(in super::super) fn begin_rename_agent_project(
         &mut self,
         project_id: &str,
@@ -647,11 +646,7 @@ impl TerminalView {
         let Some(terminal) = tab.active_terminal() else {
             return;
         };
-        let Some(thread) = self
-            .agent_threads
-            .iter()
-            .find(|t| t.id == thread_id)
-        else {
+        let Some(thread) = self.agent_threads.iter().find(|t| t.id == thread_id) else {
             return;
         };
         if thread.last_session_id.is_some() {
@@ -659,11 +654,7 @@ impl TerminalView {
         }
         let agent = thread.agent;
         if let Some(session_id) = Self::detect_agent_session_id(agent, terminal) {
-            if let Some(thread) = self
-                .agent_threads
-                .iter_mut()
-                .find(|t| t.id == thread_id)
-            {
+            if let Some(thread) = self.agent_threads.iter_mut().find(|t| t.id == thread_id) {
                 thread.last_session_id = Some(session_id);
             }
         }

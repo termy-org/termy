@@ -40,12 +40,12 @@ use termy_search::SearchState;
 #[cfg(debug_assertions)]
 use termy_terminal_ui::terminal_ui_render_metrics_reset;
 use termy_terminal_ui::{
-    CellRenderInfo, PaneTerminal, TabTitleShellIntegration, Terminal as NativeTerminal,
-    TerminalClipboardTarget, TerminalCursorState, TerminalCursorStyle, TerminalDamageSnapshot,
-    TerminalDirtySpan, TerminalEvent, TerminalGrid, TerminalGridPaintCacheHandle,
-    TerminalGridPaintDamage, TerminalGridRows, TerminalKeyEventKind, TerminalKeyboardMode,
-    TerminalMouseMode, TerminalOptions, TerminalQueryColors, TerminalReplyHost,
-    TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
+    CellRenderInfo, CommandLifecycle, PaneTerminal, ProgressState, TabTitleShellIntegration,
+    Terminal as NativeTerminal, TerminalClipboardTarget, TerminalCursorState, TerminalCursorStyle,
+    TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent, TerminalGrid,
+    TerminalGridPaintCacheHandle, TerminalGridPaintDamage, TerminalGridRows, TerminalKeyEventKind,
+    TerminalKeyboardMode, TerminalMouseMode, TerminalOptions, TerminalQueryColors,
+    TerminalReplyHost, TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
     WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
     normalize_working_directory_candidate, resolve_launch_working_directory,
 };
@@ -1174,6 +1174,8 @@ struct TerminalTab {
     display_width: f32,
     running_process: bool,
     agent_command_has_started: bool,
+    progress_state: ProgressState,
+    command_lifecycle: CommandLifecycle,
 }
 
 struct NativePaneZoomSnapshot {
@@ -1580,6 +1582,11 @@ pub struct TerminalView {
     new_tab_animation_scheduled: bool,
     show_termy_in_titlebar: bool,
     tab_shell_integration: TabTitleShellIntegration,
+    notifications_enabled: bool,
+    notification_min_duration: f32,
+    notify_only_unfocused: bool,
+    shell_integration_enabled: bool,
+    progress_indicator_enabled: bool,
     configured_working_dir: Option<String>,
     child_working_dir_cache: HashMap<u32, ChildWorkingDirCacheEntry>,
     child_working_dir_lookup_pending: HashSet<u32>,
@@ -2090,6 +2097,8 @@ impl TerminalView {
             display_width,
             running_process: false,
             agent_command_has_started: false,
+            progress_state: ProgressState::default(),
+            command_lifecycle: CommandLifecycle::default(),
         }
     }
 
@@ -2432,10 +2441,12 @@ impl TerminalView {
         self.resize_throttle_task = Some(cx.spawn(async move |this, cx| {
             smol::Timer::after(Duration::from_millis(RESIZE_THROTTLE_MS + 1)).await;
             let _ = cx.update(|cx| {
-                this.update(cx, |view, _cx| {
+                this.update(cx, |view, cx| {
                     view.resize_throttle_task = None;
                     // Clear the timestamp to allow immediate resize on next frame
                     view.last_resize_applied_at = None;
+                    // Trigger a redraw to apply any pending resize
+                    cx.notify();
                 })
             });
         }));
@@ -3109,6 +3120,11 @@ impl TerminalView {
             new_tab_animation_scheduled: false,
             show_termy_in_titlebar: config.show_termy_in_titlebar,
             tab_shell_integration,
+            notifications_enabled: config.notifications_enabled,
+            notification_min_duration: config.notification_min_duration,
+            notify_only_unfocused: config.notify_only_unfocused,
+            shell_integration_enabled: config.shell_integration_enabled,
+            progress_indicator_enabled: config.progress_indicator_enabled,
             configured_working_dir,
             child_working_dir_cache: HashMap::new(),
             child_working_dir_lookup_pending: HashSet::new(),
@@ -3422,6 +3438,11 @@ impl TerminalView {
             enabled: self.tab_title.shell_integration,
             explicit_prefix: self.tab_title.explicit_prefix.clone(),
         };
+        self.notifications_enabled = config.notifications_enabled;
+        self.notification_min_duration = config.notification_min_duration;
+        self.notify_only_unfocused = config.notify_only_unfocused;
+        self.shell_integration_enabled = config.shell_integration_enabled;
+        self.progress_indicator_enabled = config.progress_indicator_enabled;
         #[cfg(target_os = "windows")]
         if !self.tmux_enabled_config && config.tmux_enabled {
             // Keep this visible on config reload so users understand why runtime did not switch.
@@ -3775,6 +3796,71 @@ impl TerminalView {
                                 self.pending_clipboard = Some(text);
                                 should_redraw = true;
                             }
+                        }
+                        // Shell integration events (OSC 133)
+                        TerminalEvent::ShellPromptStart => {
+                            if self.shell_integration_enabled {
+                                // Notify for long-running commands when prompt returns
+                                if let Some(duration) = self.tabs[index].command_lifecycle.elapsed()
+                                {
+                                    if duration.as_secs_f32() >= self.notification_min_duration
+                                        && self.notifications_enabled
+                                        && (!self.notify_only_unfocused
+                                            || !termy_native_sdk::is_app_active())
+                                    {
+                                        termy_native_sdk::show_notification(
+                                            "Command Complete",
+                                            "Long-running command finished",
+                                        );
+                                    }
+                                }
+                                self.tabs[index].command_lifecycle.prompt_start();
+                            }
+                        }
+                        TerminalEvent::ShellCommandStart => {
+                            if self.shell_integration_enabled {
+                                self.tabs[index].command_lifecycle.command_start();
+                            }
+                        }
+                        TerminalEvent::ShellCommandExecuting => {
+                            if self.shell_integration_enabled {
+                                self.tabs[index].command_lifecycle.command_executing();
+                            }
+                        }
+                        TerminalEvent::ShellCommandFinished(code) => {
+                            if self.shell_integration_enabled {
+                                self.tabs[index].command_lifecycle.command_finished(code);
+                            }
+                        }
+                        // Notification events (OSC 9, OSC 777)
+                        TerminalEvent::Notification { title, body } => {
+                            if self.notifications_enabled {
+                                let should_notify = !self.notify_only_unfocused
+                                    || !termy_native_sdk::is_app_active();
+                                if should_notify {
+                                    termy_native_sdk::show_notification(&title, &body);
+                                }
+                            }
+                        }
+                        TerminalEvent::Notify(msg) => {
+                            if self.notifications_enabled {
+                                let should_notify = !self.notify_only_unfocused
+                                    || !termy_native_sdk::is_app_active();
+                                if should_notify {
+                                    termy_native_sdk::show_notification("Terminal", &msg);
+                                }
+                            }
+                        }
+                        // Progress indicator (OSC 9;4)
+                        TerminalEvent::Progress(state) => {
+                            if self.progress_indicator_enabled {
+                                self.tabs[index].progress_state = state;
+                                should_redraw = true;
+                            }
+                        }
+                        // Working directory (OSC 7)
+                        TerminalEvent::WorkingDirectory(_path) => {
+                            // Future use: store for tab title, etc.
                         }
                     }
                 }

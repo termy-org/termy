@@ -158,9 +158,12 @@ impl TerminalView {
                 // Also match UUID-like patterns on lines containing "session"
                 if lower.contains("session") || lower.contains("conversation") {
                     for word in trimmed.split_whitespace() {
-                        let cleaned = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
+                        let cleaned = word
+                            .trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
                         if cleaned.len() >= 8
-                            && cleaned.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                            && cleaned
+                                .chars()
+                                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
                             && cleaned.chars().any(|c| c.is_alphanumeric())
                             && !cleaned.chars().all(|c| c.is_alphabetic())
                         {
@@ -441,7 +444,9 @@ impl TerminalView {
             .agent_threads
             .iter()
             .enumerate()
-            .filter(|(_, thread)| thread.last_session_id.is_none() && thread.linked_tab_id.is_some())
+            .filter(|(_, thread)| {
+                thread.last_session_id.is_none() && thread.linked_tab_id.is_some()
+            })
             .filter_map(|(i, thread)| {
                 let tab = thread
                     .linked_tab_id

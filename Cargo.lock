@@ -7510,6 +7510,7 @@ dependencies = [
  "dirs 6.0.0",
  "flume",
  "gpui",
+ "polling",
  "rustix-openpty",
 ]
 

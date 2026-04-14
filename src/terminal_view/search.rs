@@ -329,7 +329,12 @@ impl TerminalView {
                     .border_color(if has_error {
                         error_color
                     } else {
-                        gpui::Rgba { r: 1.0, g: 1.0, b: 1.0, a: 0.1 }
+                        gpui::Rgba {
+                            r: 1.0,
+                            g: 1.0,
+                            b: 1.0,
+                            a: 0.1,
+                        }
                     })
                     .px(px(8.0))
                     .flex()
@@ -340,7 +345,7 @@ impl TerminalView {
                         div()
                             .text_size(px(12.0))
                             .text_color(overlay_style.panel_foreground(0.4))
-                            .child("⌕")
+                            .child("⌕"),
                     )
                     .child(self.render_inline_input_layer(
                         Font::default(),

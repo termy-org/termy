@@ -4,11 +4,13 @@ mod links;
 mod locale;
 mod monotonic_time;
 mod mouse_protocol;
+mod osc_intercept;
 mod pane_terminal;
 mod path_env;
 mod protocol;
 mod render_metrics;
 mod runtime;
+mod shell_integration;
 mod tmux;
 
 // Intentionally re-exported for the app renderer adapter boundary. These types are the
@@ -24,6 +26,7 @@ pub use mouse_protocol::{
     TerminalMouseButton, TerminalMouseEventKind, TerminalMouseMode, TerminalMouseModifiers,
     TerminalMousePosition, encode_mouse_report,
 };
+pub use osc_intercept::{OscEvent, OscInterceptor};
 pub use pane_terminal::PaneTerminal;
 pub use protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
 pub use render_metrics::{
@@ -36,6 +39,7 @@ pub use runtime::{
     WorkingDirFallback, normalize_working_directory_candidate, resolve_launch_working_directory,
     resolve_working_directory_path,
 };
+pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState, TerminalNotification};
 pub use tmux::{
     TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,
     TmuxSessionSummary, TmuxShutdownMode, TmuxSnapshot, TmuxSocketTarget, TmuxWindowState,

@@ -315,6 +315,10 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::CopyOnSelect => Some(config.copy_on_select),
         RootSettingId::CopyOnSelectToast => Some(config.copy_on_select_toast),
         RootSettingId::CommandPaletteShowKeybinds => Some(config.command_palette_show_keybinds),
+        RootSettingId::NotificationsEnabled => Some(config.notifications_enabled),
+        RootSettingId::NotifyOnlyUnfocused => Some(config.notify_only_unfocused),
+        RootSettingId::ShellIntegrationEnabled => Some(config.shell_integration_enabled),
+        RootSettingId::ProgressIndicatorEnabled => Some(config.progress_indicator_enabled),
         _ => None,
     }
 }

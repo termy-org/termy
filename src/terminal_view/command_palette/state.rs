@@ -5,9 +5,9 @@ use crate::config::SHELL_DECIDE_THEME_ID;
 use gpui::{Rgba, UniformListScrollHandle};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use termy_terminal_ui::TmuxSocketTarget;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use termy_terminal_ui::TmuxSocketTarget;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in super::super) enum CommandPaletteMode {
@@ -103,7 +103,10 @@ impl AiAgentPreset {
                 concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/claude.svg")
             }
             Self::Copilot => {
-                concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/copilot.svg")
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/assets/agent-icons/copilot.svg"
+                )
             }
             Self::Cursor => {
                 concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/cursor.svg")
@@ -880,7 +883,10 @@ mod tests {
             .expect("chmod executable");
 
         let path = std::env::join_paths([dir.path()]).expect("join PATH");
-        assert!(command_exists_in_path("codex", path.to_string_lossy().as_ref()));
+        assert!(command_exists_in_path(
+            "codex",
+            path.to_string_lossy().as_ref()
+        ));
     }
 
     #[cfg(unix)]
@@ -893,7 +899,10 @@ mod tests {
             .expect("chmod file");
 
         let path = std::env::join_paths([dir.path()]).expect("join PATH");
-        assert!(!command_exists_in_path("codex", path.to_string_lossy().as_ref()));
+        assert!(!command_exists_in_path(
+            "codex",
+            path.to_string_lossy().as_ref()
+        ));
     }
 
     #[test]

@@ -326,9 +326,14 @@ impl TerminalView {
         );
 
         for index in 0..self.tabs.len() {
-            let (display_width, tab_title, pinned) = {
+            let (display_width, tab_title, pinned, progress_state) = {
                 let tab = &self.tabs[index];
-                (tab.display_width, tab.title.clone(), tab.pinned)
+                (
+                    tab.display_width,
+                    tab.title.clone(),
+                    tab.pinned,
+                    tab.progress_state,
+                )
             };
             let anim_progress = new_tab_anim
                 .filter(|(anim_index, _)| *anim_index == index)
@@ -399,6 +404,7 @@ impl TerminalView {
                     trailing_divider_cover: None,
                     drop_marker_side: self.tab_drop_marker_side(index),
                     open_anim_progress: anim_progress,
+                    progress_state,
                 },
                 font_family,
                 colors,

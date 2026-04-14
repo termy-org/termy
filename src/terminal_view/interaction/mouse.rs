@@ -437,7 +437,9 @@ impl TerminalView {
                 let boundary = match edge {
                     PaneResizeEdge::Left => target.left,
                     PaneResizeEdge::Right => target.left.saturating_add(target.width),
-                    PaneResizeEdge::Top | PaneResizeEdge::Bottom => return PaneResizeResult::NoChange,
+                    PaneResizeEdge::Top | PaneResizeEdge::Bottom => {
+                        return PaneResizeResult::NoChange;
+                    }
                 };
                 let mut spans = vec![(target.top, target.top.saturating_add(target.height))];
                 let mut left_indices = Vec::<usize>::new();
@@ -523,7 +525,9 @@ impl TerminalView {
                 let boundary = match edge {
                     PaneResizeEdge::Top => target.top,
                     PaneResizeEdge::Bottom => target.top.saturating_add(target.height),
-                    PaneResizeEdge::Left | PaneResizeEdge::Right => return PaneResizeResult::NoChange,
+                    PaneResizeEdge::Left | PaneResizeEdge::Right => {
+                        return PaneResizeResult::NoChange;
+                    }
                 };
                 let mut spans = vec![(target.left, target.left.saturating_add(target.width))];
                 let mut top_indices = Vec::<usize>::new();

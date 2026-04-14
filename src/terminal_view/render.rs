@@ -746,9 +746,7 @@ impl TerminalView {
                         updates.push((
                             row,
                             col,
-                            self.build_cell_render_info(
-                                col, row, term_line, cell_content, context,
-                            ),
+                            self.build_cell_render_info(col, row, term_line, cell_content, context),
                         ));
                     }
                 }
@@ -1924,7 +1922,12 @@ impl TerminalView {
             let panel_bg = overlay_style.chrome_panel_background(0.98);
             let panel_border = overlay_style.chrome_panel_neutral(0.22);
             let text_active = overlay_style.panel_foreground(0.95);
-            let text_danger = gpui::Rgba { r: 0.95, g: 0.4, b: 0.4, a: 1.0 };
+            let text_danger = gpui::Rgba {
+                r: 0.95,
+                g: 0.4,
+                b: 0.4,
+                a: 1.0,
+            };
             let hover_bg = overlay_style.chrome_panel_cursor(0.22);
             let pin_label = if state.pinned { "Unpin Tab" } else { "Pin Tab" };
 
@@ -2524,23 +2527,31 @@ impl Render for TerminalView {
                     let pane_id = pane.id.clone();
 
                     // Visual states for right edge divider
-                    let is_dragging_right = self.pane_resize_drag.as_ref().is_some_and(|d| {
-                        d.pane_id == pane.id && d.edge == PaneResizeEdge::Right
-                    });
-                    let is_hovered_right = self.hovered_pane_divider.as_ref().is_some_and(|h| {
-                        h.pane_id == pane.id && h.edge == PaneResizeEdge::Right
-                    });
+                    let is_dragging_right = self
+                        .pane_resize_drag
+                        .as_ref()
+                        .is_some_and(|d| d.pane_id == pane.id && d.edge == PaneResizeEdge::Right);
+                    let is_hovered_right = self
+                        .hovered_pane_divider
+                        .as_ref()
+                        .is_some_and(|h| h.pane_id == pane.id && h.edge == PaneResizeEdge::Right);
                     let cursor_color_hsla: gpui::Hsla = colors.cursor.into();
-                    let blocked_color = gpui::Hsla { h: 0.0, s: 0.7, l: 0.5, a: 1.0 }; // Red
-                    let (right_divider_width, right_divider_color) = if is_dragging_right && self.pane_resize_blocked {
-                        (3.0, blocked_color)
-                    } else if is_dragging_right {
-                        (3.0, cursor_color_hsla)
-                    } else if is_hovered_right {
-                        (2.0, cursor_color_hsla)
-                    } else {
-                        (1.0, divider_color)
-                    };
+                    let blocked_color = gpui::Hsla {
+                        h: 0.0,
+                        s: 0.7,
+                        l: 0.5,
+                        a: 1.0,
+                    }; // Red
+                    let (right_divider_width, right_divider_color) =
+                        if is_dragging_right && self.pane_resize_blocked {
+                            (3.0, blocked_color)
+                        } else if is_dragging_right {
+                            (3.0, cursor_color_hsla)
+                        } else if is_hovered_right {
+                            (2.0, cursor_color_hsla)
+                        } else {
+                            (1.0, divider_color)
+                        };
 
                     pane_dividers.push(
                         div()
@@ -2587,23 +2598,31 @@ impl Render for TerminalView {
                     let pane_id = pane.id.clone();
 
                     // Visual states for bottom edge divider
-                    let is_dragging_bottom = self.pane_resize_drag.as_ref().is_some_and(|d| {
-                        d.pane_id == pane.id && d.edge == PaneResizeEdge::Bottom
-                    });
-                    let is_hovered_bottom = self.hovered_pane_divider.as_ref().is_some_and(|h| {
-                        h.pane_id == pane.id && h.edge == PaneResizeEdge::Bottom
-                    });
+                    let is_dragging_bottom = self
+                        .pane_resize_drag
+                        .as_ref()
+                        .is_some_and(|d| d.pane_id == pane.id && d.edge == PaneResizeEdge::Bottom);
+                    let is_hovered_bottom = self
+                        .hovered_pane_divider
+                        .as_ref()
+                        .is_some_and(|h| h.pane_id == pane.id && h.edge == PaneResizeEdge::Bottom);
                     let cursor_color_hsla: gpui::Hsla = colors.cursor.into();
-                    let blocked_color = gpui::Hsla { h: 0.0, s: 0.7, l: 0.5, a: 1.0 }; // Red
-                    let (bottom_divider_height, bottom_divider_color) = if is_dragging_bottom && self.pane_resize_blocked {
-                        (3.0, blocked_color)
-                    } else if is_dragging_bottom {
-                        (3.0, cursor_color_hsla)
-                    } else if is_hovered_bottom {
-                        (2.0, cursor_color_hsla)
-                    } else {
-                        (1.0, divider_color)
-                    };
+                    let blocked_color = gpui::Hsla {
+                        h: 0.0,
+                        s: 0.7,
+                        l: 0.5,
+                        a: 1.0,
+                    }; // Red
+                    let (bottom_divider_height, bottom_divider_color) =
+                        if is_dragging_bottom && self.pane_resize_blocked {
+                            (3.0, blocked_color)
+                        } else if is_dragging_bottom {
+                            (3.0, cursor_color_hsla)
+                        } else if is_hovered_bottom {
+                            (2.0, cursor_color_hsla)
+                        } else {
+                            (1.0, divider_color)
+                        };
 
                     pane_dividers.push(
                         div()
@@ -3044,12 +3063,19 @@ impl Render for TerminalView {
                                                 cx.listener(Self::handle_mouse_up),
                                             )
                                             .when_some(
-                                                self.pane_resize_drag.as_ref().map(|d| d.axis)
-                                                    .or(self.hovered_pane_divider.as_ref().map(|h| h.axis)),
+                                                self.pane_resize_drag.as_ref().map(|d| d.axis).or(
+                                                    self.hovered_pane_divider
+                                                        .as_ref()
+                                                        .map(|h| h.axis),
+                                                ),
                                                 |s, axis| match axis {
-                                                    PaneResizeAxis::Horizontal => s.cursor_col_resize(),
-                                                    PaneResizeAxis::Vertical => s.cursor_row_resize(),
-                                                }
+                                                    PaneResizeAxis::Horizontal => {
+                                                        s.cursor_col_resize()
+                                                    }
+                                                    PaneResizeAxis::Vertical => {
+                                                        s.cursor_row_resize()
+                                                    }
+                                                },
                                             )
                                             .font_family(font_family.clone())
                                             .text_size(font_size)
@@ -3202,11 +3228,11 @@ mod tests {
                     ..TerminalOptions::default()
                 },
             ),
-        render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
-        last_alternate_screen: std::cell::Cell::new(false),
-        cached_element_ids: PaneCachedElementIds::new(id),
+            render_cache: std::cell::RefCell::new(TerminalPaneRenderCache::default()),
+            last_alternate_screen: std::cell::Cell::new(false),
+            cached_element_ids: PaneCachedElementIds::new(id),
+        }
     }
-}
 
     fn test_render_rows(rows: Vec<Vec<CellRenderInfo>>) -> PaneRenderCells {
         Arc::new(rows.into_iter().map(Arc::new).collect())
