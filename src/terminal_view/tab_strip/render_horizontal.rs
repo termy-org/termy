@@ -1,6 +1,5 @@
 use super::super::*;
 use super::hints::TabSwitchHintState;
-use super::render_controls::TabStripControlAction;
 use super::render_palette::TabStripPalette;
 use super::render_shared::TabStripRenderState;
 use super::render_tab_item::{TabItemRenderInput, TabItemStrokeRects};
@@ -14,30 +13,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gutter_divider_shows_without_overflow() {
-        assert!(TerminalView::should_render_gutter_divider(
+    fn gutter_divider_never_shows() {
+        // Gutter divider is disabled - should always return false
+        assert!(!TerminalView::should_render_gutter_divider(
             TabStripOverflowState {
                 left: false,
                 right: false,
             },
             false,
         ));
-    }
-
-    #[test]
-    fn gutter_divider_shows_when_only_right_overflow_exists() {
-        assert!(TerminalView::should_render_gutter_divider(
+        assert!(!TerminalView::should_render_gutter_divider(
             TabStripOverflowState {
                 left: false,
                 right: true,
             },
             false,
         ));
-    }
-
-    #[test]
-    fn gutter_divider_shows_when_overflow_exists_on_both_sides() {
-        assert!(TerminalView::should_render_gutter_divider(
+        assert!(!TerminalView::should_render_gutter_divider(
             TabStripOverflowState {
                 left: true,
                 right: true,
@@ -285,10 +277,10 @@ impl TerminalView {
     }
 
     fn should_render_gutter_divider(
-        overflow: TabStripOverflowState,
-        boundary_at_viewport_right: bool,
+        _overflow: TabStripOverflowState,
+        _boundary_at_viewport_right: bool,
     ) -> bool {
-        (overflow.right || !overflow.left) && !boundary_at_viewport_right
+        false
     }
 
     fn should_render_left_inset_divider(
@@ -432,13 +424,6 @@ impl TerminalView {
         palette: &TabStripPalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let tabbar_new_tab_left =
-            (state.geometry.button_start_x - state.geometry.action_rail_start_x).max(0.0);
-        let tabbar_new_tab_top =
-            (state.geometry.button_start_y - TOP_STRIP_CONTENT_OFFSET_Y).max(0.0);
-        let tabbar_new_tab_size =
-            (state.geometry.button_end_x - state.geometry.button_start_x).max(0.0);
-
         div()
             .id("tabbar-action-rail")
             .relative()
@@ -457,26 +442,6 @@ impl TerminalView {
                     .top(px(state.chrome_layout.baseline_y))
                     .h(px(TAB_STROKE_THICKNESS))
                     .bg(palette.tab_stroke_color),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .left(px(tabbar_new_tab_left))
-                    .top(px(tabbar_new_tab_top))
-                    .child(self.render_tab_strip_control_button(
-                        "tabbar-new-tab",
-                        "+",
-                        TabStripControlAction::NewTab,
-                        palette.tabbar_new_tab_bg,
-                        palette.tabbar_new_tab_hover_bg,
-                        palette.tabbar_new_tab_border,
-                        palette.tabbar_new_tab_hover_border,
-                        palette.tabbar_new_tab_text,
-                        palette.tabbar_new_tab_hover_text,
-                        tabbar_new_tab_size,
-                        TABBAR_NEW_TAB_ICON_SIZE,
-                        cx,
-                    )),
             )
             .into_any_element()
     }

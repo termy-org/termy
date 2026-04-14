@@ -22,6 +22,7 @@ pub(crate) const VERTICAL_TAB_STRIP_MACOS_TRAILING_PADDING: f32 = 0.0;
 pub(crate) const TAB_HORIZONTAL_PADDING: f32 = 0.0;
 pub(crate) const TAB_ITEM_HEIGHT: f32 = 32.0;
 pub(crate) const TAB_ITEM_GAP: f32 = 0.0;
+pub(crate) const TAB_ITEM_RADIUS: f32 = 0.0;
 pub(crate) const TAB_TEXT_PADDING_X: f32 = 10.0;
 // Adds a small cushion to avoid early clipping from glyph/metrics variance.
 pub(crate) const TAB_TITLE_LAYOUT_SLACK_PX: f32 = 18.0;

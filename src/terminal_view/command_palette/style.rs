@@ -8,10 +8,10 @@ use super::super::{
     resolve_chrome_stroke_color,
 };
 
-pub(in super::super) const COMMAND_PALETTE_PANEL_RADIUS: f32 = 0.0;
-pub(in super::super) const COMMAND_PALETTE_INPUT_RADIUS: f32 = 0.0;
-pub(super) const COMMAND_PALETTE_ROW_RADIUS: f32 = 0.0;
-pub(super) const COMMAND_PALETTE_SHORTCUT_RADIUS: f32 = 0.0;
+pub(in super::super) const COMMAND_PALETTE_PANEL_RADIUS: f32 = 12.0;
+pub(in super::super) const COMMAND_PALETTE_INPUT_RADIUS: f32 = 8.0;
+pub(super) const COMMAND_PALETTE_ROW_RADIUS: f32 = 6.0;
+pub(super) const COMMAND_PALETTE_SHORTCUT_RADIUS: f32 = 4.0;
 
 #[derive(Clone, Copy)]
 pub(in super::super) struct CommandPaletteStyle {
@@ -93,11 +93,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sharp_geometry_defaults_to_square_edges() {
-        assert_eq!(COMMAND_PALETTE_PANEL_RADIUS, 0.0);
-        assert_eq!(COMMAND_PALETTE_INPUT_RADIUS, 0.0);
-        assert_eq!(COMMAND_PALETTE_ROW_RADIUS, 0.0);
-        assert_eq!(COMMAND_PALETTE_SHORTCUT_RADIUS, 0.0);
+    fn rounded_geometry_uses_consistent_radii() {
+        assert_eq!(COMMAND_PALETTE_PANEL_RADIUS, 12.0);
+        assert_eq!(COMMAND_PALETTE_INPUT_RADIUS, 8.0);
+        assert_eq!(COMMAND_PALETTE_ROW_RADIUS, 6.0);
+        assert_eq!(COMMAND_PALETTE_SHORTCUT_RADIUS, 4.0);
     }
 
     #[test]

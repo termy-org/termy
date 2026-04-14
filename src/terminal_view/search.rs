@@ -281,7 +281,6 @@ impl TerminalView {
         let colors = &self.colors;
         let overlay_style = self.overlay_style();
         let bar_bg = overlay_style.chrome_panel_background(SEARCH_BAR_BG_ALPHA);
-        let bar_border = overlay_style.chrome_panel_cursor(OVERLAY_PANEL_BORDER_ALPHA);
         let input_bg = overlay_style.chrome_panel_background(SEARCH_INPUT_BG_ALPHA);
         let counter_text = overlay_style.panel_foreground(SEARCH_COUNTER_TEXT_ALPHA);
         let button_text = overlay_style.panel_foreground(SEARCH_BUTTON_TEXT_ALPHA);
@@ -290,11 +289,11 @@ impl TerminalView {
         let (current, total) = self.search_state.results().position().unwrap_or((0, 0));
 
         let counter_label = if total > 0 {
-            format!("{} of {}", current, total)
+            format!("{}/{}", current, total)
         } else if self.search_input.text().is_empty() {
             String::new()
         } else {
-            "No matches".to_string()
+            "0/0".to_string()
         };
 
         let has_error = self.search_state.error().is_some();
@@ -308,32 +307,44 @@ impl TerminalView {
         div()
             .id("search-bar")
             .absolute()
-            .top(px(12.0))
+            .top(px(8.0))
             .right(px(12.0))
             .w(px(SEARCH_BAR_WIDTH))
             .h(px(SEARCH_BAR_HEIGHT))
             .bg(bar_bg)
-            .border_1()
-            .border_color(if has_error { error_color } else { bar_border })
-            .rounded(px(TERMINAL_OVERLAY_GEOMETRY.panel_radius))
-            .shadow_lg()
+            .rounded(px(SEARCH_OVERLAY_GEOMETRY.panel_radius))
+            .shadow_md()
             .flex()
             .items_center()
-            .px(px(8.0))
-            .gap(px(6.0))
-            // Search input
+            .px(px(10.0))
+            .gap(px(8.0))
+            // Search input container
             .child(
                 div()
                     .flex_1()
-                    .h(px(24.0))
-                    .rounded(px(TERMINAL_OVERLAY_GEOMETRY.input_radius))
+                    .h(px(26.0))
+                    .rounded(px(SEARCH_OVERLAY_GEOMETRY.input_radius))
                     .bg(input_bg)
-                    .px(px(6.0))
+                    .border_1()
+                    .border_color(if has_error {
+                        error_color
+                    } else {
+                        gpui::Rgba { r: 1.0, g: 1.0, b: 1.0, a: 0.1 }
+                    })
+                    .px(px(8.0))
                     .flex()
                     .items_center()
+                    .gap(px(6.0))
+                    // Search icon
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(overlay_style.panel_foreground(0.4))
+                            .child("⌕")
+                    )
                     .child(self.render_inline_input_layer(
                         Font::default(),
-                        px(12.0),
+                        px(13.0),
                         colors.foreground.into(),
                         {
                             overlay_style
@@ -344,31 +355,31 @@ impl TerminalView {
                         cx,
                     )),
             )
-            // Match counter
-            .child(
+            // Match counter (outside input)
+            .children((!counter_label.is_empty()).then(|| {
                 div()
-                    .min_w(px(60.0))
                     .text_size(px(11.0))
                     .text_color(if has_error { error_color } else { counter_text })
-                    .child(counter_label),
-            )
+                    .flex_none()
+                    .child(counter_label.clone())
+            }))
             // Navigation buttons
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(2.0))
-                    // Up arrow: navigate toward older/top content
+                    // Up arrow (chevron): navigate toward older/top content
                     .child(
                         div()
                             .id("search-prev")
-                            .w(px(22.0))
-                            .h(px(22.0))
-                            .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
+                            .w(px(24.0))
+                            .h(px(24.0))
+                            .rounded(px(SEARCH_OVERLAY_GEOMETRY.control_radius))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(12.0))
+                            .text_size(px(14.0))
                             .text_color(button_text)
                             .hover(|style| style.bg(button_hover_bg))
                             .cursor_pointer()
@@ -379,19 +390,19 @@ impl TerminalView {
                                     cx.stop_propagation();
                                 }),
                             )
-                            .child("\u{2191}"), // Up arrow
+                            .child("‹"),
                     )
-                    // Down arrow: navigate toward newer/bottom content
+                    // Down arrow (chevron): navigate toward newer/bottom content
                     .child(
                         div()
                             .id("search-next")
-                            .w(px(22.0))
-                            .h(px(22.0))
-                            .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
+                            .w(px(24.0))
+                            .h(px(24.0))
+                            .rounded(px(SEARCH_OVERLAY_GEOMETRY.control_radius))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(12.0))
+                            .text_size(px(14.0))
                             .text_color(button_text)
                             .hover(|style| style.bg(button_hover_bg))
                             .cursor_pointer()
@@ -402,20 +413,20 @@ impl TerminalView {
                                     cx.stop_propagation();
                                 }),
                             )
-                            .child("\u{2193}"), // Down arrow
+                            .child("›"),
                     ),
             )
             // Close button
             .child(
                 div()
                     .id("search-close")
-                    .w(px(22.0))
-                    .h(px(22.0))
-                    .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
+                    .w(px(24.0))
+                    .h(px(24.0))
+                    .rounded(px(SEARCH_OVERLAY_GEOMETRY.control_radius))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(13.0))
+                    .text_size(px(14.0))
                     .text_color(button_text)
                     .hover(|style| style.bg(button_hover_bg))
                     .cursor_pointer()
@@ -426,7 +437,7 @@ impl TerminalView {
                             cx.stop_propagation();
                         }),
                     )
-                    .child("\u{00d7}"), // X
+                    .child("✕"),
             )
             .into_any()
     }

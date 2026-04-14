@@ -239,6 +239,7 @@ impl TerminalView {
             .flex_none()
             .relative()
             .overflow_hidden()
+            .rounded(px(TAB_ITEM_RADIUS))
             .bg(tab_bg)
             .w(px(input.tab_primary_extent))
             .h(px(input.tab_cross_extent))

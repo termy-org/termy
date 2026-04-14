@@ -313,7 +313,7 @@ impl TerminalView {
     }
 
     fn pane_resize_hit_test(&self, position: gpui::Point<Pixels>) -> Option<PaneResizeDragState> {
-        const DIVIDER_HIT_MARGIN_PX: f32 = 4.0;
+        const DIVIDER_HIT_MARGIN_PX: f32 = 8.0;
 
         let tab = self.tabs.get(self.active_tab)?;
         let max_right_cells = tab
@@ -411,7 +411,7 @@ impl TerminalView {
         axis: PaneResizeAxis,
         edge: PaneResizeEdge,
         divider_delta: i16,
-    ) -> bool {
+    ) -> PaneResizeResult {
         fn overlaps_any(span_start: u16, span_end: u16, spans: &[(u16, u16)]) -> bool {
             spans.iter().any(|(start, end)| {
                 TerminalView::native_resize_overlap_cells(span_start, span_end, *start, *end) > 0
@@ -419,17 +419,17 @@ impl TerminalView {
         }
 
         if divider_delta == 0 {
-            return false;
+            return PaneResizeResult::NoChange;
         }
 
         let Some(tab) = self.tabs.get_mut(self.active_tab) else {
-            return false;
+            return PaneResizeResult::NoChange;
         };
         let Some(target_index) = tab.panes.iter().position(|pane| pane.id == pane_id) else {
-            return false;
+            return PaneResizeResult::NoChange;
         };
         let Some(target) = tab.panes.get(target_index) else {
-            return false;
+            return PaneResizeResult::NoChange;
         };
 
         match axis {
@@ -437,7 +437,7 @@ impl TerminalView {
                 let boundary = match edge {
                     PaneResizeEdge::Left => target.left,
                     PaneResizeEdge::Right => target.left.saturating_add(target.width),
-                    PaneResizeEdge::Top | PaneResizeEdge::Bottom => return false,
+                    PaneResizeEdge::Top | PaneResizeEdge::Bottom => return PaneResizeResult::NoChange,
                 };
                 let mut spans = vec![(target.top, target.top.saturating_add(target.height))];
                 let mut left_indices = Vec::<usize>::new();
@@ -471,7 +471,7 @@ impl TerminalView {
                 }
 
                 if left_indices.is_empty() || right_indices.is_empty() {
-                    return false;
+                    return PaneResizeResult::NoChange;
                 }
                 let horizontal_lane_count =
                     Self::native_pane_lane_count_for_axis(&tab.panes, PaneResizeAxis::Horizontal);
@@ -490,7 +490,7 @@ impl TerminalView {
                         tab.panes[*index].width
                             < min_width.saturating_add(divider_delta.unsigned_abs())
                     }) {
-                        return false;
+                        return PaneResizeResult::BlockedByMinimum;
                     }
                     for index in left_indices {
                         tab.panes[index].width =
@@ -508,7 +508,7 @@ impl TerminalView {
                         .iter()
                         .any(|index| tab.panes[*index].width < min_width.saturating_add(shrink))
                     {
-                        return false;
+                        return PaneResizeResult::BlockedByMinimum;
                     }
                     for index in left_indices {
                         tab.panes[index].width = tab.panes[index].width.saturating_sub(shrink);
@@ -523,7 +523,7 @@ impl TerminalView {
                 let boundary = match edge {
                     PaneResizeEdge::Top => target.top,
                     PaneResizeEdge::Bottom => target.top.saturating_add(target.height),
-                    PaneResizeEdge::Left | PaneResizeEdge::Right => return false,
+                    PaneResizeEdge::Left | PaneResizeEdge::Right => return PaneResizeResult::NoChange,
                 };
                 let mut spans = vec![(target.left, target.left.saturating_add(target.width))];
                 let mut top_indices = Vec::<usize>::new();
@@ -557,7 +557,7 @@ impl TerminalView {
                 }
 
                 if top_indices.is_empty() || bottom_indices.is_empty() {
-                    return false;
+                    return PaneResizeResult::NoChange;
                 }
                 let vertical_lane_count =
                     Self::native_pane_lane_count_for_axis(&tab.panes, PaneResizeAxis::Vertical);
@@ -576,7 +576,7 @@ impl TerminalView {
                         tab.panes[*index].height
                             < min_height.saturating_add(divider_delta.unsigned_abs())
                     }) {
-                        return false;
+                        return PaneResizeResult::BlockedByMinimum;
                     }
                     for index in top_indices {
                         tab.panes[index].height =
@@ -594,7 +594,7 @@ impl TerminalView {
                         .iter()
                         .any(|index| tab.panes[*index].height < min_height.saturating_add(shrink))
                     {
-                        return false;
+                        return PaneResizeResult::BlockedByMinimum;
                     }
                     for index in top_indices {
                         tab.panes[index].height = tab.panes[index].height.saturating_sub(shrink);
@@ -607,7 +607,7 @@ impl TerminalView {
             }
         }
 
-        true
+        PaneResizeResult::Applied
     }
 
     fn apply_pane_resize_drag(&mut self, position: gpui::Point<Pixels>) -> bool {
@@ -647,8 +647,9 @@ impl TerminalView {
             return false;
         }
         let mut completed_steps = 0i32;
+        let mut was_blocked = false;
         for _ in 0..step_delta.unsigned_abs() {
-            let resized = match self.runtime_kind() {
+            let result = match self.runtime_kind() {
                 RuntimeKind::Tmux => {
                     // Left/top drags invert the tmux resize direction relative to cursor delta,
                     // because dragging toward the pane interior shrinks that edge.
@@ -656,7 +657,11 @@ impl TerminalView {
                         PaneResizeEdge::Left | PaneResizeEdge::Top => step_delta.is_negative(),
                         PaneResizeEdge::Right | PaneResizeEdge::Bottom => step_delta.is_positive(),
                     };
-                    self.tmux_resize_pane_step(pane_id.as_str(), axis, positive_direction)
+                    if self.tmux_resize_pane_step(pane_id.as_str(), axis, positive_direction) {
+                        PaneResizeResult::Applied
+                    } else {
+                        PaneResizeResult::NoChange
+                    }
                 }
                 RuntimeKind::Native => self.native_resize_pane_step(
                     pane_id.as_str(),
@@ -665,11 +670,21 @@ impl TerminalView {
                     if step_delta.is_positive() { 1 } else { -1 },
                 ),
             };
-            if resized {
-                completed_steps += 1;
-            } else {
-                break;
+            match result {
+                PaneResizeResult::Applied => {
+                    completed_steps += 1;
+                    self.pane_resize_blocked = false;
+                }
+                PaneResizeResult::BlockedByMinimum => {
+                    was_blocked = true;
+                    break;
+                }
+                PaneResizeResult::NoChange => break,
             }
+        }
+
+        if was_blocked {
+            self.pane_resize_blocked = true;
         }
 
         if completed_steps == 0 {
@@ -698,9 +713,11 @@ impl TerminalView {
         }
 
         let lines = if pointer_y < top {
-            ((top - pointer_y).powf(1.1) / line_height).ceil() as i32
+            // Pointer above viewport: scroll toward history (negative delta)
+            -((top - pointer_y).powf(1.1) / line_height).ceil() as i32
         } else if pointer_y > bottom {
-            -((pointer_y - bottom).powf(1.1) / line_height).ceil() as i32
+            // Pointer below viewport: scroll toward bottom (positive delta)
+            ((pointer_y - bottom).powf(1.1) / line_height).ceil() as i32
         } else {
             0
         };
@@ -1133,6 +1150,7 @@ impl TerminalView {
                     cx.notify();
                 }
             } else if self.pane_resize_drag.take().is_some() {
+                self.pane_resize_blocked = false;
                 if self.runtime_kind() == RuntimeKind::Native {
                     self.schedule_persist_native_workspace();
                 }
@@ -1140,6 +1158,20 @@ impl TerminalView {
             }
             cx.stop_propagation();
             return;
+        }
+
+        // Track pane divider hover state for cursor feedback
+        if !event.dragging() {
+            let hit = self.pane_resize_hit_test(event.position);
+            let next_hover = hit.map(|h| HoveredPaneDivider {
+                pane_id: h.pane_id,
+                axis: h.axis,
+                edge: h.edge,
+            });
+            if self.hovered_pane_divider != next_hover {
+                self.hovered_pane_divider = next_hover;
+                cx.notify();
+            }
         }
 
         if self.try_forward_mouse_move(event, cx) {
@@ -1216,6 +1248,7 @@ impl TerminalView {
             return;
         }
         if event.button == MouseButton::Left && self.pane_resize_drag.take().is_some() {
+            self.pane_resize_blocked = false;
             if self.runtime_kind() == RuntimeKind::Native {
                 self.schedule_persist_native_workspace();
             }
@@ -1244,14 +1277,16 @@ mod tests {
     fn selection_drag_autoscroll_lines_scrolls_up_when_pointer_above_top() {
         let lines =
             TerminalView::selection_drag_autoscroll_lines_from_bounds(90.0, 100.0, 300.0, 20.0);
-        assert!(lines > 0);
+        // Negative delta scrolls toward history (up)
+        assert!(lines < 0);
     }
 
     #[test]
     fn selection_drag_autoscroll_lines_scrolls_down_when_pointer_below_bottom() {
         let lines =
             TerminalView::selection_drag_autoscroll_lines_from_bounds(330.0, 100.0, 300.0, 20.0);
-        assert!(lines < 0);
+        // Positive delta scrolls toward bottom (down)
+        assert!(lines > 0);
     }
 
     #[test]
@@ -1269,8 +1304,10 @@ mod tests {
         let down =
             TerminalView::selection_drag_autoscroll_lines_from_bounds(10_000.0, 100.0, 300.0, 20.0);
 
-        assert_eq!(up, SELECTION_DRAG_AUTOSCROLL_MAX_LINES);
-        assert_eq!(down, -SELECTION_DRAG_AUTOSCROLL_MAX_LINES);
+        // up (pointer far above) -> negative, clamped to -MAX
+        assert_eq!(up, -SELECTION_DRAG_AUTOSCROLL_MAX_LINES);
+        // down (pointer far below) -> positive, clamped to +MAX
+        assert_eq!(down, SELECTION_DRAG_AUTOSCROLL_MAX_LINES);
     }
 
     #[test]

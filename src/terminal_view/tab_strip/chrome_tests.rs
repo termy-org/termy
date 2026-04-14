@@ -293,6 +293,7 @@ fn baseline_rectangles_are_bounded_by_content_width() {
 
 #[test]
 fn vertical_active_middle_suppresses_content_divider_only_across_active_span() {
+    // Tab 0 at 0-32, Tab 1 (active) at 32-64, Tab 2 at 64-96
     let layout = vertical_layout_for(&[32.0, 32.0, 32.0], Some(1), 180.0);
     let divider_pixels: HashSet<i32> = layout
         .content_divider_strokes
@@ -300,8 +301,13 @@ fn vertical_active_middle_suppresses_content_divider_only_across_active_span() {
         .flat_map(|stroke| (stroke.y as i32)..((stroke.y + stroke.h) as i32))
         .collect();
 
+    // Active tab: top=32, bottom_edge=63, bottom divider starts at 64
+    // Top divider: 0 to 32, Bottom divider: 64 to 96
+    // No divider in 32..64
+    let active_start = 32;
+    let active_end = 64;
     for y in 0..layout.content_height as i32 {
-        if (32..64).contains(&y) {
+        if (active_start..active_end).contains(&y) {
             assert!(
                 !divider_pixels.contains(&y),
                 "active span unexpectedly contains divider pixel at y={y}"
@@ -317,6 +323,7 @@ fn vertical_active_middle_suppresses_content_divider_only_across_active_span() {
 
 #[test]
 fn vertical_active_first_suppresses_divider_for_first_tab_only() {
+    // Tab 0 (active) at 0-32, Tab 1 at 32-64
     let layout = vertical_layout_for(&[32.0, 32.0], Some(0), 180.0);
     let divider_pixels: HashSet<i32> = layout
         .content_divider_strokes
@@ -324,8 +331,10 @@ fn vertical_active_first_suppresses_divider_for_first_tab_only() {
         .flat_map(|stroke| (stroke.y as i32)..((stroke.y + stroke.h) as i32))
         .collect();
 
+    // Active tab: bottom_edge = 32-1 = 31, divider starts at 32
+    let active_end = 32;
     for y in 0..layout.content_height as i32 {
-        if y < 32 {
+        if y < active_end {
             assert!(
                 !divider_pixels.contains(&y),
                 "active first tab unexpectedly contains divider pixel at y={y}"
@@ -341,6 +350,7 @@ fn vertical_active_first_suppresses_divider_for_first_tab_only() {
 
 #[test]
 fn vertical_active_last_suppresses_divider_for_last_tab_only() {
+    // Tab 0 at 0-32, Tab 1 (active) at 32-64
     let layout = vertical_layout_for(&[32.0, 32.0], Some(1), 180.0);
     let divider_pixels: HashSet<i32> = layout
         .content_divider_strokes
@@ -348,8 +358,11 @@ fn vertical_active_last_suppresses_divider_for_last_tab_only() {
         .flat_map(|stroke| (stroke.y as i32)..((stroke.y + stroke.h) as i32))
         .collect();
 
+    // Divider should exist from 0 to just before active tab (y=32)
+    // Active tab starts at y=32, so divider should be suppressed from there
+    let active_start = 32;
     for y in 0..layout.content_height as i32 {
-        if y < 32 {
+        if y < active_start {
             assert!(
                 divider_pixels.contains(&y),
                 "missing divider pixel above active last tab at y={y}"

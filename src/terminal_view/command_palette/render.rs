@@ -373,9 +373,9 @@ impl TerminalView {
             if let Some(metrics) = self.command_palette_scrollbar_metrics(list_height, item_count) {
                 let paint_style = ScrollbarPaintStyle {
                     width: COMMAND_PALETTE_SCROLLBAR_WIDTH,
-                    track_radius: 0.0,
-                    thumb_radius: 0.0,
-                    thumb_inset: 0.0,
+                    track_radius: 4.0,
+                    thumb_radius: 4.0,
+                    thumb_inset: 1.0,
                     marker_inset: 0.0,
                     marker_radius: 0.0,
                     track_color: style.scrollbar_track,

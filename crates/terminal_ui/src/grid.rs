@@ -446,8 +446,14 @@ impl TerminalGridPaintCache {
     }
 
     fn ensure_row_capacity(&mut self, row_count: usize) {
-        if self.row_ops.len() != row_count {
-            self.row_ops = vec![CachedRowPaintOps::default(); row_count];
+        let old_len = self.row_ops.len();
+        if old_len < row_count {
+            // Growing: keep existing cached rows, add new default rows
+            self.row_ops
+                .resize_with(row_count, CachedRowPaintOps::default);
+        } else if old_len > row_count {
+            // Shrinking: truncate, existing rows still valid for their indices
+            self.row_ops.truncate(row_count);
         }
         // dirty_col_ranges is per-pass scratch — resize and reset every frame.
         // Use resize + fill to reuse the existing allocation when row count is stable.

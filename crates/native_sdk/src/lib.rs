@@ -42,8 +42,10 @@ pub enum ContextMenuAction {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TabContextMenuAction {
+    Rename,
     Pin,
     Unpin,
+    Close,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,6 +79,8 @@ const CONTEXT_MENU_OPEN_SEARCH_ID: i32 = 3;
 const CONTEXT_MENU_COPY_BUFFER_POSITION_ID: i32 = 4;
 const TAB_CONTEXT_MENU_PIN_ID: i32 = 101;
 const TAB_CONTEXT_MENU_UNPIN_ID: i32 = 102;
+const TAB_CONTEXT_MENU_RENAME_ID: i32 = 103;
+const TAB_CONTEXT_MENU_CLOSE_ID: i32 = 104;
 const AGENT_PROJECT_CONTEXT_MENU_NEW_SESSION_ID: i32 = 201;
 const AGENT_PROJECT_CONTEXT_MENU_RENAME_ID: i32 = 202;
 const AGENT_PROJECT_CONTEXT_MENU_TOGGLE_GIT_PANEL_ID: i32 = 203;
@@ -438,21 +442,35 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
             let menu = NSMenu::new(mtm);
             menu.setAutoenablesItems(false);
 
-            let (title, action_id) = if pinned {
+            // Rename Tab
+            let rename_item = TermyContextMenuItem::new_with_action_id(mtm, "Rename Tab", TAB_CONTEXT_MENU_RENAME_ID, true);
+            menu.addItem(&rename_item);
+
+            // Pin/Unpin Tab
+            let (pin_title, pin_action_id) = if pinned {
                 ("Unpin Tab", TAB_CONTEXT_MENU_UNPIN_ID)
             } else {
                 ("Pin Tab", TAB_CONTEXT_MENU_PIN_ID)
             };
-            let item = TermyContextMenuItem::new_with_action_id(mtm, title, action_id, true);
-            menu.addItem(&item);
+            let pin_item = TermyContextMenuItem::new_with_action_id(mtm, pin_title, pin_action_id, true);
+            menu.addItem(&pin_item);
+
+            // Separator
+            menu.addItem(&NSMenuItem::separatorItem(mtm));
+
+            // Close Tab
+            let close_item = TermyContextMenuItem::new_with_action_id(mtm, "Close Tab", TAB_CONTEXT_MENU_CLOSE_ID, true);
+            menu.addItem(&close_item);
 
             CONTEXT_MENU_SELECTION.store(0, Ordering::Relaxed);
             let location: NSPoint = NSEvent::mouseLocation();
             let _ = menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
 
             match CONTEXT_MENU_SELECTION.swap(0, Ordering::Relaxed) {
+                TAB_CONTEXT_MENU_RENAME_ID => Some(TabContextMenuAction::Rename),
                 TAB_CONTEXT_MENU_PIN_ID => Some(TabContextMenuAction::Pin),
                 TAB_CONTEXT_MENU_UNPIN_ID => Some(TabContextMenuAction::Unpin),
+                TAB_CONTEXT_MENU_CLOSE_ID => Some(TabContextMenuAction::Close),
                 _ => None,
             }
         }
@@ -474,18 +492,47 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
         }
         let _menu_guard = MenuGuard(menu);
 
-        let (title, action_id) = if pinned {
-            (wide_string("Unpin Tab"), TAB_CONTEXT_MENU_UNPIN_ID)
-        } else {
-            (wide_string("Pin Tab"), TAB_CONTEXT_MENU_PIN_ID)
-        };
-
+        // Rename Tab
+        let rename_title = wide_string("Rename Tab");
         unsafe {
             AppendMenuW(
                 menu,
                 MF_STRING,
-                action_id as usize,
-                windows::core::PCWSTR(title.as_ptr()),
+                TAB_CONTEXT_MENU_RENAME_ID as usize,
+                windows::core::PCWSTR(rename_title.as_ptr()),
+            )
+            .ok()?;
+        }
+
+        // Pin/Unpin Tab
+        let (pin_title, pin_action_id) = if pinned {
+            (wide_string("Unpin Tab"), TAB_CONTEXT_MENU_UNPIN_ID)
+        } else {
+            (wide_string("Pin Tab"), TAB_CONTEXT_MENU_PIN_ID)
+        };
+        unsafe {
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                pin_action_id as usize,
+                windows::core::PCWSTR(pin_title.as_ptr()),
+            )
+            .ok()?;
+        }
+
+        // Separator
+        unsafe {
+            AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null()).ok()?;
+        }
+
+        // Close Tab
+        let close_title = wide_string("Close Tab");
+        unsafe {
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                TAB_CONTEXT_MENU_CLOSE_ID as usize,
+                windows::core::PCWSTR(close_title.as_ptr()),
             )
             .ok()?;
         }
@@ -509,8 +556,10 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
         };
 
         return match result {
+            TAB_CONTEXT_MENU_RENAME_ID => Some(TabContextMenuAction::Rename),
             TAB_CONTEXT_MENU_PIN_ID => Some(TabContextMenuAction::Pin),
             TAB_CONTEXT_MENU_UNPIN_ID => Some(TabContextMenuAction::Unpin),
+            TAB_CONTEXT_MENU_CLOSE_ID => Some(TabContextMenuAction::Close),
             _ => None,
         };
     }

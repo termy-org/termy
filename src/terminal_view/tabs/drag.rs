@@ -403,17 +403,20 @@ mod tests {
 
     #[test]
     fn vertical_drop_slot_respects_midpoints() {
+        // With TAB_ITEM_GAP=4, tabs are at:
+        // Tab 0: 0-32, midpoint=16
+        // Tab 1: 36-68, midpoint=52
+        // Tab 2: 72-104, midpoint=88
         let layout = vertical_layout(vec![TAB_ITEM_HEIGHT, TAB_ITEM_HEIGHT, TAB_ITEM_HEIGHT]);
         assert_eq!(layout.drop_slot_for_pointer(10.0, 0.0), 0);
         assert_eq!(
             layout.drop_slot_for_pointer(TAB_ITEM_HEIGHT * 0.5 + 1.0, 0.0),
             1
         );
-        assert_eq!(
-            layout.drop_slot_for_pointer(TAB_ITEM_HEIGHT * 1.5 + 1.0, 0.0),
-            2
-        );
-        assert_eq!(layout.drop_slot_for_pointer(TAB_ITEM_HEIGHT * 3.0, 0.0), 3);
+        // 53.0 is past tab 1's midpoint (52), so slot 2
+        assert_eq!(layout.drop_slot_for_pointer(53.0, 0.0), 2);
+        // Past all tabs
+        assert_eq!(layout.drop_slot_for_pointer(110.0, 0.0), 3);
     }
 
     #[test]

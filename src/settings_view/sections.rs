@@ -31,7 +31,7 @@ impl SettingsWindow {
     }
 
     fn render_root_bool_setting_row(
-        &self,
+        &mut self,
         setting_key: &'static str,
         toggle_id: &'static str,
         setting: RootSettingId,
@@ -756,7 +756,7 @@ impl SettingsWindow {
             .id("theme-store-search-input")
             .h(px(36.0))
             .px_3()
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_INPUT_RADIUS))
             .bg(bg_input)
             .border_1()
             .border_color(if is_search_active {
@@ -787,10 +787,17 @@ impl SettingsWindow {
                         .character_index_for_point(event.position);
                     if event.modifiers.shift {
                         view.theme_store_search_state.select_to_utf16(index);
+                    } else if event.click_count >= 3 {
+                        // Triple-click: select all
+                        view.theme_store_search_state.select_all();
+                    } else if event.click_count == 2 {
+                        // Double-click: select word at cursor
+                        view.theme_store_search_state.select_token_at_utf16(index);
                     } else {
                         view.theme_store_search_state.set_cursor_utf16(index);
                     }
-                    view.theme_store_search_selecting = true;
+                    // Only enable drag-selecting on single click
+                    view.theme_store_search_selecting = event.click_count == 1;
                     view.focus_handle.focus(window, cx);
                     cx.notify();
                 }),
@@ -1286,7 +1293,7 @@ impl SettingsWindow {
         let config_file_card = div()
             .py_4()
             .px_4()
-            .rounded(px(0.0))
+            .rounded(px(SETTINGS_INPUT_RADIUS))
             .bg(bg_card)
             .border_1()
             .border_color(border_color)
@@ -1311,7 +1318,7 @@ impl SettingsWindow {
                     .mt_2()
                     .px_4()
                     .py_2()
-                    .rounded(px(0.0))
+                    .rounded(px(SETTINGS_INPUT_RADIUS))
                     .bg(accent)
                     .text_sm()
                     .font_weight(gpui::FontWeight::MEDIUM)

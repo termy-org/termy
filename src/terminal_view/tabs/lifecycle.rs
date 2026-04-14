@@ -710,7 +710,9 @@ impl TerminalView {
             return false;
         };
         self.clear_native_zoom_snapshot_for_active_tab();
-        if !self.native_resize_pane_step(active_pane_id.as_str(), axis, edge, divider_delta) {
+        if self.native_resize_pane_step(active_pane_id.as_str(), axis, edge, divider_delta)
+            != PaneResizeResult::Applied
+        {
             return false;
         }
         self.clear_selection();
@@ -825,6 +827,7 @@ impl TerminalView {
         &mut self,
         cols: u16,
         rows: u16,
+        cell_size: Size<Pixels>,
         cx: &mut Context<Self>,
     ) -> Result<Terminal, String> {
         let preferred_working_dir = self.preferred_working_dir_for_new_session(None, cx);
@@ -832,7 +835,8 @@ impl TerminalView {
             TerminalSize {
                 cols: cols.max(1),
                 rows: rows.max(1),
-                ..TerminalSize::default()
+                cell_width: cell_size.width,
+                cell_height: cell_size.height,
             },
             preferred_working_dir.as_deref(),
             Some(self.event_wakeup_tx.clone()),
@@ -924,7 +928,8 @@ impl TerminalView {
             }
         };
 
-        let terminal = match self.native_make_terminal(split_size.2, split_size.3, cx) {
+        let cell_size = self.layout_cell_size();
+        let terminal = match self.native_make_terminal(split_size.2, split_size.3, cell_size, cx) {
             Ok(terminal) => terminal,
             Err(error) => {
                 termy_toast::error(error);
@@ -944,6 +949,13 @@ impl TerminalView {
             active_pane.top = current_size.1;
             active_pane.width = current_size.2;
             active_pane.height = current_size.3;
+            // Resize terminal immediately to avoid visual "crump" on first render
+            active_pane.terminal.resize(TerminalSize {
+                cols: current_size.2,
+                rows: current_size.3,
+                cell_width: cell_size.width,
+                cell_height: cell_size.height,
+            });
         }
 
         let cached_element_ids = PaneCachedElementIds::new(&pane_id);

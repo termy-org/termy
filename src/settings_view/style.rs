@@ -131,9 +131,9 @@ impl SettingsWindow {
 
         ScrollbarPaintStyle {
             width: SETTINGS_SCROLLBAR_WIDTH,
-            track_radius: 0.0,
-            thumb_radius: 0.0,
-            thumb_inset: 0.0,
+            track_radius: 4.0,
+            thumb_radius: 4.0,
+            thumb_inset: 1.0,
             marker_inset: 0.0,
             marker_radius: 0.0,
             track_color: track,

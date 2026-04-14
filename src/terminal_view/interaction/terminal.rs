@@ -265,8 +265,9 @@ impl TerminalView {
         &mut self,
         window: &mut Window,
         layout_cell_size: Size<Pixels>,
-        cx: &App,
+        cx: &mut Context<Self>,
     ) {
+        let now = Instant::now();
         let viewport = window.viewport_size();
         let viewport_width: f32 = viewport.width.into();
         let viewport_height: f32 = viewport.height.into();
@@ -332,6 +333,12 @@ impl TerminalView {
             }
         }
 
+        // Throttle resize to avoid SIGWINCH flood during window drag
+        let can_resize = self.last_resize_applied_at.map_or(true, |last| {
+            now.duration_since(last) >= Duration::from_millis(RESIZE_THROTTLE_MS)
+        });
+        let mut needs_throttle_follow_up = false;
+
         for tab_index in 0..self.tabs.len() {
             let pane_count = self.tabs[tab_index].panes.len();
             let tab_uses_native_split_padding =
@@ -376,12 +383,18 @@ impl TerminalView {
                     cell_height: pane_cell_size.height,
                 };
                 let current = pane.terminal.size();
-                if current.cols != next_size.cols
+                let needs_resize = current.cols != next_size.cols
                     || current.rows != next_size.rows
                     || current.cell_width != next_size.cell_width
-                    || current.cell_height != next_size.cell_height
-                {
-                    pane.terminal.resize(next_size);
+                    || current.cell_height != next_size.cell_height;
+
+                if needs_resize {
+                    if can_resize {
+                        pane.terminal.resize(next_size);
+                        self.last_resize_applied_at = Some(now);
+                    } else {
+                        needs_throttle_follow_up = true;
+                    }
                 }
 
                 let alt_screen = pane.terminal.alternate_screen_mode();
@@ -393,6 +406,10 @@ impl TerminalView {
                     }
                 }
             }
+        }
+
+        if needs_throttle_follow_up {
+            self.schedule_resize_throttle_follow_up(cx);
         }
     }
 }
