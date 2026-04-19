@@ -1940,26 +1940,46 @@ impl TerminalView {
         .detach();
     }
 
-    fn cached_or_queued_working_dir_for_child_pid(
+    fn cached_child_working_dir_for_pid(
+        &mut self,
+        pid: u32,
+        cx: &mut Context<Self>,
+    ) -> Option<Option<String>> {
+        let (cached_value, resolved_at) = self
+            .child_working_dir_cache
+            .get(&pid)
+            .map(|entry| (entry.value.clone(), entry.resolved_at))?;
+        let is_fresh =
+            Instant::now().saturating_duration_since(resolved_at) <= CHILD_WORKING_DIR_CACHE_TTL;
+        if !is_fresh {
+            self.schedule_child_working_dir_lookup(pid, cx);
+        }
+        Some(cached_value)
+    }
+
+    fn immediate_process_cwd_for_session_creation(
+        cached_value: Option<&str>,
+        pid: u32,
+    ) -> Option<String> {
+        normalize_working_directory_candidate(cached_value)
+            .or_else(|| Self::working_dir_for_child_pid_blocking(pid))
+    }
+
+    pub(in crate::terminal_view) fn cached_or_resolved_working_dir_for_child_pid(
         &mut self,
         pid: u32,
         cx: &mut Context<Self>,
     ) -> Option<String> {
-        if let Some((cached_value, resolved_at)) = self
-            .child_working_dir_cache
-            .get(&pid)
-            .map(|entry| (entry.value.clone(), entry.resolved_at))
-        {
-            let is_fresh = Instant::now().saturating_duration_since(resolved_at)
-                <= CHILD_WORKING_DIR_CACHE_TTL;
-            if !is_fresh {
-                self.schedule_child_working_dir_lookup(pid, cx);
-            }
+        if let Some(cached_value) = self.cached_child_working_dir_for_pid(pid, cx) {
             return cached_value;
         }
 
-        self.schedule_child_working_dir_lookup(pid, cx);
-        None
+        let value = Self::immediate_process_cwd_for_session_creation(None, pid);
+        self.complete_child_working_dir_lookup(pid, value.clone());
+        if value.is_none() {
+            self.schedule_child_working_dir_lookup(pid, cx);
+        }
+        value
     }
 
     fn resolve_preferred_working_directory(
@@ -2005,7 +2025,7 @@ impl TerminalView {
             .get(active_tab)
             .and_then(TerminalTab::active_terminal)
             .and_then(Terminal::child_pid)
-            .and_then(|pid| self.cached_or_queued_working_dir_for_child_pid(pid, cx));
+            .and_then(|pid| self.cached_or_resolved_working_dir_for_child_pid(pid, cx));
         let title_cwd = self
             .tabs
             .get(active_tab)
@@ -4022,6 +4042,24 @@ mod tests {
             RuntimeWorkingDirFallback::Home,
         );
         assert_eq!(cwd.as_deref(), Some(configured.to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn immediate_process_cwd_for_session_creation_prefers_cached_value() {
+        let cwd = TerminalView::immediate_process_cwd_for_session_creation(Some("/cached"), 0);
+        assert_eq!(cwd.as_deref(), Some("/cached"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
+    #[test]
+    fn immediate_process_cwd_for_session_creation_resolves_on_cache_miss() {
+        let expected = std::env::current_dir()
+            .expect("current dir")
+            .to_string_lossy()
+            .into_owned();
+        let cwd =
+            TerminalView::immediate_process_cwd_for_session_creation(None, std::process::id());
+        assert_eq!(cwd.as_deref(), Some(expected.as_str()));
     }
 
     #[test]

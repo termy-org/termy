@@ -187,7 +187,7 @@ impl TerminalView {
             .get(active_tab)
             .and_then(TerminalTab::active_terminal)
             .and_then(Terminal::child_pid)
-            .and_then(|pid| self.cached_or_queued_working_dir_for_child_pid(pid, cx));
+            .and_then(|pid| self.cached_or_resolved_working_dir_for_child_pid(pid, cx));
         let title_cwd = self
             .tabs
             .get(active_tab)
