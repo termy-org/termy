@@ -2,44 +2,100 @@ use crate::config;
 use crate::settings_view::SettingsWindow;
 use crate::terminal_view::TerminalView;
 use crate::terminal_view::initial_window_background_appearance;
-use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use crate::gpui::{
+    AnyView, AnyWindowHandle, App, AppContext, Bounds, Context, Window, WindowBounds,
+    WindowOptions, px, size,
+};
+
+fn root_contains_view<V: 'static>(root_view: AnyView, cx: &App) -> bool {
+    if root_view.clone().downcast::<V>().is_ok() {
+        return true;
+    }
+
+    let Some(root) = root_view.downcast::<gpui_component::Root>().ok() else {
+        return false;
+    };
+
+    root.read(cx).view().clone().downcast::<V>().is_ok()
+}
+
+fn window_contains_view<V: 'static, C: AppContext>(handle: AnyWindowHandle, cx: &C) -> bool {
+    if handle.downcast::<V>().is_some() {
+        return true;
+    }
+
+    handle
+        .downcast::<gpui_component::Root>()
+        .and_then(|root| {
+            root.read_with(cx, |root, _cx| root.view().clone().downcast::<V>().ok())
+                .ok()
+                .flatten()
+        })
+        .is_some()
+}
+
+fn update_window_view<V: 'static, R>(
+    handle: AnyWindowHandle,
+    cx: &mut App,
+    update: impl FnOnce(&mut V, &mut Window, &mut Context<V>) -> R,
+) -> Option<R> {
+    let mut update = Some(update);
+    handle
+        .update(cx, move |root_view, window, cx| {
+            let view = if let Ok(view) = root_view.clone().downcast::<V>() {
+                view
+            } else {
+                let Ok(root) = root_view.downcast::<gpui_component::Root>() else {
+                    return None;
+                };
+                let Ok(view) = root.read(cx).view().clone().downcast::<V>() else {
+                    return None;
+                };
+                view
+            };
+
+            let update = update
+                .take()
+                .expect("window view update closure should only execute once");
+            Some(view.update(cx, |view, cx| update(view, window, cx)))
+        })
+        .ok()
+        .flatten()
+}
 
 pub(crate) fn open_config_file() -> Result<(), String> {
     config::open_config_file().map_err(|error| error.to_string())
 }
 
 pub(crate) fn focus_existing_window<V: 'static>(cx: &mut App) -> bool {
-    if let Some(window_handle) = cx
-        .windows()
-        .into_iter()
-        .find_map(|handle| handle.downcast::<V>())
-    {
-        window_handle
-            .update(cx, |_view, window, _cx| {
+    cx.windows().into_iter().any(|handle| {
+        handle
+            .update(cx, |root_view, window, cx| {
+                if !root_contains_view::<V>(root_view, cx) {
+                    return false;
+                }
+
                 window.activate_window();
+                true
             })
-            .is_ok()
-    } else {
-        false
-    }
+            .unwrap_or(false)
+    })
 }
 
 pub(crate) fn has_window<V: 'static>(cx: &App) -> bool {
     cx.windows()
         .into_iter()
-        .any(|handle| handle.downcast::<V>().is_some())
+        .any(|handle| window_contains_view::<V, _>(handle, cx))
 }
 
 pub(crate) fn update_open_settings_windows(
     cx: &mut App,
-    mut update: impl FnMut(&mut SettingsWindow, &mut gpui::Context<SettingsWindow>),
+    mut update: impl FnMut(&mut SettingsWindow, &mut crate::gpui::Context<SettingsWindow>),
 ) {
-    for settings_window in cx
-        .windows()
-        .into_iter()
-        .filter_map(|handle| handle.downcast::<SettingsWindow>())
-    {
-        let _ = settings_window.update(cx, |view, _window, cx| update(view, cx));
+    for handle in cx.windows() {
+        let _ = update_window_view(handle, cx, |view: &mut SettingsWindow, _window, view_cx| {
+            update(view, view_cx);
+        });
     }
 }
 
@@ -48,19 +104,13 @@ pub(crate) fn open_new_tab_in_main_window(
     command: Option<String>,
     dir: Option<String>,
 ) -> Result<(), String> {
-    let Some(main_window) = cx
-        .windows()
-        .into_iter()
-        .find_map(|handle| handle.downcast::<TerminalView>())
-    else {
+    let Some(()) = cx.windows().into_iter().find_map(|handle| {
+        update_window_view(handle, cx, |view: &mut TerminalView, window, view_cx| {
+            view.open_new_tab_from_deeplink(command.as_deref(), dir.as_deref(), window, view_cx);
+        })
+    }) else {
         return Err("No main window available for new tab deeplink".to_string());
     };
-
-    main_window
-        .update(cx, |view, window, cx| {
-            view.open_new_tab_from_deeplink(command.as_deref(), dir.as_deref(), window, cx);
-        })
-        .map_err(|error| format!("Failed to open new tab from deeplink: {error}"))?;
 
     Ok(())
 }
@@ -87,19 +137,19 @@ pub(crate) fn open_settings_window(cx: &mut App) -> Result<(), String> {
     let window_background = initial_window_background_appearance(&settings_load.config);
 
     #[cfg(target_os = "macos")]
-    let titlebar = Some(gpui::TitlebarOptions {
+    let titlebar = Some(crate::gpui::TitlebarOptions {
         title: Some("Settings".into()),
         appears_transparent: true,
-        traffic_light_position: Some(gpui::point(px(12.0), px(10.0))),
+        traffic_light_position: Some(crate::gpui::point(px(12.0), px(10.0))),
     });
     #[cfg(target_os = "windows")]
-    let titlebar = Some(gpui::TitlebarOptions {
+    let titlebar = Some(crate::gpui::TitlebarOptions {
         title: Some("Settings".into()),
         appears_transparent: false,
         traffic_light_position: None,
     });
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    let titlebar = Some(gpui::TitlebarOptions {
+    let titlebar = Some(crate::gpui::TitlebarOptions {
         title: Some("Settings".into()),
         appears_transparent: true,
         traffic_light_position: None,
@@ -123,7 +173,7 @@ pub(crate) fn open_settings_window(cx: &mut App) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{AnyWindowHandle, TestAppContext};
+    use crate::gpui::{AnyWindowHandle, TestAppContext};
 
     fn settings_window_count(cx: &TestAppContext) -> usize {
         cx.windows()
@@ -132,7 +182,7 @@ mod tests {
             .count()
     }
 
-    #[gpui::test]
+    #[crate::gpui::test]
     fn open_settings_window_reuses_existing_window(cx: &mut TestAppContext) {
         assert_eq!(settings_window_count(cx), 0);
 
@@ -148,7 +198,7 @@ mod tests {
         assert_eq!(settings_window_count(cx), 1);
     }
 
-    #[gpui::test]
+    #[crate::gpui::test]
     fn open_settings_window_does_not_duplicate_when_called_from_settings_update(
         cx: &mut TestAppContext,
     ) {
