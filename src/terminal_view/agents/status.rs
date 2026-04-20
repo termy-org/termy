@@ -47,10 +47,10 @@ impl TerminalView {
     }
 
     pub(in super::super) fn extract_agent_status_line(
-        grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
+        grid: &crate::alacritty_terminal::grid::Grid<crate::alacritty_terminal::term::cell::Cell>,
         line_idx: i32,
     ) -> Option<String> {
-        use alacritty_terminal::index::{Column, Line};
+        use crate::alacritty_terminal::index::{Column, Line};
 
         let line = Line(line_idx);
         let cols = grid.columns();

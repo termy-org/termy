@@ -14,7 +14,7 @@ impl TerminalView {
 
     fn terminal_context_menu_buffer_position(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
     ) -> Option<SelectionPos> {
         let (_, buffer_position) = self.position_to_pane_selection_pos(position, false)?;
         Some(buffer_position)
@@ -186,7 +186,7 @@ impl TerminalView {
 
     pub(in super::super) fn open_terminal_context_menu(
         &mut self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
         let _ = self.close_tab_context_menu(cx);
@@ -225,7 +225,7 @@ impl TerminalView {
     pub(in super::super) fn open_tab_context_menu(
         &mut self,
         tab_index: usize,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
         let Some((tab_id, pinned)) = self.tabs.get(tab_index).map(|tab| (tab.id, tab.pinned))

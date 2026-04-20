@@ -276,7 +276,7 @@ impl TerminalView {
         window: &Window,
         colors: &TerminalColors,
         font_family: &SharedString,
-        tabbar_bg: gpui::Rgba,
+        tabbar_bg: crate::gpui::Rgba,
         show_sidebar_chrome: bool,
         _cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
@@ -358,7 +358,7 @@ impl TerminalView {
 
     fn render_vertical_tail(
         layout: &chrome::VerticalTabChromeLayout,
-        tab_stroke_color: gpui::Rgba,
+        tab_stroke_color: crate::gpui::Rgba,
     ) -> AnyElement {
         let mut tail = div()
             .id("vertical-tabs-lane-tail")
@@ -458,7 +458,7 @@ impl TerminalView {
         &mut self,
         layout: VerticalNewTabShelfLayout,
         divider_x: f32,
-        tab_stroke_color: gpui::Rgba,
+        tab_stroke_color: crate::gpui::Rgba,
         palette: &TabStripPalette,
         compact: bool,
         cx: &mut Context<Self>,
@@ -518,7 +518,7 @@ impl TerminalView {
         &mut self,
         layout: VerticalBottomShelfLayout,
         divider_x: f32,
-        tab_stroke_color: gpui::Rgba,
+        tab_stroke_color: crate::gpui::Rgba,
         palette: &TabStripPalette,
         compact: bool,
         cx: &mut Context<Self>,
@@ -584,7 +584,7 @@ impl TerminalView {
         window: &Window,
         colors: &TerminalColors,
         font_family: &SharedString,
-        tabbar_bg: gpui::Rgba,
+        tabbar_bg: crate::gpui::Rgba,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let font_family_key = font_family.to_string();

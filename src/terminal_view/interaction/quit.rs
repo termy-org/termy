@@ -1,5 +1,5 @@
 use super::*;
-use gpui::PromptLevel;
+use crate::gpui::PromptLevel;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CloseRequestTarget {

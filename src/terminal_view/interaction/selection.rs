@@ -1,5 +1,5 @@
 use super::*;
-use alacritty_terminal::grid::Dimensions;
+use crate::alacritty_terminal::grid::Dimensions;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TerminalSelectionCharClass {
@@ -20,7 +20,7 @@ fn is_trailing_wide_char_spacer(flags: Flags) -> bool {
 }
 
 fn terminal_line_bounds(
-    grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
+    grid: &crate::alacritty_terminal::grid::Grid<crate::alacritty_terminal::term::cell::Cell>,
 ) -> Option<(i32, i32)> {
     let screen_lines = i32::try_from(grid.screen_lines()).ok()?;
     let total_lines = i32::try_from(grid.total_lines()).ok()?;
@@ -34,11 +34,11 @@ fn terminal_line_bounds(
 }
 
 fn grid_line_text(
-    grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::cell::Cell>,
+    grid: &crate::alacritty_terminal::grid::Grid<crate::alacritty_terminal::term::cell::Cell>,
     line_idx: i32,
     cols: usize,
 ) -> Option<Vec<Option<char>>> {
-    use alacritty_terminal::index::{Column, Line};
+    use crate::alacritty_terminal::index::{Column, Line};
 
     let (min_line, max_line) = terminal_line_bounds(grid)?;
     if line_idx < min_line || line_idx > max_line {
@@ -328,7 +328,7 @@ impl TerminalView {
 
     pub(in super::super) fn position_to_pane_cell(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<(String, CellPos)> {
         let tab = self.tabs.get(self.active_tab)?;
@@ -354,7 +354,7 @@ impl TerminalView {
     pub(in super::super) fn position_to_cell_in_pane(
         &self,
         pane_id: &str,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<CellPos> {
         let tab = self.tabs.get(self.active_tab)?;
@@ -429,7 +429,7 @@ impl TerminalView {
 
     pub(in super::super) fn position_to_cell(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<CellPos> {
         let (pane_id, cell) = self.position_to_pane_cell(position, clamp)?;
@@ -438,7 +438,7 @@ impl TerminalView {
 
     pub(in super::super) fn position_to_selection_pos(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<SelectionPos> {
         let cell = self.position_to_cell(position, clamp)?;
@@ -447,7 +447,7 @@ impl TerminalView {
 
     pub(in super::super) fn position_to_pane_selection_pos(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         clamp: bool,
     ) -> Option<(String, SelectionPos)> {
         let (pane_id, cell) = self.position_to_pane_cell(position, clamp)?;
@@ -676,7 +676,7 @@ impl TerminalView {
         }
     }
 
-    pub(in super::super) fn is_link_modifier(modifiers: gpui::Modifiers) -> bool {
+    pub(in super::super) fn is_link_modifier(modifiers: crate::gpui::Modifiers) -> bool {
         modifiers.secondary() && !modifiers.alt && !modifiers.function
     }
 }

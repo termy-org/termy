@@ -1,6 +1,6 @@
 use super::*;
 use crate::theme_store;
-use gpui::point;
+use crate::gpui::point;
 use state::{
     CommandPaletteCommandIntent, CommandPaletteItem, CommandPaletteItemKind,
     command_palette_next_scroll_y, command_palette_target_scroll_y, ordered_theme_ids_for_palette,

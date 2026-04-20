@@ -7,7 +7,7 @@ use cocoa::{
     foundation::{NSArray, NSAutoreleasePool, NSFastEnumeration, NSPoint, NSString, NSUInteger},
 };
 use flume::Sender;
-use gpui::Window;
+use crate::gpui::Window;
 use objc::{
     class,
     declare::ClassDecl,

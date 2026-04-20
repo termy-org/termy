@@ -1,19 +1,19 @@
 use super::scrollbar as terminal_scrollbar;
 use super::*;
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle};
-use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
-use gpui::prelude::FluentBuilder;
-use gpui::{ElementInputHandler, canvas};
+use crate::alacritty_terminal::grid::Dimensions;
+use crate::alacritty_terminal::index::{Column, Line};
+use crate::alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor};
+use crate::gpui::prelude::FluentBuilder;
+use crate::gpui::{ElementInputHandler, canvas};
 use std::sync::Arc;
 use std::time::Instant;
 use termy_terminal_ui::add_span_damage_compute_us;
 
-fn blend_rgb_only(base: gpui::Rgba, target: gpui::Rgba, factor: f32) -> gpui::Rgba {
+fn blend_rgb_only(base: crate::gpui::Rgba, target: crate::gpui::Rgba, factor: f32) -> crate::gpui::Rgba {
     let factor = factor.clamp(0.0, 1.0);
     let inv = 1.0 - factor;
-    gpui::Rgba {
+    crate::gpui::Rgba {
         r: (base.r * inv) + (target.r * factor),
         g: (base.g * inv) + (target.g * factor),
         b: (base.b * inv) + (target.b * factor),
@@ -21,14 +21,14 @@ fn blend_rgb_only(base: gpui::Rgba, target: gpui::Rgba, factor: f32) -> gpui::Rg
     }
 }
 
-fn desaturate_rgb(color: gpui::Rgba, amount: f32) -> gpui::Rgba {
+fn desaturate_rgb(color: crate::gpui::Rgba, amount: f32) -> crate::gpui::Rgba {
     let amount = amount.clamp(0.0, 1.0);
     if amount <= f32::EPSILON {
         return color;
     }
     let luma = (color.r * 0.2126) + (color.g * 0.7152) + (color.b * 0.0722);
     let inv = 1.0 - amount;
-    gpui::Rgba {
+    crate::gpui::Rgba {
         r: (color.r * inv) + (luma * amount),
         g: (color.g * inv) + (luma * amount),
         b: (color.b * inv) + (luma * amount),
@@ -191,16 +191,16 @@ struct PaneCellBuildContext<'a> {
     effective_background_opacity: f32,
     background_opacity_cells: bool,
     cell_color_transform: CellColorTransform,
-    pane_focus_target_bg: gpui::Rgba,
-    terminal_surface_bg: gpui::Rgba,
+    pane_focus_target_bg: crate::gpui::Rgba,
+    terminal_surface_bg: crate::gpui::Rgba,
     selection_range: Option<(SelectionPos, SelectionPos)>,
     pane_search_results: Option<&'a termy_search::SearchResults>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct ResolvedCellColors {
-    fg: gpui::Rgba,
-    bg: gpui::Rgba,
+    fg: crate::gpui::Rgba,
+    bg: crate::gpui::Rgba,
     uses_terminal_default_bg: bool,
 }
 
@@ -212,7 +212,7 @@ fn uses_block_element_background(c: char) -> bool {
     matches!(c as u32, 0x2580..=0x259F)
 }
 
-fn resolved_default_cell_colors(context: PaneCellBuildContext<'_>) -> (gpui::Rgba, gpui::Rgba) {
+fn resolved_default_cell_colors(context: PaneCellBuildContext<'_>) -> (crate::gpui::Rgba, crate::gpui::Rgba) {
     let mut default_bg = context.colors.background;
     default_bg.a *= context.effective_background_opacity;
     apply_cell_color_transform(
@@ -225,7 +225,7 @@ fn resolved_default_cell_colors(context: PaneCellBuildContext<'_>) -> (gpui::Rgb
 }
 
 fn resolve_cell_colors(
-    cell_content: &alacritty_terminal::term::cell::Cell,
+    cell_content: &crate::alacritty_terminal::term::cell::Cell,
     context: PaneCellBuildContext<'_>,
 ) -> ResolvedCellColors {
     let mut fg_source = cell_content.fg;
@@ -392,12 +392,12 @@ fn command_palette_backdrop_transform() -> CellColorTransform {
 }
 
 fn apply_cell_color_transform(
-    fg: gpui::Rgba,
-    bg: gpui::Rgba,
+    fg: crate::gpui::Rgba,
+    bg: crate::gpui::Rgba,
     transform: CellColorTransform,
-    fg_blend_target: gpui::Rgba,
-    bg_blend_target: gpui::Rgba,
-) -> (gpui::Rgba, gpui::Rgba) {
+    fg_blend_target: crate::gpui::Rgba,
+    bg_blend_target: crate::gpui::Rgba,
+) -> (crate::gpui::Rgba, crate::gpui::Rgba) {
     if !transform.is_active() {
         return (fg, bg);
     }
@@ -541,7 +541,7 @@ impl TerminalView {
         col: usize,
         row: usize,
         term_line: i32,
-        cell_content: &alacritty_terminal::term::cell::Cell,
+        cell_content: &crate::alacritty_terminal::term::cell::Cell,
         context: PaneCellBuildContext<'_>,
     ) -> CellRenderInfo {
         let resolved_colors = resolve_cell_colors(cell_content, context);
@@ -882,7 +882,7 @@ impl TerminalView {
         cursor_style: TerminalCursorStyle,
         cursor_cell: Option<(usize, usize)>,
         cursor_visible: bool,
-        terminal_surface_bg: gpui::Rgba,
+        terminal_surface_bg: crate::gpui::Rgba,
     ) -> TerminalGrid {
         let mut selection_bg = colors.cursor;
         selection_bg.a = SELECTION_BG_ALPHA;
@@ -897,18 +897,18 @@ impl TerminalView {
             // The shared terminal surface already owns the translucent default
             // background. Clearing the grid to that same translucent color would
             // composite it twice and darken the viewport rectangle.
-            clear_bg: gpui::Hsla::transparent_black(),
+            clear_bg: crate::gpui::Hsla::transparent_black(),
             terminal_surface_bg: terminal_surface_bg.into(),
             cursor_color: colors.cursor.into(),
             selection_bg: selection_bg.into(),
             selection_fg: selection_fg.into(),
-            search_match_bg: gpui::Hsla {
+            search_match_bg: crate::gpui::Hsla {
                 h: 0.14,
                 s: 0.92,
                 l: 0.62,
                 a: 0.62,
             },
-            search_current_bg: gpui::Hsla {
+            search_current_bg: crate::gpui::Hsla {
                 h: 0.09,
                 s: 0.98,
                 l: 0.56,
@@ -1172,13 +1172,13 @@ impl TerminalView {
                 color.a = 0.22;
                 color
             }
-            termy_auto_update_ui::UpdateBannerTone::Success => gpui::Rgba {
+            termy_auto_update_ui::UpdateBannerTone::Success => crate::gpui::Rgba {
                 r: 0.25,
                 g: 0.66,
                 b: 0.36,
                 a: 0.24,
             },
-            termy_auto_update_ui::UpdateBannerTone::Error => gpui::Rgba {
+            termy_auto_update_ui::UpdateBannerTone::Error => crate::gpui::Rgba {
                 r: 0.85,
                 g: 0.31,
                 b: 0.31,
@@ -1197,7 +1197,7 @@ impl TerminalView {
                     (
                         bg,
                         colors.background,
-                        gpui::Rgba {
+                        crate::gpui::Rgba {
                             r: 0.0,
                             g: 0.0,
                             b: 0.0,
@@ -1380,7 +1380,7 @@ impl TerminalView {
             let (icon, accent, _is_loading) = match toast.kind {
                 termy_toast::ToastKind::Info => (
                     "\u{2139}", // ℹ info symbol
-                    gpui::Rgba {
+                    crate::gpui::Rgba {
                         r: 0.53,
                         g: 0.70,
                         b: 0.92,
@@ -1390,7 +1390,7 @@ impl TerminalView {
                 ),
                 termy_toast::ToastKind::Success => (
                     "\u{2713}", // ✓ checkmark
-                    gpui::Rgba {
+                    crate::gpui::Rgba {
                         r: 0.42,
                         g: 0.78,
                         b: 0.55,
@@ -1400,7 +1400,7 @@ impl TerminalView {
                 ),
                 termy_toast::ToastKind::Warning => (
                     "\u{26A0}", // ⚠ warning
-                    gpui::Rgba {
+                    crate::gpui::Rgba {
                         r: 0.94,
                         g: 0.76,
                         b: 0.38,
@@ -1410,7 +1410,7 @@ impl TerminalView {
                 ),
                 termy_toast::ToastKind::Error => (
                     "\u{2715}", // ✕ x mark
-                    gpui::Rgba {
+                    crate::gpui::Rgba {
                         r: 0.92,
                         g: 0.45,
                         b: 0.45,
@@ -1426,7 +1426,7 @@ impl TerminalView {
                     let frame_index = (elapsed_ms / 80) % SPINNER_FRAMES.len();
                     (
                         SPINNER_FRAMES[frame_index],
-                        gpui::Rgba {
+                        crate::gpui::Rgba {
                             r: 0.53,
                             g: 0.70,
                             b: 0.92,
@@ -1680,7 +1680,7 @@ impl TerminalView {
     #[cfg(not(target_os = "macos"))]
     fn clamped_context_menu_origin(
         &self,
-        anchor: gpui::Point<Pixels>,
+        anchor: crate::gpui::Point<Pixels>,
         menu_width: f32,
         menu_height: f32,
     ) -> (f32, f32) {
@@ -2010,7 +2010,7 @@ impl TerminalView {
 
     pub(super) fn render_overlay_layer(
         &mut self,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let now = Instant::now();
@@ -2222,6 +2222,9 @@ impl TerminalView {
             .children(debug_overlay)
             .children(toast_overlay)
             .children(link_preview_overlay)
+            .children(gpui_component::Root::render_sheet_layer(window, cx))
+            .children(gpui_component::Root::render_dialog_layer(window, cx))
+            .children(gpui_component::Root::render_notification_layer(window, cx))
             .into_any_element()
     }
 }
@@ -2266,7 +2269,7 @@ impl Render for TerminalView {
         let configured_cursor_style = self.terminal_cursor_style();
         let mut terminal_display_offset = 0usize;
         let divider_rgba = pane_divider_color(terminal_surface_bg, colors.foreground);
-        let divider_color: gpui::Hsla = divider_rgba.into();
+        let divider_color: crate::gpui::Hsla = divider_rgba.into();
         let mut pane_layers = Vec::<AnyElement>::new();
         let mut pane_dividers = Vec::<AnyElement>::new();
         let mut pane_resize_handles = Vec::<AnyElement>::new();
@@ -2549,7 +2552,7 @@ impl Render for TerminalView {
                 if multi_pane && pane_active_border_alpha > f32::EPSILON {
                     let mut accent = blend_rgb_only(colors.cursor, colors.foreground, 0.18);
                     accent.a = self.scaled_chrome_alpha(pane_active_border_alpha);
-                    let accent_hsla: gpui::Hsla = accent.into();
+                    let accent_hsla: crate::gpui::Hsla = accent.into();
                     pane_focus_accents.push(
                         div()
                             .id(pane.cached_element_ids.focus_accent.clone())
@@ -2567,7 +2570,7 @@ impl Render for TerminalView {
                 if pane.degraded {
                     // Hydration degraded panes still function, but this marker makes
                     // the warning state persistent until the next successful snapshot.
-                    let degraded_accent = gpui::Hsla {
+                    let degraded_accent = crate::gpui::Hsla {
                         h: 0.09,
                         s: 0.92,
                         l: 0.58,
@@ -2699,8 +2702,8 @@ impl Render for TerminalView {
                 return None;
             }
             let bounds = self.ime_cursor_bounds()?;
-            let fg_color: gpui::Hsla = self.colors.foreground.into();
-            let bg_color: gpui::Hsla = self.colors.background.into();
+            let fg_color: crate::gpui::Hsla = self.colors.foreground.into();
+            let bg_color: crate::gpui::Hsla = self.colors.background.into();
             Some(
                 div()
                     .absolute()
@@ -3010,8 +3013,8 @@ mod tests {
             col,
             row,
             char: c,
-            fg: gpui::Hsla::transparent_black(),
-            bg: gpui::Hsla::transparent_black(),
+            fg: crate::gpui::Hsla::transparent_black(),
+            bg: crate::gpui::Hsla::transparent_black(),
             uses_terminal_default_bg: false,
             bold: false,
             render_text: true,
@@ -3046,8 +3049,8 @@ mod tests {
     fn test_build_context_with_transform(
         opacity: f32,
         cell_color_transform: CellColorTransform,
-        pane_focus_target_bg: gpui::Rgba,
-        terminal_surface_bg: gpui::Rgba,
+        pane_focus_target_bg: crate::gpui::Rgba,
+        terminal_surface_bg: crate::gpui::Rgba,
     ) -> PaneCellBuildContext<'static> {
         static COLORS: std::sync::LazyLock<TerminalColors> =
             std::sync::LazyLock::new(TerminalColors::default);
@@ -3067,8 +3070,8 @@ mod tests {
         fg: AnsiColor,
         bg: AnsiColor,
         flags: Flags,
-    ) -> alacritty_terminal::term::cell::Cell {
-        let mut cell = alacritty_terminal::term::cell::Cell::default();
+    ) -> crate::alacritty_terminal::term::cell::Cell {
+        let mut cell = crate::alacritty_terminal::term::cell::Cell::default();
         cell.fg = fg;
         cell.bg = bg;
         cell.flags = flags;
@@ -3287,25 +3290,25 @@ mod tests {
 
     #[test]
     fn apply_cell_color_transform_is_noop_for_zero_factors() {
-        let fg = gpui::Rgba {
+        let fg = crate::gpui::Rgba {
             r: 0.72,
             g: 0.64,
             b: 0.35,
             a: 0.91,
         };
-        let bg = gpui::Rgba {
+        let bg = crate::gpui::Rgba {
             r: 0.12,
             g: 0.17,
             b: 0.26,
             a: 0.66,
         };
-        let fg_target = gpui::Rgba {
+        let fg_target = crate::gpui::Rgba {
             r: 0.01,
             g: 0.02,
             b: 0.03,
             a: 1.0,
         };
-        let bg_target = gpui::Rgba {
+        let bg_target = crate::gpui::Rgba {
             r: 0.98,
             g: 0.97,
             b: 0.96,
@@ -3413,7 +3416,7 @@ mod tests {
         let rgb_background = resolve_cell_colors(
             &test_term_cell(
                 AnsiColor::Named(NamedColor::Foreground),
-                AnsiColor::Spec(alacritty_terminal::vte::ansi::Rgb {
+                AnsiColor::Spec(crate::alacritty_terminal::vte::ansi::Rgb {
                     r: 12,
                     g: 34,
                     b: 56,
@@ -3455,7 +3458,7 @@ mod tests {
         let rgb_background = resolve_cell_colors(
             &test_term_cell(
                 AnsiColor::Named(NamedColor::Foreground),
-                AnsiColor::Spec(alacritty_terminal::vte::ansi::Rgb {
+                AnsiColor::Spec(crate::alacritty_terminal::vte::ansi::Rgb {
                     r: 12,
                     g: 34,
                     b: 56,
@@ -3502,13 +3505,13 @@ mod tests {
 
     #[test]
     fn resolve_cell_colors_keeps_transformed_default_background_in_sync_with_default_fill() {
-        let pane_focus_target_bg = gpui::Rgba {
+        let pane_focus_target_bg = crate::gpui::Rgba {
             r: 0.8,
             g: 0.7,
             b: 0.6,
             a: 1.0,
         };
-        let terminal_surface_bg = gpui::Rgba {
+        let terminal_surface_bg = crate::gpui::Rgba {
             r: 0.1,
             g: 0.2,
             b: 0.3,

@@ -39,8 +39,8 @@ impl TerminalView {
     }
 
     pub(in super::super) fn render_agent_project_glyph(
-        stroke: gpui::Rgba,
-        bg: gpui::Rgba,
+        stroke: crate::gpui::Rgba,
+        bg: crate::gpui::Rgba,
     ) -> AnyElement {
         div()
             .relative()
@@ -75,9 +75,9 @@ impl TerminalView {
     pub(in super::super) fn render_agent_sidebar_avatar(
         agent: command_palette::AiAgentPreset,
         dark_surface: bool,
-        border: gpui::Rgba,
-        bg: gpui::Rgba,
-        text: gpui::Rgba,
+        border: crate::gpui::Rgba,
+        bg: crate::gpui::Rgba,
+        text: crate::gpui::Rgba,
     ) -> AnyElement {
         let fallback_label = agent.fallback_label();
         div()
@@ -109,12 +109,12 @@ impl TerminalView {
     pub(in super::super) fn render_agent_status_badge(
         label: &str,
         tone: AgentThreadStatusTone,
-        border: gpui::Rgba,
-        bg: gpui::Rgba,
-        text: gpui::Rgba,
-        muted: gpui::Rgba,
-        warning: gpui::Rgba,
-        error: gpui::Rgba,
+        border: crate::gpui::Rgba,
+        bg: crate::gpui::Rgba,
+        text: crate::gpui::Rgba,
+        muted: crate::gpui::Rgba,
+        warning: crate::gpui::Rgba,
+        error: crate::gpui::Rgba,
     ) -> AnyElement {
         let badge_text = match tone {
             AgentThreadStatusTone::Active => text,
@@ -141,9 +141,9 @@ impl TerminalView {
 
     pub(in super::super) fn render_agent_sidebar_chip(
         label: impl Into<SharedString>,
-        border: gpui::Rgba,
-        bg: gpui::Rgba,
-        text: gpui::Rgba,
+        border: crate::gpui::Rgba,
+        bg: crate::gpui::Rgba,
+        text: crate::gpui::Rgba,
     ) -> AnyElement {
         let label: SharedString = label.into();
         div()
@@ -162,7 +162,7 @@ impl TerminalView {
             .into_any_element()
     }
 
-    pub(in super::super) fn render_agent_activity_dot(color: gpui::Rgba) -> AnyElement {
+    pub(in super::super) fn render_agent_activity_dot(color: crate::gpui::Rgba) -> AnyElement {
         div()
             .flex_none()
             .size(px(5.0))
@@ -1814,7 +1814,7 @@ impl TerminalView {
                                 .border_1()
                                 .border_color(border)
                                 .bg(selected_bg)
-                                .cursor(gpui::CursorStyle::IBeam)
+                                .cursor(crate::gpui::CursorStyle::IBeam)
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(|view, _event, _window, cx| {

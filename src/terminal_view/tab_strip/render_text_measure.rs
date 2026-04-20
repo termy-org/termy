@@ -1,5 +1,5 @@
 use super::super::*;
-use gpui::{Hsla, TextRun};
+use crate::gpui::{Hsla, TextRun};
 
 impl TerminalView {
     pub(super) fn measure_text_width(

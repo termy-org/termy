@@ -261,13 +261,13 @@ fn baseline_is_continuous_outside_active_span() {
 
 #[test]
 fn resolved_stroke_color_is_uniform_contract() {
-    let tabbar_bg = gpui::Rgba {
+    let tabbar_bg = crate::gpui::Rgba {
         r: 0.12,
         g: 0.18,
         b: 0.24,
         a: 0.64,
     };
-    let foreground = gpui::Rgba {
+    let foreground = crate::gpui::Rgba {
         r: 0.91,
         g: 0.87,
         b: 0.83,

@@ -157,7 +157,7 @@ impl TerminalView {
         id: &'static str,
         width: f32,
         tab_baseline_y: f32,
-        tab_stroke_color: gpui::Rgba,
+        tab_stroke_color: crate::gpui::Rgba,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
@@ -185,7 +185,7 @@ impl TerminalView {
         font_family: &SharedString,
         termy_branding_slot_start_x: f32,
         termy_branding_slot_width: f32,
-        termy_branding_text_color: gpui::Rgba,
+        termy_branding_text_color: crate::gpui::Rgba,
     ) -> Option<AnyElement> {
         (termy_branding_slot_width > f32::EPSILON).then(|| {
             div()
@@ -213,11 +213,11 @@ impl TerminalView {
     fn render_left_inset_lane(
         width: f32,
         tab_baseline_y: f32,
-        tab_stroke_color: gpui::Rgba,
+        tab_stroke_color: crate::gpui::Rgba,
         font_family: &SharedString,
         termy_branding_slot_start_x: f32,
         termy_branding_slot_width: f32,
-        termy_branding_text_color: gpui::Rgba,
+        termy_branding_text_color: crate::gpui::Rgba,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
@@ -250,7 +250,7 @@ impl TerminalView {
     fn render_gutter_lane(
         gutter_width: f32,
         tab_baseline_y: f32,
-        tab_stroke_color: gpui::Rgba,
+        tab_stroke_color: crate::gpui::Rgba,
         show_divider: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -486,7 +486,7 @@ impl TerminalView {
         window: &Window,
         colors: &TerminalColors,
         font_family: &SharedString,
-        tabbar_bg: gpui::Rgba,
+        tabbar_bg: crate::gpui::Rgba,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let font_family_key = font_family.to_string();

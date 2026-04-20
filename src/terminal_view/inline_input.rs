@@ -1,5 +1,5 @@
 use super::*;
-use gpui::{
+use crate::gpui::{
     Bounds, ContentMask, ElementInputHandler, Entity, EntityInputHandler, Font, Hsla, IntoElement,
     PaintQuad, Pixels, ShapedLine, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window,
     canvas, fill, point, px, size,
@@ -534,7 +534,7 @@ impl InlineInputState {
             .map(|range| self.range_to_utf16(range))
     }
 
-    pub(super) fn character_index_for_point(&self, point: gpui::Point<Pixels>) -> usize {
+    pub(super) fn character_index_for_point(&self, point: crate::gpui::Point<Pixels>) -> usize {
         if self.text.is_empty() {
             return 0;
         }
@@ -699,7 +699,7 @@ pub(super) struct InlineInputPrepaintState {
 }
 
 impl IntoElement for InlineInputElement {
-    type Element = gpui::Canvas<InlineInputPrepaintState>;
+    type Element = crate::gpui::Canvas<InlineInputPrepaintState>;
 
     fn into_element(self) -> Self::Element {
         let focus_handle = self.focus_handle;
@@ -1213,7 +1213,7 @@ impl TerminalView {
             .left_0()
             .right_0()
             .bottom_0()
-            .cursor(gpui::CursorStyle::IBeam)
+            .cursor(crate::gpui::CursorStyle::IBeam)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(Self::handle_inline_input_mouse_down),
@@ -1590,7 +1590,7 @@ impl TerminalView {
         let y = geometry.origin_y + (cursor_row as f32) * cell_height;
         Some(Bounds::new(
             point(px(x), px(y)),
-            gpui::size(px(cell_width), px(cell_height)),
+            crate::gpui::size(px(cell_width), px(cell_height)),
         ))
     }
 }
@@ -1725,7 +1725,7 @@ impl EntityInputHandler for TerminalView {
 
     fn character_index_for_point(
         &mut self,
-        point: gpui::Point<Pixels>,
+        point: crate::gpui::Point<Pixels>,
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) -> Option<usize> {

@@ -175,7 +175,7 @@ impl TerminalView {
 
     fn retarget_scroll_wheel_pane(
         &mut self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         cx: &mut Context<Self>,
     ) -> WheelScrollRetargetResult {
         let hovered_pane_id = self
@@ -202,7 +202,7 @@ impl TerminalView {
 
     pub(in super::super) fn terminal_scrollbar_hit_test(
         &self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         window: &Window,
     ) -> Option<TerminalScrollbarHit> {
         let terminal = self.active_terminal()?;
@@ -345,7 +345,7 @@ impl TerminalView {
 
     pub(in super::super) fn handle_terminal_scrollbar_drag(
         &mut self,
-        position: gpui::Point<Pixels>,
+        position: crate::gpui::Point<Pixels>,
         window: &Window,
         cx: &mut Context<Self>,
     ) {

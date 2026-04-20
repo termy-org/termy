@@ -1,7 +1,7 @@
 use super::*;
 use crate::terminal_view::agents::AgentGitPanelInputMode;
 
-fn should_defer_key_down_to_ime(keystroke: &gpui::Keystroke) -> bool {
+fn should_defer_key_down_to_ime(keystroke: &crate::gpui::Keystroke) -> bool {
     let key = keystroke.key.as_str();
     keystroke.key_char.is_some()
         && !keystroke.modifiers.control
@@ -41,16 +41,16 @@ fn dropped_paths_to_terminal_paste_input(paths: &[PathBuf]) -> Option<Vec<u8>> {
     Some(text.into_bytes())
 }
 
-fn image_extension(format: gpui::ImageFormat) -> &'static str {
+fn image_extension(format: crate::gpui::ImageFormat) -> &'static str {
     match format {
-        gpui::ImageFormat::Gif => "gif",
-        gpui::ImageFormat::Png => "png",
-        gpui::ImageFormat::Jpeg => "jpg",
-        gpui::ImageFormat::Webp => "webp",
-        gpui::ImageFormat::Bmp => "bmp",
-        gpui::ImageFormat::Tiff => "tiff",
-        gpui::ImageFormat::Svg => "svg",
-        gpui::ImageFormat::Ico => "ico",
+        crate::gpui::ImageFormat::Gif => "gif",
+        crate::gpui::ImageFormat::Png => "png",
+        crate::gpui::ImageFormat::Jpeg => "jpg",
+        crate::gpui::ImageFormat::Webp => "webp",
+        crate::gpui::ImageFormat::Bmp => "bmp",
+        crate::gpui::ImageFormat::Tiff => "tiff",
+        crate::gpui::ImageFormat::Svg => "svg",
+        crate::gpui::ImageFormat::Ico => "ico",
     }
 }
 
@@ -58,7 +58,7 @@ fn clipboard_image_cache_dir() -> PathBuf {
     env::temp_dir().join("termy-clipboard-images")
 }
 
-fn write_clipboard_image_to_temp_file(image: &gpui::Image) -> std::io::Result<PathBuf> {
+fn write_clipboard_image_to_temp_file(image: &crate::gpui::Image) -> std::io::Result<PathBuf> {
     let dir = clipboard_image_cache_dir();
     std::fs::create_dir_all(&dir)?;
 
@@ -84,26 +84,26 @@ fn clipboard_item_to_terminal_paste_input(
     let Some(entry) = item.entries().iter().find(|entry| {
         matches!(
             entry,
-            gpui::ClipboardEntry::ExternalPaths(_) | gpui::ClipboardEntry::Image(_)
+            crate::gpui::ClipboardEntry::ExternalPaths(_) | crate::gpui::ClipboardEntry::Image(_)
         )
     }) else {
         return Ok(None);
     };
 
     match entry {
-        gpui::ClipboardEntry::ExternalPaths(paths) => {
+        crate::gpui::ClipboardEntry::ExternalPaths(paths) => {
             Ok(Some(shell_quote_paths(paths.paths()).into_bytes()))
         }
-        gpui::ClipboardEntry::Image(image) => {
+        crate::gpui::ClipboardEntry::Image(image) => {
             let path = write_clipboard_image_to_temp_file(image)?;
             Ok(Some(shell_quote_path(&path).into_bytes()))
         }
-        gpui::ClipboardEntry::String(_) => Ok(None),
+        crate::gpui::ClipboardEntry::String(_) => Ok(None),
     }
 }
 
-fn synthetic_modifier_keystroke(key: &str, modifiers: gpui::Modifiers) -> gpui::Keystroke {
-    gpui::Keystroke {
+fn synthetic_modifier_keystroke(key: &str, modifiers: crate::gpui::Modifiers) -> crate::gpui::Keystroke {
+    crate::gpui::Keystroke {
         modifiers,
         key: key.to_string(),
         key_char: None,
@@ -111,9 +111,9 @@ fn synthetic_modifier_keystroke(key: &str, modifiers: gpui::Modifiers) -> gpui::
 }
 
 fn modifier_transition_events(
-    previous: gpui::Modifiers,
-    current: gpui::Modifiers,
-) -> Vec<(gpui::Keystroke, TerminalKeyEventKind)> {
+    previous: crate::gpui::Modifiers,
+    current: crate::gpui::Modifiers,
+) -> Vec<(crate::gpui::Keystroke, TerminalKeyEventKind)> {
     // GPUI surfaces pure modifier transitions separately from key presses, so
     // synthesize terminal key events here when enhanced keyboard reporting is active.
     let mut events = Vec::with_capacity(4);
@@ -168,10 +168,10 @@ fn overlay_owns_terminal_input_state(
 }
 
 fn terminal_modifier_transition_events(
-    previous: gpui::Modifiers,
-    current: gpui::Modifiers,
+    previous: crate::gpui::Modifiers,
+    current: crate::gpui::Modifiers,
     overlay_owns_terminal_input: bool,
-) -> Vec<(gpui::Keystroke, TerminalKeyEventKind)> {
+) -> Vec<(crate::gpui::Keystroke, TerminalKeyEventKind)> {
     if overlay_owns_terminal_input {
         return Vec::new();
     }
@@ -259,7 +259,7 @@ impl TerminalView {
     fn write_terminal_keystroke_to_pane(
         &mut self,
         pane_id: &str,
-        keystroke: &gpui::Keystroke,
+        keystroke: &crate::gpui::Keystroke,
         event_kind: TerminalKeyEventKind,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -278,7 +278,7 @@ impl TerminalView {
 
     fn write_terminal_keystroke(
         &mut self,
-        keystroke: &gpui::Keystroke,
+        keystroke: &crate::gpui::Keystroke,
         event_kind: TerminalKeyEventKind,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -301,7 +301,7 @@ impl TerminalView {
 
     fn write_forwarded_terminal_key_event(
         &mut self,
-        keystroke: &gpui::Keystroke,
+        keystroke: &crate::gpui::Keystroke,
         event_kind: TerminalKeyEventKind,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -322,7 +322,7 @@ impl TerminalView {
 
     fn write_terminal_key_release(
         &mut self,
-        keystroke: &gpui::Keystroke,
+        keystroke: &crate::gpui::Keystroke,
         cx: &mut Context<Self>,
     ) -> bool {
         // Use the pane that received the press so delayed releases do not drift
@@ -354,7 +354,7 @@ impl TerminalView {
         let mut cleared_selection = false;
 
         for (keystroke, event_kind) in
-            modifier_transition_events(previous, gpui::Modifiers::default())
+            modifier_transition_events(previous, crate::gpui::Modifiers::default())
         {
             let wrote = match event_kind {
                 TerminalKeyEventKind::Press => {
@@ -385,7 +385,7 @@ impl TerminalView {
     fn maybe_suppress_tab_switch_hint_for_key_down(
         &mut self,
         key: &str,
-        modifiers: gpui::Modifiers,
+        modifiers: crate::gpui::Modifiers,
         cx: &mut Context<Self>,
     ) {
         if self.tab_strip.switch_hints.suppress_for_key_down(
@@ -796,7 +796,7 @@ mod tests {
         take_deferred_ime_key_release, take_pending_key_release_action,
         terminal_modifier_transition_events,
     };
-    use gpui::{Keystroke, Modifiers};
+    use crate::gpui::{Keystroke, Modifiers};
     use std::{
         collections::{HashMap, HashSet},
         path::PathBuf,
@@ -891,8 +891,8 @@ mod tests {
 
     #[test]
     fn clipboard_image_paste_materializes_a_quoted_temp_path() {
-        let item = gpui::ClipboardItem::new_image(&gpui::Image::from_bytes(
-            gpui::ImageFormat::Png,
+        let item = crate::gpui::ClipboardItem::new_image(&crate::gpui::Image::from_bytes(
+            crate::gpui::ImageFormat::Png,
             vec![1, 2, 3, 4],
         ));
 
@@ -908,14 +908,14 @@ mod tests {
 
     #[test]
     fn image_extension_matches_expected_file_suffixes() {
-        assert_eq!(image_extension(gpui::ImageFormat::Gif), "gif");
-        assert_eq!(image_extension(gpui::ImageFormat::Png), "png");
-        assert_eq!(image_extension(gpui::ImageFormat::Jpeg), "jpg");
-        assert_eq!(image_extension(gpui::ImageFormat::Webp), "webp");
-        assert_eq!(image_extension(gpui::ImageFormat::Bmp), "bmp");
-        assert_eq!(image_extension(gpui::ImageFormat::Tiff), "tiff");
-        assert_eq!(image_extension(gpui::ImageFormat::Svg), "svg");
-        assert_eq!(image_extension(gpui::ImageFormat::Ico), "ico");
+        assert_eq!(image_extension(crate::gpui::ImageFormat::Gif), "gif");
+        assert_eq!(image_extension(crate::gpui::ImageFormat::Png), "png");
+        assert_eq!(image_extension(crate::gpui::ImageFormat::Jpeg), "jpg");
+        assert_eq!(image_extension(crate::gpui::ImageFormat::Webp), "webp");
+        assert_eq!(image_extension(crate::gpui::ImageFormat::Bmp), "bmp");
+        assert_eq!(image_extension(crate::gpui::ImageFormat::Tiff), "tiff");
+        assert_eq!(image_extension(crate::gpui::ImageFormat::Svg), "svg");
+        assert_eq!(image_extension(crate::gpui::ImageFormat::Ico), "ico");
     }
 
     #[test]
