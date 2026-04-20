@@ -127,6 +127,8 @@ const BOX_DRAWING_START: u32 = 0x2500;
 const BOX_DRAWING_END: u32 = 0x257F;
 const BLOCK_ELEMENTS_START: u32 = 0x2580;
 const BLOCK_ELEMENTS_END: u32 = 0x259F;
+const BRAILLE_PATTERNS_START: u32 = 0x2800;
+const BRAILLE_PATTERNS_END: u32 = 0x28FF;
 const QUAD_UPPER_LEFT: u8 = 0b0001;
 const QUAD_UPPER_RIGHT: u8 = 0b0010;
 const QUAD_LOWER_LEFT: u8 = 0b0100;
@@ -613,6 +615,52 @@ fn block_element_geometry(c: char) -> Option<BlockElementGeometry> {
         '\u{259F}' => quadrants(QUAD_UPPER_RIGHT | QUAD_LOWER_LEFT | QUAD_LOWER_RIGHT),
         _ => return None,
     })
+}
+
+fn braille_geometry(c: char) -> Option<BlockElementGeometry> {
+    let codepoint = c as u32;
+    if !(BRAILLE_PATTERNS_START..=BRAILLE_PATTERNS_END).contains(&codepoint) {
+        return None;
+    }
+
+    let pattern = (codepoint - BRAILLE_PATTERNS_START) as u8;
+    if pattern == 0 {
+        return None;
+    }
+
+    // Braille QR output typically uses the Unicode braille block. Render it as
+    // explicit geometry so output remains readable even when the configured
+    // terminal font lacks braille glyph coverage.
+    const DOT_WIDTH: f32 = 0.24;
+    const DOT_HEIGHT: f32 = 0.16;
+    const LEFT_X: f32 = 0.22;
+    const RIGHT_X: f32 = 0.64;
+    const ROW_Y: [f32; 4] = [0.08, 0.31, 0.54, 0.77];
+    const DOT_MASKS: [(u8, f32, f32); 8] = [
+        (0b0000_0001, LEFT_X, ROW_Y[0]),
+        (0b0000_0010, LEFT_X, ROW_Y[1]),
+        (0b0000_0100, LEFT_X, ROW_Y[2]),
+        (0b0100_0000, LEFT_X, ROW_Y[3]),
+        (0b0000_1000, RIGHT_X, ROW_Y[0]),
+        (0b0001_0000, RIGHT_X, ROW_Y[1]),
+        (0b0010_0000, RIGHT_X, ROW_Y[2]),
+        (0b1000_0000, RIGHT_X, ROW_Y[3]),
+    ];
+
+    let mut geometry = BlockElementGeometry::empty();
+    for (mask, left, top) in DOT_MASKS {
+        if pattern & mask == 0 {
+            continue;
+        }
+        geometry.push_rect(BlockRectSpec::new(
+            left,
+            top,
+            (left + DOT_WIDTH).min(1.0),
+            (top + DOT_HEIGHT).min(1.0),
+            1.0,
+        ));
+    }
+    Some(geometry)
 }
 
 const fn box_segments(
@@ -1718,6 +1766,7 @@ impl TerminalGrid {
             }
 
             if let Some(geometry) = block_element_geometry(cell.char)
+                .or_else(|| braille_geometry(cell.char))
                 .or_else(|| box_draw_geometry_for_char(cell.char, cell_w, cell_h, font_sz))
             {
                 Self::push_pending_text_batch(&mut current, ops);
@@ -2424,6 +2473,17 @@ mod tests {
     }
 
     #[test]
+    fn braille_geometry_supports_non_empty_patterns() {
+        let geometry = braille_geometry('\u{28FF}').expect("expected braille geometry");
+        assert_eq!(geometry.rect_count, 8);
+    }
+
+    #[test]
+    fn blank_braille_does_not_emit_geometry() {
+        assert!(braille_geometry('\u{2800}').is_none());
+    }
+
+    #[test]
     fn box_draw_segments_covers_expected_range() {
         for codepoint in BOX_DRAWING_START..=BOX_DRAWING_END {
             let glyph = char::from_u32(codepoint).expect("valid box-drawing codepoint");
@@ -2471,6 +2531,15 @@ mod tests {
         assert_eq!(y.fract(), 0.0);
         assert_eq!(width.fract(), 0.0);
         assert_eq!(height.fract(), 0.0);
+    }
+
+    #[test]
+    fn draw_ops_render_braille_as_block_geometry() {
+        let grid = test_grid(vec![test_cell(0, 0, '\u{28FF}'), test_cell(1, 0, 'x')]);
+
+        let ops = collect_draw_ops(&grid);
+        assert!(matches!(&ops[0], TextDrawOp::Block(_)));
+        assert!(matches!(&ops[1], TextDrawOp::Batch(_)));
     }
 
     #[test]
