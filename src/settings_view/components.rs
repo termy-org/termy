@@ -1,4 +1,7 @@
 use super::*;
+use gpui_component::Sizable as _;
+use gpui_component::button::ButtonVariants as _;
+use gpui_component::Disableable as _;
 
 impl SettingsWindow {
     fn masked_secret_value(text: &str) -> String {
@@ -32,19 +35,10 @@ impl SettingsWindow {
         section: SettingsSection,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let bg_input = self.bg_input();
-        let hover_bg = self.bg_hover();
-        let border_color = self.border_color();
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
-        let text_secondary = self.text_secondary();
         let can_reset = self.section_has_non_default_values(section);
-        let mut disabled_bg = bg_input;
-        disabled_bg.a *= 0.6;
-        let mut disabled_border = border_color;
-        disabled_border.a *= 0.6;
-        let mut disabled_text = text_muted;
-        disabled_text.a *= 0.6;
+        let entity = cx.entity().clone();
 
         div()
             .flex()
@@ -67,34 +61,15 @@ impl SettingsWindow {
                     .child(div().text_sm().text_color(text_muted).child(subtitle)),
             )
             .child(
-                div()
-                    .id(SharedString::from(format!("reset-section-{section:?}")))
-                    .px_3()
-                    .py_2()
-                    .rounded(px(0.0))
-                    .bg(if can_reset { bg_input } else { disabled_bg })
-                    .border_1()
-                    .border_color(if can_reset {
-                        border_color
-                    } else {
-                        disabled_border
-                    })
-                    .text_sm()
-                    .font_weight(crate::gpui::FontWeight::MEDIUM)
-                    .text_color(if can_reset {
-                        text_secondary
-                    } else {
-                        disabled_text
-                    })
-                    .when(can_reset, |s| {
-                        s.cursor_pointer()
-                            .hover(move |s| s.bg(hover_bg).text_color(text_primary))
-                    })
-                    .child("Reset section")
-                    .when(can_reset, |s| {
-                        s.on_click(cx.listener(move |view, _, _, cx| {
+                gpui_component::button::Button::new(format!("reset-section-{section:?}"))
+                    .label("Reset section")
+                    .ghost()
+                    .with_size(gpui_component::Size::Small)
+                    .disabled(!can_reset)
+                    .on_click(move |_event, _window, cx| {
+                        entity.update(cx, |view, cx| {
                             view.confirm_reset_section_to_defaults(section, cx);
-                        }))
+                        });
                     }),
             )
     }
@@ -114,43 +89,18 @@ impl SettingsWindow {
         setting_key: &'static str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let bg_input = self.bg_input();
-        let hover_bg = self.bg_hover();
-        let border_color = self.border_color();
-        let text_primary = self.text_primary();
-        let text_muted = self.text_muted();
         let can_reset = !self.is_setting_at_default(setting_key);
-        let mut disabled_bg = bg_input;
-        disabled_bg.a *= 0.6;
-        let mut disabled_border = border_color;
-        disabled_border.a *= 0.6;
-        let mut disabled_text = text_muted;
-        disabled_text.a *= 0.6;
+        let entity = cx.entity().clone();
 
-        div()
-            .id(SharedString::from(format!("reset-setting-{setting_key}")))
-            .px_2()
-            .py_1()
-            .rounded(px(0.0))
-            .bg(if can_reset { bg_input } else { disabled_bg })
-            .border_1()
-            .border_color(if can_reset {
-                border_color
-            } else {
-                disabled_border
-            })
-            .text_xs()
-            .font_weight(crate::gpui::FontWeight::MEDIUM)
-            .text_color(if can_reset { text_muted } else { disabled_text })
-            .when(can_reset, |s| {
-                s.cursor_pointer()
-                    .hover(move |s| s.bg(hover_bg).text_color(text_primary))
-            })
-            .child("Reset")
-            .when(can_reset, |s| {
-                s.on_click(cx.listener(move |view, _, _, cx| {
+        gpui_component::button::Button::new(format!("reset-setting-{setting_key}"))
+            .label("Reset")
+            .ghost()
+            .with_size(gpui_component::Size::XSmall)
+            .disabled(!can_reset)
+            .on_click(move |_event, _window, cx| {
+                entity.update(cx, |view, cx| {
                     view.confirm_reset_setting_to_default(setting_key, cx);
-                }))
+                });
             })
     }
 
@@ -243,51 +193,21 @@ impl SettingsWindow {
 
     pub(super) fn render_switch(
         &self,
-        id: impl Into<SharedString>,
+        id: impl Into<crate::gpui::ElementId>,
         checked: bool,
         cx: &mut Context<Self>,
         on_toggle: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
-        let accent = self.accent_with_alpha(0.95);
-        let mut bg_off = self.colors.foreground;
-        bg_off.a = 0.34;
-        let track_color = if checked { accent } else { bg_off };
-        let knob_color = self.contrasting_text_for_fill(track_color, self.bg_card());
-        let knob_left = if checked {
-            SETTINGS_SWITCH_WIDTH - SETTINGS_SWITCH_KNOB_SIZE - 2.0
-        } else {
-            2.0
-        };
-
-        div()
-            .id(id.into())
-            .w(px(SETTINGS_SWITCH_WIDTH))
-            .h(px(SETTINGS_SWITCH_HEIGHT))
-            .rounded(px(0.0))
-            .bg(track_color)
-            .border_1()
-            .border_color(self.border_color())
-            .cursor_pointer()
-            .relative()
-            .child(
-                div()
-                    .absolute()
-                    .top(px(2.0))
-                    .left(px(knob_left))
-                    .w(px(SETTINGS_SWITCH_KNOB_SIZE))
-                    .h(px(SETTINGS_SWITCH_KNOB_SIZE))
-                    .rounded(px(0.0))
-                    .bg(knob_color)
-                    .shadow_sm(),
-            )
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                    cx.stop_propagation();
+        let entity = cx.entity().clone();
+        gpui_component::switch::Switch::new(id)
+            .checked(checked)
+            .with_size(gpui_component::Size::Small)
+            .on_click(move |_checked, _window, cx| {
+                entity.update(cx, |view, cx| {
                     on_toggle(view, cx);
                     cx.notify();
-                }),
-            )
+                });
+            })
     }
 
     pub(super) fn active_dropdown_options(
@@ -402,8 +322,8 @@ impl SettingsWindow {
         uses_dropdown: bool,
         display_value: String,
         text_secondary: Rgba,
-        bg_card: Rgba,
-        text_primary: Rgba,
+        _bg_card: Rgba,
+        _text_primary: Rgba,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let is_secret_field = Self::is_secret_field(field);
@@ -416,6 +336,8 @@ impl SettingsWindow {
         };
 
         if is_numeric {
+            let entity = cx.entity().clone();
+            let entity_inc = entity.clone();
             return div()
                 .h_full()
                 .flex()
@@ -423,23 +345,15 @@ impl SettingsWindow {
                 .justify_between()
                 .gap_2()
                 .child(
-                    div()
-                        .id(SharedString::from(format!("dec-{field:?}")))
-                        .w(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .h(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .rounded(px(0.0))
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .bg(bg_card)
-                        .text_color(text_primary)
-                        .text_sm()
-                        .child("-")
-                        .on_click(cx.listener(move |view, _, _, cx| {
-                            cx.stop_propagation();
-                            view.step_numeric_field(field, -1, cx);
-                        })),
+                    gpui_component::button::Button::new(format!("dec-{field:?}"))
+                        .label("-")
+                        .with_size(gpui_component::Size::XSmall)
+                        .on_click(move |_event, _window, cx| {
+                            entity.update(cx, |view, cx| {
+                                cx.stop_propagation();
+                                view.step_numeric_field(field, -1, cx);
+                            });
+                        }),
                 )
                 .child(
                     div()
@@ -450,23 +364,15 @@ impl SettingsWindow {
                         .child(display_value),
                 )
                 .child(
-                    div()
-                        .id(SharedString::from(format!("inc-{field:?}")))
-                        .w(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .h(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .rounded(px(0.0))
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .bg(bg_card)
-                        .text_color(text_primary)
-                        .text_sm()
-                        .child("+")
-                        .on_click(cx.listener(move |view, _, _, cx| {
-                            cx.stop_propagation();
-                            view.step_numeric_field(field, 1, cx);
-                        })),
+                    gpui_component::button::Button::new(format!("inc-{field:?}"))
+                        .label("+")
+                        .with_size(gpui_component::Size::XSmall)
+                        .on_click(move |_event, _window, cx| {
+                            entity_inc.update(cx, |view, cx| {
+                                cx.stop_propagation();
+                                view.step_numeric_field(field, 1, cx);
+                            });
+                        }),
                 )
                 .into_any_element();
         }
@@ -927,34 +833,24 @@ impl SettingsWindow {
         id: &'static str,
         label: &'static str,
         delta: i32,
-        border_color: Rgba,
-        text_primary: Rgba,
+        _border_color: Rgba,
+        _text_primary: Rgba,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        div()
-            .id(id)
-            .w(px(NUMERIC_STEP_BUTTON_SIZE))
-            .h(px(NUMERIC_STEP_BUTTON_SIZE))
-            .rounded(px(0.0))
-            .cursor_pointer()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(self.bg_input())
-            .border_1()
-            .border_color(border_color)
-            .text_color(text_primary)
-            .font_weight(crate::gpui::FontWeight::BOLD)
-            .text_sm()
-            .child(label)
-            .on_click(cx.listener(move |view, _, _, cx| {
-                match view.step_background_opacity(delta) {
-                    Ok(true) => termy_toast::success("Saved"),
-                    Ok(false) => {}
-                    Err(error) => termy_toast::error(error),
-                }
-                cx.notify();
-            }))
+        let entity = cx.entity().clone();
+        gpui_component::button::Button::new(id)
+            .label(label)
+            .with_size(gpui_component::Size::XSmall)
+            .on_click(move |_event, _window, cx| {
+                entity.update(cx, |view, cx| {
+                    match view.step_background_opacity(delta) {
+                        Ok(true) => termy_toast::success("Saved"),
+                        Ok(false) => {}
+                        Err(error) => termy_toast::error(error),
+                    }
+                    cx.notify();
+                });
+            })
             .into_any_element()
     }
 
