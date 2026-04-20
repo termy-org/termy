@@ -1314,7 +1314,7 @@ impl SettingsWindow {
                     .rounded(px(0.0))
                     .bg(accent)
                     .text_sm()
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .font_weight(crate::gpui::FontWeight::MEDIUM)
                     .text_color(button_text)
                     .cursor_pointer()
                     .hover(move |s| s.bg(accent_hover).text_color(button_hover_text))

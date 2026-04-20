@@ -1,7 +1,7 @@
 use crate::config::{CustomColors, SHELL_DECIDE_THEME_ID};
 use crate::theme_store;
-use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Rgb as AnsiRgb};
-use gpui::Rgba;
+use crate::alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Rgb as AnsiRgb};
+use crate::gpui::Rgba;
 use termy_themes as themes;
 use termy_themes::Rgb8;
 

@@ -1,7 +1,7 @@
 use crate::commands::{CommandAction, CommandMenuEntry, MenuRoot};
 #[cfg(target_os = "macos")]
-use gpui::SystemMenuType;
-use gpui::{Menu, MenuItem};
+use crate::gpui::SystemMenuType;
+use crate::gpui::{Menu, MenuItem};
 use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavailableReason};
 
 const INSTALL_CLI_TITLE: &str = "Install CLI";
@@ -88,7 +88,7 @@ fn menu_item_title(
 mod tests {
     use super::{INSTALL_CLI_INSTALLED_TITLE, INSTALL_CLI_TITLE, app_menus};
     use crate::commands::CommandAction;
-    use gpui::{MenuItem, OsAction};
+    use crate::gpui::{MenuItem, OsAction};
     use termy_command_core::{CommandCapabilities, CommandUnavailableReason};
 
     #[test]
@@ -180,7 +180,7 @@ mod tests {
             .find(|menu| menu.name.as_ref() == "Help")
             .expect("missing Help menu");
 
-        let install_cli_titles = |menu: &gpui::Menu| {
+        let install_cli_titles = |menu: &crate::gpui::Menu| {
             menu.items
                 .iter()
                 .filter_map(|item| {

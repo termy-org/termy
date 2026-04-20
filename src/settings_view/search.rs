@@ -378,8 +378,8 @@ impl SettingsWindow {
 
     pub(super) fn start_smooth_scroll_animation(
         &mut self,
-        start_offset: gpui::Point<gpui::Pixels>,
-        target_offset: gpui::Point<gpui::Pixels>,
+        start_offset: crate::gpui::Point<crate::gpui::Pixels>,
+        target_offset: crate::gpui::Point<crate::gpui::Pixels>,
         cx: &mut Context<Self>,
     ) {
         let start_x: f32 = start_offset.x.into();
@@ -553,7 +553,7 @@ impl SettingsWindow {
                 div().px_5().pt_10().pb_2().child(
                     div()
                         .text_xs()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(crate::gpui::FontWeight::SEMIBOLD)
                         .text_color(self.text_muted())
                         .child("SETTINGS"),
                 ),
@@ -616,7 +616,7 @@ impl SettingsWindow {
                         .items_center()
                         .justify_center()
                         .text_xs()
-                        .font_weight(gpui::FontWeight::BOLD)
+                        .font_weight(crate::gpui::FontWeight::BOLD)
                         .text_color(text_primary)
                         .child(avatar_fallback)
                         .into_any_element(),
@@ -948,9 +948,9 @@ impl SettingsWindow {
                 div()
                     .text_sm()
                     .font_weight(if is_active {
-                        gpui::FontWeight::MEDIUM
+                        crate::gpui::FontWeight::MEDIUM
                     } else {
-                        gpui::FontWeight::NORMAL
+                        crate::gpui::FontWeight::NORMAL
                     })
                     .text_color(if is_active {
                         text_primary
