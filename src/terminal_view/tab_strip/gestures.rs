@@ -43,6 +43,7 @@ impl TerminalView {
         click_count: usize,
         cx: &mut Context<Self>,
     ) {
+        self.disarm_titlebar_window_move();
         self.switch_tab(tab_index, cx);
         self.begin_tab_drag(tab_index, orientation);
         if Self::should_begin_tab_rename(orientation, click_count, self.vertical_tabs_minimized) {
@@ -93,6 +94,7 @@ impl TerminalView {
         }
 
         let drag_changed = if event.dragging() {
+            self.disarm_titlebar_window_move();
             let preview = self.tab_strip_drag_preview(orientation, window, event.position);
             self.update_tab_drag_preview(
                 orientation,

@@ -68,6 +68,7 @@ impl TerminalView {
 
     pub(crate) fn begin_tab_drag(&mut self, index: usize, orientation: TabStripOrientation) {
         if index < self.tabs.len() {
+            self.disarm_titlebar_window_move();
             self.clear_tab_drag_preview_state();
             self.tab_strip.drag = Some(TabDragState {
                 source_index: index,

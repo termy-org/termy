@@ -216,7 +216,12 @@ pub fn render_vertical(
     } else {
         style.thumb_color
     };
-    let thumb_inset = style.thumb_inset.max(0.0);
+    let active_thumb_color = style.active_thumb_color;
+    let thumb_inset = if thumb_active {
+        (style.thumb_inset - 1.0).max(0.0)
+    } else {
+        style.thumb_inset.max(0.0)
+    };
     let marker_inset = style.marker_inset.max(0.0);
     let marker_radius = style.marker_radius.max(0.0);
     let mut marker_elements = Vec::new();
@@ -277,7 +282,8 @@ pub fn render_vertical(
                 .top(px(metrics.thumb_top))
                 .h(px(metrics.thumb_height))
                 .rounded(px(style.thumb_radius.max(0.0)))
-                .bg(thumb_color),
+                .bg(thumb_color)
+                .hover(move |style| style.bg(active_thumb_color)),
         )
         .children(marker_elements)
         .into_any_element()

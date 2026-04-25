@@ -619,7 +619,7 @@ fn block_element_geometry(c: char) -> Option<BlockElementGeometry> {
 
 fn braille_geometry(c: char) -> Option<BlockElementGeometry> {
     let codepoint = c as u32;
-    if !(BRAILLE_PATTERNS_START..=BRAILLE_PATTERNS_END).contains(&codepoint) {
+    if !is_braille_pattern_char(c) {
         return None;
     }
 
@@ -661,6 +661,29 @@ fn braille_geometry(c: char) -> Option<BlockElementGeometry> {
         ));
     }
     Some(geometry)
+}
+
+fn is_braille_pattern_char(c: char) -> bool {
+    (BRAILLE_PATTERNS_START..=BRAILLE_PATTERNS_END).contains(&(c as u32))
+}
+
+fn should_render_braille_as_geometry(row_cells: &[CellRenderInfo], index: usize) -> bool {
+    let Some(cell) = row_cells.get(index) else {
+        return false;
+    };
+    if !is_braille_pattern_char(cell.char) {
+        return false;
+    }
+
+    // QR output is emitted as contiguous braille runs. CLI loading spinners
+    // usually draw one isolated braille frame, so leave those to the font.
+    index
+        .checked_sub(1)
+        .and_then(|previous| row_cells.get(previous))
+        .is_some_and(|neighbor| is_braille_pattern_char(neighbor.char))
+        || row_cells
+            .get(index + 1)
+            .is_some_and(|neighbor| is_braille_pattern_char(neighbor.char))
 }
 
 const fn box_segments(
@@ -1736,7 +1759,7 @@ impl TerminalGrid {
         let cell_h: f32 = self.cell_size.height.into();
         let font_sz: f32 = self.font_size.into();
 
-        for cell in row_cells {
+        for (index, cell) in row_cells.iter().enumerate() {
             if !Self::cell_is_drawable_text(cell) {
                 Self::push_pending_text_batch(&mut current, ops);
                 continue;
@@ -1766,7 +1789,11 @@ impl TerminalGrid {
             }
 
             if let Some(geometry) = block_element_geometry(cell.char)
-                .or_else(|| braille_geometry(cell.char))
+                .or_else(|| {
+                    should_render_braille_as_geometry(row_cells, index)
+                        .then(|| braille_geometry(cell.char))
+                        .flatten()
+                })
                 .or_else(|| box_draw_geometry_for_char(cell.char, cell_w, cell_h, font_sz))
             {
                 Self::push_pending_text_batch(&mut current, ops);
@@ -2535,11 +2562,31 @@ mod tests {
 
     #[test]
     fn draw_ops_render_braille_as_block_geometry() {
-        let grid = test_grid(vec![test_cell(0, 0, '\u{28FF}'), test_cell(1, 0, 'x')]);
+        let grid = test_grid(
+            vec![
+                test_cell(0, 0, '\u{28FF}'),
+                test_cell(1, 0, '\u{28FF}'),
+                test_cell(2, 0, 'x'),
+            ],
+            None,
+        );
 
         let ops = collect_draw_ops(&grid);
         assert!(matches!(&ops[0], TextDrawOp::Block(_)));
-        assert!(matches!(&ops[1], TextDrawOp::Batch(_)));
+        assert!(matches!(&ops[1], TextDrawOp::Block(_)));
+        assert!(matches!(&ops[2], TextDrawOp::Batch(_)));
+    }
+
+    #[test]
+    fn draw_ops_keep_isolated_braille_as_text_for_spinners() {
+        let grid = test_grid(
+            vec![test_cell(0, 0, '\u{280B}'), test_cell(1, 0, 'x')],
+            None,
+        );
+
+        let ops = collect_draw_ops(&grid);
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(&ops[0], TextDrawOp::Batch(_)));
     }
 
     #[test]

@@ -299,4 +299,14 @@ mod tests {
         assert!(state.take_window_move_request(true, false));
         assert!(!state.take_window_move_request(true, false));
     }
+
+    #[test]
+    fn titlebar_state_disarm_cancels_pending_window_move() {
+        let mut state = TabStripTitlebarState::default();
+        assert!(state.on_mouse_down(false, 1).arm_move);
+
+        state.disarm();
+
+        assert!(!state.take_window_move_request(true, false));
+    }
 }
