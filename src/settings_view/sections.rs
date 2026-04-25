@@ -715,12 +715,18 @@ impl SettingsWindow {
         let button_text = self.contrasting_text_for_fill(accent, bg_card);
         let button_hover_text = self.contrasting_text_for_fill(accent_hover, bg_card);
         let button_border = self.accent_with_alpha(0.45);
-        let install_hover_bg = self.accent_with_alpha(0.18);
+        let install_bg = self.accent_with_alpha(0.14);
+        let install_hover_bg = self.accent_with_alpha(0.22);
+        let chip_bg = self.accent_with_alpha(0.1);
+        let active_border = self.accent_with_alpha(0.55);
+        let top_edge = self.accent_with_alpha(0.62);
         let store_url = "https://github.com/termy-org/themes";
         let query_text = self.theme_store_search_state.text().to_string();
         let has_query = !query_text.trim().is_empty();
         let is_search_active = self.theme_store_search_active;
         let normalized_query = query_text.trim().to_ascii_lowercase();
+        let total_theme_count = self.theme_store_themes.len();
+        let installed_theme_count = self.theme_store_installed_versions.len();
 
         let mut rows: Vec<AnyElement> = Vec::new();
         let search_content = if is_search_active {
@@ -766,6 +772,8 @@ impl SettingsWindow {
             })
             .overflow_hidden()
             .cursor_text()
+            .flex_1()
+            .min_w(px(220.0))
             .flex()
             .items_center()
             .child(
@@ -831,6 +839,35 @@ impl SettingsWindow {
                 }),
             );
 
+        let filtered_count = if has_query {
+            self.theme_store_themes
+                .iter()
+                .filter(|theme| {
+                    let haystack = format!(
+                        "{} {} {}",
+                        theme.name.to_ascii_lowercase(),
+                        theme.slug.to_ascii_lowercase(),
+                        theme.description.to_ascii_lowercase()
+                    );
+                    haystack.contains(&normalized_query)
+                })
+                .count()
+        } else {
+            total_theme_count
+        };
+        let availability_label = if self.theme_store_loading {
+            "Syncing registry".to_string()
+        } else if self.theme_store_error.is_some() {
+            "Registry unavailable".to_string()
+        } else if has_query {
+            format!(
+                "{filtered_count} result{}",
+                if filtered_count == 1 { "" } else { "s" }
+            )
+        } else {
+            format!("{total_theme_count} available")
+        };
+
         rows.push(
             div()
                 .py_3()
@@ -839,27 +876,63 @@ impl SettingsWindow {
                 .border_1()
                 .border_color(border_color)
                 .flex()
-                .flex_col()
-                .gap_2()
+                .items_center()
+                .justify_between()
+                .flex_wrap()
+                .gap_3()
                 .child(search_input)
                 .child(
                     div()
+                        .h(px(30.0))
+                        .px_3()
+                        .rounded(px(SETTINGS_INPUT_RADIUS))
+                        .bg(chip_bg)
+                        .border_1()
+                        .border_color(button_border)
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(text_secondary)
+                        .whitespace_nowrap()
+                        .flex()
+                        .items_center()
+                        .child(availability_label),
+                )
+                .when(installed_theme_count > 0, |s| {
+                    s.child(
+                        div()
+                            .h(px(30.0))
+                            .px_3()
+                            .rounded(px(SETTINGS_INPUT_RADIUS))
+                            .bg(bg_input)
+                            .border_1()
+                            .border_color(border_color)
+                            .text_xs()
+                            .text_color(text_muted)
+                            .whitespace_nowrap()
+                            .flex()
+                            .items_center()
+                            .child(format!("{installed_theme_count} installed")),
+                    )
+                })
+                .child(
+                    div()
                         .id("theme-store-open-link")
-                        .mt_1()
-                        .w(px(108.0))
                         .h(px(32.0))
-                        .px_2()
+                        .px_3()
+                        .rounded(px(SETTINGS_BUTTON_RADIUS))
                         .border_1()
                         .border_color(button_border)
                         .bg(bg_input)
                         .text_sm()
+                        .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(text_secondary)
+                        .whitespace_nowrap()
                         .cursor_pointer()
                         .flex()
                         .items_center()
                         .justify_center()
                         .hover(move |s| s.bg(hover_bg).text_color(text_primary))
-                        .child("Open Store")
+                        .child("Open Repo")
                         .on_click(cx.listener(move |_view, _, _, cx| {
                             if let Err(error) = SettingsWindow::open_url(store_url) {
                                 termy_toast::error(error);
@@ -878,9 +951,30 @@ impl SettingsWindow {
                     .bg(bg_card)
                     .border_1()
                     .border_color(border_color)
-                    .text_sm()
-                    .text_color(text_muted)
-                    .child("Loading themes from registry...")
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_4()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(text_primary)
+                                    .child("Syncing theme registry"),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(text_muted)
+                                    .child("Fetching the latest themes from GitHub."),
+                            ),
+                    )
+                    .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(accent))
                     .into_any_element(),
             );
         } else if let Some(error) = self.theme_store_error.clone() {
@@ -890,22 +984,36 @@ impl SettingsWindow {
                     .px_4()
                     .bg(bg_card)
                     .border_1()
-                    .border_color(border_color)
+                    .border_color(active_border)
                     .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(div().text_sm().text_color(text_secondary).child(error))
+                    .items_center()
+                    .justify_between()
+                    .gap_4()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(text_primary)
+                                    .child("Registry did not respond"),
+                            )
+                            .child(div().text_xs().text_color(text_muted).child(error)),
+                    )
                     .child(
                         div()
                             .id("theme-store-retry-btn")
-                            .mt_1()
-                            .w(px(90.0))
+                            .h(px(32.0))
                             .px_3()
-                            .py_1()
+                            .rounded(px(SETTINGS_BUTTON_RADIUS))
                             .border_1()
                             .border_color(button_border)
                             .bg(accent)
                             .text_sm()
+                            .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(button_text)
                             .cursor_pointer()
                             .hover(move |s| s.bg(accent_hover).text_color(button_hover_text))
@@ -923,12 +1031,12 @@ impl SettingsWindow {
                     div()
                         .py_2()
                         .px_4()
-                        .bg(bg_card)
+                        .bg(chip_bg)
                         .border_1()
-                        .border_color(border_color)
-                        .text_sm()
+                        .border_color(button_border)
+                        .text_xs()
                         .text_color(text_muted)
-                        .child("Showing cached themes (registry unavailable)")
+                        .child("Showing cached themes because the registry is unavailable.")
                         .into_any_element(),
                 );
             }
@@ -936,14 +1044,26 @@ impl SettingsWindow {
             if self.theme_store_themes.is_empty() {
                 rows.push(
                     div()
-                        .py_4()
+                        .py_5()
                         .px_4()
                         .bg(bg_card)
                         .border_1()
                         .border_color(border_color)
-                        .text_sm()
-                        .text_color(text_muted)
-                        .child("No themes available in store.")
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(text_primary)
+                                .child("No themes yet"),
+                        )
+                        .child(
+                            div().text_xs().text_color(text_muted).child(
+                                "The registry is reachable, but it has no published themes.",
+                            ),
+                        )
                         .into_any_element(),
                 );
             } else {
@@ -969,14 +1089,27 @@ impl SettingsWindow {
                 if filtered_themes.is_empty() {
                     rows.push(
                         div()
-                            .py_4()
+                            .py_5()
                             .px_4()
                             .bg(bg_card)
                             .border_1()
                             .border_color(border_color)
-                            .text_sm()
-                            .text_color(text_muted)
-                            .child("No themes match your search.")
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(text_primary)
+                                    .child("No matching themes"),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(text_muted)
+                                    .child("Try a different name, slug, or style keyword."),
+                            )
                             .into_any_element(),
                     );
                 }
@@ -991,24 +1124,36 @@ impl SettingsWindow {
                         .unwrap_or_else(|| "n/a".to_string());
                     let slug_key = theme.slug.to_ascii_lowercase();
                     let installed_version = self.theme_store_installed_versions.get(&slug_key);
-                    let is_installed = self
-                        .theme_store_installed_versions
-                        .get(&slug_key)
-                        .is_some_and(|version| {
-                            theme
-                                .latest_version
-                                .as_deref()
-                                .is_none_or(|latest| version.eq_ignore_ascii_case(latest))
-                        });
+                    let installed_any = installed_version.is_some();
+                    let is_installed = installed_version.is_some_and(|version| {
+                        theme
+                            .latest_version
+                            .as_deref()
+                            .is_none_or(|latest| version.eq_ignore_ascii_case(latest))
+                    });
+                    let has_update = installed_any && !is_installed;
                     let description = if theme.description.trim().is_empty() {
                         "No description provided.".to_string()
                     } else {
                         theme.description.clone()
                     };
-                    let installed_label = installed_version
-                        .and_then(|version| (!version.trim().is_empty()).then_some(version))
-                        .map(|_| "Installed".to_string())
-                        .unwrap_or_else(|| "Installed".to_string());
+                    let status_label = if is_installed {
+                        "Installed"
+                    } else if has_update {
+                        "Update"
+                    } else {
+                        "Registry"
+                    };
+                    let status_bg = if is_installed || has_update {
+                        chip_bg
+                    } else {
+                        bg_input
+                    };
+                    let status_border = if is_installed || has_update {
+                        button_border
+                    } else {
+                        border_color
+                    };
                     let install_button = if is_installed {
                         let uninstall_slug = theme.slug.clone();
                         div()
@@ -1022,19 +1167,20 @@ impl SettingsWindow {
                             .gap_2()
                             .child(
                                 div()
-                                    .w(px(108.0))
                                     .h(px(32.0))
-                                    .px_2()
+                                    .px_3()
+                                    .rounded(px(SETTINGS_BUTTON_RADIUS))
                                     .border_1()
-                                    .border_color(border_color)
-                                    .bg(bg_card)
-                                    .text_sm()
-                                    .text_color(text_muted)
+                                    .border_color(status_border)
+                                    .bg(status_bg)
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .text_color(text_secondary)
                                     .whitespace_nowrap()
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .child(installed_label),
+                                    .child(status_label),
                             )
                             .child(
                                 div()
@@ -1042,13 +1188,14 @@ impl SettingsWindow {
                                         "theme-store-uninstall-{}",
                                         theme.slug
                                     )))
-                                    .w(px(108.0))
                                     .h(px(32.0))
-                                    .px_2()
+                                    .px_3()
+                                    .rounded(px(SETTINGS_BUTTON_RADIUS))
                                     .border_1()
                                     .border_color(button_border)
                                     .bg(bg_input)
                                     .text_sm()
+                                    .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(text_secondary)
                                     .cursor_pointer()
                                     .flex()
@@ -1063,19 +1210,21 @@ impl SettingsWindow {
                             )
                             .into_any_element()
                     } else {
+                        let action_label = if has_update { "Update" } else { "Install" };
                         div()
                             .id(SharedString::from(format!(
                                 "theme-store-install-{}",
                                 theme.slug
                             )))
                             .mt_auto()
-                            .w(px(108.0))
                             .h(px(32.0))
-                            .px_2()
+                            .px_3()
+                            .rounded(px(SETTINGS_BUTTON_RADIUS))
                             .border_1()
                             .border_color(button_border)
-                            .bg(bg_input)
+                            .bg(install_bg)
                             .text_sm()
+                            .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(text_secondary)
                             .whitespace_nowrap()
                             .cursor_pointer()
@@ -1083,7 +1232,7 @@ impl SettingsWindow {
                             .items_center()
                             .justify_center()
                             .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
-                            .child("Install")
+                            .child(action_label)
                             .on_click(cx.listener(move |view, _, _, cx| {
                                 view.confirm_install_theme_store_theme(install_theme.clone(), cx);
                             }))
@@ -1092,41 +1241,83 @@ impl SettingsWindow {
 
                     theme_cards.push(
                         div()
-                            .py_3()
-                            .px_4()
-                            .w(px(250.0))
-                            .min_w(px(250.0))
-                            .max_w(px(250.0))
-                            .min_h(px(186.0))
+                            .w(px(260.0))
+                            .min_w(px(260.0))
+                            .max_w(px(260.0))
+                            .min_h(px(178.0))
                             .bg(bg_card)
                             .border_1()
-                            .border_color(border_color)
+                            .border_color(if is_installed {
+                                active_border
+                            } else {
+                                border_color
+                            })
+                            .overflow_hidden()
                             .flex()
                             .flex_col()
-                            .gap_3()
+                            .hover(move |s| s.bg(bg_input).border_color(active_border))
+                            .child(div().h(px(3.0)).w_full().bg(top_edge))
                             .child(
                                 div()
+                                    .p_4()
                                     .flex()
-                                    .justify_between()
-                                    .items_center()
+                                    .flex_col()
+                                    .gap_3()
                                     .child(
-                                        div().text_sm().text_color(text_primary).child(theme.name),
+                                        div()
+                                            .flex()
+                                            .justify_between()
+                                            .items_start()
+                                            .gap_3()
+                                            .child(
+                                                div()
+                                                    .min_w(px(0.0))
+                                                    .flex()
+                                                    .flex_col()
+                                                    .gap_1()
+                                                    .child(
+                                                        div()
+                                                            .text_sm()
+                                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                            .text_color(text_primary)
+                                                            .overflow_hidden()
+                                                            .child(theme.name),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(text_muted)
+                                                            .overflow_hidden()
+                                                            .child(theme.slug),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .h(px(24.0))
+                                                    .px_2()
+                                                    .rounded(px(SETTINGS_INPUT_RADIUS))
+                                                    .bg(bg_input)
+                                                    .border_1()
+                                                    .border_color(border_color)
+                                                    .text_xs()
+                                                    .text_color(text_muted)
+                                                    .whitespace_nowrap()
+                                                    .flex()
+                                                    .items_center()
+                                                    .child(format!("v{version_label}")),
+                                            ),
                                     )
                                     .child(
                                         div()
                                             .text_xs()
                                             .text_color(text_muted)
-                                            .child(format!("v{version_label}")),
-                                    ),
+                                            .min_h(px(42.0))
+                                            .max_h(px(42.0))
+                                            .overflow_hidden()
+                                            .child(description),
+                                    )
+                                    .child(install_button),
                             )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(text_muted)
-                                    .min_h(px(42.0))
-                                    .child(description),
-                            )
-                            .child(install_button)
                             .into_any_element(),
                     );
                 }
@@ -1134,13 +1325,10 @@ impl SettingsWindow {
                 if !theme_cards.is_empty() {
                     rows.push(
                         div()
-                            .mt_3()
-                            .pt_3()
-                            .border_t_1()
-                            .border_color(border_color)
+                            .pt_2()
                             .flex()
                             .flex_wrap()
-                            .gap_2()
+                            .gap_3()
                             .children(theme_cards)
                             .into_any_element(),
                     );
