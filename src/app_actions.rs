@@ -19,6 +19,7 @@ fn root_contains_view<V: 'static>(root_view: AnyView, cx: &App) -> bool {
     root.read(cx).view().clone().downcast::<V>().is_ok()
 }
 
+#[cfg(test)]
 fn window_contains_view<V: 'static, C: AppContext>(handle: AnyWindowHandle, cx: &C) -> bool {
     if handle.downcast::<V>().is_some() {
         return true;
@@ -82,10 +83,16 @@ pub(crate) fn focus_existing_window<V: 'static>(cx: &mut App) -> bool {
     })
 }
 
-pub(crate) fn has_window<V: 'static>(cx: &App) -> bool {
+pub(crate) fn has_window<V: 'static>(cx: &mut App) -> bool {
     cx.windows()
         .into_iter()
-        .any(|handle| window_contains_view::<V, _>(handle, cx))
+        .any(|handle| {
+            handle
+                .update(cx, |root_view, _window, cx| {
+                    root_contains_view::<V>(root_view, cx)
+                })
+                .unwrap_or(false)
+        })
 }
 
 pub(crate) fn update_open_settings_windows(
@@ -164,7 +171,10 @@ pub(crate) fn open_settings_window(cx: &mut App) -> Result<(), String> {
             window_min_size: Some(initial_window_size),
             ..Default::default()
         },
-        |window, cx| cx.new(|cx| SettingsWindow::new(window, cx)),
+        |window, cx| {
+            let view = cx.new(|cx| SettingsWindow::new(window, cx));
+            cx.new(|cx| gpui_component::Root::new(view, window, cx))
+        },
     )
     .map(|_| ())
     .map_err(|error| format!("Failed to open settings window: {}", error))
@@ -178,7 +188,7 @@ mod tests {
     fn settings_window_count(cx: &TestAppContext) -> usize {
         cx.windows()
             .into_iter()
-            .filter(|handle| handle.downcast::<SettingsWindow>().is_some())
+            .filter(|handle| window_contains_view::<SettingsWindow, _>(handle, cx))
             .count()
     }
 
