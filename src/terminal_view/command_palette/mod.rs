@@ -601,6 +601,13 @@ impl TerminalView {
         mode: CommandPaletteMode,
         cx: &mut Context<Self>,
     ) {
+        if self.simple_mode {
+            if self.command_palette.is_open() {
+                self.close_command_palette(cx);
+            }
+            return;
+        }
+
         let _ = self.close_terminal_context_menu(cx);
         let was_open = self.command_palette.is_open();
         self.command_palette.open(mode);
@@ -1851,15 +1858,22 @@ mod tests {
             .collect::<Vec<_>>();
         let commands = items
             .iter()
-            .map(|item| item.status_hint)
+            .map(|item| match item.kind {
+                CommandPaletteItemKind::AiAgentSpawn(agent) => Some(agent.launch_command()),
+                _ => None,
+            })
             .collect::<Vec<_>>();
 
-        assert_eq!(titles, ["Codex", "Claude", "Cursor", "OpenCode", "Pi"]);
+        assert_eq!(
+            titles,
+            ["Codex", "Claude", "Copilot", "Cursor", "OpenCode", "Pi"]
+        );
         assert_eq!(
             commands,
             [
                 Some("codex"),
                 Some("claude"),
+                Some("copilot"),
                 Some("agent"),
                 Some("opencode"),
                 Some("pi")

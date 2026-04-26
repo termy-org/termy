@@ -295,35 +295,6 @@ impl TerminalView {
             .into_any_element()
     }
 
-    pub(super) fn render_baseline_segments(
-        layout: &chrome::TabChromeLayout,
-        tab_stroke_color: gpui::Rgba,
-    ) -> Vec<AnyElement> {
-        let mut elements = Vec::with_capacity(layout.baseline_strokes.len() + 1);
-        for segment in &layout.baseline_strokes {
-            elements.push(Self::render_tab_stroke(*segment, tab_stroke_color));
-        }
-        elements.push(
-            div()
-                .id("tabs-baseline-tail-filler")
-                .flex_1()
-                .min_w(px(0.0))
-                .h(px(TABBAR_HEIGHT))
-                .relative()
-                .child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .right_0()
-                        .top(px(layout.baseline_y))
-                        .h(px(TAB_STROKE_THICKNESS))
-                        .bg(tab_stroke_color),
-                )
-                .into_any_element(),
-        );
-        elements
-    }
-
     pub(super) fn render_stroke_segments(
         strokes: &[chrome::StrokeRect],
         tab_stroke_color: gpui::Rgba,

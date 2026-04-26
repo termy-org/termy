@@ -1001,7 +1001,8 @@ impl TerminalView {
 
 #[cfg(test)]
 mod tests {
-    use super::TerminalView;
+    use super::{PersistedNativeLayoutNode, TerminalView};
+    use crate::terminal_view::PaneResizeAxis;
 
     #[test]
     fn persisted_native_workspace_parser_accepts_legacy_v1_shape() {
@@ -1111,6 +1112,7 @@ mod tests {
             .expect("state should include last session");
         match workspace.tabs[0]
             .layout_tree
+            .as_ref()
             .expect("layout tree should be present")
         {
             PersistedNativeLayoutNode::Split {
@@ -1119,14 +1121,14 @@ mod tests {
                 first,
                 second,
             } => {
-                assert_eq!(axis, PaneResizeAxis::Horizontal);
-                assert_eq!(ratio, 0.5);
+                assert_eq!(*axis, PaneResizeAxis::Horizontal);
+                assert_eq!(*ratio, 0.5);
                 assert!(matches!(
-                    *first,
+                    first.as_ref(),
                     PersistedNativeLayoutNode::Leaf { pane: 0 }
                 ));
                 assert!(matches!(
-                    *second,
+                    second.as_ref(),
                     PersistedNativeLayoutNode::Leaf { pane: 1 }
                 ));
             }

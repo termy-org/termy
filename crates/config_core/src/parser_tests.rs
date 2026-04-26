@@ -43,6 +43,25 @@ fn native_buffer_persistence_parses_as_boolean() {
 }
 
 #[test]
+fn simple_mode_parses_as_boolean_and_defaults_off() {
+    assert!(!parse("").simple_mode);
+    assert!(parse("simple_mode = true\n").simple_mode);
+    assert!(!parse("simple_mode = false\n").simple_mode);
+}
+
+#[test]
+fn invalid_simple_mode_keeps_default_and_reports_diagnostic() {
+    let report = parse_report("simple_mode = sometimes\n");
+
+    assert!(!report.config.simple_mode);
+    assert_eq!(report.diagnostics.len(), 1);
+    assert_eq!(
+        report.diagnostics[0].kind,
+        ConfigDiagnosticKind::InvalidValue
+    );
+}
+
+#[test]
 fn from_contents_with_report_captures_diagnostics() {
     let report = parse_report(
         "bad syntax line\n\
@@ -295,6 +314,7 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::NativeLayoutAutosave => Some(config.native_layout_autosave),
         RootSettingId::NativeBufferPersistence => Some(config.native_buffer_persistence),
         RootSettingId::ShowDebugOverlay => Some(config.show_debug_overlay),
+        RootSettingId::SimpleMode => Some(config.simple_mode),
         RootSettingId::TmuxShowActivePaneBorder => Some(config.tmux_show_active_pane_border),
         RootSettingId::WarnOnQuit => Some(config.warn_on_quit),
         RootSettingId::WarnOnQuitWithRunningProcess => {

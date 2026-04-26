@@ -17,6 +17,16 @@ fn search_key_action(key: &str, shift_pressed: bool) -> Option<SearchKeyAction> 
     }
 }
 
+fn search_counter_label(current: usize, total: usize, query_is_empty: bool) -> Option<String> {
+    if total > 0 {
+        Some(format!("{current}/{total}"))
+    } else if query_is_empty {
+        None
+    } else {
+        Some("0/0".to_string())
+    }
+}
+
 impl TerminalView {
     fn search_prefill_from_selection(selection: Option<String>) -> Option<String> {
         selection.filter(|text| !text.trim().is_empty())
@@ -278,25 +288,23 @@ impl TerminalView {
     }
 
     pub(super) fn render_search_bar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let colors = &self.colors;
         let overlay_style = self.overlay_style();
         let bar_bg = overlay_style.chrome_panel_background(SEARCH_BAR_BG_ALPHA);
         let input_bg = overlay_style.chrome_panel_background(SEARCH_INPUT_BG_ALPHA);
+        let input_border = overlay_style.panel_foreground(0.10);
         let counter_text = overlay_style.panel_foreground(SEARCH_COUNTER_TEXT_ALPHA);
         let button_text = overlay_style.panel_foreground(SEARCH_BUTTON_TEXT_ALPHA);
         let button_hover_bg = overlay_style.chrome_panel_cursor(SEARCH_BUTTON_HOVER_BG_ALPHA);
+        let button_active_bg = overlay_style.chrome_panel_cursor(0.28);
+        let strong_text = overlay_style.panel_foreground(0.92);
 
         let (current, total) = self.search_state.results().position().unwrap_or((0, 0));
-
-        let counter_label = if total > 0 {
-            format!("{}/{}", current, total)
-        } else if self.search_input.text().is_empty() {
-            String::new()
-        } else {
-            "0/0".to_string()
-        };
+        let counter_label =
+            search_counter_label(current, total, self.search_input.text().is_empty());
 
         let has_error = self.search_state.error().is_some();
+        let case_sensitive = self.search_state.is_case_sensitive();
+        let regex_mode = matches!(self.search_state.mode(), termy_search::SearchMode::Regex);
         let error_color = gpui::Rgba {
             r: 0.98,
             g: 0.48,
@@ -313,44 +321,32 @@ impl TerminalView {
             .h(px(SEARCH_BAR_HEIGHT))
             .bg(bar_bg)
             .rounded(px(SEARCH_OVERLAY_GEOMETRY.panel_radius))
-            .shadow_md()
+            .border_1()
+            .border_color(overlay_style.panel_foreground(0.08))
+            .shadow_lg()
             .flex()
             .items_center()
-            .px(px(10.0))
-            .gap(px(8.0))
-            // Search input container
+            .px(px(8.0))
+            .gap(px(6.0))
             .child(
                 div()
                     .flex_1()
-                    .h(px(26.0))
+                    .h(px(30.0))
+                    .min_w(px(0.0))
+                    .relative()
+                    .overflow_hidden()
                     .rounded(px(SEARCH_OVERLAY_GEOMETRY.input_radius))
                     .bg(input_bg)
                     .border_1()
-                    .border_color(if has_error {
-                        error_color
-                    } else {
-                        gpui::Rgba {
-                            r: 1.0,
-                            g: 1.0,
-                            b: 1.0,
-                            a: 0.1,
-                        }
-                    })
-                    .px(px(8.0))
+                    .border_color(if has_error { error_color } else { input_border })
+                    .pl(px(10.0))
+                    .pr(px(10.0))
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
-                    // Search icon
-                    .child(
-                        div()
-                            .text_size(px(12.0))
-                            .text_color(overlay_style.panel_foreground(0.4))
-                            .child("⌕"),
-                    )
                     .child(self.render_inline_input_layer(
                         Font::default(),
                         px(13.0),
-                        colors.foreground.into(),
+                        strong_text.into(),
                         {
                             overlay_style
                                 .chrome_panel_cursor(SEARCH_INPUT_SELECTION_ALPHA)
@@ -360,21 +356,33 @@ impl TerminalView {
                         cx,
                     )),
             )
-            // Match counter (outside input)
-            .children((!counter_label.is_empty()).then(|| {
+            .children(counter_label.map(|label| {
                 div()
+                    .w(px(46.0))
+                    .h(px(26.0))
+                    .rounded(px(SEARCH_OVERLAY_GEOMETRY.control_radius))
+                    .bg(if has_error {
+                        let mut bg = error_color;
+                        bg.a = 0.14;
+                        bg
+                    } else {
+                        input_bg
+                    })
+                    .border_1()
+                    .border_color(if has_error { error_color } else { input_border })
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .text_size(px(11.0))
                     .text_color(if has_error { error_color } else { counter_text })
                     .flex_none()
-                    .child(counter_label.clone())
+                    .child(label)
             }))
-            // Navigation buttons
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(2.0))
-                    // Up arrow (chevron): navigate toward older/top content
                     .child(
                         div()
                             .id("search-prev")
@@ -387,6 +395,7 @@ impl TerminalView {
                             .text_size(px(14.0))
                             .text_color(button_text)
                             .hover(|style| style.bg(button_hover_bg))
+                            .active(|style| style.bg(button_active_bg))
                             .cursor_pointer()
                             .on_mouse_down(
                                 MouseButton::Left,
@@ -397,7 +406,6 @@ impl TerminalView {
                             )
                             .child("‹"),
                     )
-                    // Down arrow (chevron): navigate toward newer/bottom content
                     .child(
                         div()
                             .id("search-next")
@@ -410,6 +418,7 @@ impl TerminalView {
                             .text_size(px(14.0))
                             .text_color(button_text)
                             .hover(|style| style.bg(button_hover_bg))
+                            .active(|style| style.bg(button_active_bg))
                             .cursor_pointer()
                             .on_mouse_down(
                                 MouseButton::Left,
@@ -421,7 +430,88 @@ impl TerminalView {
                             .child("›"),
                     ),
             )
-            // Close button
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(2.0))
+                    .child(
+                        div()
+                            .id("search-case-sensitive")
+                            .w(px(28.0))
+                            .h(px(24.0))
+                            .rounded(px(SEARCH_OVERLAY_GEOMETRY.control_radius))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(10.0))
+                            .text_color(if case_sensitive {
+                                strong_text
+                            } else {
+                                button_text
+                            })
+                            .bg(if case_sensitive {
+                                button_active_bg
+                            } else {
+                                gpui::Rgba {
+                                    r: 0.0,
+                                    g: 0.0,
+                                    b: 0.0,
+                                    a: 0.0,
+                                }
+                            })
+                            .hover(|style| style.bg(button_hover_bg))
+                            .active(|style| style.bg(button_active_bg))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, _window, cx| {
+                                    this.execute_search_command_action(
+                                        CommandAction::ToggleSearchCaseSensitive,
+                                        cx,
+                                    );
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .child("Aa"),
+                    )
+                    .child(
+                        div()
+                            .id("search-regex")
+                            .w(px(28.0))
+                            .h(px(24.0))
+                            .rounded(px(SEARCH_OVERLAY_GEOMETRY.control_radius))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(11.0))
+                            .text_color(if regex_mode { strong_text } else { button_text })
+                            .bg(if regex_mode {
+                                button_active_bg
+                            } else {
+                                gpui::Rgba {
+                                    r: 0.0,
+                                    g: 0.0,
+                                    b: 0.0,
+                                    a: 0.0,
+                                }
+                            })
+                            .hover(|style| style.bg(button_hover_bg))
+                            .active(|style| style.bg(button_active_bg))
+                            .cursor_pointer()
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _event, _window, cx| {
+                                    this.execute_search_command_action(
+                                        CommandAction::ToggleSearchRegex,
+                                        cx,
+                                    );
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .child(".*"),
+                    ),
+            )
             .child(
                 div()
                     .id("search-close")
@@ -434,6 +524,7 @@ impl TerminalView {
                     .text_size(px(14.0))
                     .text_color(button_text)
                     .hover(|style| style.bg(button_hover_bg))
+                    .active(|style| style.bg(button_active_bg))
                     .cursor_pointer()
                     .on_mouse_down(
                         MouseButton::Left,
@@ -442,7 +533,7 @@ impl TerminalView {
                             cx.stop_propagation();
                         }),
                     )
-                    .child("✕"),
+                    .child("×"),
             )
             .into_any()
     }
@@ -514,6 +605,21 @@ mod tests {
             TerminalView::search_prefill_from_selection(Some("panic: missing semicolon".into())),
             Some("panic: missing semicolon".into())
         );
+    }
+
+    #[test]
+    fn search_counter_label_hides_empty_query_without_results() {
+        assert_eq!(search_counter_label(0, 0, true), None);
+    }
+
+    #[test]
+    fn search_counter_label_reports_zero_results_for_non_empty_query() {
+        assert_eq!(search_counter_label(0, 0, false), Some("0/0".to_string()));
+    }
+
+    #[test]
+    fn search_counter_label_reports_current_result_position() {
+        assert_eq!(search_counter_label(3, 12, false), Some("3/12".to_string()));
     }
 
     fn filled_line_count(lines: &[Option<String>]) -> usize {

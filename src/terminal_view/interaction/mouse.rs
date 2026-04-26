@@ -58,6 +58,9 @@ impl TerminalView {
         }
 
         let (pane_id, target) = self.position_to_pane_cell(event.position, false)?;
+        if !self.pane_cell_has_clickable_text(pane_id.as_str(), target) {
+            return None;
+        }
         let selection_start = self.selection_pos_for_pane_cell(pane_id.as_str(), target)?;
         let terminal = self.pane_terminal_by_id(pane_id.as_str())?;
         let tab = self.tabs.get(self.active_tab)?;

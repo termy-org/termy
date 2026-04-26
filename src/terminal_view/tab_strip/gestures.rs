@@ -44,6 +44,9 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.disarm_titlebar_window_move();
+        self.tab_strip
+            .start_press_animation(tab_index, Instant::now());
+        self.schedule_tab_interaction_animation(cx);
         self.switch_tab(tab_index, cx);
         self.begin_tab_drag(tab_index, orientation);
         if Self::should_begin_tab_rename(orientation, click_count, self.vertical_tabs_minimized) {
@@ -64,6 +67,9 @@ impl TerminalView {
         let mut hover_changed = false;
         if self.tab_strip.hovered_tab != Some(tab_index) {
             self.tab_strip.hovered_tab = Some(tab_index);
+            self.tab_strip
+                .start_hover_animation(tab_index, Instant::now());
+            self.schedule_tab_interaction_animation(cx);
             hover_changed = true;
         }
         if self.tab_strip.hovered_tab_close != Some(tab_index) {
@@ -85,6 +91,9 @@ impl TerminalView {
     ) {
         let mut hovered_changed = if self.tab_strip.hovered_tab != Some(tab_index) {
             self.tab_strip.hovered_tab = Some(tab_index);
+            self.tab_strip
+                .start_hover_animation(tab_index, Instant::now());
+            self.schedule_tab_interaction_animation(cx);
             true
         } else {
             false

@@ -70,6 +70,7 @@ impl TerminalView {
                     cx.set_menus(crate::menus::app_menus(
                         self.install_cli_available(),
                         self.runtime_uses_tmux(),
+                        self.simple_mode,
                     ));
                 }
                 cx.notify();

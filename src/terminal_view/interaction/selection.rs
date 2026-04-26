@@ -176,6 +176,13 @@ fn row_text_from_terminal(terminal: &Terminal, row: usize, cols: usize) -> Vec<O
     line
 }
 
+fn line_clickable_end_col(line: &[Option<char>]) -> Option<usize> {
+    let last_content_col = line
+        .iter()
+        .rposition(|cell| cell.is_some_and(|c| !c.is_whitespace()))?;
+    Some((last_content_col + 1).min(line.len().saturating_sub(1)))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn pane_cell_for_position(
     pane: &TerminalPane,
@@ -419,6 +426,26 @@ impl TerminalView {
         let pane = tab.panes.iter().find(|pane| pane.id == pane_id)?;
         let (display_offset, _) = pane.terminal.scroll_state();
         Self::selection_pos_for_cell_with_display_offset(cell, display_offset)
+    }
+
+    pub(in super::super) fn pane_cell_has_clickable_text(
+        &self,
+        pane_id: &str,
+        cell: CellPos,
+    ) -> bool {
+        let Some(tab) = self.tabs.get(self.active_tab) else {
+            return false;
+        };
+        let Some(pane) = tab.panes.iter().find(|pane| pane.id == pane_id) else {
+            return false;
+        };
+        let cols = usize::from(pane.terminal.size().cols);
+        if cols == 0 || cell.col >= cols {
+            return false;
+        }
+
+        let line = row_text_from_terminal(&pane.terminal, cell.row, cols);
+        line_clickable_end_col(&line).is_some_and(|end_col| cell.col <= end_col)
     }
 
     pub(in super::super) fn selection_pos_for_cell(&self, cell: CellPos) -> Option<SelectionPos> {
@@ -880,6 +907,24 @@ mod tests {
         let row1 = row_text_from_terminal(&terminal, 1, usize::from(size.cols));
         assert_eq!(row1[0], Some('文'));
         assert_eq!(row1[1], None, "trailing spacer should be None");
+    }
+
+    #[test]
+    fn line_clickable_end_col_rejects_empty_lines() {
+        let line = vec![Some(' '), Some(' '), None, Some(' ')];
+        assert_eq!(line_clickable_end_col(&line), None);
+    }
+
+    #[test]
+    fn line_clickable_end_col_allows_one_cell_after_visible_text() {
+        let line = vec![Some('$'), Some(' '), Some('l'), Some('s'), Some(' ')];
+        assert_eq!(line_clickable_end_col(&line), Some(4));
+    }
+
+    #[test]
+    fn line_clickable_end_col_includes_trailing_wide_spacer_cell() {
+        let line = vec![Some('好'), None, Some(' ')];
+        assert_eq!(line_clickable_end_col(&line), Some(1));
     }
 
     #[test]

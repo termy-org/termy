@@ -562,6 +562,7 @@ mod tests {
         TerminalSize, TerminalTab,
     };
     use std::cell::{Cell, RefCell};
+    use termy_terminal_ui::{CommandLifecycle, ProgressState};
 
     #[test]
     fn reorder_active_window_id_preserves_previously_active_window() {
@@ -619,6 +620,8 @@ mod tests {
             display_width: 0.0,
             running_process: false,
             agent_command_has_started: false,
+            progress_state: ProgressState::default(),
+            command_lifecycle: CommandLifecycle::default(),
         };
 
         assert!(apply_local_tmux_pane_focus(&mut tab, "%2"));

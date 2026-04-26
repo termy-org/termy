@@ -310,6 +310,7 @@ pub struct AppConfig {
     pub copy_on_select: bool,
     pub copy_on_select_toast: bool,
     pub command_palette_show_keybinds: bool,
+    pub simple_mode: bool,
     // Notification settings
     pub notifications_enabled: bool,
     pub notification_min_duration: f32,
@@ -394,6 +395,7 @@ impl Default for AppConfig {
             copy_on_select: false,
             copy_on_select_toast: true,
             command_palette_show_keybinds: true,
+            simple_mode: false,
             // Notification defaults
             notifications_enabled: true,
             notification_min_duration: 5.0,

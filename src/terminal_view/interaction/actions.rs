@@ -16,6 +16,17 @@ impl TerminalView {
         }
     }
 
+    fn simple_mode_blocks_command_action(action: CommandAction) -> bool {
+        matches!(
+            action,
+            CommandAction::ToggleCommandPalette
+                | CommandAction::SwitchTheme
+                | CommandAction::ManageTmuxSessions
+                | CommandAction::ManageSavedLayouts
+                | CommandAction::RunTask
+        )
+    }
+
     fn command_shortcuts_suspended(&self) -> bool {
         self.has_active_inline_input()
     }
@@ -81,6 +92,13 @@ impl TerminalView {
                     return;
                 }
             }
+        }
+
+        if self.simple_mode && Self::simple_mode_blocks_command_action(action) {
+            if self.is_command_palette_open() {
+                self.close_command_palette(cx);
+            }
+            return;
         }
 
         let shortcuts_suspended = respect_shortcut_suspend
@@ -790,5 +808,25 @@ mod tests {
             TerminalView::command_palette_mode_for_action(CommandAction::PrettifyConfig),
             None
         );
+    }
+
+    #[test]
+    fn simple_mode_blocks_palette_backed_command_actions() {
+        for action in [
+            CommandAction::ToggleCommandPalette,
+            CommandAction::SwitchTheme,
+            CommandAction::ManageTmuxSessions,
+            CommandAction::ManageSavedLayouts,
+            CommandAction::RunTask,
+        ] {
+            assert!(TerminalView::simple_mode_blocks_command_action(action));
+        }
+
+        assert!(!TerminalView::simple_mode_blocks_command_action(
+            CommandAction::OpenSettings
+        ));
+        assert!(!TerminalView::simple_mode_blocks_command_action(
+            CommandAction::OpenConfig
+        ));
     }
 }

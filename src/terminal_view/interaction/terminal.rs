@@ -487,6 +487,8 @@ mod tests {
             display_width: TAB_MIN_WIDTH,
             running_process: false,
             agent_command_has_started: false,
+            progress_state: ProgressState::default(),
+            command_lifecycle: CommandLifecycle::default(),
         };
 
         assert!(TerminalView::repair_native_tab_active_pane_for_resize(

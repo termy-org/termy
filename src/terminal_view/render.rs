@@ -157,30 +157,45 @@ fn paint_damage_from_dirty_spans(
     row_count: usize,
 ) -> TerminalGridPaintDamage {
     let t0 = Instant::now();
-    let result = DIRTY_SPAN_RANGES.with(|buf| {
-        let mut ranges = buf.borrow_mut();
-        ranges.clear();
-        for span in spans {
-            if span.row < row_count {
-                ranges.push((span.row, span.left_col, span.right_col));
-            }
+    let result = if spans.is_empty() {
+        TerminalGridPaintDamage::None
+    } else if let [span] = spans {
+        if span.row < row_count {
+            TerminalGridPaintDamage::RowRanges(Arc::from([(
+                span.row,
+                span.left_col,
+                span.right_col,
+            )]))
+        } else {
+            TerminalGridPaintDamage::None
         }
-        if ranges.is_empty() {
-            return TerminalGridPaintDamage::None;
-        }
-        // Sort by row so consecutive entries for the same row are adjacent
-        ranges.sort_unstable_by_key(|&(row, _, _)| row);
-        // Merge multiple spans on the same row into one union of column ranges
-        ranges.dedup_by(|b, a| {
-            if a.0 == b.0 {
-                a.2 = a.2.max(b.2); // expand right bound of `a` to cover `b`
-                true // remove `b`
-            } else {
-                false
+    } else {
+        DIRTY_SPAN_RANGES.with(|buf| {
+            let mut ranges = buf.borrow_mut();
+            ranges.clear();
+            for span in spans {
+                if span.row < row_count {
+                    ranges.push((span.row, span.left_col, span.right_col));
+                }
             }
-        });
-        TerminalGridPaintDamage::RowRanges(Arc::from(ranges.as_slice()))
-    });
+            if ranges.is_empty() {
+                return TerminalGridPaintDamage::None;
+            }
+            // Sort by row/column so entries for the same row are adjacent and the
+            // first item on a row owns the full left bound after merging.
+            ranges.sort_unstable_by_key(|&(row, left_col, _)| (row, left_col));
+            ranges.dedup_by(|b, a| {
+                if a.0 == b.0 {
+                    a.1 = a.1.min(b.1);
+                    a.2 = a.2.max(b.2);
+                    true
+                } else {
+                    false
+                }
+            });
+            TerminalGridPaintDamage::RowRanges(Arc::from(ranges.as_slice()))
+        })
+    };
     add_span_damage_compute_us(t0.elapsed().as_micros() as u64);
     result
 }
@@ -2173,15 +2188,16 @@ impl TerminalView {
                     .justify_center()
                     .child(
                         div()
-                            .px(px(14.0))
-                            .py(px(8.0))
-                            .rounded(px(TERMINAL_OVERLAY_GEOMETRY.panel_radius))
-                            .bg(overlay_style.chrome_panel_background(0.84))
+                            .px(px(12.0))
+                            .py(px(5.0))
+                            .rounded_full()
+                            .bg(overlay_style.chrome_panel_background(0.54))
                             .border_1()
-                            .border_color(overlay_style.chrome_panel_neutral(0.24))
-                            .text_size(px(13.0))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(overlay_style.panel_foreground(0.95))
+                            .border_color(overlay_style.chrome_panel_neutral(0.10))
+                            .shadow_md()
+                            .text_size(px(11.0))
+                            .font_weight(FontWeight::NORMAL)
+                            .text_color(overlay_style.panel_foreground(0.82))
                             .child(format!("{} x {}", cols, rows)),
                     )
                     .into_any_element()
@@ -2532,6 +2548,7 @@ impl Render for TerminalView {
                         .top(px(pane_top))
                         .w(px(pane_width))
                         .h(px(pane_height))
+                        .cursor_text()
                         .when(link_hovered, |el| el.cursor_pointer())
                         .child(terminal_grid)
                         .into_any_element(),

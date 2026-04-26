@@ -257,6 +257,13 @@ impl AppConfig {
                         config.show_debug_overlay = parsed;
                     }
                 }
+                RootSettingId::SimpleMode => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.simple_mode = parsed;
+                    }
+                }
                 RootSettingId::TmuxBinary => {
                     if let Some(parsed) = parse_string_field(
                         &mut diagnostics,

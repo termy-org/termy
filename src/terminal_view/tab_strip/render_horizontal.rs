@@ -148,8 +148,8 @@ impl TerminalView {
     fn render_inset_lane(
         id: &'static str,
         width: f32,
-        tab_baseline_y: f32,
-        tab_stroke_color: gpui::Rgba,
+        _tab_baseline_y: f32,
+        _tab_stroke_color: gpui::Rgba,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
@@ -161,15 +161,6 @@ impl TerminalView {
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.on_action_rail_mouse_move(event, window, cx);
             }))
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .top(px(tab_baseline_y))
-                    .h(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            )
             .into_any_element()
     }
 
@@ -204,8 +195,8 @@ impl TerminalView {
 
     fn render_left_inset_lane(
         width: f32,
-        tab_baseline_y: f32,
-        tab_stroke_color: gpui::Rgba,
+        _tab_baseline_y: f32,
+        _tab_stroke_color: gpui::Rgba,
         font_family: &SharedString,
         termy_branding_slot_start_x: f32,
         termy_branding_slot_width: f32,
@@ -221,15 +212,6 @@ impl TerminalView {
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.on_action_rail_mouse_move(event, window, cx);
             }))
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .top(px(tab_baseline_y))
-                    .h(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            )
             .children(Self::render_termy_branding(
                 font_family,
                 termy_branding_slot_start_x,
@@ -241,7 +223,7 @@ impl TerminalView {
 
     fn render_gutter_lane(
         gutter_width: f32,
-        tab_baseline_y: f32,
+        _tab_baseline_y: f32,
         tab_stroke_color: gpui::Rgba,
         show_divider: bool,
         cx: &mut Context<Self>,
@@ -255,15 +237,6 @@ impl TerminalView {
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.on_action_rail_mouse_move(event, window, cx);
             }))
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .top(px(tab_baseline_y))
-                    .h(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            )
             .children(show_divider.then(|| {
                 div()
                     .absolute()
@@ -344,7 +317,10 @@ impl TerminalView {
                 display_width
             };
             let is_active = index == self.active_tab;
-            let is_hovered = self.tab_strip.hovered_tab == Some(index);
+            let is_drag_source = self
+                .tab_strip
+                .drag
+                .is_some_and(|drag| drag.source_index == index);
             let show_close_button = Self::tab_shows_close(
                 self.tab_close_visibility,
                 is_active,
@@ -386,24 +362,26 @@ impl TerminalView {
                     tab_primary_extent: tab_width,
                     tab_cross_extent: TAB_ITEM_HEIGHT,
                     tab_strokes: TabItemStrokeRects {
-                        top: Some(state.chrome_layout.tab_strokes[index].top),
+                        top: None,
                         bottom: None,
-                        left: state.chrome_layout.tab_strokes[index].left_boundary,
-                        right: state.chrome_layout.tab_strokes[index].right_boundary,
+                        left: None,
+                        right: None,
                     },
                     label,
                     switch_hint_label,
                     is_active,
-                    is_hovered,
+                    is_drag_source,
                     is_renaming,
                     show_tab_close,
                     show_tab_pin,
                     close_slot_width,
                     text_padding_x: TAB_TEXT_PADDING_X,
-                    label_centered: false,
+                    label_centered: true,
                     trailing_divider_cover: None,
                     drop_marker_side: self.tab_drop_marker_side(index),
                     open_anim_progress: anim_progress,
+                    hover_progress: self.tab_strip.hover_progress(index, now),
+                    press_progress: self.tab_strip.press_progress(index, now),
                     progress_state,
                 },
                 font_family,
@@ -415,19 +393,13 @@ impl TerminalView {
             tabs_scroll_content = tabs_scroll_content.child(tab_item);
         }
 
-        for element in
-            Self::render_baseline_segments(&state.chrome_layout, palette.tab_stroke_color)
-        {
-            tabs_scroll_content = tabs_scroll_content.child(element);
-        }
-
         tabs_scroll_content.into_any_element()
     }
 
     fn render_action_rail(
         &mut self,
         state: &TabStripRenderState,
-        palette: &TabStripPalette,
+        _palette: &TabStripPalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
@@ -440,15 +412,6 @@ impl TerminalView {
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.on_action_rail_mouse_move(event, window, cx);
             }))
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .top(px(state.chrome_layout.baseline_y))
-                    .h(px(TAB_STROKE_THICKNESS))
-                    .bg(palette.tab_stroke_color),
-            )
             .into_any_element()
     }
 
@@ -541,6 +504,9 @@ impl TerminalView {
                             .bottom_0()
                             .overflow_x_scroll()
                             .track_scroll(&self.tab_strip.horizontal_scroll_handle)
+                            .on_scroll_wheel(
+                                cx.listener(Self::handle_tab_strip_action_rail_scroll_wheel),
+                            )
                             .child(tabs_scroll_content),
                     )
                     .children(show_left_inset_divider.then(|| {

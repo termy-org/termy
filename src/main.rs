@@ -7,6 +7,8 @@ mod commands;
 mod config;
 mod deeplink;
 mod keybindings;
+#[cfg(target_os = "macos")]
+mod macos_thermal_observer;
 mod menus;
 mod settings_view;
 mod startup;
@@ -310,7 +312,7 @@ fn dispatch_deeplink(
             };
             app_actions::open_new_tab_in_main_window(cx, command, dir)
         }
-        DeepLinkRoute::Settings => app_actions::open_settings_window(cx),
+        DeepLinkRoute::Settings => app_actions::open_settings_or_config_file(cx),
         DeepLinkRoute::OpenConfig => app_actions::open_config_file(),
         DeepLinkRoute::ThemeInstall => {
             let slug = route_argument
@@ -402,6 +404,9 @@ fn main() {
         #[cfg(debug_assertions)]
         termy_native_sdk::set_dock_icon_from_png(include_bytes!("../assets/termy_icon@1024px.png"));
 
+        #[cfg(target_os = "macos")]
+        macos_thermal_observer::neutralize_gpui_thermal_state_observer();
+
         spawn_deeplink_listener(cx, deeplink_rx);
 
         cx.on_action(|_: &OpenConfig, _cx| {
@@ -411,7 +416,7 @@ fn main() {
             }
         });
         cx.on_action(|_: &OpenSettings, cx| {
-            if let Err(error) = app_actions::open_settings_window(cx) {
+            if let Err(error) = app_actions::open_settings_or_config_file(cx) {
                 log::error!("{}", error);
                 termy_toast::error(error);
             }

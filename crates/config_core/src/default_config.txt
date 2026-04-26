@@ -17,6 +17,8 @@ native_layout_autosave = false
 native_buffer_persistence = false
 # Show FPS, CPU, and memory in the terminal corner
 show_debug_overlay = false
+# Open the config file instead of the Settings window and disable the command palette
+simple_mode = false
 # tmux executable path or binary name
 tmux_binary = tmux
 # Show active tmux pane border highlight in managed sessions

@@ -163,7 +163,7 @@ impl SettingsWindow {
         description: &'static str,
         checked: bool,
         cx: &mut Context<Self>,
-        on_toggle: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+        on_toggle: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> AnyElement {
         let is_search_match = self.setting_matches_sidebar_query(search_key);
         let row_border = if is_search_match {
@@ -246,7 +246,7 @@ impl SettingsWindow {
         id: impl Into<SharedString>,
         checked: bool,
         cx: &mut Context<Self>,
-        on_toggle: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+        on_toggle: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> impl IntoElement {
         let accent = self.accent_with_alpha(0.95);
         let mut bg_off = self.colors.foreground;
@@ -280,9 +280,9 @@ impl SettingsWindow {
             )
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                cx.listener(move |view, _event: &MouseDownEvent, window, cx| {
                     cx.stop_propagation();
-                    on_toggle(view, cx);
+                    on_toggle(view, window, cx);
                     cx.notify();
                 }),
             )

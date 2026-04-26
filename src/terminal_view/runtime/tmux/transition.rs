@@ -7,8 +7,11 @@ impl TerminalView {
             &mut self.last_config_error_message,
             "Failed to reload config after tmux runtime transition",
         );
+        let mut simple_mode = self.simple_mode;
         if loaded.loaded_from_disk {
             let keybind_config = loaded.config;
+            simple_mode = keybind_config.simple_mode;
+            self.simple_mode = keybind_config.simple_mode;
             let binary = keybind_config.tmux_binary.trim().to_string();
             self.cached_tmux_binary = (!binary.is_empty()).then_some(binary);
             keybindings::install_keybindings(cx, &keybind_config, self.runtime_uses_tmux());
@@ -16,6 +19,7 @@ impl TerminalView {
         cx.set_menus(crate::menus::app_menus(
             self.install_cli_available(),
             self.runtime_uses_tmux(),
+            simple_mode,
         ));
         self.refresh_command_palette_items_for_current_mode(cx);
     }

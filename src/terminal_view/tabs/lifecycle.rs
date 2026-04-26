@@ -1000,15 +1000,22 @@ impl TerminalView {
         if self.ensure_native_layout_tree_for_tab_id(tab_id)
             && let Some(tree) = self.native_pane_layout_trees.get_mut(&tab_id)
         {
-            let _ = Self::native_replace_leaf_with_split(
+            let layout_axis = match axis {
+                NativeSplitAxis::Vertical => PaneResizeAxis::Horizontal,
+                NativeSplitAxis::Horizontal => PaneResizeAxis::Vertical,
+            };
+            if Self::native_replace_leaf_with_split(
                 &mut tree.root,
                 active_pane_id.as_str(),
-                match axis {
-                    NativeSplitAxis::Vertical => PaneResizeAxis::Horizontal,
-                    NativeSplitAxis::Horizontal => PaneResizeAxis::Vertical,
-                },
+                layout_axis,
                 pane_id.as_str(),
-            );
+            ) {
+                Self::native_balance_split_group_containing_leaf(
+                    &mut tree.root,
+                    layout_axis,
+                    pane_id.as_str(),
+                );
+            }
             self.apply_native_layout_tree_to_tab(tab_id, max_cols, max_rows);
         }
         self.clear_selection();

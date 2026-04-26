@@ -130,8 +130,8 @@ const TERMINAL_SCROLLBAR_TRACK_RADIUS: f32 = 999.0;
 const TERMINAL_SCROLLBAR_THUMB_RADIUS: f32 = 999.0;
 const TERMINAL_SCROLLBAR_THUMB_INSET: f32 = 3.0;
 const TERMINAL_SCROLLBAR_MUTED_THEME_BLEND: f32 = 0.38;
-const SEARCH_BAR_WIDTH: f32 = 280.0;
-const SEARCH_BAR_HEIGHT: f32 = 40.0;
+const SEARCH_BAR_WIDTH: f32 = 420.0;
+const SEARCH_BAR_HEIGHT: f32 = 44.0;
 const SEARCH_DEBOUNCE_MS: u64 = 50;
 const TMUX_RESIZE_ERROR_TOAST_DEBOUNCE_MS: u64 = 2000;
 const DEBUG_OVERLAY_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
@@ -159,13 +159,14 @@ const COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA: f32 = 0.10;
 const COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA: f32 = 0.42;
 const SEARCH_BAR_BG_ALPHA: f32 = 0.92;
 const SEARCH_INPUT_BG_ALPHA: f32 = 0.15;
-const SEARCH_COUNTER_TEXT_ALPHA: f32 = 0.60;
+const SEARCH_COUNTER_TEXT_ALPHA: f32 = 0.72;
 const SEARCH_BUTTON_TEXT_ALPHA: f32 = 0.70;
 const SEARCH_BUTTON_HOVER_BG_ALPHA: f32 = 0.20;
 const SEARCH_INPUT_SELECTION_ALPHA: f32 = 0.30;
 const TAB_SWITCH_HINT_ANIMATION_FRAME_MS: u64 = 16;
 const NEW_TAB_ANIMATION_DURATION: Duration = Duration::from_millis(180);
 const NEW_TAB_ANIMATION_FRAME_MS: u64 = 16;
+const TAB_INTERACTION_ANIMATION_FRAME_MS: u64 = 16;
 const MAX_PANE_FOCUS_STRENGTH: f32 = 2.0;
 const NATIVE_PANE_MIN_COLS: u16 = 24;
 const NATIVE_PANE_MIN_ROWS: u16 = 8;
@@ -1715,6 +1716,7 @@ pub struct TerminalView {
     toast_manager: ToastManager,
     overlay_view: Option<Entity<TerminalOverlayView>>,
     command_palette: CommandPaletteState,
+    simple_mode: bool,
     last_viewport_size_px: Option<(i32, i32)>,
     resize_indicator_dims: Option<(u16, u16)>,
     resize_indicator_visible_until: Option<Instant>,
@@ -1807,6 +1809,107 @@ impl TerminalView {
         match node {
             NativePaneLayoutNode::Leaf { pane_id } => Some(pane_id.clone()),
             NativePaneLayoutNode::Split { first, .. } => Self::native_tree_first_leaf_id(first),
+        }
+    }
+
+    fn native_axis_group_contains_leaf(
+        node: &NativePaneLayoutNode,
+        axis: PaneResizeAxis,
+        target_pane_id: &str,
+    ) -> bool {
+        match node {
+            NativePaneLayoutNode::Leaf { pane_id } => pane_id == target_pane_id,
+            NativePaneLayoutNode::Split {
+                axis: split_axis,
+                first,
+                second,
+                ..
+            } if *split_axis == axis => {
+                Self::native_axis_group_contains_leaf(first, axis, target_pane_id)
+                    || Self::native_axis_group_contains_leaf(second, axis, target_pane_id)
+            }
+            NativePaneLayoutNode::Split { .. } => false,
+        }
+    }
+
+    fn native_collect_axis_group_nodes(
+        node: NativePaneLayoutNode,
+        axis: PaneResizeAxis,
+        nodes: &mut Vec<NativePaneLayoutNode>,
+    ) {
+        match node {
+            NativePaneLayoutNode::Split {
+                axis: split_axis,
+                first,
+                second,
+                ..
+            } if split_axis == axis => {
+                Self::native_collect_axis_group_nodes(*first, axis, nodes);
+                Self::native_collect_axis_group_nodes(*second, axis, nodes);
+            }
+            node => nodes.push(node),
+        }
+    }
+
+    fn native_rebuild_even_axis_group(
+        axis: PaneResizeAxis,
+        mut nodes: Vec<NativePaneLayoutNode>,
+    ) -> Option<NativePaneLayoutNode> {
+        if nodes.len() <= 1 {
+            return nodes.pop();
+        }
+
+        let total_count = nodes.len();
+        let split_index = total_count / 2;
+        let right_nodes = nodes.split_off(split_index);
+        let first = Self::native_rebuild_even_axis_group(axis, nodes)
+            .expect("balanced native split group must have a first branch");
+        let second = Self::native_rebuild_even_axis_group(axis, right_nodes)
+            .expect("balanced native split group must have a second branch");
+
+        Some(NativePaneLayoutNode::Split {
+            axis,
+            ratio: split_index as f32 / total_count as f32,
+            first: Box::new(first),
+            second: Box::new(second),
+        })
+    }
+
+    fn native_balance_axis_group(node: &mut NativePaneLayoutNode, axis: PaneResizeAxis) {
+        let placeholder = NativePaneLayoutNode::Leaf {
+            pane_id: String::new(),
+        };
+        let original = std::mem::replace(node, placeholder);
+        let mut nodes = Vec::new();
+        Self::native_collect_axis_group_nodes(original, axis, &mut nodes);
+        if let Some(rebuilt) = Self::native_rebuild_even_axis_group(axis, nodes) {
+            *node = rebuilt;
+        }
+    }
+
+    fn native_balance_split_group_containing_leaf(
+        node: &mut NativePaneLayoutNode,
+        axis: PaneResizeAxis,
+        pane_id: &str,
+    ) -> bool {
+        if matches!(
+            node,
+            NativePaneLayoutNode::Split {
+                axis: split_axis,
+                ..
+            } if *split_axis == axis
+        ) && Self::native_axis_group_contains_leaf(node, axis, pane_id)
+        {
+            Self::native_balance_axis_group(node, axis);
+            return true;
+        }
+
+        match node {
+            NativePaneLayoutNode::Leaf { .. } => false,
+            NativePaneLayoutNode::Split { first, second, .. } => {
+                Self::native_balance_split_group_containing_leaf(first, axis, pane_id)
+                    || Self::native_balance_split_group_containing_leaf(second, axis, pane_id)
+            }
         }
     }
 
@@ -2858,6 +2961,28 @@ impl TerminalView {
         .detach();
     }
 
+    pub(crate) fn schedule_tab_interaction_animation(&mut self, cx: &mut Context<Self>) {
+        if self.tab_strip.interaction_animation_scheduled
+            || !self.tab_strip.interaction_animation_active(Instant::now())
+        {
+            return;
+        }
+        self.tab_strip.interaction_animation_scheduled = true;
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            smol::Timer::after(Duration::from_millis(TAB_INTERACTION_ANIMATION_FRAME_MS)).await;
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    view.tab_strip.interaction_animation_scheduled = false;
+                    if view.tab_strip.interaction_animation_active(Instant::now()) {
+                        view.schedule_tab_interaction_animation(cx);
+                    }
+                    cx.notify();
+                })
+            });
+        })
+        .detach();
+    }
+
     pub(crate) fn start_new_tab_animation(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
         self.new_tab_animation_tab_id = Some(tab_id);
         self.new_tab_animation_start = Some(Instant::now());
@@ -3734,6 +3859,7 @@ impl TerminalView {
                                 cx.set_menus(crate::menus::app_menus(
                                     view.install_cli_available(),
                                     view.runtime_uses_tmux(),
+                                    view.simple_mode,
                                 ));
                             }
                             if config_changed || availability_changed {
@@ -3955,6 +4081,7 @@ impl TerminalView {
             toast_manager: ToastManager::new(),
             overlay_view: None,
             command_palette: CommandPaletteState::new(config.command_palette_show_keybinds),
+            simple_mode: config.simple_mode,
             last_viewport_size_px: None,
             resize_indicator_dims: None,
             resize_indicator_visible_until: None,
@@ -4173,6 +4300,7 @@ impl TerminalView {
         let show_termy_in_titlebar_changed =
             self.show_termy_in_titlebar != config.show_termy_in_titlebar;
         let show_debug_overlay_changed = self.show_debug_overlay != config.show_debug_overlay;
+        let simple_mode_changed = self.simple_mode != config.simple_mode;
         let auto_hide_tabbar_changed = self.auto_hide_tabbar != config.auto_hide_tabbar;
         self.tab_close_visibility = config.tab_close_visibility;
         self.tab_width_mode = config.tab_width_mode;
@@ -4204,6 +4332,13 @@ impl TerminalView {
         self.auto_hide_tabbar = config.auto_hide_tabbar;
         self.show_termy_in_titlebar = config.show_termy_in_titlebar;
         self.show_debug_overlay = config.show_debug_overlay;
+        self.simple_mode = config.simple_mode;
+        if self.simple_mode {
+            if self.is_command_palette_open() {
+                self.close_command_palette(cx);
+            }
+            crate::app_actions::close_settings_windows(cx);
+        }
         self.tab_shell_integration = TabTitleShellIntegration {
             enabled: self.tab_title.shell_integration,
             explicit_prefix: self.tab_title.explicit_prefix.clone(),
@@ -4354,11 +4489,12 @@ impl TerminalView {
             || vertical_tabs_width_changed
             || vertical_tabs_minimized_changed
             || show_termy_in_titlebar_changed
+            || simple_mode_changed
             || auto_hide_tabbar_changed
         {
             self.mark_tab_strip_layout_dirty();
         }
-        if tab_switch_modifier_hints_changed || auto_hide_tabbar_changed {
+        if tab_switch_modifier_hints_changed || auto_hide_tabbar_changed || simple_mode_changed {
             cx.notify();
         }
 
@@ -4507,6 +4643,7 @@ impl TerminalView {
     fn process_native_terminal_events(&mut self, cx: &mut Context<Self>) -> bool {
         let mut should_redraw = false;
         let mut should_quit = false;
+        let mut terminal_events_remain = false;
         let mut agent_tabs_to_close: Vec<TabId> = Vec::new();
         let active_tab = self.active_tab;
         let mut reply_host = GpuiClipboardReplyHost::from_cx(cx);
@@ -4516,12 +4653,13 @@ impl TerminalView {
             let active_pane_id = self.tabs[index].active_pane_id.clone();
 
             for pane_index in 0..self.tabs[index].panes.len() {
-                let pane_id = self.tabs[index].panes[pane_index].id.clone();
-                let pane_is_active = pane_id == active_pane_id;
+                let pane_is_active =
+                    self.tabs[index].panes[pane_index].id.as_str() == active_pane_id.as_str();
                 let (events, has_more) = self.tabs[index].panes[pane_index]
                     .terminal
                     .drain_events(&mut reply_host);
                 if has_more {
+                    terminal_events_remain = true;
                     should_redraw = true;
                 }
 
@@ -4637,6 +4775,10 @@ impl TerminalView {
             }
         }
 
+        if terminal_events_remain {
+            let _ = self.event_wakeup_tx.try_send(());
+        }
+
         for tab_id in agent_tabs_to_close {
             if let Some(tab_index) = self.tab_index_by_id(tab_id) {
                 self.close_tab(tab_index, cx);
@@ -4725,6 +4867,212 @@ mod tests {
         assert!(!TerminalView::native_exit_should_quit_app(1, 2));
         assert!(!TerminalView::native_exit_should_quit_app(2, 1));
         assert!(!TerminalView::native_exit_should_quit_app(0, 0));
+    }
+
+    fn native_test_leaf(pane_id: &str) -> NativePaneLayoutNode {
+        NativePaneLayoutNode::Leaf {
+            pane_id: pane_id.to_string(),
+        }
+    }
+
+    fn native_test_split(
+        axis: PaneResizeAxis,
+        ratio: f32,
+        first: NativePaneLayoutNode,
+        second: NativePaneLayoutNode,
+    ) -> NativePaneLayoutNode {
+        NativePaneLayoutNode::Split {
+            axis,
+            ratio,
+            first: Box::new(first),
+            second: Box::new(second),
+        }
+    }
+
+    fn native_test_rects(
+        root: &NativePaneLayoutNode,
+        width: u16,
+        height: u16,
+    ) -> HashMap<String, NativePaneRect> {
+        let mut rects = HashMap::new();
+        TerminalView::native_collect_leaf_rects(
+            root,
+            NativePaneRect {
+                left: 0,
+                top: 0,
+                width,
+                height,
+            },
+            &mut rects,
+        );
+        rects
+    }
+
+    #[test]
+    fn native_balanced_split_makes_three_columns_even() {
+        let mut root = native_test_split(
+            PaneResizeAxis::Horizontal,
+            0.5,
+            native_test_leaf("a"),
+            native_test_leaf("b"),
+        );
+
+        assert!(TerminalView::native_replace_leaf_with_split(
+            &mut root,
+            "a",
+            PaneResizeAxis::Horizontal,
+            "c",
+        ));
+        assert!(TerminalView::native_balance_split_group_containing_leaf(
+            &mut root,
+            PaneResizeAxis::Horizontal,
+            "c",
+        ));
+
+        let rects = native_test_rects(&root, 90, 20);
+        assert_eq!(
+            rects["a"],
+            NativePaneRect {
+                left: 0,
+                top: 0,
+                width: 30,
+                height: 20,
+            }
+        );
+        assert_eq!(
+            rects["c"],
+            NativePaneRect {
+                left: 30,
+                top: 0,
+                width: 30,
+                height: 20,
+            }
+        );
+        assert_eq!(
+            rects["b"],
+            NativePaneRect {
+                left: 60,
+                top: 0,
+                width: 30,
+                height: 20,
+            }
+        );
+    }
+
+    #[test]
+    fn native_balanced_split_makes_three_rows_even() {
+        let mut root = native_test_split(
+            PaneResizeAxis::Vertical,
+            0.5,
+            native_test_leaf("a"),
+            native_test_leaf("b"),
+        );
+
+        assert!(TerminalView::native_replace_leaf_with_split(
+            &mut root,
+            "a",
+            PaneResizeAxis::Vertical,
+            "c",
+        ));
+        assert!(TerminalView::native_balance_split_group_containing_leaf(
+            &mut root,
+            PaneResizeAxis::Vertical,
+            "c",
+        ));
+
+        let rects = native_test_rects(&root, 80, 45);
+        assert_eq!(
+            rects["a"],
+            NativePaneRect {
+                left: 0,
+                top: 0,
+                width: 80,
+                height: 15,
+            }
+        );
+        assert_eq!(
+            rects["c"],
+            NativePaneRect {
+                left: 0,
+                top: 15,
+                width: 80,
+                height: 15,
+            }
+        );
+        assert_eq!(
+            rects["b"],
+            NativePaneRect {
+                left: 0,
+                top: 30,
+                width: 80,
+                height: 15,
+            }
+        );
+    }
+
+    #[test]
+    fn native_balanced_split_preserves_unrelated_parent_ratio() {
+        let mut root = native_test_split(
+            PaneResizeAxis::Horizontal,
+            0.7,
+            native_test_split(
+                PaneResizeAxis::Vertical,
+                0.5,
+                native_test_leaf("a"),
+                native_test_leaf("b"),
+            ),
+            native_test_leaf("c"),
+        );
+
+        assert!(TerminalView::native_replace_leaf_with_split(
+            &mut root,
+            "a",
+            PaneResizeAxis::Horizontal,
+            "d",
+        ));
+        assert!(TerminalView::native_balance_split_group_containing_leaf(
+            &mut root,
+            PaneResizeAxis::Horizontal,
+            "d",
+        ));
+
+        let rects = native_test_rects(&root, 100, 40);
+        assert_eq!(
+            rects["a"],
+            NativePaneRect {
+                left: 0,
+                top: 0,
+                width: 35,
+                height: 20,
+            }
+        );
+        assert_eq!(
+            rects["d"],
+            NativePaneRect {
+                left: 35,
+                top: 0,
+                width: 35,
+                height: 20,
+            }
+        );
+        assert_eq!(
+            rects["b"],
+            NativePaneRect {
+                left: 0,
+                top: 20,
+                width: 70,
+                height: 20,
+            }
+        );
+        assert_eq!(
+            rects["c"],
+            NativePaneRect {
+                left: 70,
+                top: 0,
+                width: 30,
+                height: 40,
+            }
+        );
     }
 
     #[test]

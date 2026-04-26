@@ -628,7 +628,6 @@ impl TerminalView {
             let anim_progress =
                 (tab_height < TAB_ITEM_HEIGHT).then_some(tab_height / TAB_ITEM_HEIGHT);
             let is_active = index == self.active_tab;
-            let is_hovered = self.tab_strip.hovered_tab == Some(index);
             let is_renaming = self.renaming_tab == Some(index);
             let show_switch_hint = self.tab_strip.switch_hints.should_render(
                 index,
@@ -672,38 +671,45 @@ impl TerminalView {
                     },
                 )
             };
-            list = list.child(self.render_tab_item(
-                TabItemRenderInput {
-                    orientation: TabStripOrientation::Vertical,
-                    index,
-                    tab_primary_extent: strip_width,
-                    tab_cross_extent: tab_height,
-                    tab_strokes: TabItemStrokeRects {
-                        top: chrome_layout.tab_strokes[index].top_boundary,
-                        bottom: chrome_layout.tab_strokes[index].bottom_boundary,
-                        left: Some(chrome_layout.tab_strokes[index].left),
-                        right: None,
+            list = list.child(
+                self.render_tab_item(
+                    TabItemRenderInput {
+                        orientation: TabStripOrientation::Vertical,
+                        index,
+                        tab_primary_extent: strip_width,
+                        tab_cross_extent: tab_height,
+                        tab_strokes: TabItemStrokeRects {
+                            top: chrome_layout.tab_strokes[index].top_boundary,
+                            bottom: chrome_layout.tab_strokes[index].bottom_boundary,
+                            left: Some(chrome_layout.tab_strokes[index].left),
+                            right: None,
+                        },
+                        label,
+                        switch_hint_label,
+                        is_active,
+                        is_drag_source: self
+                            .tab_strip
+                            .drag
+                            .is_some_and(|drag| drag.source_index == index),
+                        is_renaming,
+                        show_tab_close,
+                        show_tab_pin,
+                        close_slot_width,
+                        text_padding_x: if compact { 0.0 } else { TAB_TEXT_PADDING_X },
+                        label_centered: compact,
+                        trailing_divider_cover: None,
+                        drop_marker_side: self.tab_drop_marker_side(index),
+                        open_anim_progress: anim_progress,
+                        hover_progress: self.tab_strip.hover_progress(index, now),
+                        press_progress: self.tab_strip.press_progress(index, now),
+                        progress_state,
                     },
-                    label,
-                    switch_hint_label,
-                    is_active,
-                    is_hovered,
-                    is_renaming,
-                    show_tab_close,
-                    show_tab_pin,
-                    close_slot_width,
-                    text_padding_x: if compact { 0.0 } else { TAB_TEXT_PADDING_X },
-                    label_centered: compact,
-                    trailing_divider_cover: None,
-                    drop_marker_side: self.tab_drop_marker_side(index),
-                    open_anim_progress: anim_progress,
-                    progress_state,
-                },
-                font_family,
-                colors,
-                &palette,
-                cx,
-            ));
+                    font_family,
+                    colors,
+                    &palette,
+                    cx,
+                ),
+            );
         }
 
         // Paint the shared divider after the tab rows so the chrome owns the

@@ -1661,13 +1661,15 @@ impl EntityInputHandler for TerminalView {
             return;
         }
         // Terminal IME mode: confirmed text → send to PTY
-        self.ime_marked_text = None;
-        self.ime_selected_range = None;
+        let ime_state_changed =
+            self.ime_marked_text.take().is_some() || self.ime_selected_range.take().is_some();
         if !text.is_empty() {
             self.write_terminal_input(text.as_bytes(), cx);
         }
-        self.clear_selection();
-        cx.notify();
+        let selection_changed = self.clear_selection();
+        if ime_state_changed || selection_changed {
+            cx.notify();
+        }
     }
 
     fn replace_and_mark_text_in_range(

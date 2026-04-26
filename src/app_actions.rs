@@ -8,6 +8,33 @@ pub(crate) fn open_config_file() -> Result<(), String> {
     config::open_config_file().map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SettingsActionTarget {
+    SettingsWindow,
+    ConfigFile,
+}
+
+pub(crate) fn settings_action_target(config: &config::AppConfig) -> SettingsActionTarget {
+    if config.simple_mode {
+        SettingsActionTarget::ConfigFile
+    } else {
+        SettingsActionTarget::SettingsWindow
+    }
+}
+
+pub(crate) fn open_settings_or_config_file(cx: &mut App) -> Result<(), String> {
+    let mut settings_config_error = None;
+    let settings_load = config::load_runtime_config(
+        &mut settings_config_error,
+        "Failed to load config before opening settings",
+    );
+
+    match settings_action_target(&settings_load.config) {
+        SettingsActionTarget::SettingsWindow => open_settings_window(cx),
+        SettingsActionTarget::ConfigFile => open_config_file(),
+    }
+}
+
 pub(crate) fn focus_existing_window<V: 'static>(cx: &mut App) -> bool {
     if let Some(window_handle) = cx
         .windows()
@@ -40,6 +67,16 @@ pub(crate) fn update_open_settings_windows(
         .filter_map(|handle| handle.downcast::<SettingsWindow>())
     {
         let _ = settings_window.update(cx, |view, _window, cx| update(view, cx));
+    }
+}
+
+pub(crate) fn close_settings_windows(cx: &mut App) {
+    for settings_window in cx
+        .windows()
+        .into_iter()
+        .filter_map(|handle| handle.downcast::<SettingsWindow>())
+    {
+        let _ = settings_window.update(cx, |_view, window, _cx| window.remove_window());
     }
 }
 
@@ -146,6 +183,21 @@ mod tests {
             open_settings_window(app).expect("settings window should be reused");
         });
         assert_eq!(settings_window_count(cx), 1);
+    }
+
+    #[test]
+    fn simple_mode_routes_settings_action_to_config_file() {
+        let mut config = config::AppConfig::default();
+        assert_eq!(
+            settings_action_target(&config),
+            SettingsActionTarget::SettingsWindow
+        );
+
+        config.simple_mode = true;
+        assert_eq!(
+            settings_action_target(&config),
+            SettingsActionTarget::ConfigFile
+        );
     }
 
     #[gpui::test]

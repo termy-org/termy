@@ -628,6 +628,7 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let cursor_was_hidden = !self.cursor_blink_visible;
         self.reset_cursor_blink_phase();
         let _ = self.close_terminal_context_menu(cx);
         let key = event.keystroke.key.as_str();
@@ -720,10 +721,12 @@ impl TerminalView {
             TerminalKeyEventKind::Press
         };
         if self.write_forwarded_terminal_key_event(&event.keystroke, event_kind, cx) {
-            self.clear_selection();
+            let selection_changed = self.clear_selection();
             // Stop propagation so the event does not bubble up to the IME input handler.
             cx.stop_propagation();
-            cx.notify();
+            if cursor_was_hidden || selection_changed {
+                cx.notify();
+            }
         }
     }
 
@@ -748,9 +751,11 @@ impl TerminalView {
             return;
         }
         if self.write_terminal_key_release(&event.keystroke, cx) {
-            self.clear_selection();
+            let selection_changed = self.clear_selection();
             cx.stop_propagation();
-            cx.notify();
+            if selection_changed {
+                cx.notify();
+            }
         }
     }
 

@@ -607,6 +607,7 @@ pub struct JsonEventListener {
     events_tx: Sender<RuntimeEvent>,
     wake_tx: Option<Sender<()>>,
     replay_suppressed: Arc<AtomicBool>,
+    wakeup_queued: Arc<AtomicBool>,
 }
 
 impl JsonEventListener {
@@ -615,11 +616,16 @@ impl JsonEventListener {
             events_tx,
             wake_tx,
             replay_suppressed: Arc::new(AtomicBool::new(false)),
+            wakeup_queued: Arc::new(AtomicBool::new(false)),
         }
     }
 
     fn set_replay_suppressed(&self, suppressed: bool) {
         self.replay_suppressed.store(suppressed, Ordering::Release);
+    }
+
+    fn reset_wakeup_queued(&self) {
+        self.wakeup_queued.store(false, Ordering::Release);
     }
 
     fn send_terminal_event(&self, event: TerminalEvent) {
@@ -637,6 +643,12 @@ impl EventListener for JsonEventListener {
         }
         if matches!(event, AlacEvent::Wakeup) {
             increment_runtime_wakeup_count();
+            if self.wakeup_queued.swap(true, Ordering::AcqRel) {
+                if let Some(wake_tx) = &self.wake_tx {
+                    let _ = wake_tx.try_send(());
+                }
+                return;
+            }
         }
         let _ = self.events_tx.send(RuntimeEvent::Alacritty(event));
         if let Some(wake_tx) = &self.wake_tx {
@@ -1192,6 +1204,7 @@ impl Terminal {
     /// Drain pending Alacritty events, writing reply bytes back to the PTY when required.
     /// Returns the collected events and whether more events remain (batch limit hit).
     pub fn drain_events(&self, host: &mut impl TerminalReplyHost) -> (Vec<TerminalEvent>, bool) {
+        self.listener.reset_wakeup_queued();
         drain_runtime_events(
             &self.events_rx,
             self.size,
@@ -1317,8 +1330,9 @@ fn drain_runtime_events<T: EventListener>(
     mut write_reply: impl FnMut(&[u8]),
 ) -> (Vec<TerminalEvent>, bool) {
     let fallback_live_colors = alacritty_terminal::term::color::Colors::default();
-    let mut events = Vec::new();
+    let mut events = Vec::with_capacity(16);
     let mut drained = 0usize;
+    let mut wakeup_pending = false;
 
     while let Ok(runtime_event) = events_rx.try_recv() {
         match runtime_event {
@@ -1342,19 +1356,44 @@ fn drain_runtime_events<T: EventListener>(
                 }
 
                 if let Some(event) = terminal_event_from_alacritty(event) {
-                    events.push(event);
+                    push_drained_terminal_event(&mut events, &mut wakeup_pending, event);
                 }
             }
-            RuntimeEvent::Terminal(event) => events.push(event),
+            RuntimeEvent::Terminal(event) => {
+                push_drained_terminal_event(&mut events, &mut wakeup_pending, event);
+            }
         }
 
         drained += 1;
         if drained >= EVENT_DRAIN_BATCH_LIMIT {
+            flush_pending_wakeup(&mut events, &mut wakeup_pending);
             return (events, true);
         }
     }
 
+    flush_pending_wakeup(&mut events, &mut wakeup_pending);
     (events, false)
+}
+
+fn push_drained_terminal_event(
+    events: &mut Vec<TerminalEvent>,
+    wakeup_pending: &mut bool,
+    event: TerminalEvent,
+) {
+    if matches!(event, TerminalEvent::Wakeup) {
+        *wakeup_pending = true;
+        return;
+    }
+
+    flush_pending_wakeup(events, wakeup_pending);
+    events.push(event);
+}
+
+fn flush_pending_wakeup(events: &mut Vec<TerminalEvent>, wakeup_pending: &mut bool) {
+    if *wakeup_pending {
+        events.push(TerminalEvent::Wakeup);
+        *wakeup_pending = false;
+    }
 }
 
 fn terminal_event_from_alacritty(event: AlacEvent) -> Option<TerminalEvent> {
@@ -1394,18 +1433,18 @@ mod tests {
     #[cfg(target_os = "windows")]
     use super::quote_shell_program_if_needed;
     use super::{
-        DEFAULT_TERM, RuntimeEvent, TerminalCursorState, TerminalDamageSnapshot, TerminalEvent,
-        TerminalRuntimeConfig, TerminalSize, WorkingDirFallback, cursor_position_from_term,
-        cursor_state_from_term, drain_runtime_events, normalize_working_directory_candidate,
-        pty_env_overrides, resolve_launch_working_directory, resolve_shell_path,
-        take_term_damage_snapshot, terminal_event_from_osc, termmode_to_terminal_mouse_mode,
-        user_home_dir,
+        DEFAULT_TERM, JsonEventListener, RuntimeEvent, TerminalCursorState, TerminalDamageSnapshot,
+        TerminalEvent, TerminalRuntimeConfig, TerminalSize, WorkingDirFallback,
+        cursor_position_from_term, cursor_state_from_term, drain_runtime_events,
+        normalize_working_directory_candidate, pty_env_overrides, resolve_launch_working_directory,
+        resolve_shell_path, take_term_damage_snapshot, terminal_event_from_osc,
+        termmode_to_terminal_mouse_mode, user_home_dir,
     };
     use crate::grid::TerminalCursorStyle;
     use crate::keyboard::{TerminalKeyEventKind, TerminalKeyboardMode, keystroke_to_input};
     use crate::protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
     use alacritty_terminal::{
-        event::VoidListener,
+        event::{EventListener, VoidListener},
         grid::{Dimensions, Scroll},
         sync::FairMutex,
         term::{ClipboardType, Config as TermConfig, LineDamageBounds, Term, TermMode},
@@ -1679,6 +1718,71 @@ mod tests {
                 if title == "Build Complete" && body == "Project built successfully."
         ));
         assert!(matches!(&events[1], TerminalEvent::Notify(message) if message == "Heads up"));
+    }
+
+    #[test]
+    fn drain_runtime_events_coalesces_consecutive_wakeups() {
+        let (events_tx, events_rx) = unbounded();
+        for _ in 0..128 {
+            events_tx
+                .send(RuntimeEvent::Alacritty(
+                    alacritty_terminal::event::Event::Wakeup,
+                ))
+                .unwrap();
+        }
+        events_tx
+            .send(RuntimeEvent::Alacritty(
+                alacritty_terminal::event::Event::Title("ready".to_string()),
+            ))
+            .unwrap();
+        drop(events_tx);
+
+        let term = FairMutex::new(term_after_bytes(b""));
+        let mut reply_host = RecordingReplyHost::default();
+
+        let (events, has_more) = drain_runtime_events(
+            &events_rx,
+            test_terminal_size(),
+            &term,
+            TerminalQueryColors::default(),
+            &mut reply_host,
+            |_| {},
+        );
+
+        assert!(!has_more);
+        assert!(matches!(
+            events.as_slice(),
+            [TerminalEvent::Wakeup, TerminalEvent::Title(title)] if title == "ready"
+        ));
+    }
+
+    #[test]
+    fn json_event_listener_coalesces_queued_wakeups_until_reset() {
+        let (events_tx, events_rx) = unbounded();
+        let (wake_tx, wake_rx) = unbounded();
+        let listener = JsonEventListener::new(events_tx, Some(wake_tx));
+
+        listener.send_event(alacritty_terminal::event::Event::Wakeup);
+        listener.send_event(alacritty_terminal::event::Event::Wakeup);
+        listener.send_event(alacritty_terminal::event::Event::Wakeup);
+
+        let events: Vec<_> = events_rx.try_iter().collect();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            RuntimeEvent::Alacritty(alacritty_terminal::event::Event::Wakeup)
+        ));
+        assert_eq!(wake_rx.try_iter().count(), 3);
+
+        listener.reset_wakeup_queued();
+        listener.send_event(alacritty_terminal::event::Event::Wakeup);
+
+        let events: Vec<_> = events_rx.try_iter().collect();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            RuntimeEvent::Alacritty(alacritty_terminal::event::Event::Wakeup)
+        ));
     }
 
     #[test]

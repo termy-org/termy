@@ -47,12 +47,15 @@ impl SettingsWindow {
             metadata.description,
             checked,
             cx,
-            move |view, cx| {
+            move |view, window, cx| {
                 let next = !checked;
                 match config::set_root_setting(setting, &next.to_string()) {
                     Ok(()) => {
                         let _ = view.reload_config_if_changed(cx);
                         termy_toast::success(success_message);
+                        if setting == RootSettingId::SimpleMode && next {
+                            window.remove_window();
+                        }
                         cx.notify();
                     }
                     Err(error) => termy_toast::error(error),
@@ -1355,6 +1358,7 @@ impl SettingsWindow {
         let notify_only_unfocused = self.config.notify_only_unfocused;
         let notification_min_duration = self.config.notification_min_duration;
         let show_debug_overlay = self.config.show_debug_overlay;
+        let simple_mode = self.config.simple_mode;
         let window_width = self.config.window_width;
         let window_height = self.config.window_height;
         let bg_card = self.bg_card();
@@ -1490,14 +1494,24 @@ impl SettingsWindow {
         ];
         let window_group = self.render_settings_group("WINDOW", window_rows);
 
-        let ui_rows = vec![self.render_root_bool_setting_row(
-            "show_debug_overlay",
-            "show_debug_overlay-toggle",
-            RootSettingId::ShowDebugOverlay,
-            show_debug_overlay,
-            "Saved",
-            cx,
-        )];
+        let ui_rows = vec![
+            self.render_root_bool_setting_row(
+                "show_debug_overlay",
+                "show_debug_overlay-toggle",
+                RootSettingId::ShowDebugOverlay,
+                show_debug_overlay,
+                "Saved",
+                cx,
+            ),
+            self.render_root_bool_setting_row(
+                "simple_mode",
+                "simple_mode-toggle",
+                RootSettingId::SimpleMode,
+                simple_mode,
+                "Saved",
+                cx,
+            ),
+        ];
         let ui_group = self.render_settings_group("UI", ui_rows);
 
         let auto_update = self.config.auto_update;

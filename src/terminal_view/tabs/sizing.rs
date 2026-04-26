@@ -171,8 +171,16 @@ impl TerminalView {
         viewport_width: f32,
         tab_count: usize,
     ) -> f32 {
-        let content_width = (viewport_width - (TAB_HORIZONTAL_PADDING * 2.0)).max(TAB_MAX_WIDTH);
-        let share = content_width / tab_count.max(1) as f32;
+        let tab_count = tab_count.max(1);
+        let gap_width = TAB_ITEM_GAP * tab_count.saturating_sub(1) as f32;
+        let content_width =
+            (viewport_width - (TAB_HORIZONTAL_PADDING * 2.0) - gap_width).max(TAB_MIN_WIDTH);
+        let share = content_width / tab_count as f32;
+
+        if share < TAB_MAX_WIDTH {
+            return share.max(TAB_MIN_WIDTH);
+        }
+
         let elastic_growth = (share - TAB_MAX_WIDTH).max(0.0) * TAB_ADAPTIVE_GROWTH_FACTOR;
         let elastic = TAB_MAX_WIDTH + elastic_growth;
         let hard_cap = (content_width * TAB_ADAPTIVE_HARD_CAP_RATIO).max(TAB_MAX_WIDTH);
@@ -253,7 +261,7 @@ impl TerminalView {
     fn tab_reserves_close_slot_for_layout(
         tab_width_mode: TabWidthMode,
         tab_close_visibility: TabCloseVisibility,
-        is_active: bool,
+        _is_active: bool,
         is_pinned: bool,
     ) -> bool {
         if is_pinned {
@@ -262,11 +270,12 @@ impl TerminalView {
 
         match tab_width_mode {
             TabWidthMode::Stable => true,
-            TabWidthMode::ActiveGrow | TabWidthMode::ActiveGrowSticky => {
-                matches!(tab_close_visibility, TabCloseVisibility::Always)
-                    || (matches!(tab_close_visibility, TabCloseVisibility::ActiveHover)
-                        && is_active)
-            }
+            TabWidthMode::ActiveGrow | TabWidthMode::ActiveGrowSticky => match tab_close_visibility
+            {
+                TabCloseVisibility::Always
+                | TabCloseVisibility::ActiveHover
+                | TabCloseVisibility::Hover => true,
+            },
         }
     }
 
@@ -444,7 +453,7 @@ mod tests {
         let expected_long = (TAB_TEXT_PADDING_X * 2.0) + long_text_width + TAB_CLOSE_SLOT_WIDTH;
         assert_eq!(long_width, expected_long);
 
-        let short_text_width = 49.0;
+        let short_text_width = 10.0;
         let short_width = TerminalView::tab_display_width_for_text_px_with_max(
             short_text_width,
             TAB_MAX_WIDTH * 2.0,
@@ -477,9 +486,10 @@ mod tests {
     }
 
     #[test]
-    fn effective_tab_max_width_stays_baseline_for_crowded_tabs() {
+    fn effective_tab_max_width_shrinks_for_crowded_tabs() {
         let effective = TerminalView::effective_tab_max_width_for_viewport(1600.0, 8);
-        assert_float_eq(effective, TAB_MAX_WIDTH);
+        assert_float_eq(effective, 200.0);
+        assert!(effective < TAB_MAX_WIDTH);
     }
 
     #[test]

@@ -110,6 +110,11 @@ impl TerminalView {
     }
 
     fn open_settings_action(&mut self, cx: &mut Context<Self>) {
+        if self.simple_mode {
+            self.open_config_action(cx);
+            return;
+        }
+
         if let Err(error) = crate::app_actions::open_settings_window(cx) {
             log::error!("{}", error);
             termy_toast::error(error);

@@ -5,7 +5,7 @@ use gpui::App;
 use gpui::Keystroke;
 use log::warn;
 use termy_command_core::{
-    KeybindLineRef, KeybindWarning, ResolvedKeybind, default_resolved_keybinds,
+    CommandId, KeybindLineRef, KeybindWarning, ResolvedKeybind, default_resolved_keybinds,
     parse_keybind_directives_from_iter, resolve_keybinds,
 };
 
@@ -30,6 +30,7 @@ pub fn install_keybindings(cx: &mut App, config: &AppConfig, tmux_enabled: bool)
     cx.set_menus(crate::menus::app_menus(
         !termy_cli_install_core::is_cli_installed(),
         tmux_enabled,
+        config.simple_mode,
     ));
 }
 
@@ -78,6 +79,7 @@ pub(crate) fn resolve_keybinds_for_config(
 
     let resolved = resolve_keybinds(default_resolved_keybinds(), &directives);
     let mut suppressed_tmux_only_bindings = 0usize;
+    let mut suppressed_simple_mode_bindings = 0usize;
     let resolved = if tmux_enabled {
         resolved
     } else {
@@ -94,12 +96,34 @@ pub(crate) fn resolve_keybinds_for_config(
             })
             .collect()
     };
+    let resolved = if config.simple_mode {
+        resolved
+            .into_iter()
+            .filter(|binding| {
+                if binding.action == CommandId::ToggleCommandPalette {
+                    suppressed_simple_mode_bindings += 1;
+                    return false;
+                }
+                true
+            })
+            .collect()
+    } else {
+        resolved
+    };
 
     if suppressed_tmux_only_bindings > 0 {
         warnings.push(KeybindWarning {
             line_number: GLOBAL_KEYBIND_WARNING_LINE_NUMBER,
             message: format!(
                 "{suppressed_tmux_only_bindings} tmux-only keybind(s) ignored while tmux is disabled"
+            ),
+        });
+    }
+    if suppressed_simple_mode_bindings > 0 {
+        warnings.push(KeybindWarning {
+            line_number: GLOBAL_KEYBIND_WARNING_LINE_NUMBER,
+            message: format!(
+                "{suppressed_simple_mode_bindings} command palette keybind(s) ignored while Simple Mode is enabled"
             ),
         });
     }
@@ -314,6 +338,32 @@ mod tests {
         assert!(resolved.iter().any(|binding| {
             binding.trigger == "secondary-o" && binding.action == CommandId::FocusPaneNext
         }));
+    }
+
+    #[test]
+    fn simple_mode_suppresses_command_palette_keybinds() {
+        let config = AppConfig {
+            simple_mode: true,
+            keybind_lines: vec![KeybindConfigLine {
+                line_number: 10,
+                value: "cmd-shift-p=toggle_command_palette".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let (resolved, warnings) = resolve_keybinds_for_config(&config, true);
+
+        assert!(!warnings.is_empty());
+        assert!(
+            resolved
+                .iter()
+                .all(|binding| binding.action != CommandId::ToggleCommandPalette)
+        );
+        assert!(
+            resolved
+                .iter()
+                .any(|binding| binding.action == CommandId::OpenSettings)
+        );
     }
 
     #[test]

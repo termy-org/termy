@@ -305,6 +305,7 @@ define_root_settings! {
     (NativeLayoutAutosave, "native_layout_autosave", [], Advanced, "STARTUP", "Native Layout Autosave", "Auto-save changes back into the currently loaded named layout", ["native", "layout", "autosave", "saved", "snapshot"], RootSettingValueKind::Boolean, false),
     (NativeBufferPersistence, "native_buffer_persistence", [], Advanced, "STARTUP", "Native Buffer Persistence", "Replay saved buffer text when restoring native layouts", ["native", "buffer", "scrollback", "history", "restore"], RootSettingValueKind::Boolean, false),
     (ShowDebugOverlay, "show_debug_overlay", [], Advanced, "UI", "Show Debug Overlay", "Show FPS, CPU, and memory in the terminal corner", ["debug", "overlay", "fps", "cpu", "memory"], RootSettingValueKind::Boolean, false),
+    (SimpleMode, "simple_mode", [], Advanced, "UI", "Simple Mode", "Open the config file instead of the Settings window and disable the command palette", ["simple", "mode", "settings", "config", "palette"], RootSettingValueKind::Boolean, false),
     (TmuxBinary, "tmux_binary", [], Terminal, "TMUX", "Tmux Binary", "tmux executable path or binary name", ["tmux", "binary", "path"], RootSettingValueKind::Text, false),
     (TmuxShowActivePaneBorder, "tmux_show_active_pane_border", [], Terminal, "TMUX", "Show Active Pane Border", "Show active tmux pane border highlight in managed sessions", ["tmux", "pane", "border", "highlight"], RootSettingValueKind::Boolean, false),
     (WorkingDir, "working_dir", [], Advanced, "STARTUP", "Working Directory", "Initial directory for new sessions", ["working directory", "cwd", "startup", "path"], RootSettingValueKind::Text, false),
@@ -424,6 +425,7 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
             Some(config.native_buffer_persistence.to_string())
         }
         RootSettingId::ShowDebugOverlay => Some(config.show_debug_overlay.to_string()),
+        RootSettingId::SimpleMode => Some(config.simple_mode.to_string()),
         RootSettingId::TmuxBinary => Some(config.tmux_binary.clone()),
         RootSettingId::TmuxShowActivePaneBorder => {
             Some(config.tmux_show_active_pane_border.to_string())
@@ -662,6 +664,20 @@ mod tests {
         let defaults = AppConfig::default();
         assert_eq!(
             root_setting_default_value(&defaults, RootSettingId::ChromeContrast),
+            Some("false".to_string())
+        );
+    }
+
+    #[test]
+    fn simple_mode_schema_is_boolean_and_defaults_off() {
+        let defaults = AppConfig::default();
+
+        assert_eq!(
+            root_setting_value_kind(RootSettingId::SimpleMode),
+            RootSettingValueKind::Boolean
+        );
+        assert_eq!(
+            root_setting_default_value(&defaults, RootSettingId::SimpleMode),
             Some("false".to_string())
         );
     }

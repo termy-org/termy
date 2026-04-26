@@ -200,6 +200,10 @@ impl TerminalView {
         let Some(tab) = self.tabs.get_mut(tab_index) else {
             return false;
         };
+        Self::sync_native_tab_pane_geometry_fallback(tab, cols, rows)
+    }
+
+    fn sync_native_tab_pane_geometry_fallback(tab: &mut TerminalTab, cols: u16, rows: u16) -> bool {
         if tab.panes.is_empty() {
             return false;
         }
@@ -368,9 +372,11 @@ mod tests {
             display_width: TAB_MIN_WIDTH,
             running_process: false,
             agent_command_has_started: false,
+            progress_state: ProgressState::default(),
+            command_lifecycle: CommandLifecycle::default(),
         };
 
-        TerminalView::sync_native_tab_pane_geometry(&mut tab, 120, 42);
+        TerminalView::sync_native_tab_pane_geometry_fallback(&mut tab, 120, 42);
 
         assert_eq!(tab.active_pane_id, "%native-1");
         let pane = &tab.panes[0];
@@ -405,9 +411,11 @@ mod tests {
             display_width: TAB_MIN_WIDTH,
             running_process: false,
             agent_command_has_started: false,
+            progress_state: ProgressState::default(),
+            command_lifecycle: CommandLifecycle::default(),
         };
 
-        TerminalView::sync_native_tab_pane_geometry(&mut tab, 45, 20);
+        TerminalView::sync_native_tab_pane_geometry_fallback(&mut tab, 45, 20);
 
         assert_eq!(tab.panes[0].left, 0);
         assert_eq!(tab.panes[1].left, tab.panes[0].width);
@@ -443,9 +451,11 @@ mod tests {
             display_width: TAB_MIN_WIDTH,
             running_process: false,
             agent_command_has_started: false,
+            progress_state: ProgressState::default(),
+            command_lifecycle: CommandLifecycle::default(),
         };
 
-        TerminalView::sync_native_tab_pane_geometry(&mut tab, 30, 10);
+        TerminalView::sync_native_tab_pane_geometry_fallback(&mut tab, 30, 10);
 
         assert_eq!(tab.panes[0].height, 5);
         assert_eq!(tab.panes[1].top, 5);

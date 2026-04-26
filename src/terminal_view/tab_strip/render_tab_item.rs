@@ -12,7 +12,7 @@ pub(super) struct TabItemRenderInput {
     pub(super) label: String,
     pub(super) switch_hint_label: Option<String>,
     pub(super) is_active: bool,
-    pub(super) is_hovered: bool,
+    pub(super) is_drag_source: bool,
     pub(super) is_renaming: bool,
     pub(super) show_tab_close: bool,
     pub(super) show_tab_pin: bool,
@@ -22,6 +22,8 @@ pub(super) struct TabItemRenderInput {
     pub(super) trailing_divider_cover: Option<gpui::Rgba>,
     pub(super) drop_marker_side: Option<TabDropMarkerSide>,
     pub(super) open_anim_progress: Option<f32>,
+    pub(super) hover_progress: f32,
+    pub(super) press_progress: f32,
     pub(super) progress_state: ProgressState,
 }
 
@@ -127,6 +129,12 @@ impl TerminalView {
                 .into_any_element();
         }
 
+        let close_font_size = if input.orientation == TabStripOrientation::Horizontal {
+            TAB_HORIZONTAL_TITLE_FONT_SIZE
+        } else {
+            TAB_TITLE_FONT_SIZE
+        };
+
         div()
             .flex_none()
             .w(px(input.close_slot_width))
@@ -146,7 +154,7 @@ impl TerminalView {
                     .border_1()
                     .border_color(palette.close_button_border)
                     .text_color(close_text_color)
-                    .text_size(px(12.0))
+                    .text_size(px(close_font_size))
                     .font_weight(FontWeight::MEDIUM)
                     .on_mouse_down(
                         MouseButton::Left,
@@ -207,13 +215,22 @@ impl TerminalView {
         rename_selection_color.a = if input.is_active { 0.34 } else { 0.24 };
         rename_selection_color.a *= anim;
 
-        let mut tab_bg = if input.is_active {
+        let base_tab_bg = if input.is_active {
             palette.active_tab_bg
-        } else if input.is_hovered {
-            palette.hovered_tab_bg
         } else {
             palette.inactive_tab_bg
         };
+        let target_tab_bg = if input.is_active {
+            palette.active_tab_bg
+        } else {
+            palette.hovered_tab_bg
+        };
+        let hover_progress = input.hover_progress.clamp(0.0, 1.0);
+        let mut tab_bg = base_tab_bg;
+        tab_bg.a = base_tab_bg.a + ((target_tab_bg.a - base_tab_bg.a) * hover_progress);
+        if input.is_drag_source {
+            tab_bg.a = (tab_bg.a + self.scaled_chrome_surface_alpha(0.06)).min(1.0);
+        }
         tab_bg.a *= anim;
 
         let mut close_text_color = if input.is_active {
@@ -237,14 +254,37 @@ impl TerminalView {
 
         let justify_label_center = input.label_centered;
         let trailing_divider_cover = input.trailing_divider_cover;
+        let title_font_size = if orientation == TabStripOrientation::Horizontal {
+            TAB_HORIZONTAL_TITLE_FONT_SIZE
+        } else {
+            TAB_TITLE_FONT_SIZE
+        };
+        let mut hover_tab_bg = if input.is_active {
+            palette.active_tab_bg
+        } else {
+            palette.hovered_tab_bg
+        };
+        if input.is_drag_source {
+            hover_tab_bg.a = (hover_tab_bg.a + self.scaled_chrome_surface_alpha(0.06)).min(1.0);
+        }
+        let press_offset_y = input.press_progress.clamp(0.0, 1.0) * 1.0;
+        let hover_offset_y = input.hover_progress.clamp(0.0, 1.0) * -1.0;
+        let drag_offset_y = if input.is_drag_source { -1.0 } else { 0.0 };
+        let visual_offset_y = if orientation == TabStripOrientation::Horizontal {
+            drag_offset_y + hover_offset_y + press_offset_y
+        } else {
+            0.0
+        };
         let mut tab_shell = div()
             .flex_none()
             .relative()
             .overflow_hidden()
             .rounded(px(TAB_ITEM_RADIUS))
             .bg(tab_bg)
+            .hover(move |style| style.bg(hover_tab_bg))
             .w(px(input.tab_primary_extent))
             .h(px(input.tab_cross_extent))
+            .mt(px(visual_offset_y))
             .px(px(input.text_padding_x))
             .flex()
             .items_center()
@@ -269,6 +309,10 @@ impl TerminalView {
                     cx.stop_propagation();
                 }),
             );
+
+        if input.is_drag_source {
+            tab_shell = tab_shell.shadow_md();
+        }
 
         for stroke in [
             input.tab_strokes.top,
@@ -319,6 +363,31 @@ impl TerminalView {
             }
         });
 
+        let title_trailing_padding = if orientation == TabStripOrientation::Horizontal {
+            input.close_slot_width
+        } else {
+            0.0
+        };
+        let trailing_accessory = (input.close_slot_width > 0.0)
+            .then_some(accessory_slot)
+            .map(|accessory| {
+                if orientation == TabStripOrientation::Horizontal {
+                    div()
+                        .absolute()
+                        .right(px(input.text_padding_x))
+                        .top_0()
+                        .bottom_0()
+                        .w(px(input.close_slot_width))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(accessory)
+                        .into_any_element()
+                } else {
+                    accessory
+                }
+            });
+
         tab_shell
             .child(
                 div()
@@ -326,6 +395,7 @@ impl TerminalView {
                     .min_w(px(0.0))
                     .h_full()
                     .relative()
+                    .pr(px(title_trailing_padding))
                     .child(if input.is_renaming {
                         self.render_inline_input_layer(
                             Font {
@@ -333,7 +403,7 @@ impl TerminalView {
                                 weight: FontWeight::NORMAL,
                                 ..Default::default()
                             },
-                            px(12.0),
+                            px(title_font_size),
                             rename_text_color.into(),
                             rename_selection_color.into(),
                             InlineInputAlignment::Left,
@@ -348,7 +418,7 @@ impl TerminalView {
                             .whitespace_nowrap()
                             .font_family(font_family.clone())
                             .text_color(rename_text_color)
-                            .text_size(px(12.0))
+                            .text_size(px(title_font_size))
                             .text_ellipsis();
                         if justify_label_center {
                             title_text = title_text.justify_center();
@@ -356,7 +426,7 @@ impl TerminalView {
                         title_text.child(input.label).into_any_element()
                     }),
             )
-            .children((input.close_slot_width > 0.0).then_some(accessory_slot))
+            .children(trailing_accessory)
             .children(trailing_divider_cover.map(|cover_color| {
                 div()
                     .absolute()
