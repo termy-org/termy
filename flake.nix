@@ -63,7 +63,7 @@
 
           meta = {
             description = "A fast, minimal terminal emulator built with GPUI and alacritty_terminal";
-            homepage = "https://github.com/lassejlv/termy";
+            homepage = "https://github.com/termy-org/termy";
             license = pkgs.lib.licenses.mit;
             mainProgram = "termy";
             platforms = [ "x86_64-linux" ];
