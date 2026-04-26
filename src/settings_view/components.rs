@@ -51,7 +51,7 @@ impl SettingsWindow {
         Ok(())
     }
 
-    fn background_opacity_slider_local_x(&self, window_x: f32) -> Option<f32> {
+    pub(super) fn background_opacity_slider_local_x(&self, window_x: f32) -> Option<f32> {
         let bounds = self.background_opacity_slider_bounds?;
         let slider_left: f32 = bounds.left().into();
         let slider_width: f32 = bounds.size.width.into();

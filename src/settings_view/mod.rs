@@ -456,7 +456,7 @@ impl SettingsWindow {
         .detach();
     }
 
-    fn logout_theme_store_user(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn logout_theme_store_user(&mut self, cx: &mut Context<Self>) {
         if self.theme_store_auth_loading {
             return;
         }
@@ -498,14 +498,14 @@ impl SettingsWindow {
         .detach();
     }
 
-    fn theme_store_auth_display_name(user: &ThemeStoreAuthUser) -> String {
+    pub(super) fn theme_store_auth_display_name(user: &ThemeStoreAuthUser) -> String {
         user.name
             .clone()
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| format!("@{}", user.github_login))
     }
 
-    fn theme_store_auth_avatar_fallback_label(user: &ThemeStoreAuthUser) -> String {
+    pub(super) fn theme_store_auth_avatar_fallback_label(user: &ThemeStoreAuthUser) -> String {
         user.github_login
             .chars()
             .next()

@@ -2,6 +2,7 @@ use super::*;
 use gpui_component::setting::{
     NumberFieldOptions, SettingField, SettingGroup, SettingItem, SettingPage,
 };
+use gpui_component::Sizable as _;
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex};
 use termy_config_core::RootSettingId;
@@ -233,28 +234,184 @@ impl SettingsWindow {
             ))
             .item({
                 let entity = entity.clone();
-                let entity2 = entity.clone();
+                let entity_val = entity.clone();
+                let entity_drag = entity.clone();
+                let entity_step = entity.clone();
+                let entity_canvas = entity.clone();
                 SettingItem::new(
                     setting_metadata_or_fallback("background_opacity").title,
-                    SettingField::number_input(
-                        NumberFieldOptions {
-                            min: 0.0,
-                            max: 100.0,
-                            step: 5.0,
-                        },
-                        move |cx| (entity.read(cx).config.background_opacity * 100.0) as f64,
-                        move |value: f64, cx| {
-                            let opacity = (value / 100.0).clamp(0.0, 1.0);
-                            let _ = entity2.update(cx, |view, cx| {
-                                view.clear_background_opacity_preview();
-                                match view.persist_background_opacity(opacity as f32) {
-                                    Ok(()) => termy_toast::success("Saved"),
-                                    Err(error) => termy_toast::error(error),
-                                }
-                                cx.notify();
-                            });
-                        },
-                    ),
+                    SettingField::render(move |_options, _window, cx| {
+                        let view = entity_val.read(cx);
+                        let slider_width = Self::background_opacity_slider_width();
+                        let slider_ratio = view.effective_background_opacity();
+                        let slider_fill_width = slider_ratio * slider_width;
+                        let slider_thumb_left = (slider_fill_width - 7.0).clamp(0.0, slider_width - 14.0);
+                        let percentage = format!("{}%", (slider_ratio * 100.0).round() as i32);
+
+                        let slider_track = view.bg_hover();
+                        let slider_fill = view.accent_with_alpha(0.9);
+                        let accent = view.accent();
+                        let text_secondary = view.text_secondary();
+                        let _ = view;
+
+                        let entity_drag_inner = entity_drag.clone();
+                        let entity_drag_move = entity_drag.clone();
+                        let entity_drag_up = entity_drag.clone();
+                        let entity_drag_up_out = entity_drag.clone();
+                        let entity_step_dec = entity_step.clone();
+                        let entity_step_inc = entity_step.clone();
+                        let entity_canvas_paint = entity_canvas.clone();
+
+                        div()
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .gap(px(SETTINGS_OPACITY_CONTROL_GAP))
+                            .child(
+                                div()
+                                    .id("background-opacity-slider")
+                                    .relative()
+                                    .w(px(slider_width))
+                                    .h(px(SETTINGS_SWITCH_KNOB_SIZE))
+                                    .cursor_pointer()
+                                    .on_mouse_down(
+                                        crate::gpui::MouseButton::Left,
+                                        move |event: &crate::gpui::MouseDownEvent, _window, cx| {
+                                            cx.stop_propagation();
+                                            let window_x: f32 = event.position.x.into();
+                                            let _ = entity_drag_inner.update(cx, |view, cx| {
+                                                if let Some(local_x) = view.background_opacity_slider_local_x(window_x) {
+                                                    view.set_background_opacity_from_slider_position(window_x, slider_width);
+                                                    view.begin_background_opacity_drag(local_x);
+                                                    cx.notify();
+                                                }
+                                            });
+                                        },
+                                    )
+                                    .on_mouse_move(move |event: &crate::gpui::MouseMoveEvent, _window, cx| {
+                                        if !event.dragging() {
+                                            return;
+                                        }
+                                        cx.stop_propagation();
+                                        let window_x: f32 = event.position.x.into();
+                                        let _ = entity_drag_move.update(cx, |view, cx| {
+                                            view.update_background_opacity_drag(window_x, slider_width);
+                                            cx.notify();
+                                        });
+                                    })
+                                    .on_mouse_up(
+                                        crate::gpui::MouseButton::Left,
+                                        move |_event: &crate::gpui::MouseUpEvent, _window, cx| {
+                                            cx.stop_propagation();
+                                            let _ = entity_drag_up.update(cx, |view, cx| {
+                                                match view.finish_background_opacity_drag() {
+                                                    Ok(true) => termy_toast::success("Saved"),
+                                                    Ok(false) => {}
+                                                    Err(error) => termy_toast::error(error),
+                                                }
+                                                cx.notify();
+                                            });
+                                        },
+                                    )
+                                    .on_mouse_up_out(
+                                        crate::gpui::MouseButton::Left,
+                                        move |_event: &crate::gpui::MouseUpEvent, _window, cx| {
+                                            let _ = entity_drag_up_out.update(cx, |view, cx| {
+                                                if view.background_opacity_drag_state.is_none() {
+                                                    return;
+                                                }
+                                                cx.stop_propagation();
+                                                match view.finish_background_opacity_drag() {
+                                                    Ok(true) => termy_toast::success("Saved"),
+                                                    Ok(false) => {}
+                                                    Err(error) => termy_toast::error(error),
+                                                }
+                                                cx.notify();
+                                            });
+                                        },
+                                    )
+                                    .child(
+                                        crate::gpui::canvas(
+                                            {
+                                                let entity_canvas_paint = entity_canvas_paint.clone();
+                                                move |bounds, _, cx| {
+                                                    let _ = entity_canvas_paint.update(cx, |view, _| {
+                                                        view.background_opacity_slider_bounds = Some(bounds);
+                                                    });
+                                                }
+                                            },
+                                            move |_bounds, _, _window, _cx| {},
+                                        )
+                                        .absolute()
+                                        .size_full(),
+                                    )
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top(px(7.0))
+                                            .left_0()
+                                            .w(px(slider_width))
+                                            .h(px(4.0))
+                                            .bg(slider_track),
+                                    )
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top(px(7.0))
+                                            .left_0()
+                                            .w(px(slider_fill_width))
+                                            .h(px(4.0))
+                                            .bg(slider_fill),
+                                    )
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top(px(2.0))
+                                            .left(px(slider_thumb_left))
+                                            .w(px(14.0))
+                                            .h(px(14.0))
+                                            .bg(accent),
+                                    ),
+                            )
+                            .child(
+                                gpui_component::button::Button::new("background-opacity-dec")
+                                    .label("-")
+                                    .with_size(gpui_component::Size::XSmall)
+                                    .on_click(move |_event, _window, cx| {
+                                        let _ = entity_step_dec.update(cx, |view, cx| {
+                                            match view.step_background_opacity(-1) {
+                                                Ok(true) => termy_toast::success("Saved"),
+                                                Ok(false) => {}
+                                                Err(error) => termy_toast::error(error),
+                                            }
+                                            cx.notify();
+                                        });
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .w(px(SETTINGS_SLIDER_VALUE_WIDTH))
+                                    .text_sm()
+                                    .text_color(text_secondary)
+                                    .text_align(crate::gpui::TextAlign::Center)
+                                    .child(percentage),
+                            )
+                            .child(
+                                gpui_component::button::Button::new("background-opacity-inc")
+                                    .label("+")
+                                    .with_size(gpui_component::Size::XSmall)
+                                    .on_click(move |_event, _window, cx| {
+                                        let _ = entity_step_inc.update(cx, |view, cx| {
+                                            match view.step_background_opacity(1) {
+                                                Ok(true) => termy_toast::success("Saved"),
+                                                Ok(false) => {}
+                                                Err(error) => termy_toast::error(error),
+                                            }
+                                            cx.notify();
+                                        });
+                                    }),
+                            )
+                    }),
                 )
                 .description(setting_metadata_or_fallback("background_opacity").description)
             })
@@ -849,7 +1006,7 @@ impl SettingsWindow {
             .group(titlebar_group)
     }
 
-    fn build_theme_store_page(
+     fn build_theme_store_page(
         &self,
         entity: &crate::gpui::Entity<Self>,
         _cx: &mut Context<Self>,
@@ -911,11 +1068,145 @@ impl SettingsWindow {
             }
         });
 
-        let _ = entity2;
+        let auth_render_item = SettingItem::render({
+            let entity = entity2.clone();
+            move |_options: &gpui_component::setting::RenderOptions, _window: &mut Window, cx: &mut App| {
+                let view = entity.read(cx);
+                let bg_card = view.bg_card();
+                let border_color = view.border_color();
+                let text_primary = view.text_primary();
+                let text_muted = view.text_muted();
+                let hover_bg = view.bg_hover();
+                let input_bg = view.bg_input();
+                let button_border = view.accent_with_alpha(0.35);
+                let auth_session = view.theme_store_auth_session.clone();
+                let auth_loading = view.theme_store_auth_loading;
+                let auth_error = view.theme_store_auth_error.clone();
+                let _ = view;
+
+                let auth_content: AnyElement = match auth_session {
+                    Some(session) => {
+                        let user = session.user;
+                        let display_name = Self::theme_store_auth_display_name(&user);
+                        let avatar_fallback = Self::theme_store_auth_avatar_fallback_label(&user);
+                        let entity_logout = entity.clone();
+
+                        let avatar: AnyElement = match user.avatar_url.clone() {
+                            Some(avatar_url) => div()
+                                .w(px(30.0))
+                                .h(px(30.0))
+                                .rounded_full()
+                                .overflow_hidden()
+                                .bg(input_bg)
+                                .child(
+                                    crate::gpui::img(avatar_url)
+                                        .w_full()
+                                        .h_full()
+                                        .object_fit(crate::gpui::ObjectFit::Cover),
+                                )
+                                .into_any_element(),
+                            None => div()
+                                .w(px(30.0))
+                                .h(px(30.0))
+                                .rounded_full()
+                                .bg(crate::gpui::Rgba::from(view.accent_with_alpha(0.18)))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_xs()
+                                .font_weight(crate::gpui::FontWeight::BOLD)
+                                .text_color(text_primary)
+                                .child(avatar_fallback)
+                                .into_any_element(),
+                        };
+
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(10.0))
+                                    .child(avatar)
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w(px(0.0))
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .text_color(text_primary)
+                                                    .child(display_name),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(text_muted)
+                                                    .child(format!("@{}", user.github_login)),
+                                            ),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .id("theme-store-logout-button")
+                                    .px_3()
+                                    .py(px(8.0))
+                                    .rounded(px(0.0))
+                                    .border_1()
+                                    .border_color(button_border)
+                                    .bg(input_bg)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(hover_bg))
+                                    .text_xs()
+                                    .text_color(text_primary)
+                                    .child(if auth_loading {
+                                        "Signing out..."
+                                    } else {
+                                        "Logout"
+                                    })
+                                    .on_click(move |_event, _window, cx| {
+                                        let _ = entity_logout.update(cx, |view, cx| {
+                                            view.logout_theme_store_user(cx);
+                                        });
+                                    }),
+                            )
+                            .into_any_element()
+                    }
+                    None => div()
+                        .text_sm()
+                        .text_color(text_muted)
+                        .child("Not signed in")
+                        .into_any_element(),
+                };
+
+                let mut content = div()
+                    .py_3()
+                    .px_4()
+                    .bg(bg_card)
+                    .border_1()
+                    .border_color(border_color)
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.0))
+                    .child(auth_content);
+
+                if let Some(error) = auth_error {
+                    content = content.child(
+                        div().text_xs().text_color(crate::gpui::Rgba::from(entity.read(cx).accent())).child(error),
+                    );
+                }
+
+                content.into_any_element()
+            }
+        });
+
         SettingPage::new("Theme Store")
             .description("Browse and install community themes")
             .resettable(false)
             .group(SettingGroup::new().title("ONLINE").item(store_render_item))
+            .group(SettingGroup::new().title("ACCOUNT").item(auth_render_item))
     }
 
     fn build_advanced_page(
