@@ -1,6 +1,7 @@
 use super::*;
 
 impl SettingsWindow {
+    #[allow(dead_code)]
     pub(super) fn apply_editable_field(
         &mut self,
         field: EditableField,
@@ -44,6 +45,7 @@ impl SettingsWindow {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) fn apply_appearance_field(
         &mut self,
         field: EditableField,
@@ -146,6 +148,7 @@ impl SettingsWindow {
         }
     }
 
+    #[allow(dead_code)]
     pub(super) fn apply_terminal_field(
         &mut self,
         field: EditableField,
@@ -335,6 +338,69 @@ impl SettingsWindow {
         }
     }
 
+    #[allow(dead_code)]
+    pub(super) fn apply_advanced_field(
+        &mut self,
+        field: EditableField,
+        value: &str,
+    ) -> Result<(), String> {
+        match field {
+            EditableField::WorkingDirectory => {
+                if value.is_empty() {
+                    self.config.working_dir = None;
+                    config::set_root_setting(termy_config_core::RootSettingId::WorkingDir, "none")
+                } else {
+                    self.config.working_dir = Some(value.to_string());
+                    config::set_root_setting(termy_config_core::RootSettingId::WorkingDir, value)
+                }
+            }
+            EditableField::WorkingDirFallback => {
+                let parsed = match value.to_ascii_lowercase().as_str() {
+                    "home" | "user" => termy_config_core::WorkingDirFallback::Home,
+                    "process" | "cwd" => termy_config_core::WorkingDirFallback::Process,
+                    _ => return Err("Working dir fallback must be home or process".to_string()),
+                };
+                self.config.working_dir_fallback = parsed;
+                let canonical = match parsed {
+                    termy_config_core::WorkingDirFallback::Home => "home",
+                    termy_config_core::WorkingDirFallback::Process => "process",
+                };
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::WorkingDirFallback,
+                    canonical,
+                )
+            }
+            EditableField::WindowWidth => {
+                let parsed = value
+                    .parse::<f32>()
+                    .map_err(|_| "Default width must be a positive number".to_string())?;
+                if parsed <= 0.0 {
+                    return Err("Default width must be greater than 0".to_string());
+                }
+                self.config.window_width = parsed;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::WindowWidth,
+                    &parsed.to_string(),
+                )
+            }
+            EditableField::WindowHeight => {
+                let parsed = value
+                    .parse::<f32>()
+                    .map_err(|_| "Default height must be a positive number".to_string())?;
+                if parsed <= 0.0 {
+                    return Err("Default height must be greater than 0".to_string());
+                }
+                self.config.window_height = parsed;
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::WindowHeight,
+                    &parsed.to_string(),
+                )
+            }
+            _ => unreachable!("invalid advanced field"),
+        }
+    }
+
+    #[allow(dead_code)]
     pub(super) fn apply_tabs_field(
         &mut self,
         field: EditableField,
@@ -491,67 +557,6 @@ impl SettingsWindow {
                 )
             }
             _ => unreachable!("invalid tabs field"),
-        }
-    }
-
-    pub(super) fn apply_advanced_field(
-        &mut self,
-        field: EditableField,
-        value: &str,
-    ) -> Result<(), String> {
-        match field {
-            EditableField::WorkingDirectory => {
-                if value.is_empty() {
-                    self.config.working_dir = None;
-                    config::set_root_setting(termy_config_core::RootSettingId::WorkingDir, "none")
-                } else {
-                    self.config.working_dir = Some(value.to_string());
-                    config::set_root_setting(termy_config_core::RootSettingId::WorkingDir, value)
-                }
-            }
-            EditableField::WorkingDirFallback => {
-                let parsed = match value.to_ascii_lowercase().as_str() {
-                    "home" | "user" => termy_config_core::WorkingDirFallback::Home,
-                    "process" | "cwd" => termy_config_core::WorkingDirFallback::Process,
-                    _ => return Err("Working dir fallback must be home or process".to_string()),
-                };
-                self.config.working_dir_fallback = parsed;
-                let canonical = match parsed {
-                    termy_config_core::WorkingDirFallback::Home => "home",
-                    termy_config_core::WorkingDirFallback::Process => "process",
-                };
-                config::set_root_setting(
-                    termy_config_core::RootSettingId::WorkingDirFallback,
-                    canonical,
-                )
-            }
-            EditableField::WindowWidth => {
-                let parsed = value
-                    .parse::<f32>()
-                    .map_err(|_| "Default width must be a positive number".to_string())?;
-                if parsed <= 0.0 {
-                    return Err("Default width must be greater than 0".to_string());
-                }
-                self.config.window_width = parsed;
-                config::set_root_setting(
-                    termy_config_core::RootSettingId::WindowWidth,
-                    &parsed.to_string(),
-                )
-            }
-            EditableField::WindowHeight => {
-                let parsed = value
-                    .parse::<f32>()
-                    .map_err(|_| "Default height must be a positive number".to_string())?;
-                if parsed <= 0.0 {
-                    return Err("Default height must be greater than 0".to_string());
-                }
-                self.config.window_height = parsed;
-                config::set_root_setting(
-                    termy_config_core::RootSettingId::WindowHeight,
-                    &parsed.to_string(),
-                )
-            }
-            _ => unreachable!("invalid advanced field"),
         }
     }
 

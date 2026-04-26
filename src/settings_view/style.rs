@@ -57,15 +57,23 @@ impl SettingsWindow {
         c
     }
 
+    pub(super) fn bg_card(&self) -> Rgba {
+        let mut c = self.colors.background;
+        c.a = self.adaptive_chrome_panel_alpha(0.5);
+        c
+    }
+
+    #[allow(dead_code)]
     pub(super) fn bg_secondary(&self) -> Rgba {
         let mut c = self.colors.background;
         c.a = self.adaptive_chrome_panel_alpha(0.7);
         c
     }
 
-    pub(super) fn bg_card(&self) -> Rgba {
-        let mut c = self.colors.background;
-        c.a = self.adaptive_chrome_panel_alpha(0.5);
+    #[allow(dead_code)]
+    pub(super) fn bg_active(&self) -> Rgba {
+        let mut c = self.colors.foreground;
+        c.a = self.scaled_chrome_surface_alpha(0.15);
         c
     }
 
@@ -78,12 +86,6 @@ impl SettingsWindow {
     pub(super) fn bg_hover(&self) -> Rgba {
         let mut c = self.colors.foreground;
         c.a = self.scaled_chrome_surface_alpha(0.1);
-        c
-    }
-
-    pub(super) fn bg_active(&self) -> Rgba {
-        let mut c = self.colors.foreground;
-        c.a = self.scaled_chrome_surface_alpha(0.15);
         c
     }
 
@@ -119,49 +121,7 @@ impl SettingsWindow {
         c
     }
 
-    pub(super) fn settings_scrollbar_style(&self) -> ScrollbarPaintStyle {
-        let mut track = self.colors.foreground;
-        track.a = self.scaled_chrome_neutral_alpha(SETTINGS_SCROLLBAR_TRACK_ALPHA);
-
-        let mut thumb = self.colors.foreground;
-        thumb.a = self.scaled_chrome_neutral_alpha(SETTINGS_SCROLLBAR_THUMB_ALPHA);
-
-        let mut active_thumb = self.colors.foreground;
-        active_thumb.a = self.scaled_chrome_neutral_alpha(SETTINGS_SCROLLBAR_THUMB_ACTIVE_ALPHA);
-
-        ScrollbarPaintStyle {
-            width: SETTINGS_SCROLLBAR_WIDTH,
-            track_radius: 0.0,
-            thumb_radius: 0.0,
-            thumb_inset: 0.0,
-            marker_inset: 0.0,
-            marker_radius: 0.0,
-            track_color: track,
-            thumb_color: thumb,
-            active_thumb_color: active_thumb,
-            marker_color: None,
-            current_marker_color: None,
-        }
-    }
-
-    pub(super) fn settings_scrollbar_metrics(
-        &self,
-        window: &Window,
-    ) -> Option<ui_scrollbar::ScrollbarMetrics> {
-        let viewport_height: f32 = window.viewport_size().height.into();
-        let max_offset: f32 = self.content_scroll_handle.max_offset().height.into();
-        let offset_y: f32 = self.content_scroll_handle.offset().y.into();
-        let offset = (-offset_y).max(0.0);
-        let range = ScrollbarRange {
-            offset,
-            max_offset,
-            viewport_extent: viewport_height,
-            track_extent: viewport_height,
-        };
-
-        ui_scrollbar::compute_metrics(range, SETTINGS_SCROLLBAR_MIN_THUMB_HEIGHT)
-    }
-
+    #[allow(dead_code)]
     pub(super) fn request_scrollbar_refresh_frames(
         &mut self,
         frames_remaining: u8,

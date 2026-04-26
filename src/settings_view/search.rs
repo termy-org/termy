@@ -108,7 +108,7 @@ mod tests {
     }
 }
 
-static SETTINGS_METADATA: LazyLock<Vec<SettingMetadata>> = LazyLock::new(|| {
+pub(super) static SETTINGS_METADATA: LazyLock<Vec<SettingMetadata>> = LazyLock::new(|| {
     let mut entries = root_setting_specs()
         .iter()
         .map(|spec| SettingMetadata {
@@ -144,6 +144,14 @@ static SETTINGS_METADATA: LazyLock<Vec<SettingMetadata>> = LazyLock::new(|| {
     });
     entries
 });
+
+pub(super) static FALLBACK_SETTING_METADATA: SettingMetadata = SettingMetadata {
+    key: "unknown",
+    section: SettingsSection::Advanced,
+    title: "Unknown",
+    description: "",
+    keywords: &[],
+};
 
 #[derive(Clone, Debug)]
 pub(super) struct SearchableSetting {
@@ -705,25 +713,16 @@ impl SettingsWindow {
         query_text: &str,
         has_query: bool,
         is_active: bool,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> AnyElement {
         let text_secondary = self.text_secondary();
         let text_muted = self.text_muted();
         if is_active {
-            let font = Font {
-                family: self.config.font_family.clone().into(),
-                ..Font::default()
-            };
-            return TextInputElement::new(
-                cx.entity(),
-                self.focus_handle.clone(),
-                font,
-                px(SETTINGS_INPUT_TEXT_SIZE),
-                text_secondary.into(),
-                self.accent_with_alpha(0.3).into(),
-                TextInputAlignment::Left,
-            )
-            .into_any_element();
+            return div()
+                .text_size(px(SETTINGS_INPUT_TEXT_SIZE))
+                .text_color(text_secondary)
+                .child(query_text.to_string())
+                .into_any_element();
         }
 
         if has_query {

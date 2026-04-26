@@ -1,14 +1,13 @@
 use crate::colors::TerminalColors;
 use crate::config::{self, AppConfig};
-use crate::text_input::{TextInputAlignment, TextInputElement, TextInputProvider, TextInputState};
+use crate::text_input::TextInputState;
 use crate::theme_store::{self, ThemeStoreAuthSession, ThemeStoreAuthUser, ThemeStoreTheme};
-use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle, ScrollbarRange};
 use crate::gpui::{
-    AnyElement, AsyncApp, Bounds, Context, FocusHandle, Font, InteractiveElement, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit,
-    ParentElement, Pixels, Render, Rgba, ScrollAnchor, ScrollHandle, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement, Styled, StyledImage, TextAlign, WeakEntity, Window,
-    WindowBackgroundAppearance, canvas, deferred, div, img, point, prelude::FluentBuilder, px,
+    AnyElement, App, AsyncApp, Bounds, Context, FocusHandle, InteractiveElement,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ObjectFit, ParentElement, Pixels, Render, Rgba, ScrollAnchor, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, StyledImage, WeakEntity, Window,
+    WindowBackgroundAppearance, div, img, point, prelude::FluentBuilder, px,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -27,7 +26,6 @@ use termy_config_core::{
 
 mod colors;
 mod components;
-mod input_mode;
 mod keybinds;
 mod search;
 mod sections;
@@ -38,8 +36,7 @@ mod style;
 mod test_utils;
 
 use self::search::SearchableSetting;
-use self::state::{ActiveTextInput, DropdownOption, EditableField};
-use input_mode::KeyInputMode;
+use self::state::{ActiveTextInput, EditableField};
 
 const SIDEBAR_WIDTH: f32 = 220.0;
 const SETTINGS_CONTROL_WIDTH: f32 = 360.0;
@@ -50,11 +47,6 @@ const SETTINGS_CONFIG_WATCH_INTERVAL_MS: u64 = 750;
 const SETTINGS_SEARCH_NAV_THROTTLE_MS: u64 = 70;
 const SETTINGS_SCROLL_ANIMATION_DURATION_MS: u64 = 170;
 const SETTINGS_SCROLL_ANIMATION_TICK_MS: u64 = 16;
-const SETTINGS_SCROLLBAR_WIDTH: f32 = 8.0;
-const SETTINGS_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 18.0;
-const SETTINGS_SCROLLBAR_TRACK_ALPHA: f32 = 0.10;
-const SETTINGS_SCROLLBAR_THUMB_ALPHA: f32 = 0.42;
-const SETTINGS_SCROLLBAR_THUMB_ACTIVE_ALPHA: f32 = 0.58;
 const SETTINGS_OVERLAY_PANEL_ALPHA_FLOOR_RATIO: f32 = 0.72;
 const SETTINGS_SWITCH_KNOB_SIZE: f32 = 20.0;
 const SETTINGS_SEARCH_PREVIEW_LIMIT: usize = 6;
@@ -923,167 +915,12 @@ impl SettingsWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.key_input_mode() == KeyInputMode::CaptureAction {
+        if self.capturing_action.is_some() {
             self.handle_keybind_capture(event, cx);
             return;
         }
 
-        if self.handle_global_shortcuts(event, window, cx)
-            || self.handle_section_cycle_shortcut(event, window, cx)
-        {
-            return;
-        }
-
-        match self.key_input_mode() {
-            KeyInputMode::CaptureAction => self.handle_keybind_capture(event, cx),
-            KeyInputMode::SidebarSearch => {
-                let _ = self.handle_sidebar_search_key_down(event, window, cx);
-            }
-            KeyInputMode::ThemeStoreSearch => {
-                let _ = self.handle_theme_store_search_key_down(event, cx);
-            }
-            KeyInputMode::ActiveInput => self.handle_active_input_key_down(event, cx),
-            KeyInputMode::Idle => {}
-        }
-    }
-}
-
-impl TextInputProvider for SettingsWindow {
-    fn text_input_state(&self) -> Option<&TextInputState> {
-        let settings_input = self
-            .active_input
-            .as_ref()
-            .and_then(|input| Self::uses_text_input_for_field(input.field).then_some(&input.state));
-
-        settings_input.or_else(|| {
-            if self.sidebar_search_active {
-                Some(&self.sidebar_search_state)
-            } else if self.theme_store_search_active {
-                Some(&self.theme_store_search_state)
-            } else {
-                None
-            }
-        })
-    }
-
-    fn text_input_state_mut(&mut self) -> Option<&mut TextInputState> {
-        let settings_input = self.active_input.as_mut().and_then(|input| {
-            Self::uses_text_input_for_field(input.field).then_some(&mut input.state)
-        });
-
-        if settings_input.is_some() {
-            settings_input
-        } else if self.sidebar_search_active {
-            Some(&mut self.sidebar_search_state)
-        } else if self.theme_store_search_active {
-            Some(&mut self.theme_store_search_state)
-        } else {
-            None
-        }
-    }
-}
-
-impl crate::gpui::EntityInputHandler for SettingsWindow {
-    fn text_for_range(
-        &mut self,
-        range: std::ops::Range<usize>,
-        adjusted_range: &mut Option<std::ops::Range<usize>>,
-        _window: &mut crate::gpui::Window,
-        _cx: &mut crate::gpui::Context<Self>,
-    ) -> Option<String> {
-        let state = TextInputProvider::text_input_state(self)?;
-        Some(state.text_for_range(range, adjusted_range))
-    }
-
-    fn selected_text_range(
-        &mut self,
-        _ignore_disabled_input: bool,
-        _window: &mut crate::gpui::Window,
-        _cx: &mut crate::gpui::Context<Self>,
-    ) -> Option<crate::gpui::UTF16Selection> {
-        let state = TextInputProvider::text_input_state(self)?;
-        Some(state.selected_text_range())
-    }
-
-    fn marked_text_range(
-        &self,
-        _window: &mut crate::gpui::Window,
-        _cx: &mut crate::gpui::Context<Self>,
-    ) -> Option<std::ops::Range<usize>> {
-        let state = TextInputProvider::text_input_state(self)?;
-        state.marked_text_range_utf16()
-    }
-
-    fn unmark_text(&mut self, _window: &mut crate::gpui::Window, _cx: &mut crate::gpui::Context<Self>) {
-        if let Some(state) = TextInputProvider::text_input_state_mut(self) {
-            state.unmark_text();
-        }
-    }
-
-    fn replace_text_in_range(
-        &mut self,
-        range: Option<std::ops::Range<usize>>,
-        text: &str,
-        window: &mut crate::gpui::Window,
-        cx: &mut crate::gpui::Context<Self>,
-    ) {
-        let mut changed = false;
-        if let Some(state) = TextInputProvider::text_input_state_mut(self) {
-            state.replace_text_in_range(range, text);
-            changed = true;
-        }
-
-        if changed {
-            self.refresh_search_navigation(window, cx);
-        }
-    }
-
-    fn replace_and_mark_text_in_range(
-        &mut self,
-        range: Option<std::ops::Range<usize>>,
-        new_text: &str,
-        new_selected_range: Option<std::ops::Range<usize>>,
-        window: &mut crate::gpui::Window,
-        cx: &mut crate::gpui::Context<Self>,
-    ) {
-        let mut changed = false;
-        if let Some(state) = TextInputProvider::text_input_state_mut(self) {
-            state.replace_and_mark_text_in_range(range, new_text, new_selected_range);
-            changed = true;
-        }
-
-        if changed {
-            self.refresh_search_navigation(window, cx);
-        }
-    }
-
-    fn bounds_for_range(
-        &mut self,
-        range_utf16: std::ops::Range<usize>,
-        element_bounds: crate::gpui::Bounds<crate::gpui::Pixels>,
-        _window: &mut crate::gpui::Window,
-        _cx: &mut crate::gpui::Context<Self>,
-    ) -> Option<crate::gpui::Bounds<crate::gpui::Pixels>> {
-        let state = TextInputProvider::text_input_state(self)?;
-        Some(state.bounds_for_range(range_utf16, element_bounds))
-    }
-
-    fn character_index_for_point(
-        &mut self,
-        point: crate::gpui::Point<crate::gpui::Pixels>,
-        _window: &mut crate::gpui::Window,
-        _cx: &mut crate::gpui::Context<Self>,
-    ) -> Option<usize> {
-        let state = TextInputProvider::text_input_state(self)?;
-        Some(state.character_index_for_point(point))
-    }
-
-    fn accepts_text_input(
-        &self,
-        _window: &mut crate::gpui::Window,
-        _cx: &mut crate::gpui::Context<Self>,
-    ) -> bool {
-        TextInputProvider::text_input_state(self).is_some()
+        self.handle_global_shortcuts(event, window, cx);
     }
 }
 
@@ -1091,105 +928,20 @@ impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_window_background_appearance(window);
         let bg = self.bg_primary();
-        let settings_scrollbar_metrics = self.settings_scrollbar_metrics(window);
-        let settings_scrollbar_lane = {
-            div()
-                .flex_none()
-                .w(px(SETTINGS_SCROLLBAR_WIDTH + 4.0))
-                .min_w(px(SETTINGS_SCROLLBAR_WIDTH + 4.0))
-                .max_w(px(SETTINGS_SCROLLBAR_WIDTH + 4.0))
-                .h_full()
-                .pl(px(2.0))
-                .pr(px(2.0))
-                .when_some(settings_scrollbar_metrics, |s, metrics| {
-                    s.child(ui_scrollbar::render_vertical(
-                        "settings-content-scrollbar",
-                        metrics,
-                        self.settings_scrollbar_style(),
-                        false,
-                        &[],
-                        None,
-                        0.0,
-                    ))
-                })
-        };
+        let entity = cx.entity().clone();
+
         div()
             .id("settings-root")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::handle_key_down))
-            .on_any_mouse_down(cx.listener(|view, _event: &MouseDownEvent, _window, cx| {
-                if view.active_input.is_some()
-                    || view.sidebar_search_active
-                    || view.theme_store_search_active
-                    || view.capturing_action.is_some()
-                {
-                    view.active_input = None;
-                    view.capturing_action = None;
-                    view.blur_sidebar_search();
-                    view.theme_store_search_active = false;
-                    view.theme_store_search_selecting = false;
-                    cx.notify();
-                }
-            }))
-            .when(self.background_opacity_drag_state.is_some(), |s| {
-                s.on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _window, cx| {
-                    if !event.dragging() {
-                        return;
-                    }
-                    let x: f32 = event.position.x.into();
-                    view.update_background_opacity_drag(x, Self::background_opacity_slider_width());
-                    cx.notify();
-                }))
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
-                        match view.finish_background_opacity_drag() {
-                            Ok(true) => termy_toast::success("Saved"),
-                            Ok(false) => {}
-                            Err(error) => termy_toast::error(error),
-                        }
-                        cx.notify();
-                    }),
-                )
-                .on_mouse_up_out(
-                    MouseButton::Left,
-                    cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
-                        match view.finish_background_opacity_drag() {
-                            Ok(true) => termy_toast::success("Saved"),
-                            Ok(false) => {}
-                            Err(error) => termy_toast::error(error),
-                        }
-                        cx.notify();
-                    }),
-                )
-            })
             .flex()
             .size_full()
             .bg(bg)
             .font_family(self.config.font_family.clone())
-            .child(self.render_sidebar(cx))
             .child(
-                // Keep the shared content pane shrink-safe so wide rows cannot
-                // push controls or the scrollbar lane off-canvas.
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .h_full()
-                    .flex()
-                    .items_start()
-                    .child(
-                        div()
-                            .id("settings-content-scroll")
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .h_full()
-                            .overflow_y_scroll()
-                            .track_scroll(&self.content_scroll_handle)
-                            .overflow_x_hidden()
-                            .p_6()
-                            .child(self.render_content(cx)),
-                    )
-                    .child(settings_scrollbar_lane),
+                gpui_component::setting::Settings::new("settings")
+                    .sidebar_width(px(SIDEBAR_WIDTH))
+                    .pages(self.build_pages(&entity, cx)),
             )
     }
 }
