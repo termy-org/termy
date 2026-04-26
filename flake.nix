@@ -41,7 +41,8 @@
         ];
 
         termy = pkgs.rustPlatform.buildRustPackage {
-          name = "termy";
+          pname = "termy";
+          version = "latest";
           src = pkgs.lib.cleanSource self;
 
           cargoLock = {
