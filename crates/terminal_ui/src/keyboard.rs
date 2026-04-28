@@ -162,6 +162,10 @@ fn basic_keystroke_to_input(
         return Some(input);
     }
 
+    if let Some(input) = legacy_function_key_input(key, modifiers) {
+        return Some(input.to_vec());
+    }
+
     if modifiers.control && !modifiers.platform && !modifiers.function && key.len() == 1 {
         let c = key.chars().next().unwrap();
         if c.is_ascii_alphabetic() {
@@ -211,6 +215,28 @@ fn legacy_cursor_key_input(
         "\x1b["
     };
     format!("{prefix}{suffix}").into_bytes()
+}
+
+fn legacy_function_key_input(key: &str, modifiers: Modifiers) -> Option<&'static [u8]> {
+    if modifiers.control || modifiers.alt || modifiers.shift || modifiers.platform {
+        return None;
+    }
+
+    Some(match key {
+        "f1" => b"\x1bOP".as_slice(),
+        "f2" => b"\x1bOQ".as_slice(),
+        "f3" => b"\x1bOR".as_slice(),
+        "f4" => b"\x1bOS".as_slice(),
+        "f5" => b"\x1b[15~".as_slice(),
+        "f6" => b"\x1b[17~".as_slice(),
+        "f7" => b"\x1b[18~".as_slice(),
+        "f8" => b"\x1b[19~".as_slice(),
+        "f9" => b"\x1b[20~".as_slice(),
+        "f10" => b"\x1b[21~".as_slice(),
+        "f11" => b"\x1b[23~".as_slice(),
+        "f12" => b"\x1b[24~".as_slice(),
+        _ => return None,
+    })
 }
 
 fn modifier_or_control_sequence_base(
@@ -1086,6 +1112,73 @@ mod tests {
                 true,
             ),
             Some(b"\x1bOF".to_vec())
+        );
+    }
+
+    #[test]
+    fn legacy_mode_reports_plain_function_keys() {
+        let cases = [
+            ("f1", b"\x1bOP".as_slice()),
+            ("f2", b"\x1bOQ".as_slice()),
+            ("f3", b"\x1bOR".as_slice()),
+            ("f4", b"\x1bOS".as_slice()),
+            ("f5", b"\x1b[15~".as_slice()),
+            ("f6", b"\x1b[17~".as_slice()),
+            ("f7", b"\x1b[18~".as_slice()),
+            ("f8", b"\x1b[19~".as_slice()),
+            ("f9", b"\x1b[20~".as_slice()),
+            ("f10", b"\x1b[21~".as_slice()),
+            ("f11", b"\x1b[23~".as_slice()),
+            ("f12", b"\x1b[24~".as_slice()),
+        ];
+
+        for (key, expected) in cases {
+            assert_eq!(
+                keystroke_to_input(
+                    &keystroke(key, None, Modifiers::default()),
+                    TerminalKeyEventKind::Press,
+                    TerminalKeyboardMode::default(),
+                    true,
+                ),
+                Some(expected.to_vec()),
+                "{key} should use the xterm-256color function-key sequence"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_mode_treats_fn_as_hardware_modifier_for_function_keys() {
+        let modifiers = Modifiers {
+            function: true,
+            ..Modifiers::default()
+        };
+
+        assert_eq!(
+            keystroke_to_input(
+                &keystroke("f1", None, modifiers),
+                TerminalKeyEventKind::Press,
+                TerminalKeyboardMode::default(),
+                true,
+            ),
+            Some(b"\x1bOP".to_vec())
+        );
+    }
+
+    #[test]
+    fn legacy_mode_does_not_emit_modified_function_keys() {
+        let modifiers = Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        };
+
+        assert_eq!(
+            keystroke_to_input(
+                &keystroke("f1", None, modifiers),
+                TerminalKeyEventKind::Press,
+                TerminalKeyboardMode::default(),
+                true,
+            ),
+            None
         );
     }
 
