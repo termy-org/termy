@@ -345,31 +345,16 @@ impl TerminalView {
             return;
         }
 
-        self.capture_agent_session_id_for_tab(index);
-        let removed_agent_snapshot = self.agent_thread_archive_snapshot_for_tab(index);
         self.tabs.remove(index);
         self.native_pane_zoom_snapshots.remove(&removed_tab_id);
         self.native_pane_layout_trees.remove(&removed_tab_id);
         self.mark_tab_strip_layout_dirty();
-        if let Some((thread_id, title, current_command, status_label, status_detail)) =
-            removed_agent_snapshot
-        {
-            self.archive_agent_thread_snapshot(
-                thread_id.as_deref(),
-                title.as_str(),
-                current_command.as_deref(),
-                status_label.as_deref(),
-                status_detail.as_deref(),
-            );
-        }
 
         if self.active_tab > index {
             self.active_tab -= 1;
         } else if self.active_tab >= self.tabs.len() {
             self.active_tab = self.tabs.len() - 1;
         }
-
-        self.sync_agent_workspace_to_active_tab();
 
         match self.renaming_tab {
             Some(editing) if editing == index => {
@@ -490,7 +475,6 @@ impl TerminalView {
                 self.reset_tab_rename_state();
                 self.reset_tab_drag_state();
                 self.clear_selection();
-                self.sync_agent_workspace_to_active_tab();
                 self.sync_tab_strip_for_active_tab();
                 self.schedule_persist_native_workspace();
                 cx.notify();

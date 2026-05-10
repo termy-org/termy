@@ -12,120 +12,10 @@ use termy_terminal_ui::TmuxSocketTarget;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in super::super) enum CommandPaletteMode {
     Commands,
-    AgentProjects,
-    Agents,
     Themes,
     TmuxSessions,
     Layouts,
     Tasks,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(in super::super) enum AiAgentPreset {
-    Codex,
-    Claude,
-    Copilot,
-    Cursor,
-    Kiro,
-    OpenCode,
-    Pi,
-}
-
-impl AiAgentPreset {
-    pub(super) const ALL: [Self; 7] = [
-        Self::Codex,
-        Self::Claude,
-        Self::Copilot,
-        Self::Cursor,
-        Self::Kiro,
-        Self::OpenCode,
-        Self::Pi,
-    ];
-
-    pub(in super::super) fn title(self) -> &'static str {
-        match self {
-            Self::Codex => "Codex",
-            Self::Claude => "Claude",
-            Self::Copilot => "Copilot",
-            Self::Cursor => "Cursor",
-            Self::Kiro => "Kiro",
-            Self::OpenCode => "OpenCode",
-            Self::Pi => "Pi",
-        }
-    }
-
-    pub(in super::super) fn keywords(self) -> &'static str {
-        match self {
-            Self::Codex => "ai agent assistant codex openai code",
-            Self::Claude => "ai agent assistant claude anthropic code",
-            Self::Copilot => "ai agent assistant copilot github code",
-            Self::Cursor => "ai agent assistant cursor code",
-            Self::Kiro => "ai agent assistant kiro amazon aws",
-            Self::OpenCode => "ai agent assistant opencode open code",
-            Self::Pi => "ai agent assistant pi",
-        }
-    }
-
-    pub(in super::super) fn launch_command(self) -> &'static str {
-        match self {
-            Self::Codex => "codex",
-            Self::Claude => "claude",
-            Self::Copilot => "copilot",
-            Self::Cursor => "agent",
-            Self::Kiro => "kiro-cli",
-            Self::OpenCode => "opencode",
-            Self::Pi => "pi",
-        }
-    }
-
-    pub(in super::super) fn is_installed(self) -> bool {
-        let path = resolve_user_path();
-        command_exists_in_path(self.launch_command(), path.as_str())
-    }
-
-    pub(in super::super) fn fallback_label(self) -> &'static str {
-        match self {
-            Self::Codex => "CX",
-            Self::Claude => "CL",
-            Self::Copilot => "CP",
-            Self::Cursor => "CU",
-            Self::Kiro => "KI",
-            Self::OpenCode => "OC",
-            Self::Pi => "PI",
-        }
-    }
-
-    pub(in super::super) fn image_asset_path(self, _dark_surface: bool) -> &'static str {
-        match self {
-            Self::Codex => concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/openai.svg"),
-            Self::Claude => {
-                concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/claude.svg")
-            }
-            Self::Copilot => {
-                concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/assets/agent-icons/copilot.svg"
-                )
-            }
-            Self::Cursor => {
-                concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/cursor.svg")
-            }
-            Self::Kiro => {
-                concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/kiro.svg")
-            }
-            Self::OpenCode => concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/assets/agent-icons/opencode.svg"
-            ),
-            Self::Pi => concat!(env!("CARGO_MANIFEST_DIR"), "/assets/agent-icons/pi.svg"),
-        }
-    }
-
-    pub(in super::super) fn prefers_light_asset_variant(panel_bg: Rgba) -> bool {
-        let luminance = 0.2126 * panel_bg.r + 0.7152 * panel_bg.g + 0.0722 * panel_bg.b;
-        luminance < 0.45
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,12 +33,6 @@ pub(in super::super) enum CommandPaletteCommandIntent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum CommandPaletteItemKind {
     Command(CommandAction),
-    AiAgentOpenMode,
-    AiAgentSelectCurrentFolder,
-    AiAgentSelectProject {
-        project_id: String,
-    },
-    AiAgentSpawn(AiAgentPreset),
     Theme(String),
     TmuxSessionAttachOrSwitch {
         session_name: String,
@@ -245,70 +129,6 @@ impl CommandPaletteItem {
         }
     }
 
-    pub(super) fn ai_agent_open_mode() -> Self {
-        Self {
-            title: "New AI Agent…".to_string(),
-            keywords: "ai agent assistant codex claude opencode pi spawn new".to_string(),
-            enabled: true,
-            status_hint: None,
-            tmux_status_hint: None,
-            kind: CommandPaletteItemKind::AiAgentOpenMode,
-        }
-    }
-
-    pub(super) fn ai_agent(agent: AiAgentPreset) -> Self {
-        Self {
-            title: agent.title().to_string(),
-            keywords: agent.keywords().to_string(),
-            enabled: true,
-            status_hint: None,
-            tmux_status_hint: None,
-            kind: CommandPaletteItemKind::AiAgentSpawn(agent),
-        }
-    }
-
-    pub(super) fn ai_agent_current_folder(working_dir: &str) -> Self {
-        let title = if working_dir.trim().is_empty() {
-            "Current Folder".to_string()
-        } else {
-            format!("Current Folder  {}", working_dir)
-        };
-
-        Self {
-            title,
-            keywords: format!("ai agent current folder attach {working_dir}"),
-            enabled: true,
-            status_hint: None,
-            tmux_status_hint: None,
-            kind: CommandPaletteItemKind::AiAgentSelectCurrentFolder,
-        }
-    }
-
-    pub(super) fn ai_agent_project(
-        project_id: String,
-        project_name: &str,
-        root_path: &str,
-    ) -> Self {
-        let title = if root_path.trim().is_empty() {
-            format!("Project  {}", project_name)
-        } else {
-            format!("{}  {}", project_name, root_path)
-        };
-
-        Self {
-            title,
-            keywords: format!(
-                "ai agent project attach {} {}",
-                project_name.replace(['-', '_'], " "),
-                root_path
-            ),
-            enabled: true,
-            status_hint: None,
-            tmux_status_hint: None,
-            kind: CommandPaletteItemKind::AiAgentSelectProject { project_id },
-        }
-    }
-
     pub(super) fn theme(theme_id: String, is_active: bool) -> Self {
         let title = if is_active {
             format!("\u{2713} {}", theme_id)
@@ -395,7 +215,6 @@ pub(in super::super) struct CommandPaletteState {
     pub(super) saved_layout_names: Vec<String>,
     pub(super) saved_layout_live_name: Option<String>,
     pub(super) saved_layout_autosave_enabled: bool,
-    agent_launch_project_id: Option<String>,
 }
 
 impl CommandPaletteState {
@@ -426,7 +245,6 @@ impl CommandPaletteState {
             saved_layout_names: Vec::new(),
             saved_layout_live_name: None,
             saved_layout_autosave_enabled: false,
-            agent_launch_project_id: None,
         }
     }
 
@@ -497,14 +315,6 @@ impl CommandPaletteState {
 
     pub(super) fn clear_shortcut_cache(&mut self) {
         self.shortcut_cache.clear();
-    }
-
-    pub(in super::super) fn agent_launch_project_id(&self) -> Option<&str> {
-        self.agent_launch_project_id.as_deref()
-    }
-
-    pub(in super::super) fn set_agent_launch_project_id(&mut self, project_id: Option<String>) {
-        self.agent_launch_project_id = project_id;
     }
 
     pub(super) fn refilter_current_query(&mut self) {
@@ -647,12 +457,6 @@ impl CommandPaletteState {
         }
         if self.mode != CommandPaletteMode::Commands {
             self.command_intent = CommandPaletteCommandIntent::Browse;
-        }
-        if !matches!(
-            self.mode,
-            CommandPaletteMode::AgentProjects | CommandPaletteMode::Agents
-        ) {
-            self.agent_launch_project_id = None;
         }
         if self.mode != CommandPaletteMode::Layouts {
             self.saved_layout_intent = SavedLayoutIntent::Browse;

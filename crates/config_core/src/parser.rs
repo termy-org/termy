@@ -8,7 +8,7 @@ use crate::constants::{
 use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
 use crate::types::{
-    AiProvider, AppConfig, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility,
+    AppConfig, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility,
     TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
     TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
 };
@@ -164,12 +164,6 @@ impl AppConfig {
                 Ok(None) => {}
             }
 
-            // These keys already live in AppConfig and are exercised by parser tests, but they
-            // are not part of the schema-driven settings/docs surface yet.
-            if parse_ai_root_key(&mut config, &mut diagnostics, line_number, key, value) {
-                continue;
-            }
-
             let Some(root_key) = root_setting_from_key(key) else {
                 diagnostics.push(ConfigDiagnostic {
                     line_number,
@@ -262,6 +256,13 @@ impl AppConfig {
                         parse_bool_field(&mut diagnostics, line_number, key, value)
                     {
                         config.simple_mode = parsed;
+                    }
+                }
+                RootSettingId::OnboardingComplete => {
+                    if let Some(parsed) =
+                        parse_bool_field(&mut diagnostics, line_number, key, value)
+                    {
+                        config.onboarding_complete = parsed;
                     }
                 }
                 RootSettingId::TmuxBinary => {
@@ -461,27 +462,6 @@ impl AppConfig {
                         parse_bool_field(&mut diagnostics, line_number, key, value)
                     {
                         config.vertical_tabs_minimized = parsed;
-                    }
-                }
-                RootSettingId::AiFeaturesEnabled => {
-                    if let Some(parsed) =
-                        parse_bool_field(&mut diagnostics, line_number, key, value)
-                    {
-                        config.ai_features_enabled = parsed;
-                    }
-                }
-                RootSettingId::AgentSidebarEnabled => {
-                    if let Some(parsed) =
-                        parse_bool_field(&mut diagnostics, line_number, key, value)
-                    {
-                        config.agent_sidebar_enabled = parsed;
-                    }
-                }
-                RootSettingId::AgentSidebarWidth => {
-                    if let Some(parsed) =
-                        parse_positive_f32_field(&mut diagnostics, line_number, key, value)
-                    {
-                        config.agent_sidebar_width = parsed;
                     }
                 }
                 RootSettingId::AutoHideTabbar => {
@@ -827,47 +807,6 @@ impl AppConfig {
         }
 
         ConfigParseReport::new(config, diagnostics)
-    }
-}
-
-fn parse_ai_root_key(
-    config: &mut AppConfig,
-    diagnostics: &mut Vec<ConfigDiagnostic>,
-    line_number: usize,
-    key: &str,
-    value: &str,
-) -> bool {
-    match key {
-        "ai_provider" => {
-            config.ai_provider = match value.trim().to_ascii_lowercase().as_str() {
-                "openai" | "open_ai" | "open-ai" => AiProvider::OpenAi,
-                "gemini" => AiProvider::Gemini,
-                _ => {
-                    push_invalid_value(
-                        diagnostics,
-                        line_number,
-                        key,
-                        value,
-                        "one of: openai, gemini",
-                    );
-                    config.ai_provider
-                }
-            };
-            true
-        }
-        "openai_api_key" => {
-            config.openai_api_key = parse_optional_string_value(value);
-            true
-        }
-        "gemini_api_key" => {
-            config.gemini_api_key = parse_optional_string_value(value);
-            true
-        }
-        "openai_model" => {
-            config.openai_model = parse_optional_string_value(value);
-            true
-        }
-        _ => false,
     }
 }
 

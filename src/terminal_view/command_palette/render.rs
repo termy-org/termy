@@ -5,45 +5,11 @@ use super::style::{
 };
 use super::*;
 use crate::ui::scrollbar::{self, ScrollbarPaintStyle, ScrollbarRange};
+use gpui::prelude::FluentBuilder;
 use gpui::uniform_list;
-use gpui::{ObjectFit, StyledImage, img, prelude::FluentBuilder};
 use std::ops::Range;
-use std::path::Path;
 
 impl TerminalView {
-    fn render_command_palette_agent_avatar(
-        agent: AiAgentPreset,
-        style: CommandPaletteStyle,
-    ) -> AnyElement {
-        let fallback_label = agent.fallback_label();
-        let use_light_asset = AiAgentPreset::prefers_light_asset_variant(style.panel_bg);
-
-        div()
-            .flex_none()
-            .size(px(22.0))
-            .p(px(2.0))
-            .bg(style.input_bg)
-            .border_1()
-            .border_color(style.panel_border)
-            .child(
-                img(Path::new(agent.image_asset_path(use_light_asset)))
-                    .size_full()
-                    .object_fit(ObjectFit::Contain)
-                    .with_fallback(move || {
-                        div()
-                            .size_full()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(px(9.0))
-                            .text_color(style.muted_text)
-                            .child(fallback_label)
-                            .into_any_element()
-                    }),
-            )
-            .into_any_element()
-    }
-
     fn command_palette_scrollbar_metrics(
         &self,
         viewport_height: f32,
@@ -88,11 +54,7 @@ impl TerminalView {
                 CommandPaletteItemKind::Command(action) => {
                     self.command_palette_shortcut(*action, window)
                 }
-                CommandPaletteItemKind::AiAgentOpenMode
-                | CommandPaletteItemKind::AiAgentSelectCurrentFolder
-                | CommandPaletteItemKind::AiAgentSelectProject { .. }
-                | CommandPaletteItemKind::AiAgentSpawn(_)
-                | CommandPaletteItemKind::Theme(_)
+                CommandPaletteItemKind::Theme(_)
                 | CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }
                 | CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. }
                 | CommandPaletteItemKind::TmuxSessionDetachCurrent
@@ -129,12 +91,7 @@ impl TerminalView {
             } else {
                 style.muted_text
             };
-            let agent_avatar = match &item.kind {
-                CommandPaletteItemKind::AiAgentSpawn(agent) => {
-                    Some(Self::render_command_palette_agent_avatar(*agent, style))
-                }
-                _ => None,
-            };
+            let agent_avatar: Option<AnyElement> = None;
 
             rows.push(
                 div()
@@ -239,8 +196,6 @@ impl TerminalView {
         let list_height = COMMAND_PALETTE_MAX_ITEMS as f32 * COMMAND_PALETTE_ROW_HEIGHT;
         let mode_title = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Commands".to_string(),
-            CommandPaletteMode::AgentProjects => "AI Projects".to_string(),
-            CommandPaletteMode::Agents => "AI Agents".to_string(),
             CommandPaletteMode::Themes => format!("Theme: {}", self.theme_id),
             CommandPaletteMode::TmuxSessions => match self.command_palette.tmux_session_intent() {
                 TmuxSessionIntent::AttachOrSwitch => "tmux Sessions".to_string(),
@@ -271,10 +226,6 @@ impl TerminalView {
         };
         let footer_hint = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Enter: Run  Esc: Close  Up/Down: Navigate",
-            CommandPaletteMode::AgentProjects => {
-                "Enter: Choose Project  Esc: Back  Up/Down: Navigate"
-            }
-            CommandPaletteMode::Agents => "Enter: Spawn Agent  Esc: Back  Up/Down: Navigate",
             CommandPaletteMode::Themes => "Enter: Apply Theme  Esc: Back  Up/Down: Navigate",
             CommandPaletteMode::TmuxSessions => match self.command_palette.tmux_session_intent() {
                 TmuxSessionIntent::AttachOrSwitch => {
@@ -314,8 +265,6 @@ impl TerminalView {
             ..Font::default()
         };
         let empty_state_message = match self.command_palette.mode() {
-            CommandPaletteMode::AgentProjects => "No matching agent projects",
-            CommandPaletteMode::Agents => "No matching AI agents",
             CommandPaletteMode::TmuxSessions
                 if self.command_palette.tmux_session_intent()
                     == TmuxSessionIntent::AttachOrSwitch

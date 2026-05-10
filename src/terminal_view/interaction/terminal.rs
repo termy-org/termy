@@ -278,7 +278,7 @@ impl TerminalView {
             return;
         }
 
-        let sidebar_width = self.terminal_left_sidebar_width();
+        let sidebar_width = 0.0_f32;
         let content_top_inset = self.terminal_content_top_inset();
         let backend_mode = self.runtime_kind();
         let runtime_uses_tmux = matches!(backend_mode, RuntimeKind::Tmux);
@@ -286,7 +286,7 @@ impl TerminalView {
             .tabs
             .get(self.active_tab)
             .map_or(0, |tab| tab.panes.len());
-        let total_sidebar_width = sidebar_width + self.terminal_right_panel_width();
+        let total_sidebar_width = sidebar_width;
         let (cols, rows) = Self::terminal_grid_size_for_pane_count(
             active_pane_count,
             viewport_width,
@@ -471,7 +471,6 @@ mod tests {
             window_index: 0,
             panes: vec![test_pane("%native-1"), test_pane("%native-2")],
             active_pane_id: "%missing".to_string(),
-            agent_thread_id: None,
             pinned: false,
             manual_title: None,
             explicit_title: None,
@@ -486,7 +485,6 @@ mod tests {
             sticky_title_width: 0.0,
             display_width: TAB_MIN_WIDTH,
             running_process: false,
-            agent_command_has_started: false,
             progress_state: ProgressState::default(),
             command_lifecycle: CommandLifecycle::default(),
         };

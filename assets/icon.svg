@@ -1,0 +1,28 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Body -->
+  <rect x="92" y="232" width="840" height="560" rx="96" fill="#3B3C50"/>
+  <!-- Screen -->
+  <rect x="132" y="272" width="760" height="480" rx="64" fill="#1E1E2E"/>
+
+  <!-- Left eye -->
+  <circle cx="400" cy="488" r="68" fill="#F5F5FA"/>
+  <circle cx="400" cy="488" r="44" fill="#89B4FA"/>
+  <circle cx="400" cy="488" r="22" fill="#11111B"/>
+  <circle cx="386" cy="474" r="12" fill="#FFFFFF"/>
+
+  <!-- Right eye -->
+  <circle cx="624" cy="488" r="68" fill="#F5F5FA"/>
+  <circle cx="624" cy="488" r="44" fill="#89B4FA"/>
+  <circle cx="624" cy="488" r="22" fill="#11111B"/>
+  <circle cx="610" cy="474" r="12" fill="#FFFFFF"/>
+
+  <!-- Mouth -->
+  <path d="M488 510 Q 512 538 536 510" stroke="#F5F5FA" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Blush -->
+  <circle cx="744" cy="572" r="22" fill="#F38BA8" fill-opacity="0.65"/>
+
+  <!-- Prompt >_ -->
+  <path d="M218 600 L 280 640 L 218 680" stroke="#A6E3A1" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <line x1="306" y1="680" x2="386" y2="680" stroke="#A6E3A1" stroke-width="22" stroke-linecap="round"/>
+</svg>

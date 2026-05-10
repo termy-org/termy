@@ -1,5 +1,4 @@
 use super::*;
-use crate::terminal_view::agents::AgentGitPanelInputMode;
 
 fn should_defer_key_down_to_ime(keystroke: &gpui::Keystroke) -> bool {
     let key = keystroke.key.as_str();
@@ -152,19 +151,9 @@ fn modifier_transition_events(
 fn overlay_owns_terminal_input_state(
     command_palette_open: bool,
     search_open: bool,
-    agent_sidebar_search_active: bool,
-    agent_git_panel_input_active: bool,
     renaming_tab: Option<usize>,
-    renaming_agent_project_id: Option<&str>,
-    renaming_agent_thread_id: Option<&str>,
 ) -> bool {
-    command_palette_open
-        || search_open
-        || agent_sidebar_search_active
-        || agent_git_panel_input_active
-        || renaming_tab.is_some()
-        || renaming_agent_project_id.is_some()
-        || renaming_agent_thread_id.is_some()
+    command_palette_open || search_open || renaming_tab.is_some()
 }
 
 fn terminal_modifier_transition_events(
@@ -215,11 +204,7 @@ impl TerminalView {
         overlay_owns_terminal_input_state(
             self.is_command_palette_open(),
             self.search_open,
-            self.agent_sidebar_search_active,
-            self.agent_git_panel_input_mode.is_some(),
             self.renaming_tab,
-            self.renaming_agent_project_id.as_deref(),
-            self.renaming_agent_thread_id.as_deref(),
         )
     }
 
@@ -649,52 +634,14 @@ impl TerminalView {
                 return;
             }
 
-            if self.agent_sidebar_search_active {
-                match key {
-                    "escape" => {
-                        self.dismiss_agent_sidebar_search(cx);
-                        self.remember_consumed_key_release(key);
-                    }
-                    "enter" => {
-                        self.open_first_matching_agent_thread(cx);
-                        self.remember_consumed_key_release(key);
-                    }
-                    _ => {}
-                }
-                return;
-            }
-
             match key {
                 "enter" => {
-                    if self.agent_git_panel_input_mode == Some(AgentGitPanelInputMode::Commit)
-                        && event.keystroke.modifiers.shift
-                    {
-                        self.agent_git_panel_input.replace_text_in_range(None, "\n");
-                        cx.notify();
-                        self.remember_consumed_key_release(key);
-                        return;
-                    } else if self.agent_git_panel_input_mode.is_some() {
-                        self.commit_agent_git_panel_input(cx);
-                    } else if self.renaming_agent_project_id.is_some() {
-                        self.commit_rename_agent_project(cx);
-                    } else if self.renaming_agent_thread_id.is_some() {
-                        self.commit_rename_agent_thread(cx);
-                    } else {
-                        self.commit_rename_tab(cx);
-                    }
+                    self.commit_rename_tab(cx);
                     self.remember_consumed_key_release(key);
                     return;
                 }
                 "escape" => {
-                    if self.agent_git_panel_input_mode.is_some() {
-                        self.cancel_agent_git_panel_input(cx);
-                    } else if self.renaming_agent_project_id.is_some() {
-                        self.cancel_rename_agent_project(cx);
-                    } else if self.renaming_agent_thread_id.is_some() {
-                        self.cancel_rename_agent_thread(cx);
-                    } else {
-                        self.cancel_rename_tab(cx);
-                    }
+                    self.cancel_rename_tab(cx);
                     self.remember_consumed_key_release(key);
                     return;
                 }

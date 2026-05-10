@@ -241,6 +241,71 @@ impl SettingsWindow {
         self.wrap_setting_with_scroll_anchor(search_key, row.into_any_element())
     }
 
+    pub(super) fn render_root_bool_setting_row(
+        &mut self,
+        setting_key: &'static str,
+        toggle_id: &'static str,
+        setting: RootSettingId,
+        checked: bool,
+        success_message: &'static str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let metadata = Self::setting_metadata_or_fallback(setting_key);
+        self.render_setting_row(
+            setting_key,
+            toggle_id,
+            metadata.title,
+            metadata.description,
+            checked,
+            cx,
+            move |view, window, cx| {
+                let next = !checked;
+                match config::set_root_setting(setting, &next.to_string()) {
+                    Ok(()) => {
+                        let _ = view.reload_config_if_changed(cx);
+                        termy_toast::success(success_message);
+                        if setting == RootSettingId::SimpleMode && next {
+                            window.remove_window();
+                        }
+                        cx.notify();
+                    }
+                    Err(error) => termy_toast::error(error),
+                }
+            },
+        )
+    }
+
+    pub(super) fn render_config_row(
+        &mut self,
+        setting: RootSettingId,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let spec = termy_config_core::root_setting_spec(setting);
+        let value = root_setting_default_value(&self.config, setting)?;
+
+        if spec.value_kind == RootSettingValueKind::Boolean {
+            let checked = value.parse::<bool>().unwrap_or(false);
+            Some(self.render_root_bool_setting_row(
+                spec.key,
+                spec.key,
+                setting,
+                checked,
+                "Saved",
+                cx,
+            ))
+        } else {
+            let field = Self::root_setting_to_editable_field(setting)?;
+            Some(self.render_editable_row(
+                spec.key,
+                field,
+                spec.title,
+                spec.description,
+                self.editable_field_value(field),
+                cx,
+            ))
+        }
+    }
+
     pub(super) fn render_switch(
         &self,
         id: impl Into<SharedString>,

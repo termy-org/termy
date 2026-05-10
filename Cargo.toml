@@ -16,7 +16,6 @@ members = [
   "crates/xtask",
   "crates/cli",
   "crates/termy_api",
-  "crates/agents",
 ]
 resolver = "2"
 
@@ -57,7 +56,7 @@ unimplemented = "warn"
 
 [package]
 name = "termy"
-version = "0.1.82"
+version = "0.1.83"
 edition = "2024"
 
 [package.metadata.bundle]
@@ -91,9 +90,10 @@ env_logger = "0.11"
 # File dialogs
 rfd = "0.15"
 
-# JSON parsing
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+bincode = "1.3"
 url = "2.5"
 
 # File I/O

@@ -10,6 +10,7 @@ mod keybindings;
 #[cfg(target_os = "macos")]
 mod macos_thermal_observer;
 mod menus;
+mod onboarding;
 mod settings_view;
 mod startup;
 mod terminal_view;
@@ -209,6 +210,10 @@ fn reopen_if_no_windows(cx: &mut App, mut reopen: impl FnMut(&mut App)) -> bool 
 }
 
 fn reopen_main_window(cx: &mut App) {
+    let _ = open_main_window_with_runtime_config(cx);
+}
+
+pub(crate) fn open_main_window_with_runtime_config(cx: &mut App) -> Result<(), String> {
     let mut reopen_config_error = None;
     let reopen_load =
         config::load_runtime_config(&mut reopen_config_error, "Failed to load config");
@@ -216,14 +221,16 @@ fn reopen_main_window(cx: &mut App) {
     if let Err(blocker) = preflight_tmux_runtime(&reopen_config) {
         let message = blocker.message();
         log::error!("Failed to reopen main window: {}", message);
-        termy_toast::error(message);
-        return;
+        termy_toast::error(message.clone());
+        return Err(message);
     }
 
     if let Err(error) = open_main_window(cx, reopen_config) {
         log::error!("{}", error);
-        termy_toast::error(error);
+        termy_toast::error(error.clone());
+        return Err(error);
     }
+    Ok(())
 }
 
 fn focus_or_open_main_window<V: 'static>(
@@ -422,10 +429,13 @@ fn main() {
             }
         });
 
+        let was_first_run = !onboarding::config_file_exists();
+
         let mut startup_config_error = None;
         let startup_load =
             config::load_runtime_config(&mut startup_config_error, "Failed to load config");
         let app_config = startup_load.config;
+        let show_onboarding = onboarding::should_show_onboarding(was_first_run, &app_config);
         if let Err(blocker) = preflight_tmux_runtime(&app_config) {
             blocker.present_and_exit();
         }
@@ -437,7 +447,19 @@ fn main() {
         };
         keybindings::install_keybindings(cx, &app_config, tmux_runtime_active);
         let startup_config = app_config;
-        open_main_window(cx, startup_config).unwrap();
+
+        if show_onboarding {
+            match onboarding::open_onboarding_window(cx) {
+                Ok(()) => {}
+                Err(error) => {
+                    log::error!("Failed to open onboarding window: {}", error);
+                    termy_toast::error(error);
+                    open_main_window(cx, startup_config).unwrap();
+                }
+            }
+        } else {
+            open_main_window(cx, startup_config).unwrap();
+        }
     });
 }
 

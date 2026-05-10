@@ -238,13 +238,6 @@ impl PaneFocusEffect {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AiProvider {
-    #[default]
-    OpenAi,
-    Gemini,
-}
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct CustomColors {
     pub foreground: Option<Rgb8>,
@@ -277,9 +270,6 @@ pub struct AppConfig {
     pub vertical_tabs: bool,
     pub vertical_tabs_width: f32,
     pub vertical_tabs_minimized: bool,
-    pub ai_features_enabled: bool,
-    pub agent_sidebar_enabled: bool,
-    pub agent_sidebar_width: f32,
     pub auto_hide_tabbar: bool,
     pub show_termy_in_titlebar: bool,
     pub shell: Option<String>,
@@ -311,16 +301,13 @@ pub struct AppConfig {
     pub copy_on_select_toast: bool,
     pub command_palette_show_keybinds: bool,
     pub simple_mode: bool,
+    pub onboarding_complete: bool,
     // Notification settings
     pub notifications_enabled: bool,
     pub notification_min_duration: f32,
     pub notify_only_unfocused: bool,
     pub shell_integration_enabled: bool,
     pub progress_indicator_enabled: bool,
-    pub ai_provider: AiProvider,
-    pub openai_api_key: Option<String>,
-    pub gemini_api_key: Option<String>,
-    pub openai_model: Option<String>,
     pub keybind_lines: Vec<KeybindConfigLine>,
     pub tasks: Vec<TaskConfig>,
     pub colors: CustomColors,
@@ -365,9 +352,6 @@ impl Default for AppConfig {
             vertical_tabs: false,
             vertical_tabs_width: 220.0,
             vertical_tabs_minimized: false,
-            ai_features_enabled: false,
-            agent_sidebar_enabled: false,
-            agent_sidebar_width: 252.0,
             auto_hide_tabbar: true,
             show_termy_in_titlebar: true,
             shell: None,
@@ -396,16 +380,13 @@ impl Default for AppConfig {
             copy_on_select_toast: true,
             command_palette_show_keybinds: true,
             simple_mode: false,
+            onboarding_complete: true,
             // Notification defaults
             notifications_enabled: true,
             notification_min_duration: 5.0,
             notify_only_unfocused: true,
             shell_integration_enabled: true,
             progress_indicator_enabled: true,
-            ai_provider: AiProvider::default(),
-            openai_api_key: None,
-            gemini_api_key: None,
-            openai_model: None,
             keybind_lines: Vec::new(),
             tasks: Vec::new(),
             colors: CustomColors::default(),

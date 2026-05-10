@@ -9,13 +9,24 @@ const DEFAULT_THEME_STORE_API_URL: &str = "https://api.termy.run";
 const DEFAULT_THEME_REGISTRY_URL: &str =
     "https://raw.githubusercontent.com/termy-org/themes/main/index.json";
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+const CACHE_FORMAT_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ThemeStoreTheme {
     pub(crate) name: String,
     pub(crate) slug: String,
     pub(crate) description: String,
     pub(crate) latest_version: Option<String>,
     pub(crate) file_url: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ThemeRegistryCache {
+    version: u32,
+    fetched_at: u64,
+    registry_url: String,
+    etag: Option<String>,
+    themes: Vec<ThemeStoreTheme>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,36 +61,79 @@ pub(crate) fn theme_store_registry_url() -> String {
         .unwrap_or_else(|_| DEFAULT_THEME_REGISTRY_URL.into())
 }
 
+fn current_unix_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// Fetches themes from the repo registry. Returns `(themes, from_cache)` where `from_cache`
 /// is `true` when the registry was unreachable and a saved cache was used as a fallback.
+/// Uses ETag-based conditional requests to avoid re-downloading unchanged registries.
 pub(crate) fn fetch_theme_store_themes_blocking(
     registry_url: &str,
 ) -> Result<(Vec<ThemeStoreTheme>, bool), String> {
+    let cached = load_theme_store_cache();
+
+    let cached_etag = cached.as_ref().and_then(|c| {
+        if c.registry_url == registry_url {
+            c.etag.clone()
+        } else {
+            None
+        }
+    });
+
     let fetch_url = theme_registry_fetch_url(registry_url);
-    let fetch_result = ureq::get(&fetch_url)
+
+    let mut request = ureq::get(&fetch_url)
         .set("Accept", "application/json")
         .set("Cache-Control", "no-cache")
-        .set("Pragma", "no-cache")
-        .call();
+        .set("Pragma", "no-cache");
 
-    let response = match fetch_result {
-        Ok(response) => response,
-        Err(error) => {
-            if let Some(cached) = load_theme_store_cache() {
-                return Ok((cached, true));
+    if let Some(ref etag) = cached_etag {
+        request = request.set("If-None-Match", etag);
+    }
+
+    let fetch_result = request.call();
+
+    match fetch_result {
+        Ok(response) if response.status() == 304 => {
+            // Not modified — ureq 2.x returns Ok for any status < 400, so 304
+            // lands here (with an empty body) instead of in the Err arm. Fall
+            // back to the cache and refresh its timestamp.
+            if let Some(mut cache) = cached {
+                if cache.registry_url == registry_url {
+                    cache.fetched_at = current_unix_timestamp();
+                    if let Some(path) = theme_store_cache_path() {
+                        if let Ok(bytes) = bincode::serialize(&cache) {
+                            let _ = std::fs::write(&path, bytes);
+                        }
+                    }
+                    return Ok((cache.themes, false));
+                }
             }
-            return Err(format!("Failed to fetch store themes: {error}"));
+            Err("Server returned 304 Not Modified but no matching local cache exists".to_string())
         }
-    };
+        Ok(response) => {
+            let etag = response.header("etag").map(|s| s.to_string());
+            let raw = response
+                .into_string()
+                .map_err(|error| format!("Invalid theme registry response: {error}"))?;
+            let parsed = parse_theme_store_payload(&raw, registry_url)?;
 
-    let raw = response
-        .into_string()
-        .map_err(|error| format!("Invalid theme registry response: {error}"))?;
-    let parsed = parse_theme_store_payload(&raw, registry_url)?;
+            save_theme_store_cache(&parsed, registry_url, etag);
 
-    save_theme_store_cache(&raw);
-
-    Ok((parsed, false))
+            Ok((parsed, false))
+        }
+        Err(error) => {
+            if let Some(cache) = cached.filter(|c| c.registry_url == registry_url) {
+                Ok((cache.themes, true))
+            } else {
+                Err(format!("Failed to fetch store themes: {error}"))
+            }
+        }
+    }
 }
 
 fn theme_registry_fetch_url(registry_url: &str) -> String {
@@ -98,39 +152,62 @@ fn theme_registry_fetch_url(registry_url: &str) -> String {
 fn theme_store_cache_path() -> Option<PathBuf> {
     let config_path = config::ensure_config_file().ok()?;
     let parent = config_path.parent()?;
-    Some(parent.join("theme_store_cache.json"))
+    Some(parent.join("theme_registry.cache"))
 }
 
-fn save_theme_store_cache(raw_json: &str) {
+fn save_theme_store_cache(
+    themes: &[ThemeStoreTheme],
+    registry_url: &str,
+    etag: Option<String>,
+) {
     let Some(path) = theme_store_cache_path() else {
         return;
     };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    // Store minified to save space.
-    let minified = serde_json::from_str::<serde_json::Value>(raw_json)
-        .ok()
-        .and_then(|v| serde_json::to_string(&v).ok())
-        .unwrap_or_else(|| raw_json.to_string());
-    if let Err(error) = std::fs::write(&path, minified) {
-        log::debug!(
-            "Failed to write theme store cache to {}: {}",
-            path.display(),
-            error
-        );
+
+    // Clean up legacy JSON cache to avoid confusion.
+    if let Some(legacy_path) = path.parent().map(|p| p.join("theme_store_cache.json")) {
+        if legacy_path.exists() {
+            let _ = std::fs::remove_file(&legacy_path);
+        }
+    }
+
+    let cache = ThemeRegistryCache {
+        version: CACHE_FORMAT_VERSION,
+        fetched_at: current_unix_timestamp(),
+        registry_url: registry_url.to_string(),
+        etag,
+        themes: themes.to_vec(),
+    };
+
+    match bincode::serialize(&cache) {
+        Ok(bytes) => {
+            if let Err(error) = std::fs::write(&path, bytes) {
+                log::debug!(
+                    "Failed to write theme store cache to {}: {}",
+                    path.display(),
+                    error
+                );
+            }
+        }
+        Err(error) => {
+            log::debug!("Failed to serialize theme store cache: {}", error);
+        }
     }
 }
 
-fn load_theme_store_cache() -> Option<Vec<ThemeStoreTheme>> {
+fn load_theme_store_cache() -> Option<ThemeRegistryCache> {
     let path = theme_store_cache_path()?;
-    let contents = std::fs::read_to_string(path).ok()?;
-    let registry_url = theme_store_registry_url();
-    let parsed = parse_theme_store_payload(&contents, &registry_url).ok()?;
-    if parsed.is_empty() {
+    let bytes = std::fs::read(path).ok()?;
+    let cache: ThemeRegistryCache = bincode::deserialize(&bytes).ok()?;
+
+    if cache.version != CACHE_FORMAT_VERSION {
         return None;
     }
-    Some(parsed)
+
+    Some(cache)
 }
 
 pub(crate) fn fetch_theme_for_deeplink_blocking(slug: &str) -> Result<ThemeStoreTheme, String> {

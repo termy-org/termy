@@ -52,11 +52,6 @@ use termy_terminal_ui::{
 use termy_terminal_ui::{TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_snapshot};
 use termy_toast::ToastManager;
 
-#[cfg(not(target_os = "windows"))]
-mod agents;
-#[cfg(target_os = "windows")]
-#[path = "agents_windows.rs"]
-mod agents;
 mod benchmark;
 mod command_palette;
 mod inline_input;
@@ -445,12 +440,6 @@ enum PaneResizeResult {
 
 #[derive(Clone, Copy, Debug)]
 struct VerticalTabStripResizeDragState;
-
-#[derive(Clone, Copy, Debug)]
-struct AgentSidebarResizeDragState;
-
-#[derive(Clone, Copy, Debug)]
-struct AgentGitPanelResizeDragState;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PendingCursorMoveClick {
@@ -1219,7 +1208,6 @@ struct TerminalTab {
     window_index: i32,
     panes: Vec<TerminalPane>,
     active_pane_id: String,
-    agent_thread_id: Option<String>,
     pinned: bool,
     manual_title: Option<String>,
     explicit_title: Option<String>,
@@ -1240,7 +1228,6 @@ struct TerminalTab {
     sticky_title_width: f32,
     display_width: f32,
     running_process: bool,
-    agent_command_has_started: bool,
     progress_state: ProgressState,
     command_lifecycle: CommandLifecycle,
 }
@@ -1607,16 +1594,6 @@ pub struct TerminalView {
     active_tab: usize,
     renaming_tab: Option<usize>,
     rename_input: InlineInputState,
-    renaming_agent_project_id: Option<String>,
-    agent_project_rename_input: InlineInputState,
-    renaming_agent_thread_id: Option<String>,
-    agent_thread_rename_input: InlineInputState,
-    agent_sidebar_search_active: bool,
-    agent_sidebar_search_input: InlineInputState,
-    agent_git_panel_input_mode: Option<agents::AgentGitPanelInputMode>,
-    agent_git_panel_input: InlineInputState,
-    agent_git_panel_branch_dropdown_open: bool,
-    agent_git_panel_poll_task: Option<gpui::Task<()>>,
     event_wakeup_tx: Sender<()>,
     focus_handle: FocusHandle,
     theme_id: String,
@@ -1631,19 +1608,7 @@ pub struct TerminalView {
     vertical_tabs: bool,
     vertical_tabs_width: f32,
     vertical_tabs_minimized: bool,
-    ai_features_enabled: bool,
-    agent_sidebar_enabled: bool,
-    agent_sidebar_width: f32,
-    agent_sidebar_open: bool,
-    agent_git_panel: agents::AgentGitPanelState,
-    agent_git_panel_width: f32,
-    agent_git_panel_resize_drag: Option<AgentGitPanelResizeDragState>,
     last_viewport_width: f32,
-    active_agent_project_id: Option<String>,
-    collapsed_agent_project_ids: HashSet<String>,
-    agent_projects: Vec<agents::AgentProject>,
-    agent_threads: Vec<agents::AgentThread>,
-    hovered_agent_thread_id: Option<String>,
     auto_hide_tabbar: bool,
     tab_bar_visibility: TabBarVisibility,
     new_tab_animation_tab_id: Option<TabId>,
@@ -1745,7 +1710,6 @@ pub struct TerminalView {
     hovered_pane_divider: Option<HoveredPaneDivider>,
     pane_resize_blocked: bool,
     vertical_tab_strip_resize_drag: Option<VerticalTabStripResizeDragState>,
-    agent_sidebar_resize_drag: Option<AgentSidebarResizeDragState>,
     terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache,
     /// Cached cell dimensions keyed by font-size bits.
     cell_size_cache: HashMap<u32, Size<Pixels>>,
@@ -2833,7 +2797,6 @@ impl TerminalView {
             window_index: 0,
             panes: vec![pane],
             active_pane_id: pane_id,
-            agent_thread_id: None,
             pinned: false,
             manual_title: None,
             explicit_title: predicted_prompt_title,
@@ -2848,7 +2811,6 @@ impl TerminalView {
             sticky_title_width,
             display_width,
             running_process: false,
-            agent_command_has_started: false,
             progress_state: ProgressState::default(),
             command_lifecycle: CommandLifecycle::default(),
         }
@@ -3304,7 +3266,7 @@ impl TerminalView {
         TerminalContentRect::new(
             0.0,
             0.0,
-            viewport_width - self.terminal_left_sidebar_width() - self.terminal_right_panel_width(),
+            viewport_width,
             viewport_height - self.terminal_content_top_inset(),
         )
     }
@@ -3966,16 +3928,6 @@ impl TerminalView {
             active_tab: 0,
             renaming_tab: None,
             rename_input: InlineInputState::new(String::new()),
-            renaming_agent_project_id: None,
-            agent_project_rename_input: InlineInputState::new(String::new()),
-            renaming_agent_thread_id: None,
-            agent_thread_rename_input: InlineInputState::new(String::new()),
-            agent_sidebar_search_active: false,
-            agent_sidebar_search_input: InlineInputState::new(String::new()),
-            agent_git_panel_input_mode: None,
-            agent_git_panel_input: InlineInputState::new(String::new()),
-            agent_git_panel_branch_dropdown_open: false,
-            agent_git_panel_poll_task: None,
             event_wakeup_tx,
             focus_handle,
             theme_id,
@@ -3992,23 +3944,7 @@ impl TerminalView {
                 config.vertical_tabs_width,
             ),
             vertical_tabs_minimized: config.vertical_tabs_minimized,
-            ai_features_enabled: config.ai_features_enabled,
-            agent_sidebar_enabled: if cfg!(target_os = "windows") {
-                false
-            } else {
-                config.ai_features_enabled && config.agent_sidebar_enabled
-            },
-            agent_sidebar_width: agents::clamp_agent_sidebar_width(config.agent_sidebar_width),
-            agent_sidebar_open: false,
-            agent_git_panel: agents::AgentGitPanelState::default(),
-            agent_git_panel_width: agents::AGENT_GIT_PANEL_DEFAULT_WIDTH,
-            agent_git_panel_resize_drag: None,
             last_viewport_width: 1280.0,
-            active_agent_project_id: None,
-            collapsed_agent_project_ids: HashSet::new(),
-            agent_projects: Vec::new(),
-            agent_threads: Vec::new(),
-            hovered_agent_thread_id: None,
             auto_hide_tabbar: config.auto_hide_tabbar,
             tab_bar_visibility: TabBarVisibility::FollowConfig,
             new_tab_animation_tab_id: None,
@@ -4110,7 +4046,6 @@ impl TerminalView {
             hovered_pane_divider: None,
             pane_resize_blocked: false,
             vertical_tab_strip_resize_drag: None,
-            agent_sidebar_resize_drag: None,
             terminal_scrollbar_marker_cache: TerminalScrollbarMarkerCache::default(),
             cell_size_cache: HashMap::new(),
             search_open: false,
@@ -4141,11 +4076,6 @@ impl TerminalView {
             termy_toast::warning(TMUX_UNSUPPORTED_WINDOWS_TOAST);
         }
         command_palette::prewarm_user_path_resolution();
-        if view.ai_features_enabled {
-            view.restore_persisted_agent_workspace();
-        } else {
-            view.reset_agent_workspace_runtime_state();
-        }
         let restored_native_workspace = if resolved_runtime_kind == RuntimeKind::Native {
             match view.restore_persisted_native_workspace(cx) {
                 Ok(restored) => restored,
@@ -4286,7 +4216,6 @@ impl TerminalView {
         let tab_close_visibility_changed = self.tab_close_visibility != config.tab_close_visibility;
         let tab_width_mode_changed = self.tab_width_mode != config.tab_width_mode;
         let vertical_tabs_changed = self.vertical_tabs != config.vertical_tabs;
-        let ai_features_enabled_changed = self.ai_features_enabled != config.ai_features_enabled;
         let vertical_tabs_width =
             tab_strip::clamp_expanded_vertical_tab_strip_width(config.vertical_tabs_width);
         let vertical_tabs_width_changed =
@@ -4307,28 +4236,6 @@ impl TerminalView {
         self.vertical_tabs = config.vertical_tabs;
         self.vertical_tabs_width = vertical_tabs_width;
         self.vertical_tabs_minimized = config.vertical_tabs_minimized;
-        self.ai_features_enabled = config.ai_features_enabled;
-        self.agent_sidebar_enabled = if cfg!(target_os = "windows") {
-            false
-        } else {
-            config.ai_features_enabled && config.agent_sidebar_enabled
-        };
-        self.agent_sidebar_width = agents::clamp_agent_sidebar_width(config.agent_sidebar_width);
-        if !self.ai_features_enabled {
-            self.reset_agent_workspace_runtime_state();
-        } else if ai_features_enabled_changed {
-            self.restore_persisted_agent_workspace();
-        } else if !self.agent_sidebar_enabled {
-            self.agent_sidebar_open = false;
-            self.agent_git_panel = agents::AgentGitPanelState::default();
-            self.agent_git_panel_input_mode = None;
-            self.agent_git_panel_input.clear();
-            self.agent_git_panel_branch_dropdown_open = false;
-            self.renaming_agent_project_id = None;
-            self.renaming_agent_thread_id = None;
-        } else if self.agent_projects.is_empty() && self.agent_threads.is_empty() {
-            self.agent_sidebar_open = true;
-        }
         self.auto_hide_tabbar = config.auto_hide_tabbar;
         self.show_termy_in_titlebar = config.show_termy_in_titlebar;
         self.show_debug_overlay = config.show_debug_overlay;
@@ -4499,7 +4406,6 @@ impl TerminalView {
         }
 
         if self.is_command_palette_open() {
-            self.reset_agent_command_palette_mode_if_disabled();
             self.refresh_command_palette_matches(true, cx);
         }
 
@@ -4644,7 +4550,6 @@ impl TerminalView {
         let mut should_redraw = false;
         let mut should_quit = false;
         let mut terminal_events_remain = false;
-        let mut agent_tabs_to_close: Vec<TabId> = Vec::new();
         let active_tab = self.active_tab;
         let mut reply_host = GpuiClipboardReplyHost::from_cx(cx);
         self.record_benchmark_terminal_event_drain_pass();
@@ -4682,16 +4587,8 @@ impl TerminalView {
                             }
                         }
                         TerminalEvent::Title(title) => {
-                            let was_running = self.tabs[index].agent_command_has_started
-                                && self.tabs[index].running_process;
                             if pane_is_active && self.apply_terminal_title(index, &title, cx) {
                                 should_redraw = true;
-                            }
-                            if was_running
-                                && !self.tabs[index].running_process
-                                && self.tabs[index].agent_thread_id.is_some()
-                            {
-                                agent_tabs_to_close.push(self.tabs[index].id);
                             }
                         }
                         TerminalEvent::ResetTitle => {
@@ -4777,13 +4674,6 @@ impl TerminalView {
 
         if terminal_events_remain {
             let _ = self.event_wakeup_tx.try_send(());
-        }
-
-        for tab_id in agent_tabs_to_close {
-            if let Some(tab_index) = self.tab_index_by_id(tab_id) {
-                self.close_tab(tab_index, cx);
-                should_redraw = true;
-            }
         }
 
         if should_quit {

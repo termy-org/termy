@@ -120,7 +120,6 @@ impl TerminalTab {
                 .or_else(|| panes.first().map(|pane| pane.id.clone()))
                 .unwrap_or_default(),
             panes,
-            agent_thread_id: None,
             pinned: false,
             manual_title: None,
             explicit_title: None,
@@ -135,7 +134,6 @@ impl TerminalTab {
             sticky_title_width,
             display_width,
             running_process: false,
-            agent_command_has_started: false,
             progress_state: ProgressState::default(),
             command_lifecycle: CommandLifecycle::default(),
         }

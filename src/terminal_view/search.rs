@@ -92,16 +92,6 @@ impl TerminalView {
         if self.renaming_tab.is_some() {
             self.cancel_rename_tab(cx);
         }
-        if self.renaming_agent_project_id.is_some() {
-            self.cancel_rename_agent_project(cx);
-        }
-        if self.agent_git_panel_input_mode.is_some() {
-            self.cancel_agent_git_panel_input(cx);
-        }
-        if self.agent_sidebar_search_active {
-            self.agent_sidebar_search_active = false;
-        }
-        self.renaming_agent_thread_id = None;
 
         self.search_open = true;
         self.search_state.open();

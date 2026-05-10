@@ -137,7 +137,6 @@ fn render_keybindings_doc() -> String {
 
     output.push_str("`secondary` maps to `cmd` on macOS and `ctrl` on non-macOS platforms.\n\n");
     output.push_str("Notes:\n\n");
-    output.push_str("- `toggle_agent_sidebar` is currently unavailable on Windows. On macOS/Linux it only works when `ai_features_enabled = true` and `agent_sidebar_enabled = true`; enable them in Settings > Tabs or in `~/.config/termy/config.txt`.\n");
     output.push_str("- `toggle_vertical_tab_sidebar` only works when `vertical_tabs = true`; enable it in Settings > Tabs or in `~/.config/termy/config.txt`.\n\n");
 
     output.push_str("## Config Syntax\n\n");
@@ -386,9 +385,6 @@ mod tests {
     #[test]
     fn keybindings_doc_notes_disabled_sidebar_shortcuts() {
         let out = render_keybindings_doc();
-        assert!(out.contains("currently unavailable on Windows"));
-        assert!(out.contains("ai_features_enabled = true"));
-        assert!(out.contains("agent_sidebar_enabled = true"));
         assert!(out.contains("vertical_tabs = true"));
     }
 

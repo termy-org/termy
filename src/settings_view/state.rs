@@ -200,6 +200,45 @@ impl SettingsWindow {
         root_setting_default_value(&defaults, setting)
     }
 
+    pub(super) fn root_setting_to_editable_field(id: RootSettingId) -> Option<EditableField> {
+        match id {
+            RootSettingId::Theme => Some(EditableField::Theme),
+            RootSettingId::FontFamily => Some(EditableField::FontFamily),
+            RootSettingId::FontSize => Some(EditableField::FontSize),
+            RootSettingId::LineHeight => Some(EditableField::LineHeight),
+            RootSettingId::PaddingX => Some(EditableField::PaddingX),
+            RootSettingId::PaddingY => Some(EditableField::PaddingY),
+            RootSettingId::BackgroundOpacity => Some(EditableField::BackgroundOpacity),
+            RootSettingId::Shell => Some(EditableField::Shell),
+            RootSettingId::Term => Some(EditableField::Term),
+            RootSettingId::Colorterm => Some(EditableField::Colorterm),
+            RootSettingId::TmuxBinary => Some(EditableField::TmuxBinary),
+            RootSettingId::ScrollbackHistory => Some(EditableField::ScrollbackHistory),
+            RootSettingId::InactiveTabScrollback => Some(EditableField::InactiveTabScrollback),
+            RootSettingId::MouseScrollMultiplier => Some(EditableField::ScrollMultiplier),
+            RootSettingId::CursorStyle => Some(EditableField::CursorStyle),
+            RootSettingId::ScrollbarVisibility => Some(EditableField::ScrollbarVisibility),
+            RootSettingId::ScrollbarStyle => Some(EditableField::ScrollbarStyle),
+            RootSettingId::PaneFocusEffect => Some(EditableField::PaneFocusEffect),
+            RootSettingId::PaneFocusStrength => Some(EditableField::PaneFocusStrength),
+            RootSettingId::TabTitleFallback => Some(EditableField::TabFallbackTitle),
+            RootSettingId::TabTitlePriority => Some(EditableField::TabTitlePriority),
+            RootSettingId::TabTitleMode => Some(EditableField::TabTitleMode),
+            RootSettingId::TabTitleExplicitPrefix => Some(EditableField::TabTitleExplicitPrefix),
+            RootSettingId::TabTitlePromptFormat => Some(EditableField::TabTitlePromptFormat),
+            RootSettingId::TabTitleCommandFormat => Some(EditableField::TabTitleCommandFormat),
+            RootSettingId::TabCloseVisibility => Some(EditableField::TabCloseVisibility),
+            RootSettingId::TabWidthMode => Some(EditableField::TabWidthMode),
+            RootSettingId::VerticalTabsWidth => Some(EditableField::VerticalTabsWidth),
+            RootSettingId::WorkingDir => Some(EditableField::WorkingDirectory),
+            RootSettingId::WorkingDirFallback => Some(EditableField::WorkingDirFallback),
+            RootSettingId::NotificationMinDuration => Some(EditableField::NotificationMinDuration),
+            RootSettingId::WindowWidth => Some(EditableField::WindowWidth),
+            RootSettingId::WindowHeight => Some(EditableField::WindowHeight),
+            _ => None,
+        }
+    }
+
     fn root_setting_section(section: SettingsSection) -> Option<CoreSettingsSection> {
         match section {
             SettingsSection::Appearance => Some(CoreSettingsSection::Appearance),

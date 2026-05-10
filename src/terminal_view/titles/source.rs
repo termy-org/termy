@@ -306,9 +306,6 @@ impl TerminalView {
                 }
                 ExplicitTitlePayload::Command { title, command } => {
                     self.tabs[index].running_process = true;
-                    if self.tabs[index].agent_thread_id.is_some() {
-                        self.tabs[index].agent_command_has_started = true;
-                    }
                     self.tabs[index].current_command = Some(command);
                     let tab_id = self.tabs[index].id;
                     self.schedule_delayed_command_title(tab_id, title, COMMAND_TITLE_DELAY_MS, cx);

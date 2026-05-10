@@ -1,5 +1,5 @@
 use crate::{
-    AiProvider, AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle,
+    AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle,
     DEFAULT_LINE_HEIGHT, PaneFocusEffect, Rgb8, RootSettingId, RootSettingValueKind,
     TabCloseVisibility, TabTitleMode, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
     TerminalScrollbarVisibility, WorkingDirFallback, root_setting_specs,
@@ -315,6 +315,7 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::NativeBufferPersistence => Some(config.native_buffer_persistence),
         RootSettingId::ShowDebugOverlay => Some(config.show_debug_overlay),
         RootSettingId::SimpleMode => Some(config.simple_mode),
+        RootSettingId::OnboardingComplete => Some(config.onboarding_complete),
         RootSettingId::TmuxShowActivePaneBorder => Some(config.tmux_show_active_pane_border),
         RootSettingId::WarnOnQuit => Some(config.warn_on_quit),
         RootSettingId::WarnOnQuitWithRunningProcess => {
@@ -324,8 +325,6 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::TabSwitchModifierHints => Some(config.tab_switch_modifier_hints),
         RootSettingId::VerticalTabs => Some(config.vertical_tabs),
         RootSettingId::VerticalTabsMinimized => Some(config.vertical_tabs_minimized),
-        RootSettingId::AiFeaturesEnabled => Some(config.ai_features_enabled),
-        RootSettingId::AgentSidebarEnabled => Some(config.agent_sidebar_enabled),
         RootSettingId::AutoHideTabbar => Some(config.auto_hide_tabbar),
         RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar),
         RootSettingId::CursorBlink => Some(config.cursor_blink),
@@ -535,21 +534,6 @@ fn runtime_env_options_parse() {
     assert_eq!(config.shell.as_deref(), Some("/bin/zsh"));
     assert_eq!(config.working_dir_fallback, WorkingDirFallback::Process);
     assert!(config.colorterm.is_none());
-}
-
-#[test]
-fn ai_provider_and_keys_parse() {
-    let config = parse(
-        "ai_provider = gemini\n\
-         openai_api_key = sk-openai\n\
-         gemini_api_key = sk-gemini\n\
-         openai_model = gemini-2.0-flash\n",
-    );
-
-    assert_eq!(config.ai_provider, AiProvider::Gemini);
-    assert_eq!(config.openai_api_key.as_deref(), Some("sk-openai"));
-    assert_eq!(config.gemini_api_key.as_deref(), Some("sk-gemini"));
-    assert_eq!(config.openai_model.as_deref(), Some("gemini-2.0-flash"));
 }
 
 #[test]

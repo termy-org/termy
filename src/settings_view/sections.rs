@@ -15,7 +15,7 @@ static LOGGED_MISSING_METADATA_KEYS: LazyLock<Mutex<HashSet<&'static str>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
 impl SettingsWindow {
-    fn setting_metadata_or_fallback(key: &'static str) -> &'static SettingMetadata {
+    pub(super) fn setting_metadata_or_fallback(key: &'static str) -> &'static SettingMetadata {
         if let Some(metadata) = Self::setting_metadata(key) {
             return metadata;
         }
@@ -28,40 +28,6 @@ impl SettingsWindow {
         }
 
         &FALLBACK_SETTING_METADATA
-    }
-
-    fn render_root_bool_setting_row(
-        &mut self,
-        setting_key: &'static str,
-        toggle_id: &'static str,
-        setting: RootSettingId,
-        checked: bool,
-        success_message: &'static str,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let metadata = Self::setting_metadata_or_fallback(setting_key);
-        self.render_setting_row(
-            setting_key,
-            toggle_id,
-            metadata.title,
-            metadata.description,
-            checked,
-            cx,
-            move |view, window, cx| {
-                let next = !checked;
-                match config::set_root_setting(setting, &next.to_string()) {
-                    Ok(()) => {
-                        let _ = view.reload_config_if_changed(cx);
-                        termy_toast::success(success_message);
-                        if setting == RootSettingId::SimpleMode && next {
-                            window.remove_window();
-                        }
-                        cx.notify();
-                    }
-                    Err(error) => termy_toast::error(error),
-                }
-            },
-        )
     }
 
     pub(super) fn render_content(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -601,8 +567,6 @@ impl SettingsWindow {
         let show_switch_hints = self.config.tab_switch_modifier_hints;
         let vertical_tabs = self.config.vertical_tabs;
         let vertical_tabs_minimized = self.config.vertical_tabs_minimized;
-        let ai_features_enabled = self.config.ai_features_enabled;
-        let agent_sidebar_enabled = self.config.agent_sidebar_enabled;
         let auto_hide_tabbar = self.config.auto_hide_tabbar;
         let close_visibility_meta = Self::setting_metadata_or_fallback("tab_close_visibility");
         let width_mode_meta = Self::setting_metadata_or_fallback("tab_width_mode");
@@ -657,27 +621,6 @@ impl SettingsWindow {
                 cx,
             ),
         ];
-
-        if !cfg!(target_os = "windows") {
-            rows.push(self.render_root_bool_setting_row(
-                "ai_features_enabled",
-                "ai_features_enabled-toggle",
-                RootSettingId::AiFeaturesEnabled,
-                ai_features_enabled,
-                "Saved",
-                cx,
-            ));
-            if ai_features_enabled {
-                rows.push(self.render_root_bool_setting_row(
-                    "agent_sidebar_enabled",
-                    "agent_sidebar_enabled-toggle",
-                    RootSettingId::AgentSidebarEnabled,
-                    agent_sidebar_enabled,
-                    "Saved",
-                    cx,
-                ));
-            }
-        }
 
         rows.push(self.render_root_bool_setting_row(
             "auto_hide_tabbar",
@@ -1170,8 +1113,8 @@ impl SettingsWindow {
                             .gap_2()
                             .child(
                                 div()
-                                    .h(px(32.0))
-                                    .px_3()
+                                    .h(px(24.0))
+                                    .px_2()
                                     .rounded(px(SETTINGS_BUTTON_RADIUS))
                                     .border_1()
                                     .border_color(status_border)
@@ -1191,13 +1134,13 @@ impl SettingsWindow {
                                         "theme-store-uninstall-{}",
                                         theme.slug
                                     )))
-                                    .h(px(32.0))
+                                    .h(px(28.0))
                                     .px_3()
                                     .rounded(px(SETTINGS_BUTTON_RADIUS))
                                     .border_1()
                                     .border_color(button_border)
                                     .bg(bg_input)
-                                    .text_sm()
+                                    .text_xs()
                                     .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(text_secondary)
                                     .cursor_pointer()
@@ -1220,22 +1163,22 @@ impl SettingsWindow {
                                 theme.slug
                             )))
                             .mt_auto()
-                            .h(px(32.0))
+                            .h(px(28.0))
                             .px_3()
                             .rounded(px(SETTINGS_BUTTON_RADIUS))
                             .border_1()
                             .border_color(button_border)
                             .bg(install_bg)
-                            .text_sm()
+                            .text_xs()
                             .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(text_secondary)
-                            .whitespace_nowrap()
-                            .cursor_pointer()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
-                            .child(action_label)
+                                    .text_color(text_secondary)
+                                    .whitespace_nowrap()
+                                    .cursor_pointer()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
+                                    .child(action_label)
                             .on_click(cx.listener(move |view, _, _, cx| {
                                 view.confirm_install_theme_store_theme(install_theme.clone(), cx);
                             }))
@@ -1244,10 +1187,9 @@ impl SettingsWindow {
 
                     theme_cards.push(
                         div()
-                            .w(px(260.0))
-                            .min_w(px(260.0))
-                            .max_w(px(260.0))
-                            .min_h(px(178.0))
+                            .w(px(228.0))
+                            .min_w(px(228.0))
+                            .max_w(px(228.0))
                             .bg(bg_card)
                             .border_1()
                             .border_color(if is_installed {
@@ -1255,23 +1197,24 @@ impl SettingsWindow {
                             } else {
                                 border_color
                             })
+                            .rounded(px(6.0))
                             .overflow_hidden()
                             .flex()
                             .flex_col()
                             .hover(move |s| s.bg(bg_input).border_color(active_border))
-                            .child(div().h(px(3.0)).w_full().bg(top_edge))
+                            .child(div().h(px(2.0)).w_full().bg(top_edge))
                             .child(
                                 div()
-                                    .p_4()
+                                    .p_3()
                                     .flex()
                                     .flex_col()
-                                    .gap_3()
+                                    .gap_2()
                                     .child(
                                         div()
                                             .flex()
                                             .justify_between()
                                             .items_start()
-                                            .gap_3()
+                                            .gap_2()
                                             .child(
                                                 div()
                                                     .min_w(px(0.0))
@@ -1296,7 +1239,7 @@ impl SettingsWindow {
                                             )
                                             .child(
                                                 div()
-                                                    .h(px(24.0))
+                                                    .h(px(20.0))
                                                     .px_2()
                                                     .rounded(px(SETTINGS_INPUT_RADIUS))
                                                     .bg(bg_input)
@@ -1307,15 +1250,13 @@ impl SettingsWindow {
                                                     .whitespace_nowrap()
                                                     .flex()
                                                     .items_center()
-                                                    .child(format!("v{version_label}")),
+                                                                    .child(format!("v{version_label}")),
                                             ),
                                     )
                                     .child(
                                         div()
                                             .text_xs()
                                             .text_color(text_muted)
-                                            .min_h(px(42.0))
-                                            .max_h(px(42.0))
                                             .overflow_hidden()
                                             .child(description),
                                     )

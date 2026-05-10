@@ -366,19 +366,18 @@ fn pane_render_cells_match_dimensions(cells: &PaneRenderCells, cols: usize, rows
 }
 
 fn merge_pane_render_rows(
-    existing: &PaneRenderCells,
+    mut existing: PaneRenderCells,
     rows: usize,
     cols: usize,
     updates: Vec<(usize, usize, CellRenderInfo)>,
 ) -> PaneRenderCells {
     if updates.is_empty() {
-        return existing.clone();
+        return existing;
     }
 
-    // Clone the outer vec of Arc pointers (cheap refcount bumps), then use
-    // Arc::make_mut on touched rows to avoid cloning the inner Vec when the
-    // Arc has a single owner.
-    let mut merged_rows: Vec<PaneRenderRow> = existing.as_ref().clone();
+    // Use Arc::make_mut on the outer Arc to avoid cloning the outer Vec when
+    // the caller is the sole owner (typical case during partial updates).
+    let merged_rows = Arc::make_mut(&mut existing);
     let mut any_touched = false;
 
     for (row, col, cell) in updates {
@@ -390,10 +389,10 @@ fn merge_pane_render_rows(
     }
 
     if !any_touched {
-        return existing.clone();
+        return existing;
     }
 
-    Arc::new(merged_rows)
+    existing
 }
 
 fn command_palette_backdrop_transform() -> CellColorTransform {
@@ -514,7 +513,7 @@ impl TerminalView {
             self.update_banner_visible(),
             self.vertical_tabs,
             self.should_render_tab_strip_chrome(),
-            self.terminal_left_sidebar_width(),
+            0.0,
         )
     }
     fn pane_render_cache_key(
@@ -782,7 +781,7 @@ impl TerminalView {
 
         match result {
             Some((patched_cell_count, updates)) => {
-                *cells = merge_pane_render_rows(cells, rows, cols, updates);
+                *cells = merge_pane_render_rows(std::mem::take(cells), rows, cols, updates);
                 (patched_cell_count, false)
             }
             None => (0, false),
@@ -1450,9 +1449,9 @@ impl TerminalView {
                 }
             };
 
-            // Subtle, glassy background with animation
+            // Solid background so toasts remain readable over transparent terminals
             let mut bg = colors.background;
-            bg.a = 0.88 * opacity;
+            bg.a = 1.0 * opacity;
             let mut border = colors.foreground;
             border.a = 0.08 * opacity;
             let mut text = colors.foreground;
@@ -2718,8 +2717,6 @@ impl Render for TerminalView {
         .flatten();
         let vertical_tab_strip = (self.vertical_tabs && show_tab_strip_chrome)
             .then(|| self.render_vertical_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
-        let agent_sidebar = self.render_agent_sidebar(cx);
-        let agent_git_panel = self.render_agent_git_panel(cx);
         #[cfg(target_os = "macos")]
         let update_banner_layout = self.update_banner_layout();
 
@@ -2962,7 +2959,6 @@ impl Render for TerminalView {
                     })
                     .on_action(cx.listener(Self::handle_toggle_tab_bar_visibility_action))
                     .on_action(cx.listener(Self::handle_toggle_vertical_tab_sidebar_action))
-                    .on_action(cx.listener(Self::handle_toggle_agent_sidebar_action))
                     .on_action(cx.listener(Self::handle_inline_backspace_action))
                     .on_action(cx.listener(Self::handle_inline_delete_action))
                     .on_action(cx.listener(Self::handle_inline_move_left_action))
@@ -2990,7 +2986,6 @@ impl Render for TerminalView {
                             .w_full()
                             .h_full()
                             .children(vertical_tab_strip)
-                            .children(agent_sidebar)
                             .child(
                                 div()
                                     .id("terminal-pane")
@@ -3058,8 +3053,7 @@ impl Render for TerminalView {
                                             .children(ime_preedit_overlay)
                                             .children(terminal_scrollbar_overlay),
                                     ),
-                            )
-                            .children(agent_git_panel),
+                            ),
                     ),
             )
             .child(overlay_view);
@@ -3310,9 +3304,10 @@ mod tests {
             test_render_cell(1, 0, 'b'),
             test_render_cell(2, 0, 'c'),
         ]]);
+        let existing_ptr = Arc::as_ptr(&existing);
 
-        let merged = merge_pane_render_rows(&existing, 1, 3, Vec::new());
-        assert!(Arc::ptr_eq(&existing, &merged));
+        let merged = merge_pane_render_rows(existing, 1, 3, Vec::new());
+        assert_eq!(Arc::as_ptr(&merged), existing_ptr);
     }
 
     #[test]
@@ -3324,7 +3319,7 @@ mod tests {
         ]);
         let updates = vec![(1, 1, test_render_cell(1, 1, 'x'))];
 
-        let merged = merge_pane_render_rows(&existing, 3, 2, updates);
+        let merged = merge_pane_render_rows(existing.clone(), 3, 2, updates);
 
         assert!(Arc::ptr_eq(&existing[0], &merged[0]));
         assert!(!Arc::ptr_eq(&existing[1], &merged[1]));
@@ -3346,7 +3341,7 @@ mod tests {
             (0, 0, test_render_cell(0, 0, 'z')),
         ];
 
-        let merged = merge_pane_render_rows(&existing, 2, 2, updates);
+        let merged = merge_pane_render_rows(existing, 2, 2, updates);
 
         assert_eq!(merged[0][0].char, 'z');
         assert_eq!(merged[1][1].char, 'y');

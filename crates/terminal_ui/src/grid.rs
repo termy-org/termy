@@ -429,9 +429,6 @@ struct TerminalGridPaintCache {
     /// Cached Font objects, rebuilt only when style_key changes.
     cached_font_normal: Option<Font>,
     cached_font_bold: Option<Font>,
-    /// Reusable scratch buffers for building row ops, avoiding per-row heap allocations.
-    scratch_bg_spans: Vec<BackgroundSpan>,
-    scratch_draw_ops: Vec<TextDrawOp>,
 }
 
 impl TerminalGridPaintCache {
@@ -1831,6 +1828,7 @@ impl TerminalGrid {
         Self::push_pending_text_batch(&mut current, ops);
     }
 
+    #[cfg(test)]
     fn rebuild_cached_row_ops_into(
         &self,
         row_cells: &[CellRenderInfo],
@@ -2164,11 +2162,7 @@ impl TerminalGrid {
         } else {
             None
         };
-        // Take scratch buffers out of cache so the closure can borrow cache fields independently.
-        let mut scratch_bg = std::mem::take(&mut cache.scratch_bg_spans);
-        let mut scratch_ops = std::mem::take(&mut cache.scratch_draw_ops);
-
-        // Build ops first using color_cache, then write to row_ops (field-split borrow).
+        // Build ops directly into row slots, avoiding per-row temporary allocations.
         let mut rebuild_row = |row: usize| {
             if row >= self.rows {
                 return;
@@ -2176,37 +2170,41 @@ impl TerminalGrid {
             // Read col range hint (Copy) before any mutable borrows.
             let dirty_col_range = cache.dirty_col_ranges.get(row).copied().flatten();
 
-            // Build the next ops, using color_cache (separate field from row_ops).
-            // Scratch buffers are reused across rows to avoid per-row heap allocations.
-            let mut next_row_ops = if let Some(row_cells) = self.cells.get(row) {
-                self.rebuild_cached_row_ops_into(
-                    row_cells.as_slice(),
-                    cursor_fg,
-                    highlight_fg,
-                    &mut cache.color_cache,
-                    &mut scratch_bg,
-                    &mut scratch_ops,
-                )
-            } else {
-                // Row is no longer present — clear stale ops.
-                CachedRowPaintOps::default()
-            };
-
-            // color_cache borrow ends here; now we can mutably borrow row_ops.
             let Some(row_slot) = cache.row_ops.get_mut(row) else {
                 return;
             };
+
+            if let Some(row_cells) = self.cells.get(row) {
+                row_slot.draw_ops.clear();
+                row_slot.background_spans.clear();
+                self.collect_row_draw_ops_into(
+                    row_cells.as_slice(),
+                    cursor_fg,
+                    highlight_fg,
+                    &mut row_slot.draw_ops,
+                );
+                self.build_row_background_spans_into(
+                    row_cells.as_slice(),
+                    &mut cache.color_cache,
+                    &mut row_slot.background_spans,
+                );
+                row_slot.shaped_lines.clear();
+                row_slot.shaped_lines.resize(row_slot.draw_ops.len(), None);
+            } else {
+                *row_slot = CachedRowPaintOps::default();
+                return;
+            }
 
             // 1. Try whole-row ShapedLine reuse: if the entire row's ops match a previous
             //    row, reuse all its ShapedLine objects (existing logic).
             let mut whole_row_reused = false;
             if let Some(previous_row_ops) = previous_row_ops.as_ref()
                 && let Some(previous_index) =
-                    find_matching_previous_row_ops_index(row, &next_row_ops, previous_row_ops)
+                    find_matching_previous_row_ops_index(row, row_slot, previous_row_ops)
             {
                 let previous = &previous_row_ops[previous_index];
-                if previous.shaped_lines.len() == next_row_ops.shaped_lines.len() {
-                    next_row_ops.shaped_lines = previous.shaped_lines.clone();
+                if previous.shaped_lines.len() == row_slot.shaped_lines.len() {
+                    row_slot.shaped_lines.clone_from(&previous.shaped_lines);
                     whole_row_reused = true;
                 }
             }
@@ -2218,12 +2216,12 @@ impl TerminalGrid {
             if !whole_row_reused {
                 if let Some(dirty_range) = dirty_col_range {
                     if let Some(prev_row) = previous_row_ops.as_ref().and_then(|ops| ops.get(row)) {
-                        for (i, op) in next_row_ops.draw_ops.iter().enumerate() {
+                        for (i, op) in row_slot.draw_ops.iter().enumerate() {
                             let op_range = draw_op_col_range(op);
                             if !col_ranges_overlap(op_range, dirty_range) {
                                 if let Some(prev_op) = prev_row.draw_ops.get(i) {
                                     if text_draw_ops_match_without_row(op, prev_op) {
-                                        next_row_ops.shaped_lines[i] =
+                                        row_slot.shaped_lines[i] =
                                             prev_row.shaped_lines[i].clone();
                                     }
                                 }
@@ -2232,8 +2230,6 @@ impl TerminalGrid {
                     }
                 }
             }
-
-            *row_slot = next_row_ops;
         };
 
         let t0 = Instant::now();
@@ -2247,10 +2243,6 @@ impl TerminalGrid {
             }
         }
         add_span_row_ops_rebuild_us(t0.elapsed().as_micros() as u64);
-
-        // Return scratch buffers to cache for reuse next frame.
-        cache.scratch_bg_spans = scratch_bg;
-        cache.scratch_draw_ops = scratch_ops;
     }
 
     fn paint_with_row_cache(&self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {

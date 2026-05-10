@@ -1,4 +1,4 @@
-use gpui::{AnyElement, InteractiveElement, IntoElement, ParentElement, Rgba, Styled, div, px};
+use gpui::{AnyElement, CursorStyle, InteractiveElement, IntoElement, ParentElement, Rgba, Styled, div, px};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -274,6 +274,7 @@ pub fn render_vertical(
         .h(px(metrics.track_height))
         .rounded(px(style.track_radius.max(0.0)))
         .bg(style.track_color)
+        .cursor(CursorStyle::Arrow)
         .child(
             div()
                 .absolute()
@@ -283,6 +284,7 @@ pub fn render_vertical(
                 .h(px(metrics.thumb_height))
                 .rounded(px(style.thumb_radius.max(0.0)))
                 .bg(thumb_color)
+                .cursor_pointer()
                 .hover(move |style| style.bg(active_thumb_color)),
         )
         .children(marker_elements)

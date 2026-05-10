@@ -446,8 +446,7 @@ fn modified_special_keystroke_input(
             return match key {
                 "left" | "home" => Some(b"\x01"),
                 "right" | "end" => Some(b"\x05"),
-                "backspace" => Some(b"\x15"),
-                "delete" => Some(b"\x0b"),
+                "backspace" | "delete" => Some(b"\x15"),
                 _ => None,
             };
         }

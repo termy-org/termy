@@ -155,9 +155,6 @@ impl TerminalView {
                     cx.notify();
                 }
             }
-            CommandAction::ToggleAgentSidebar => {
-                self.toggle_agent_sidebar(cx);
-            }
             _ if shortcuts_suspended => {}
             CommandAction::OpenConfig
             | CommandAction::PrettifyConfig
@@ -314,15 +311,6 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::ToggleTabBarVisibility, true, window, cx);
-    }
-
-    pub(in super::super) fn handle_toggle_agent_sidebar_action(
-        &mut self,
-        _: &commands::ToggleAgentSidebar,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.execute_command_action(CommandAction::ToggleAgentSidebar, true, window, cx);
     }
 
     pub(in super::super) fn handle_new_tab_action(

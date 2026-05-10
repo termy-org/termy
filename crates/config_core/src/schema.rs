@@ -306,6 +306,7 @@ define_root_settings! {
     (NativeBufferPersistence, "native_buffer_persistence", [], Advanced, "STARTUP", "Native Buffer Persistence", "Replay saved buffer text when restoring native layouts", ["native", "buffer", "scrollback", "history", "restore"], RootSettingValueKind::Boolean, false),
     (ShowDebugOverlay, "show_debug_overlay", [], Advanced, "UI", "Show Debug Overlay", "Show FPS, CPU, and memory in the terminal corner", ["debug", "overlay", "fps", "cpu", "memory"], RootSettingValueKind::Boolean, false),
     (SimpleMode, "simple_mode", [], Advanced, "UI", "Simple Mode", "Open the config file instead of the Settings window and disable the command palette", ["simple", "mode", "settings", "config", "palette"], RootSettingValueKind::Boolean, false),
+    (OnboardingComplete, "onboarding_complete", [], Advanced, "ONBOARDING", "Onboarding Complete", "Whether the first-run welcome flow has been completed; set to false to see it again", ["onboarding", "welcome", "first run", "tutorial"], RootSettingValueKind::Boolean, false),
     (TmuxBinary, "tmux_binary", [], Terminal, "TMUX", "Tmux Binary", "tmux executable path or binary name", ["tmux", "binary", "path"], RootSettingValueKind::Text, false),
     (TmuxShowActivePaneBorder, "tmux_show_active_pane_border", [], Terminal, "TMUX", "Show Active Pane Border", "Show active tmux pane border highlight in managed sessions", ["tmux", "pane", "border", "highlight"], RootSettingValueKind::Boolean, false),
     (WorkingDir, "working_dir", [], Advanced, "STARTUP", "Working Directory", "Initial directory for new sessions", ["working directory", "cwd", "startup", "path"], RootSettingValueKind::Text, false),
@@ -325,9 +326,6 @@ define_root_settings! {
     (VerticalTabs, "vertical_tabs", [], Tabs, "TAB STRIP", "Vertical Tabs", "Move the tab strip into a left sidebar like cmux", ["tab", "tabs", "vertical", "sidebar", "left", "cmux"], RootSettingValueKind::Boolean, false),
     (VerticalTabsWidth, "vertical_tabs_width", [], Tabs, "TAB STRIP", "Vertical Tabs Width", "Saved width for the vertical tab sidebar in pixels", ["tab", "tabs", "vertical", "width", "sidebar"], RootSettingValueKind::Numeric, false),
     (VerticalTabsMinimized, "vertical_tabs_minimized", [], Tabs, "TAB STRIP", "Vertical Tabs Minimized", "Start vertical tabs in the collapsed state", ["tab", "tabs", "vertical", "minimized", "collapsed", "sidebar"], RootSettingValueKind::Boolean, false),
-    (AiFeaturesEnabled, "ai_features_enabled", ["agent_features_enabled"], Tabs, "AGENTS", "AI Features", "Enable or disable all AI and agent UI features", ["ai", "agent", "agents", "assistant", "sidebar", "threads", "picker"], RootSettingValueKind::Boolean, false),
-    (AgentSidebarEnabled, "agent_sidebar_enabled", [], Tabs, "AGENTS", "Agent Sidebar", "Enable the persisted agent projects and threads sidebar (currently unavailable on Windows)", ["agent", "agents", "sidebar", "threads", "projects", "cmux", "ai"], RootSettingValueKind::Boolean, false),
-    (AgentSidebarWidth, "agent_sidebar_width", [], Tabs, "AGENTS", "Agent Sidebar Width", "Width for the agent sidebar in pixels (currently unavailable on Windows)", ["agent", "agents", "sidebar", "width"], RootSettingValueKind::Numeric, false),
     (AutoHideTabbar, "auto_hide_tabbar", [], Tabs, "TAB STRIP", "Auto-hide Tab Bar", "Hide the tab bar when only one tab is open", ["tab", "tabs", "hide", "auto", "single", "tabbar"], RootSettingValueKind::Boolean, false),
     (ShowTermyInTitlebar, "show_termy_in_titlebar", [], Tabs, "TITLE BAR", "Show Termy In Titlebar", "Show or hide the termy branding in the titlebar", ["titlebar", "branding", "tabs"], RootSettingValueKind::Boolean, false),
     (Shell, "shell", [], Terminal, "SHELL", "Shell", "Executable used for new sessions", ["shell", "bash", "zsh", "fish"], RootSettingValueKind::Text, false),
@@ -426,6 +424,7 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         }
         RootSettingId::ShowDebugOverlay => Some(config.show_debug_overlay.to_string()),
         RootSettingId::SimpleMode => Some(config.simple_mode.to_string()),
+        RootSettingId::OnboardingComplete => Some(config.onboarding_complete.to_string()),
         RootSettingId::TmuxBinary => Some(config.tmux_binary.clone()),
         RootSettingId::TmuxShowActivePaneBorder => {
             Some(config.tmux_show_active_pane_border.to_string())
@@ -480,9 +479,6 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::VerticalTabs => Some(config.vertical_tabs.to_string()),
         RootSettingId::VerticalTabsWidth => Some(config.vertical_tabs_width.to_string()),
         RootSettingId::VerticalTabsMinimized => Some(config.vertical_tabs_minimized.to_string()),
-        RootSettingId::AiFeaturesEnabled => Some(config.ai_features_enabled.to_string()),
-        RootSettingId::AgentSidebarEnabled => Some(config.agent_sidebar_enabled.to_string()),
-        RootSettingId::AgentSidebarWidth => Some(config.agent_sidebar_width.to_string()),
         RootSettingId::AutoHideTabbar => Some(config.auto_hide_tabbar.to_string()),
         RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar.to_string()),
         RootSettingId::Shell => config.shell.clone(),
