@@ -548,6 +548,117 @@ impl TerminalView {
         }
     }
 
+    pub(crate) fn close_native_pane_by_id(
+        &mut self,
+        tab_id: TabId,
+        pane_id: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.runtime_kind() != RuntimeKind::Native {
+            return false;
+        }
+        let Some(tab_index) = self.tab_index_by_id(tab_id) else {
+            return false;
+        };
+        let Some(tab) = self.tabs.get(tab_index) else {
+            return false;
+        };
+        if tab.panes.len() <= 1 {
+            return false;
+        }
+        if !tab.panes.iter().any(|pane| pane.id == pane_id) {
+            return false;
+        }
+
+        let pane_id = pane_id.to_string();
+        let _ = self
+            .release_forwarded_mouse_presses_for_panes(std::slice::from_ref(&pane_id));
+        self.clear_native_zoom_snapshot_for_tab_id(tab_id);
+
+        if self.ensure_native_layout_tree_for_tab_id(tab_id)
+            && let Some(tree) = self.native_pane_layout_trees.remove(&tab_id)
+        {
+            let (next_root, next_focus_id, removed) =
+                Self::native_remove_leaf_from_tree(tree.root, pane_id.as_str());
+            if removed && let Some(next_root) = next_root {
+                self.native_pane_layout_trees
+                    .insert(tab_id, NativePaneLayoutTree { root: next_root });
+                let (cols, rows) = if let Some(tab) = self.tabs.get_mut(tab_index) {
+                    let prev_cols = tab
+                        .panes
+                        .iter()
+                        .map(|pane| pane.left.saturating_add(pane.width))
+                        .max()
+                        .unwrap_or(1)
+                        .max(1);
+                    let prev_rows = tab
+                        .panes
+                        .iter()
+                        .map(|pane| pane.top.saturating_add(pane.height))
+                        .max()
+                        .unwrap_or(1)
+                        .max(1);
+                    tab.panes.retain(|pane| pane.id != pane_id);
+                    if tab.active_pane_id == pane_id || !tab.has_active_pane() {
+                        tab.active_pane_id = next_focus_id
+                            .or_else(|| tab.panes.first().map(|pane| pane.id.clone()))
+                            .unwrap_or_default();
+                    }
+                    if tab.panes.len() == 1
+                        && let Some(remaining_pane) = tab.panes.first_mut()
+                    {
+                        remaining_pane.pane_zoom_steps = 0;
+                    }
+                    tab.assert_active_pane_invariant();
+                    (prev_cols, prev_rows)
+                } else {
+                    return false;
+                };
+
+                self.apply_native_layout_tree_to_tab(tab_id, cols, rows);
+                if tab_index == self.active_tab {
+                    self.clear_selection();
+                    self.clear_hovered_link();
+                    self.clear_terminal_scrollbar_marker_cache();
+                }
+                self.schedule_persist_native_workspace();
+                cx.notify();
+                return true;
+            }
+        }
+
+        let Some(tab) = self.tabs.get_mut(tab_index) else {
+            return false;
+        };
+        let Some(removed_index) = tab.panes.iter().position(|pane| pane.id == pane_id) else {
+            return false;
+        };
+        let removed = tab.panes.remove(removed_index);
+        Self::native_close_expand_neighbors(&mut tab.panes, &removed);
+
+        if tab.active_pane_id == pane_id || !tab.has_active_pane() {
+            let next_index = removed_index.min(tab.panes.len().saturating_sub(1));
+            if let Some(next) = tab.panes.get(next_index) {
+                tab.active_pane_id = next.id.clone();
+            }
+        }
+        if tab.panes.len() == 1
+            && let Some(remaining_pane) = tab.panes.first_mut()
+        {
+            remaining_pane.pane_zoom_steps = 0;
+        }
+        tab.assert_active_pane_invariant();
+
+        if tab_index == self.active_tab {
+            self.clear_selection();
+            self.clear_hovered_link();
+            self.clear_terminal_scrollbar_marker_cache();
+        }
+        self.schedule_persist_native_workspace();
+        cx.notify();
+        true
+    }
+
     pub(crate) fn close_active_pane_or_tab(
         &mut self,
         window: &mut Window,
@@ -680,8 +791,12 @@ impl TerminalView {
 
     fn clear_native_zoom_snapshot_for_active_tab(&mut self) {
         if let Some(tab) = self.tabs.get(self.active_tab) {
-            self.native_pane_zoom_snapshots.remove(&tab.id);
+            self.clear_native_zoom_snapshot_for_tab_id(tab.id);
         }
+    }
+
+    fn clear_native_zoom_snapshot_for_tab_id(&mut self, tab_id: TabId) {
+        self.native_pane_zoom_snapshots.remove(&tab_id);
     }
 
     fn native_resize_active_pane(
