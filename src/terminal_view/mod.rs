@@ -4554,8 +4554,13 @@ impl TerminalView {
         let mut reply_host = GpuiClipboardReplyHost::from_cx(cx);
         self.record_benchmark_terminal_event_drain_pass();
 
-        let mut pending_tab_closures: Vec<TabId> = Vec::new();
+        let mut pending_tab_closures: HashSet<TabId> = HashSet::new();
         let mut pending_pane_closures: Vec<(TabId, String)> = Vec::new();
+        let mut simulated_tab_count = self.tabs.len();
+        let mut simulated_pane_counts = HashMap::new();
+        for tab in &self.tabs {
+            simulated_pane_counts.insert(tab.id, tab.panes.len());
+        }
 
         for tab_index in 0..self.tabs.len() {
             let tab_id = self.tabs[tab_index].id;
@@ -4580,23 +4585,16 @@ impl TerminalView {
                             }
                         }
                         TerminalEvent::Exit => {
-                            if Self::native_exit_should_quit_app(
-                                self.tabs.len(),
-                                self.tabs[tab_index].panes.len(),
-                            ) {
+                            let exit_should_quit = Self::schedule_native_exit(
+                                tab_id,
+                                pane_id.as_str(),
+                                &mut simulated_tab_count,
+                                &mut simulated_pane_counts,
+                                &mut pending_tab_closures,
+                                &mut pending_pane_closures,
+                            );
+                            if exit_should_quit {
                                 should_quit = true;
-                            } else if !pending_tab_closures.contains(&tab_id) {
-                                if self.tabs[tab_index].panes.len() <= 1 {
-                                    pending_tab_closures.push(tab_id);
-                                } else if !pending_pane_closures
-                                    .iter()
-                                    .any(|(pending_tab, pending_pane)| {
-                                        *pending_tab == tab_id
-                                            && pending_pane.as_str() == pane_id.as_str()
-                                    })
-                                {
-                                    pending_pane_closures.push((tab_id, pane_id.clone()));
-                                }
                             }
                             if tab_index == active_tab {
                                 should_redraw = true;
@@ -4698,7 +4696,7 @@ impl TerminalView {
         if should_quit {
             pending_tab_closures.clear();
         }
-        for tab_id in pending_tab_closures.drain(..) {
+        for tab_id in pending_tab_closures.drain() {
             if let Some(tab_index) = self.tab_index_by_id(tab_id) {
                 self.close_tab(tab_index, cx);
                 should_redraw = true;
@@ -4732,6 +4730,40 @@ impl TerminalView {
         tab_count == 1 && pane_count == 1
     }
 
+    fn schedule_native_exit(
+        tab_id: TabId,
+        pane_id: &str,
+        simulated_tab_count: &mut usize,
+        simulated_pane_counts: &mut HashMap<TabId, usize>,
+        pending_tab_closures: &mut HashSet<TabId>,
+        pending_pane_closures: &mut Vec<(TabId, String)>,
+    ) -> bool {
+        let simulated_pane_count = simulated_pane_counts
+            .get(&tab_id)
+            .copied()
+            .unwrap_or(0);
+        if Self::native_exit_should_quit_app(*simulated_tab_count, simulated_pane_count) {
+            return true;
+        }
+        if pending_tab_closures.contains(&tab_id) {
+            return false;
+        }
+        if simulated_pane_count <= 1 {
+            pending_tab_closures.insert(tab_id);
+            *simulated_tab_count = simulated_tab_count.saturating_sub(1);
+            simulated_pane_counts.insert(tab_id, 0);
+            return false;
+        }
+        if pending_pane_closures.iter().any(|(pending_tab, pending_pane)| {
+            *pending_tab == tab_id && pending_pane.as_str() == pane_id
+        }) {
+            return false;
+        }
+        pending_pane_closures.push((tab_id, pane_id.to_string()));
+        simulated_pane_counts.insert(tab_id, simulated_pane_count.saturating_sub(1));
+        false
+    }
+
     fn clear_selection(&mut self) -> bool {
         let anchor_changed = self.selection_anchor.take().is_some();
         let head_changed = self.selection_head.take().is_some();
@@ -4759,6 +4791,7 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn terminal_overlay_geometry_defaults_to_square_edges() {
@@ -4790,6 +4823,68 @@ mod tests {
         assert!(!TerminalView::native_exit_should_quit_app(1, 2));
         assert!(!TerminalView::native_exit_should_quit_app(2, 1));
         assert!(!TerminalView::native_exit_should_quit_app(0, 0));
+    }
+
+    #[test]
+    fn native_exit_schedules_tab_close_after_two_panes_exit() {
+        let tab_id = 1;
+        let mut pending_tab_closures = HashSet::new();
+        let mut pending_pane_closures = Vec::new();
+        let mut simulated_tab_count = 2;
+        let mut simulated_pane_counts = HashMap::from([(tab_id, 2), (2, 1)]);
+
+        let should_quit = TerminalView::schedule_native_exit(
+            tab_id,
+            "%native-1",
+            &mut simulated_tab_count,
+            &mut simulated_pane_counts,
+            &mut pending_tab_closures,
+            &mut pending_pane_closures,
+        );
+        assert!(!should_quit);
+        assert_eq!(pending_pane_closures.len(), 1);
+
+        let should_quit = TerminalView::schedule_native_exit(
+            tab_id,
+            "%native-2",
+            &mut simulated_tab_count,
+            &mut simulated_pane_counts,
+            &mut pending_tab_closures,
+            &mut pending_pane_closures,
+        );
+        assert!(!should_quit);
+        assert!(pending_tab_closures.contains(&tab_id));
+        assert_eq!(simulated_tab_count, 1);
+    }
+
+    #[test]
+    fn native_exit_quits_after_two_single_pane_tabs_exit() {
+        let mut pending_tab_closures = HashSet::new();
+        let mut pending_pane_closures = Vec::new();
+        let mut simulated_tab_count = 2;
+        let mut simulated_pane_counts = HashMap::from([(1, 1), (2, 1)]);
+
+        let should_quit = TerminalView::schedule_native_exit(
+            1,
+            "%native-1",
+            &mut simulated_tab_count,
+            &mut simulated_pane_counts,
+            &mut pending_tab_closures,
+            &mut pending_pane_closures,
+        );
+        assert!(!should_quit);
+        assert!(pending_tab_closures.contains(&1));
+        assert_eq!(simulated_tab_count, 1);
+
+        let should_quit = TerminalView::schedule_native_exit(
+            2,
+            "%native-2",
+            &mut simulated_tab_count,
+            &mut simulated_pane_counts,
+            &mut pending_tab_closures,
+            &mut pending_pane_closures,
+        );
+        assert!(should_quit);
     }
 
     fn native_test_leaf(pane_id: &str) -> NativePaneLayoutNode {

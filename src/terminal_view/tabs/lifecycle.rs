@@ -584,6 +584,20 @@ impl TerminalView {
                 self.native_pane_layout_trees
                     .insert(tab_id, NativePaneLayoutTree { root: next_root });
                 let (cols, rows) = if let Some(tab) = self.tabs.get_mut(tab_index) {
+                    let prev_cols = tab
+                        .panes
+                        .iter()
+                        .map(|pane| pane.left.saturating_add(pane.width))
+                        .max()
+                        .unwrap_or(1)
+                        .max(1);
+                    let prev_rows = tab
+                        .panes
+                        .iter()
+                        .map(|pane| pane.top.saturating_add(pane.height))
+                        .max()
+                        .unwrap_or(1)
+                        .max(1);
                     tab.panes.retain(|pane| pane.id != pane_id);
                     if tab.active_pane_id == pane_id || !tab.has_active_pane() {
                         tab.active_pane_id = next_focus_id
@@ -596,21 +610,7 @@ impl TerminalView {
                         remaining_pane.pane_zoom_steps = 0;
                     }
                     tab.assert_active_pane_invariant();
-                    let cols = tab
-                        .panes
-                        .iter()
-                        .map(|pane| pane.left.saturating_add(pane.width))
-                        .max()
-                        .unwrap_or(1)
-                        .max(1);
-                    let rows = tab
-                        .panes
-                        .iter()
-                        .map(|pane| pane.top.saturating_add(pane.height))
-                        .max()
-                        .unwrap_or(1)
-                        .max(1);
-                    (cols, rows)
+                    (prev_cols, prev_rows)
                 } else {
                     return false;
                 };
