@@ -4554,13 +4554,17 @@ impl TerminalView {
         let mut reply_host = GpuiClipboardReplyHost::from_cx(cx);
         self.record_benchmark_terminal_event_drain_pass();
 
-        for index in 0..self.tabs.len() {
-            let active_pane_id = self.tabs[index].active_pane_id.clone();
+        let mut pending_tab_closures: Vec<TabId> = Vec::new();
+        let mut pending_pane_closures: Vec<(TabId, String)> = Vec::new();
 
-            for pane_index in 0..self.tabs[index].panes.len() {
-                let pane_is_active =
-                    self.tabs[index].panes[pane_index].id.as_str() == active_pane_id.as_str();
-                let (events, has_more) = self.tabs[index].panes[pane_index]
+        for tab_index in 0..self.tabs.len() {
+            let tab_id = self.tabs[tab_index].id;
+            let active_pane_id = self.tabs[tab_index].active_pane_id.clone();
+
+            for pane_index in 0..self.tabs[tab_index].panes.len() {
+                let pane_id = self.tabs[tab_index].panes[pane_index].id.clone();
+                let pane_is_active = pane_id.as_str() == active_pane_id.as_str();
+                let (events, has_more) = self.tabs[tab_index].panes[pane_index]
                     .terminal
                     .drain_events(&mut reply_host);
                 if has_more {
@@ -4571,33 +4575,47 @@ impl TerminalView {
                 for event in events {
                     match event {
                         TerminalEvent::Wakeup | TerminalEvent::Bell => {
-                            if index == active_tab {
+                            if tab_index == active_tab {
                                 should_redraw = true;
                             }
                         }
                         TerminalEvent::Exit => {
                             if Self::native_exit_should_quit_app(
                                 self.tabs.len(),
-                                self.tabs[index].panes.len(),
+                                self.tabs[tab_index].panes.len(),
                             ) {
                                 should_quit = true;
+                            } else if !pending_tab_closures.contains(&tab_id) {
+                                if self.tabs[tab_index].panes.len() <= 1 {
+                                    pending_tab_closures.push(tab_id);
+                                } else if !pending_pane_closures
+                                    .iter()
+                                    .any(|(pending_tab, pending_pane)| {
+                                        *pending_tab == tab_id
+                                            && pending_pane.as_str() == pane_id.as_str()
+                                    })
+                                {
+                                    pending_pane_closures.push((tab_id, pane_id.clone()));
+                                }
                             }
-                            if index == active_tab {
+                            if tab_index == active_tab {
                                 should_redraw = true;
                             }
                         }
                         TerminalEvent::Title(title) => {
-                            if pane_is_active && self.apply_terminal_title(index, &title, cx) {
+                            if pane_is_active
+                                && self.apply_terminal_title(tab_index, &title, cx)
+                            {
                                 should_redraw = true;
                             }
                         }
                         TerminalEvent::ResetTitle => {
-                            if pane_is_active && self.clear_terminal_titles(index) {
+                            if pane_is_active && self.clear_terminal_titles(tab_index) {
                                 should_redraw = true;
                             }
                         }
                         TerminalEvent::ClipboardStore(text) => {
-                            if index == active_tab && pane_is_active {
+                            if tab_index == active_tab && pane_is_active {
                                 self.pending_clipboard = Some(text);
                                 should_redraw = true;
                             }
@@ -4606,7 +4624,8 @@ impl TerminalView {
                         TerminalEvent::ShellPromptStart => {
                             if self.shell_integration_enabled {
                                 // Notify for long-running commands when prompt returns
-                                if let Some(duration) = self.tabs[index].command_lifecycle.elapsed()
+                                if let Some(duration) =
+                                    self.tabs[tab_index].command_lifecycle.elapsed()
                                 {
                                     if duration.as_secs_f32() >= self.notification_min_duration
                                         && self.notifications_enabled
@@ -4619,22 +4638,22 @@ impl TerminalView {
                                         );
                                     }
                                 }
-                                self.tabs[index].command_lifecycle.prompt_start();
+                                self.tabs[tab_index].command_lifecycle.prompt_start();
                             }
                         }
                         TerminalEvent::ShellCommandStart => {
                             if self.shell_integration_enabled {
-                                self.tabs[index].command_lifecycle.command_start();
+                                self.tabs[tab_index].command_lifecycle.command_start();
                             }
                         }
                         TerminalEvent::ShellCommandExecuting => {
                             if self.shell_integration_enabled {
-                                self.tabs[index].command_lifecycle.command_executing();
+                                self.tabs[tab_index].command_lifecycle.command_executing();
                             }
                         }
                         TerminalEvent::ShellCommandFinished(code) => {
                             if self.shell_integration_enabled {
-                                self.tabs[index].command_lifecycle.command_finished(code);
+                                self.tabs[tab_index].command_lifecycle.command_finished(code);
                             }
                         }
                         // Notification events (OSC 9, OSC 777)
@@ -4659,16 +4678,30 @@ impl TerminalView {
                         // Progress indicator (OSC 9;4)
                         TerminalEvent::Progress(state) => {
                             if self.progress_indicator_enabled {
-                                self.tabs[index].progress_state = state;
+                                self.tabs[tab_index].progress_state = state;
                                 should_redraw = true;
                             }
                         }
                         // Working directory (OSC 7)
                         TerminalEvent::WorkingDirectory(path) => {
-                            self.tabs[index].last_prompt_cwd = Some(path);
+                            self.tabs[tab_index].last_prompt_cwd = Some(path);
                         }
                     }
                 }
+            }
+        }
+
+        for (tab_id, pane_id) in pending_pane_closures.drain(..) {
+            let closed = self.close_native_pane_by_id(tab_id, pane_id.as_str(), cx);
+            should_redraw |= closed;
+        }
+        if should_quit {
+            pending_tab_closures.clear();
+        }
+        for tab_id in pending_tab_closures.drain(..) {
+            if let Some(tab_index) = self.tab_index_by_id(tab_id) {
+                self.close_tab(tab_index, cx);
+                should_redraw = true;
             }
         }
 
