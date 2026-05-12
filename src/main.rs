@@ -1,6 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod app_actions;
+mod asset_source;
 mod chrome_style;
 mod colors;
 mod commands;
@@ -168,7 +169,7 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
                             while let Ok(result) = native_drop_rx.recv_async().await {
                                 cx.update(|cx| {
                                     let _ = native_drop_view.update(cx, |view, cx| {
-                                        view.handle_native_file_drop_result(result, cx)
+                                        view.handle_native_file_drop_result(result, cx);
                                     });
                                 });
                             }
@@ -197,7 +198,7 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
         },
     )
     .map(|_| ())
-    .map_err(|error| format!("Failed to open main window: {}", error))
+    .map_err(|error| format!("Failed to open main window: {error}"))
 }
 
 fn reopen_if_no_windows(cx: &mut App, mut reopen: impl FnMut(&mut App)) -> bool {
@@ -220,13 +221,13 @@ pub(crate) fn open_main_window_with_runtime_config(cx: &mut App) -> Result<(), S
     let reopen_config = reopen_load.config;
     if let Err(blocker) = preflight_tmux_runtime(&reopen_config) {
         let message = blocker.message();
-        log::error!("Failed to reopen main window: {}", message);
+        log::error!("Failed to reopen main window: {message}");
         termy_toast::error(message.clone());
         return Err(message);
     }
 
     if let Err(error) = open_main_window(cx, reopen_config) {
-        log::error!("{}", error);
+        log::error!("{error}");
         termy_toast::error(error.clone());
         return Err(error);
     }
@@ -381,7 +382,7 @@ fn main() {
     env_logger::init();
 
     let (deeplink_tx, deeplink_rx) = flume::unbounded::<Vec<String>>();
-    let application = Application::new();
+    let application = Application::new().with_assets(crate::asset_source::EmbeddedAssets);
 
     // On Windows, URL scheme launches pass the URL as a command-line argument
     // (argv[1]) instead of going through Application::on_open_urls(). Enqueue
@@ -418,13 +419,13 @@ fn main() {
 
         cx.on_action(|_: &OpenConfig, _cx| {
             if let Err(error) = app_actions::open_config_file() {
-                log::error!("Failed to open config file: {}", error);
+                log::error!("Failed to open config file: {error}");
                 termy_toast::error(error);
             }
         });
         cx.on_action(|_: &OpenSettings, cx| {
             if let Err(error) = app_actions::open_settings_or_config_file(cx) {
-                log::error!("{}", error);
+                log::error!("{error}");
                 termy_toast::error(error);
             }
         });
@@ -452,7 +453,7 @@ fn main() {
             match onboarding::open_onboarding_window(cx) {
                 Ok(()) => {}
                 Err(error) => {
-                    log::error!("Failed to open onboarding window: {}", error);
+                    log::error!("Failed to open onboarding window: {error}");
                     termy_toast::error(error);
                     open_main_window(cx, startup_config).unwrap();
                 }
@@ -624,9 +625,11 @@ mod tests {
 
     #[test]
     fn normalized_startup_window_size_clamps_to_minimums() {
-        let mut config = AppConfig::default();
-        config.window_width = 100.0;
-        config.window_height = 200.0;
+        let config = AppConfig {
+            window_width: 100.0,
+            window_height: 200.0,
+            ..AppConfig::default()
+        };
 
         assert_eq!(
             normalized_startup_window_size(&config),

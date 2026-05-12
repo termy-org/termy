@@ -173,8 +173,7 @@ pub(crate) fn managed_session_window_option_override_commands<'a>(
 pub(crate) fn managed_session_name() -> String {
     let now_ns = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |duration| duration.as_nanos());
     format!("termy-{}-{}", std::process::id(), now_ns)
 }
 

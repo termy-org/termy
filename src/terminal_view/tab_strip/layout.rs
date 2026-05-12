@@ -605,8 +605,7 @@ impl TerminalView {
             .map(|index| {
                 let anim_progress = active_animation
                     .filter(|(anim_index, _)| *anim_index == index)
-                    .map(|(_, progress)| progress)
-                    .unwrap_or(1.0);
+                    .map_or(1.0, |(_, progress)| progress);
                 TAB_ITEM_HEIGHT * anim_progress
             })
             .collect();

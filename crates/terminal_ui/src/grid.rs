@@ -2229,35 +2229,30 @@ impl TerminalGrid {
             let mut whole_row_reused = false;
             if let Some(previous_row_ops) = previous_row_ops.as_ref()
                 && let Some(previous_index) = previous_row_ops.find_matching_index(row, row_slot)
+                && let Some(previous) = previous_row_ops.get(previous_index)
+                && previous.shaped_lines.len() == row_slot.shaped_lines.len()
             {
-                if let Some(previous) = previous_row_ops.get(previous_index)
-                    && previous.shaped_lines.len() == row_slot.shaped_lines.len()
-                {
-                    row_slot.shaped_lines.clone_from(&previous.shaped_lines);
-                    whole_row_reused = true;
-                }
+                row_slot.shaped_lines.clone_from(&previous.shaped_lines);
+                whole_row_reused = true;
             }
 
             // 2. Per-op ShapedLine reuse: if we know the dirty column range (from RowRanges
             //    damage), reuse ShapedLines for text batches that don't overlap the dirty
             //    region. This avoids re-shaping unchanged text runs when only a few columns
             //    changed (e.g. a single character typed at the cursor).
-            if !whole_row_reused {
-                if let Some(dirty_range) = dirty_col_range {
-                    if let Some(prev_row) = previous_row_ops
-                        .as_ref()
-                        .and_then(|previous| previous.get(row))
+            if !whole_row_reused
+                && let Some(dirty_range) = dirty_col_range
+                && let Some(prev_row) = previous_row_ops
+                    .as_ref()
+                    .and_then(|previous| previous.get(row))
+            {
+                for (i, op) in row_slot.draw_ops.iter().enumerate() {
+                    let op_range = draw_op_col_range(op);
+                    if !col_ranges_overlap(op_range, dirty_range)
+                        && let Some(prev_op) = prev_row.draw_ops.get(i)
+                        && text_draw_ops_match_without_row(op, prev_op)
                     {
-                        for (i, op) in row_slot.draw_ops.iter().enumerate() {
-                            let op_range = draw_op_col_range(op);
-                            if !col_ranges_overlap(op_range, dirty_range) {
-                                if let Some(prev_op) = prev_row.draw_ops.get(i) {
-                                    if text_draw_ops_match_without_row(op, prev_op) {
-                                        row_slot.shaped_lines[i] = prev_row.shaped_lines[i].clone();
-                                    }
-                                }
-                            }
-                        }
+                        row_slot.shaped_lines[i] = prev_row.shaped_lines[i].clone();
                     }
                 }
             }
@@ -2405,7 +2400,7 @@ impl TerminalGrid {
                 highlight_fg,
                 &mut scratch,
             );
-            ops.extend(scratch.drain(..));
+            ops.append(&mut scratch);
         }
         ops
     }
@@ -2537,11 +2532,10 @@ mod tests {
     fn box_draw_segments_covers_expected_range() {
         for codepoint in BOX_DRAWING_START..=BOX_DRAWING_END {
             let glyph = char::from_u32(codepoint).expect("valid box-drawing codepoint");
-            assert_eq!(
-                (rounded_corner_char(glyph)
+            assert!(
+                rounded_corner_char(glyph)
                     || diagonal_char(glyph)
-                    || box_draw_geometry_for_char(glyph, 10.0, 20.0, 14.0).is_some()),
-                true,
+                    || box_draw_geometry_for_char(glyph, 10.0, 20.0, 14.0).is_some(),
                 "unexpected box-drawing coverage for U+{codepoint:04X}"
             );
         }

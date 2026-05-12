@@ -24,7 +24,7 @@ impl SettingsWindow {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         if logged.insert(key) {
-            log::error!("Missing settings metadata for key '{}'", key);
+            log::error!("Missing settings metadata for key '{key}'");
         }
 
         &FALLBACK_SETTING_METADATA
@@ -166,7 +166,7 @@ impl SettingsWindow {
         div()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(CARD_GAP))
             .child(self.render_section_header(
                 "Appearance",
                 "Customize the look and feel",
@@ -185,11 +185,34 @@ impl SettingsWindow {
         title: &'static str,
         rows: Vec<AnyElement>,
     ) -> AnyElement {
-        // Keep group composition consistent across settings tabs (header + rows in normal flow)
-        // to avoid spacing drift and width forcing regressions.
+        let divider = self.divider_color();
+        let card_bg = self.bg_elevated();
+        let card_border = self.border_color();
+
+        let total = rows.len();
+        let mut card = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .rounded(px(SETTINGS_CARD_RADIUS))
+            .bg(card_bg)
+            .border_1()
+            .border_color(card_border)
+            .overflow_hidden();
+        for (index, row) in rows.into_iter().enumerate() {
+            let mut wrapper = div().w_full().child(row);
+            if index + 1 < total {
+                wrapper = wrapper.border_b_1().border_color(divider);
+            }
+            card = card.child(wrapper);
+        }
+
         div()
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
             .child(self.render_group_header(title))
-            .child(div().flex().flex_col().gap_2().children(rows))
+            .child(card)
             .into_any_element()
     }
 
@@ -197,7 +220,7 @@ impl SettingsWindow {
         let section = div()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(CARD_GAP))
             .child(self.render_section_header(
                 "Terminal",
                 "Configure terminal behavior",
@@ -350,7 +373,7 @@ impl SettingsWindow {
                 EditableField::ScrollbackHistory,
                 scrollback_meta.title,
                 scrollback_meta.description,
-                format!("{} lines", scrollback),
+                format!("{scrollback} lines"),
                 cx,
             ),
             self.render_editable_row(
@@ -358,7 +381,7 @@ impl SettingsWindow {
                 EditableField::InactiveTabScrollback,
                 inactive_scrollback_meta.title,
                 inactive_scrollback_meta.description,
-                format!("{} lines", inactive_scrollback),
+                format!("{inactive_scrollback} lines"),
                 cx,
             ),
             self.render_editable_row(
@@ -366,7 +389,7 @@ impl SettingsWindow {
                 EditableField::ScrollMultiplier,
                 scroll_mult_meta.title,
                 scroll_mult_meta.description,
-                format!("{}x", scroll_mult),
+                format!("{scroll_mult}x"),
                 cx,
             ),
             self.render_editable_row(
@@ -434,7 +457,7 @@ impl SettingsWindow {
                 EditableField::PaneFocusStrength,
                 pane_focus_strength_meta.title,
                 pane_focus_strength_meta.description,
-                format!("{}%", pane_focus_strength_percent),
+                format!("{pane_focus_strength_percent}%"),
                 cx,
             ),
             self.render_root_bool_setting_row(
@@ -453,7 +476,7 @@ impl SettingsWindow {
         div()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(CARD_GAP))
             .child(self.render_section_header(
                 "Tabs",
                 "Configure tab behavior and titles",
@@ -471,17 +494,23 @@ impl SettingsWindow {
     ) -> impl IntoElement {
         self.ensure_theme_store_themes_loaded(cx);
 
+        let toolbar = self.render_theme_store_toolbar(cx);
+        let status = self.render_theme_store_status(cx);
+        let grid = self.render_theme_store_grid(cx);
+
         div()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(14.0))
             .child(self.render_section_header(
                 "Themes",
                 "Browse and install community themes",
                 SettingsSection::ThemeStore,
                 cx,
             ))
-            .child(self.render_tabs_theme_store_group(cx))
+            .child(toolbar)
+            .when_some(status, |s, status| s.child(status))
+            .child(grid)
     }
 
     pub(super) fn render_tabs_title_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -593,7 +622,7 @@ impl SettingsWindow {
                 EditableField::VerticalTabsWidth,
                 vertical_width_meta.title,
                 vertical_width_meta.description,
-                format!("{}px", vertical_tabs_width),
+                format!("{vertical_tabs_width}px"),
                 cx,
             ),
             self.render_root_bool_setting_row(
@@ -648,8 +677,7 @@ impl SettingsWindow {
         self.render_settings_group("TITLE BAR", rows)
     }
 
-    pub(super) fn render_tabs_theme_store_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let bg_card = self.bg_card();
+    pub(super) fn render_theme_store_toolbar(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let border_color = self.border_color();
         let bg_input = self.bg_input();
         let hover_bg = self.bg_hover();
@@ -657,15 +685,6 @@ impl SettingsWindow {
         let text_secondary = self.text_secondary();
         let text_muted = self.text_muted();
         let accent = self.accent();
-        let accent_hover = self.accent_with_alpha(0.8);
-        let button_text = self.contrasting_text_for_fill(accent, bg_card);
-        let button_hover_text = self.contrasting_text_for_fill(accent_hover, bg_card);
-        let button_border = self.accent_with_alpha(0.45);
-        let install_bg = self.accent_with_alpha(0.14);
-        let install_hover_bg = self.accent_with_alpha(0.22);
-        let chip_bg = self.accent_with_alpha(0.1);
-        let active_border = self.accent_with_alpha(0.55);
-        let top_edge = self.accent_with_alpha(0.62);
         let store_url = "https://github.com/termy-org/themes";
         let query_text = self.theme_store_search_state.text().to_string();
         let has_query = !query_text.trim().is_empty();
@@ -674,7 +693,6 @@ impl SettingsWindow {
         let total_theme_count = self.theme_store_themes.len();
         let installed_theme_count = self.theme_store_installed_versions.len();
 
-        let mut rows: Vec<AnyElement> = Vec::new();
         let search_content = if is_search_active {
             let font = Font {
                 family: self.config.font_family.clone().into(),
@@ -694,7 +712,7 @@ impl SettingsWindow {
             div()
                 .text_size(px(SETTINGS_INPUT_TEXT_SIZE))
                 .text_color(text_secondary)
-                .child(query_text.clone())
+                .child(query_text)
                 .into_any_element()
         } else {
             div()
@@ -706,7 +724,7 @@ impl SettingsWindow {
 
         let search_input = div()
             .id("theme-store-search-input")
-            .h(px(36.0))
+            .h(px(32.0))
             .px_3()
             .rounded(px(SETTINGS_INPUT_RADIUS))
             .bg(bg_input)
@@ -802,9 +820,9 @@ impl SettingsWindow {
             total_theme_count
         };
         let availability_label = if self.theme_store_loading {
-            "Syncing registry".to_string()
+            "Syncing".to_string()
         } else if self.theme_store_error.is_some() {
-            "Registry unavailable".to_string()
+            "Unavailable".to_string()
         } else if has_query {
             format!(
                 "{filtered_count} result{}",
@@ -814,87 +832,89 @@ impl SettingsWindow {
             format!("{total_theme_count} available")
         };
 
-        rows.push(
-            div()
-                .py_3()
-                .px_4()
-                .bg(bg_card)
-                .border_1()
-                .border_color(border_color)
-                .flex()
-                .items_center()
-                .justify_between()
-                .flex_wrap()
-                .gap_3()
-                .child(search_input)
-                .child(
-                    div()
-                        .h(px(30.0))
-                        .px_3()
-                        .rounded(px(SETTINGS_INPUT_RADIUS))
-                        .bg(chip_bg)
-                        .border_1()
-                        .border_color(button_border)
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(text_secondary)
-                        .whitespace_nowrap()
-                        .flex()
-                        .items_center()
-                        .child(availability_label),
-                )
-                .when(installed_theme_count > 0, |s| {
-                    s.child(
-                        div()
-                            .h(px(30.0))
-                            .px_3()
-                            .rounded(px(SETTINGS_INPUT_RADIUS))
-                            .bg(bg_input)
-                            .border_1()
-                            .border_color(border_color)
-                            .text_xs()
-                            .text_color(text_muted)
-                            .whitespace_nowrap()
-                            .flex()
-                            .items_center()
-                            .child(format!("{installed_theme_count} installed")),
-                    )
-                })
-                .child(
-                    div()
-                        .id("theme-store-open-link")
-                        .h(px(32.0))
-                        .px_3()
-                        .rounded(px(SETTINGS_BUTTON_RADIUS))
-                        .border_1()
-                        .border_color(button_border)
-                        .bg(bg_input)
-                        .text_sm()
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(text_secondary)
-                        .whitespace_nowrap()
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .hover(move |s| s.bg(hover_bg).text_color(text_primary))
-                        .child("Open Repo")
-                        .on_click(cx.listener(move |_view, _, _, cx| {
-                            if let Err(error) = SettingsWindow::open_url(store_url) {
-                                termy_toast::error(error);
-                            }
-                            cx.notify();
-                        })),
-                )
-                .into_any_element(),
-        );
+        let installed_chip: Option<AnyElement> = if installed_theme_count > 0 {
+            Some(
+                div()
+                    .h(px(26.0))
+                    .px_2()
+                    .rounded(px(SETTINGS_INPUT_RADIUS))
+                    .text_xs()
+                    .text_color(text_muted)
+                    .whitespace_nowrap()
+                    .flex()
+                    .items_center()
+                    .child(format!("· {installed_theme_count} installed"))
+                    .into_any_element(),
+            )
+        } else {
+            None
+        };
+
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .child(search_input)
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_secondary)
+                    .whitespace_nowrap()
+                    .child(availability_label),
+            )
+            .when_some(installed_chip, |s, chip| s.child(chip))
+            .child(div().flex_1())
+            .child(
+                div()
+                    .id("theme-store-open-link")
+                    .h(px(28.0))
+                    .px_3()
+                    .rounded(px(SETTINGS_BUTTON_RADIUS))
+                    .border_1()
+                    .border_color(border_color)
+                    .bg(bg_input)
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(text_secondary)
+                    .whitespace_nowrap()
+                    .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .hover(move |s| s.bg(hover_bg).text_color(text_primary))
+                    .child("Open repo ↗")
+                    .on_click(cx.listener(move |_view, _, _, cx| {
+                        if let Err(error) = SettingsWindow::open_url(store_url) {
+                            termy_toast::error(error);
+                        }
+                        cx.notify();
+                    })),
+            )
+            .into_any_element()
+    }
+
+    pub(super) fn render_theme_store_status(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let bg_elevated = self.bg_elevated();
+        let border_color = self.border_color();
+        let text_primary = self.text_primary();
+        let text_muted = self.text_muted();
+        let accent = self.accent();
+        let active_border = self.accent_with_alpha(0.55);
+        let bg_card = self.bg_card();
+        let accent_hover = self.accent_with_alpha(0.8);
+        let button_text = self.contrasting_text_for_fill(accent, bg_card);
+        let button_hover_text = self.contrasting_text_for_fill(accent_hover, bg_card);
 
         if self.theme_store_loading {
-            rows.push(
+            return Some(
                 div()
-                    .py_4()
-                    .px_4()
-                    .bg(bg_card)
+                    .py(px(CARD_ROW_PADDING_Y + 2.0))
+                    .px(px(CARD_ROW_PADDING_X))
+                    .rounded(px(SETTINGS_CARD_RADIUS))
+                    .bg(bg_elevated)
                     .border_1()
                     .border_color(border_color)
                     .flex()
@@ -905,11 +925,11 @@ impl SettingsWindow {
                         div()
                             .flex()
                             .flex_col()
-                            .gap_1()
+                            .gap(px(2.0))
                             .child(
                                 div()
                                     .text_sm()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(text_primary)
                                     .child("Syncing theme registry"),
                             )
@@ -923,12 +943,14 @@ impl SettingsWindow {
                     .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(accent))
                     .into_any_element(),
             );
-        } else if let Some(error) = self.theme_store_error.clone() {
-            rows.push(
+        }
+        if let Some(error) = self.theme_store_error.clone() {
+            return Some(
                 div()
-                    .py_4()
-                    .px_4()
-                    .bg(bg_card)
+                    .py(px(CARD_ROW_PADDING_Y + 2.0))
+                    .px(px(CARD_ROW_PADDING_X))
+                    .rounded(px(SETTINGS_CARD_RADIUS))
+                    .bg(bg_elevated)
                     .border_1()
                     .border_color(active_border)
                     .flex()
@@ -939,11 +961,11 @@ impl SettingsWindow {
                         div()
                             .flex()
                             .flex_col()
-                            .gap_1()
+                            .gap(px(2.0))
                             .child(
                                 div()
                                     .text_sm()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(text_primary)
                                     .child("Registry did not respond"),
                             )
@@ -952,16 +974,17 @@ impl SettingsWindow {
                     .child(
                         div()
                             .id("theme-store-retry-btn")
-                            .h(px(32.0))
+                            .h(px(28.0))
                             .px_3()
                             .rounded(px(SETTINGS_BUTTON_RADIUS))
-                            .border_1()
-                            .border_color(button_border)
                             .bg(accent)
-                            .text_sm()
+                            .text_xs()
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(button_text)
                             .cursor_pointer()
+                            .flex()
+                            .items_center()
+                            .justify_center()
                             .hover(move |s| s.bg(accent_hover).text_color(button_hover_text))
                             .child("Retry")
                             .on_click(cx.listener(|view, _, _, cx| {
@@ -971,316 +994,335 @@ impl SettingsWindow {
                     )
                     .into_any_element(),
             );
-        } else {
-            if self.theme_store_from_cache {
-                rows.push(
-                    div()
-                        .py_2()
-                        .px_4()
-                        .bg(chip_bg)
-                        .border_1()
-                        .border_color(button_border)
-                        .text_xs()
-                        .text_color(text_muted)
-                        .child("Showing cached themes because the registry is unavailable.")
-                        .into_any_element(),
-                );
-            }
+        }
+        if self.theme_store_from_cache {
+            return Some(
+                div()
+                    .py(px(8.0))
+                    .px(px(CARD_ROW_PADDING_X))
+                    .rounded(px(SETTINGS_INPUT_RADIUS))
+                    .bg(self.accent_with_alpha(0.08))
+                    .text_xs()
+                    .text_color(text_muted)
+                    .child("Showing cached themes — registry unreachable.")
+                    .into_any_element(),
+            );
+        }
+        None
+    }
 
-            if self.theme_store_themes.is_empty() {
-                rows.push(
-                    div()
-                        .py_5()
-                        .px_4()
-                        .bg(bg_card)
-                        .border_1()
-                        .border_color(border_color)
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(text_primary)
-                                .child("No themes yet"),
-                        )
-                        .child(
-                            div().text_xs().text_color(text_muted).child(
-                                "The registry is reachable, but it has no published themes.",
-                            ),
-                        )
-                        .into_any_element(),
-                );
-            } else {
-                let filtered_themes: Vec<ThemeStoreTheme> = self
-                    .theme_store_themes
-                    .iter()
-                    .filter(|theme| {
-                        if normalized_query.is_empty() {
-                            return true;
-                        }
-                        let haystack = format!(
-                            "{} {} {}",
-                            theme.name.to_ascii_lowercase(),
-                            theme.slug.to_ascii_lowercase(),
-                            theme.description.to_ascii_lowercase()
-                        );
-                        haystack.contains(&normalized_query)
-                    })
-                    .take(30)
-                    .cloned()
-                    .collect();
+    pub(super) fn render_theme_store_grid(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let bg_elevated = self.bg_elevated();
+        let border_color = self.border_color();
+        let text_primary = self.text_primary();
+        let text_muted = self.text_muted();
 
-                if filtered_themes.is_empty() {
-                    rows.push(
-                        div()
-                            .py_5()
-                            .px_4()
-                            .bg(bg_card)
-                            .border_1()
-                            .border_color(border_color)
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_color(text_primary)
-                                    .child("No matching themes"),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(text_muted)
-                                    .child("Try a different name, slug, or style keyword."),
-                            )
-                            .into_any_element(),
-                    );
-                }
-
-                let mut theme_cards: Vec<AnyElement> = Vec::new();
-
-                for theme in filtered_themes {
-                    let install_theme = theme.clone();
-                    let version_label = theme
-                        .latest_version
-                        .clone()
-                        .unwrap_or_else(|| "n/a".to_string());
-                    let slug_key = theme.slug.to_ascii_lowercase();
-                    let installed_version = self.theme_store_installed_versions.get(&slug_key);
-                    let installed_any = installed_version.is_some();
-                    let is_installed = installed_version.is_some_and(|version| {
-                        theme
-                            .latest_version
-                            .as_deref()
-                            .is_none_or(|latest| version.eq_ignore_ascii_case(latest))
-                    });
-                    let has_update = installed_any && !is_installed;
-                    let description = if theme.description.trim().is_empty() {
-                        "No description provided.".to_string()
-                    } else {
-                        theme.description.clone()
-                    };
-                    let status_label = if is_installed {
-                        "Installed"
-                    } else if has_update {
-                        "Update"
-                    } else {
-                        "Registry"
-                    };
-                    let status_bg = if is_installed || has_update {
-                        chip_bg
-                    } else {
-                        bg_input
-                    };
-                    let status_border = if is_installed || has_update {
-                        button_border
-                    } else {
-                        border_color
-                    };
-                    let install_button = if is_installed {
-                        let uninstall_slug = theme.slug.clone();
-                        div()
-                            .id(SharedString::from(format!(
-                                "theme-store-actions-{}",
-                                theme.slug
-                            )))
-                            .mt_auto()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .h(px(24.0))
-                                    .px_2()
-                                    .rounded(px(SETTINGS_BUTTON_RADIUS))
-                                    .border_1()
-                                    .border_color(status_border)
-                                    .bg(status_bg)
-                                    .text_xs()
-                                    .font_weight(gpui::FontWeight::MEDIUM)
-                                    .text_color(text_secondary)
-                                    .whitespace_nowrap()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child(status_label),
-                            )
-                            .child(
-                                div()
-                                    .id(SharedString::from(format!(
-                                        "theme-store-uninstall-{}",
-                                        theme.slug
-                                    )))
-                                    .h(px(28.0))
-                                    .px_3()
-                                    .rounded(px(SETTINGS_BUTTON_RADIUS))
-                                    .border_1()
-                                    .border_color(button_border)
-                                    .bg(bg_input)
-                                    .text_xs()
-                                    .font_weight(gpui::FontWeight::MEDIUM)
-                                    .text_color(text_secondary)
-                                    .cursor_pointer()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
-                                    .child("Uninstall")
-                                    .on_click(cx.listener(move |view, _, _, cx| {
-                                        view.uninstall_theme_store_theme(&uninstall_slug, cx);
-                                        cx.notify();
-                                    })),
-                            )
-                            .into_any_element()
-                    } else {
-                        let action_label = if has_update { "Update" } else { "Install" };
-                        div()
-                            .id(SharedString::from(format!(
-                                "theme-store-install-{}",
-                                theme.slug
-                            )))
-                            .mt_auto()
-                            .h(px(28.0))
-                            .px_3()
-                            .rounded(px(SETTINGS_BUTTON_RADIUS))
-                            .border_1()
-                            .border_color(button_border)
-                            .bg(install_bg)
-                            .text_xs()
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(text_secondary)
-                            .whitespace_nowrap()
-                            .cursor_pointer()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
-                            .child(action_label)
-                            .on_click(cx.listener(move |view, _, _, cx| {
-                                view.confirm_install_theme_store_theme(install_theme.clone(), cx);
-                            }))
-                            .into_any_element()
-                    };
-
-                    theme_cards.push(
-                        div()
-                            .w(px(228.0))
-                            .min_w(px(228.0))
-                            .max_w(px(228.0))
-                            .bg(bg_card)
-                            .border_1()
-                            .border_color(if is_installed {
-                                active_border
-                            } else {
-                                border_color
-                            })
-                            .rounded(px(6.0))
-                            .overflow_hidden()
-                            .flex()
-                            .flex_col()
-                            .hover(move |s| s.bg(bg_input).border_color(active_border))
-                            .child(div().h(px(2.0)).w_full().bg(top_edge))
-                            .child(
-                                div()
-                                    .p_3()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .justify_between()
-                                            .items_start()
-                                            .gap_2()
-                                            .child(
-                                                div()
-                                                    .min_w(px(0.0))
-                                                    .flex()
-                                                    .flex_col()
-                                                    .gap_1()
-                                                    .child(
-                                                        div()
-                                                            .text_sm()
-                                                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                            .text_color(text_primary)
-                                                            .overflow_hidden()
-                                                            .child(theme.name),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(text_muted)
-                                                            .overflow_hidden()
-                                                            .child(theme.slug),
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .h(px(20.0))
-                                                    .px_2()
-                                                    .rounded(px(SETTINGS_INPUT_RADIUS))
-                                                    .bg(bg_input)
-                                                    .border_1()
-                                                    .border_color(border_color)
-                                                    .text_xs()
-                                                    .text_color(text_muted)
-                                                    .whitespace_nowrap()
-                                                    .flex()
-                                                    .items_center()
-                                                    .child(format!("v{version_label}")),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(text_muted)
-                                            .overflow_hidden()
-                                            .child(description),
-                                    )
-                                    .child(install_button),
-                            )
-                            .into_any_element(),
-                    );
-                }
-
-                if !theme_cards.is_empty() {
-                    rows.push(
-                        div()
-                            .pt_2()
-                            .flex()
-                            .flex_wrap()
-                            .gap_3()
-                            .children(theme_cards)
-                            .into_any_element(),
-                    );
-                }
-            } // end else (themes loaded, not error)
+        if self.theme_store_loading || self.theme_store_error.is_some() {
+            return div().into_any_element();
         }
 
-        self.render_settings_group("THEMES", rows)
+        let query_text = self.theme_store_search_state.text().to_string();
+        let normalized_query = query_text.trim().to_ascii_lowercase();
+
+        if self.theme_store_themes.is_empty() {
+            return div()
+                .py(px(28.0))
+                .px(px(CARD_ROW_PADDING_X))
+                .rounded(px(SETTINGS_CARD_RADIUS))
+                .bg(bg_elevated)
+                .border_1()
+                .border_color(border_color)
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap(px(4.0))
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(text_primary)
+                        .child("No themes yet"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(text_muted)
+                        .child("Registry is reachable but has no published themes."),
+                )
+                .into_any_element();
+        }
+
+        let filtered_themes: Vec<ThemeStoreTheme> = self
+            .theme_store_themes
+            .iter()
+            .filter(|theme| {
+                if normalized_query.is_empty() {
+                    return true;
+                }
+                let haystack = format!(
+                    "{} {} {}",
+                    theme.name.to_ascii_lowercase(),
+                    theme.slug.to_ascii_lowercase(),
+                    theme.description.to_ascii_lowercase()
+                );
+                haystack.contains(&normalized_query)
+            })
+            .take(30)
+            .cloned()
+            .collect();
+
+        if filtered_themes.is_empty() {
+            return div()
+                .py(px(28.0))
+                .px(px(CARD_ROW_PADDING_X))
+                .rounded(px(SETTINGS_CARD_RADIUS))
+                .bg(bg_elevated)
+                .border_1()
+                .border_color(border_color)
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap(px(4.0))
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(text_primary)
+                        .child("No matching themes"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(text_muted)
+                        .child("Try a different name, slug, or style keyword."),
+                )
+                .into_any_element();
+        }
+
+        let cards: Vec<AnyElement> = filtered_themes
+            .into_iter()
+            .map(|theme| self.render_theme_store_card(theme, cx))
+            .collect();
+
+        div()
+            .flex()
+            .flex_wrap()
+            .justify_center()
+            .gap(px(10.0))
+            .children(cards)
+            .into_any_element()
+    }
+
+    pub(super) fn render_theme_store_card(
+        &self,
+        theme: ThemeStoreTheme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let bg_elevated = self.bg_elevated();
+        let bg_input = self.bg_input();
+        let hover_bg = self.bg_hover();
+        let border_color = self.border_color();
+        let text_primary = self.text_primary();
+        let text_secondary = self.text_secondary();
+        let text_muted = self.text_muted();
+        let accent = self.accent();
+        let accent_hover = self.accent_with_alpha(0.85);
+        let bg_card = self.bg_card();
+        let button_text = self.contrasting_text_for_fill(accent, bg_card);
+        let button_hover_text = self.contrasting_text_for_fill(accent_hover, bg_card);
+        let active_border = self.accent_with_alpha(0.50);
+
+        let version_label = theme
+            .latest_version
+            .clone()
+            .unwrap_or_else(|| "n/a".to_string());
+        let slug_key = theme.slug.to_ascii_lowercase();
+        let installed_version = self.theme_store_installed_versions.get(&slug_key).cloned();
+        let installed_any = installed_version.is_some();
+        let is_installed = installed_version.as_ref().is_some_and(|version| {
+            theme
+                .latest_version
+                .as_deref()
+                .is_none_or(|latest| version.eq_ignore_ascii_case(latest))
+        });
+        let has_update = installed_any && !is_installed;
+        let description = if theme.description.trim().is_empty() {
+            "No description provided.".to_string()
+        } else {
+            theme.description.clone()
+        };
+
+        let install_theme = theme.clone();
+        let uninstall_slug = theme.slug.clone();
+
+        let action_button: AnyElement = if is_installed {
+            div()
+                .id(SharedString::from(format!(
+                    "theme-store-uninstall-{}",
+                    theme.slug
+                )))
+                .flex_1()
+                .h(px(28.0))
+                .px_3()
+                .rounded(px(SETTINGS_BUTTON_RADIUS))
+                .border_1()
+                .border_color(border_color)
+                .bg(bg_input)
+                .text_xs()
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(text_secondary)
+                .cursor_pointer()
+                .flex()
+                .items_center()
+                .justify_center()
+                .hover(move |s| s.bg(hover_bg).text_color(text_primary))
+                .child("Uninstall")
+                .on_click(cx.listener(move |view, _, _, cx| {
+                    view.uninstall_theme_store_theme(&uninstall_slug, cx);
+                    cx.notify();
+                }))
+                .into_any_element()
+        } else {
+            let label = if has_update { "Update" } else { "Install" };
+            div()
+                .id(SharedString::from(format!(
+                    "theme-store-install-{}",
+                    theme.slug
+                )))
+                .flex_1()
+                .h(px(28.0))
+                .px_3()
+                .rounded(px(SETTINGS_BUTTON_RADIUS))
+                .bg(accent)
+                .text_xs()
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(button_text)
+                .cursor_pointer()
+                .flex()
+                .items_center()
+                .justify_center()
+                .hover(move |s| s.bg(accent_hover).text_color(button_hover_text))
+                .child(label)
+                .on_click(cx.listener(move |view, _, _, cx| {
+                    view.confirm_install_theme_store_theme(install_theme.clone(), cx);
+                }))
+                .into_any_element()
+        };
+
+        let status_dot_color = if is_installed {
+            accent
+        } else if has_update {
+            self.accent_with_alpha(0.55)
+        } else {
+            border_color
+        };
+
+        let swatch_colors: Vec<Rgba> = {
+            let resolved = crate::theme_store::load_installed_theme_colors(&theme.slug)
+                .or_else(|| crate::theme_store::load_installed_theme_colors(&theme.name));
+            if let Some(colors) = resolved {
+                let palette_indices = [1usize, 2, 4, 3, 5, 6, 14];
+                palette_indices
+                    .iter()
+                    .map(|&i| {
+                        let c = colors.ansi[i];
+                        Rgba {
+                            r: c.r as f32 / 255.0,
+                            g: c.g as f32 / 255.0,
+                            b: c.b as f32 / 255.0,
+                            a: 1.0,
+                        }
+                    })
+                    .collect()
+            } else {
+                let mut muted = text_muted;
+                muted.a *= 0.35;
+                vec![muted; 7]
+            }
+        };
+
+        let mut swatch_row = div().flex().items_center().gap(px(5.0));
+        for color in swatch_colors {
+            swatch_row = swatch_row.child(div().w(px(11.0)).h(px(11.0)).rounded_full().bg(color));
+        }
+
+        let theme_name = theme.name;
+        let theme_slug = theme.slug;
+
+        div()
+            .flex_grow()
+            .flex_shrink()
+            .flex_basis(px(240.0))
+            .min_w(px(240.0))
+            .max_w(px(360.0))
+            .bg(bg_elevated)
+            .border_1()
+            .border_color(if is_installed || has_update {
+                active_border
+            } else {
+                border_color
+            })
+            .rounded(px(SETTINGS_CARD_RADIUS))
+            .overflow_hidden()
+            .flex()
+            .flex_col()
+            .p(px(14.0))
+            .gap(px(10.0))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .w(px(8.0))
+                            .h(px(8.0))
+                            .rounded_full()
+                            .bg(status_dot_color),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .text_sm()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(text_primary)
+                            .overflow_hidden()
+                            .child(theme_name),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(text_muted)
+                            .whitespace_nowrap()
+                            .child(format!("v{version_label}")),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_muted)
+                    .overflow_hidden()
+                    .child(theme_slug),
+            )
+            .child(swatch_row)
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_secondary)
+                    .line_height(px(16.0))
+                    .overflow_hidden()
+                    .child(description),
+            )
+            .child(div().flex_1())
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(action_button),
+            )
+            .into_any_element()
     }
 
     pub(super) fn render_advanced_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1504,7 +1546,7 @@ impl SettingsWindow {
                     .child("Open Config File")
                     .on_click(cx.listener(|_view, _, _, cx| {
                         if let Err(error) = crate::config::open_config_file() {
-                            log::error!("Failed to open config file from settings: {}", error);
+                            log::error!("Failed to open config file from settings: {error}");
                             termy_toast::error(error.to_string());
                         }
                         cx.notify();
@@ -1517,7 +1559,7 @@ impl SettingsWindow {
         div()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(CARD_GAP))
             .child(self.render_section_header(
                 "Advanced",
                 "Advanced configuration options",

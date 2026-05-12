@@ -69,6 +69,26 @@ impl SettingsWindow {
         c
     }
 
+    pub(super) fn icon_color(&self, active: bool) -> Rgba {
+        if active {
+            self.accent()
+        } else {
+            self.text_secondary()
+        }
+    }
+
+    pub(super) fn bg_elevated(&self) -> Rgba {
+        let mut c = self.colors.foreground;
+        c.a = self.scaled_chrome_surface_alpha(0.045);
+        c
+    }
+
+    pub(super) fn divider_color(&self) -> Rgba {
+        let mut c = self.colors.foreground;
+        c.a = self.scaled_chrome_neutral_alpha(0.10);
+        c
+    }
+
     pub(super) fn bg_input(&self) -> Rgba {
         let mut c = self.colors.background;
         c.a = self.adaptive_chrome_panel_alpha(0.36);
@@ -144,22 +164,96 @@ impl SettingsWindow {
         }
     }
 
-    pub(super) fn settings_scrollbar_metrics(
-        &self,
-        window: &Window,
-    ) -> Option<ui_scrollbar::ScrollbarMetrics> {
+    pub(super) fn settings_scrollbar_range(&self, window: &Window) -> ScrollbarRange {
         let viewport_height: f32 = window.viewport_size().height.into();
         let max_offset: f32 = self.content_scroll_handle.max_offset().height.into();
         let offset_y: f32 = self.content_scroll_handle.offset().y.into();
         let offset = (-offset_y).max(0.0);
-        let range = ScrollbarRange {
+        ScrollbarRange {
             offset,
             max_offset,
             viewport_extent: viewport_height,
             track_extent: viewport_height,
-        };
+        }
+    }
 
-        ui_scrollbar::compute_metrics(range, SETTINGS_SCROLLBAR_MIN_THUMB_HEIGHT)
+    pub(super) fn settings_scrollbar_metrics(
+        &self,
+        window: &Window,
+    ) -> Option<ui_scrollbar::ScrollbarMetrics> {
+        ui_scrollbar::compute_metrics(
+            self.settings_scrollbar_range(window),
+            SETTINGS_SCROLLBAR_MIN_THUMB_HEIGHT,
+        )
+    }
+
+    pub(super) fn apply_scrollbar_offset(&mut self, offset: f32, max_offset: f32) {
+        let clamped = offset.clamp(0.0, max_offset);
+        self.content_scroll_handle
+            .set_offset(point(px(0.0), px(-clamped)));
+    }
+
+    pub(super) fn handle_scrollbar_mouse_down(
+        &mut self,
+        window_y: f32,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(bounds) = self.scrollbar_lane_bounds else {
+            return;
+        };
+        let lane_top: f32 = bounds.top().into();
+        let local_y = window_y - lane_top;
+        let range = self.settings_scrollbar_range(window);
+        let Some(metrics) =
+            ui_scrollbar::compute_metrics(range, SETTINGS_SCROLLBAR_MIN_THUMB_HEIGHT)
+        else {
+            return;
+        };
+        let thumb_top = metrics.thumb_top;
+        let thumb_bottom = thumb_top + metrics.thumb_height;
+        if local_y >= thumb_top && local_y <= thumb_bottom {
+            self.scrollbar_drag_state = Some(ScrollbarDragState {
+                thumb_grab_offset: local_y - thumb_top,
+            });
+        } else {
+            let new_offset = ui_scrollbar::offset_from_track_click(local_y, range, metrics);
+            self.apply_scrollbar_offset(new_offset, range.max_offset);
+            self.scrollbar_drag_state = Some(ScrollbarDragState {
+                thumb_grab_offset: metrics.thumb_height * 0.5,
+            });
+        }
+        cx.notify();
+    }
+
+    pub(super) fn handle_scrollbar_drag(
+        &mut self,
+        window_y: f32,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(drag) = self.scrollbar_drag_state else {
+            return;
+        };
+        let Some(bounds) = self.scrollbar_lane_bounds else {
+            return;
+        };
+        let lane_top: f32 = bounds.top().into();
+        let local_y = window_y - lane_top;
+        let range = self.settings_scrollbar_range(window);
+        let Some(metrics) =
+            ui_scrollbar::compute_metrics(range, SETTINGS_SCROLLBAR_MIN_THUMB_HEIGHT)
+        else {
+            return;
+        };
+        let target_thumb_top = (local_y - drag.thumb_grab_offset).clamp(0.0, metrics.travel);
+        let new_offset = ui_scrollbar::offset_from_thumb_top(target_thumb_top, range, metrics);
+        self.apply_scrollbar_offset(new_offset, range.max_offset);
+        cx.notify();
+    }
+
+    pub(super) fn finish_scrollbar_drag(&mut self) -> bool {
+        self.scrollbar_drag_state.take().is_some()
     }
 
     pub(super) fn request_scrollbar_refresh_frames(

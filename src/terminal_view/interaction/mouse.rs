@@ -140,8 +140,9 @@ impl TerminalView {
 
         let cursor_style = terminal
             .cursor_state()
-            .map(|cursor_state| cursor_state.style)
-            .unwrap_or(TerminalCursorStyle::Block);
+            .map_or(TerminalCursorStyle::Block, |cursor_state| {
+                cursor_state.style
+            });
         self.start_cursor_move_preview(
             PendingCursorMovePreview {
                 pane_id: pending.pane_id,
@@ -784,16 +785,16 @@ impl TerminalView {
     }
 
     fn copy_selection_to_clipboard_if_enabled(&mut self, cx: &mut Context<Self>) {
-        if self.copy_on_select {
-            if let Some(text) = self.selected_text() {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-                if self.copy_on_select_toast {
-                    termy_toast::enqueue_toast(
-                        termy_toast::ToastKind::Success,
-                        "Copied",
-                        Some(std::time::Duration::from_millis(1500)),
-                    );
-                }
+        if self.copy_on_select
+            && let Some(text) = self.selected_text()
+        {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            if self.copy_on_select_toast {
+                termy_toast::enqueue_toast(
+                    termy_toast::ToastKind::Success,
+                    "Copied",
+                    Some(std::time::Duration::from_millis(1500)),
+                );
             }
         }
     }

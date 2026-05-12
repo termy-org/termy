@@ -12,7 +12,7 @@ const XTASK_USAGE: &str = "usage: cargo run -p xtask -- <generate-keybindings-do
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("{}", error);
+        eprintln!("{error}");
         std::process::exit(1);
     }
 }
@@ -31,7 +31,7 @@ fn run() -> Result<()> {
     for arg in args {
         match arg.as_str() {
             "--check" => check_only = true,
-            other => bail!("unknown argument `{}`", other),
+            other => bail!("unknown argument `{other}`"),
         }
     }
 
@@ -70,7 +70,7 @@ fn write_or_check(path: &Path, contents: &str, check_only: bool, label: &str) ->
         let existing = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
         if existing == contents {
-            println!("{} are up to date", label);
+            println!("{label} are up to date");
             return Ok(());
         }
         bail!(
@@ -233,8 +233,7 @@ fn root_default_display(defaults: &AppConfig, id: RootSettingId) -> String {
         }
         RootSettingId::Keybind => "built-in platform defaults".to_string(),
         _ => root_setting_default_value(defaults, id)
-            .map(|value| format!("`{}`", value))
-            .unwrap_or_else(|| "unset".to_string()),
+            .map_or_else(|| "unset".to_string(), |value| format!("`{value}`")),
     }
 }
 

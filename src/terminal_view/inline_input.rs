@@ -543,20 +543,21 @@ impl InlineInputState {
                 .iter()
                 .enumerate()
                 .find(|(_, (_, bounds, _))| point.y >= bounds.top() && point.y <= bounds.bottom())
-                .map(|(i, _)| i)
-                .unwrap_or_else(|| {
-                    if point.y
-                        < self
-                            .last_line_metas
-                            .first()
-                            .map(|(_, b, _)| b.top())
-                            .unwrap_or(px(0.0))
-                    {
-                        0
-                    } else {
-                        self.last_line_metas.len() - 1
-                    }
-                });
+                .map_or_else(
+                    || {
+                        if point.y
+                            < self
+                                .last_line_metas
+                                .first()
+                                .map_or(px(0.0), |(_, b, _)| b.top())
+                        {
+                            0
+                        } else {
+                            self.last_line_metas.len() - 1
+                        }
+                    },
+                    |(i, _)| i,
+                );
 
             let (line_start_byte, row_bounds, offset_x) = &self.last_line_metas[row_idx];
             let layout = self.last_line_layouts.get(row_idx).and_then(|l| l.as_ref());
@@ -568,7 +569,7 @@ impl InlineInputState {
                 point.x - text_left
             };
 
-            let utf8_index_in_row = layout.map(|l| l.closest_index_for_x(local_x)).unwrap_or(0);
+            let utf8_index_in_row = layout.map_or(0, |l| l.closest_index_for_x(local_x));
             let abs_utf8 = line_start_byte + utf8_index_in_row;
             return self.utf8_to_utf16(abs_utf8);
         }
@@ -595,8 +596,7 @@ impl InlineInputState {
         let utf8_index = self
             .last_layout
             .as_ref()
-            .map(|layout| layout.closest_index_for_x(local_x))
-            .unwrap_or(0);
+            .map_or(0, |layout| layout.closest_index_for_x(local_x));
         self.utf8_to_utf16(utf8_index)
     }
 
@@ -727,8 +727,9 @@ impl IntoElement for InlineInputElement {
                     let focused = prepaint_focus_handle.is_focused(window);
                     let cursor_visible = view.cursor_visible_for_focus(focused);
                     let cursor_style = view.cursor_style;
-                    view.active_inline_input_state()
-                        .map(|state| {
+                    view.active_inline_input_state().map_or_else(
+                        || (String::new(), 0..0, 0, None, focused, false, cursor_style),
+                        |state| {
                             (
                                 state.text().to_string(),
                                 state.selected_range(),
@@ -738,10 +739,8 @@ impl IntoElement for InlineInputElement {
                                 cursor_visible,
                                 cursor_style,
                             )
-                        })
-                        .unwrap_or_else(|| {
-                            (String::new(), 0..0, 0, None, focused, false, cursor_style)
-                        })
+                        },
+                    )
                 };
 
                 // Split text into lines for multiline support
@@ -794,8 +793,7 @@ impl IntoElement for InlineInputElement {
                     .enumerate()
                     .rev()
                     .find(|&(_, start)| *start <= cursor_utf8_early)
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
+                    .map_or(0, |(i, _)| i);
                 let cursor_col_in_row = cursor_utf8_early - line_start_bytes[cursor_row];
 
                 // Get previous per-line offsets for scroll continuity
@@ -889,10 +887,9 @@ impl IntoElement for InlineInputElement {
                                 let available_width: f32 = row_bounds.size.width.into();
                                 let prev_offset: f32 =
                                     prev_line_offset_xs.get(row_idx).copied().unwrap_or(0.0);
-                                let cursor_x: f32 = shaped
-                                    .as_ref()
-                                    .map(|l| -> f32 { l.x_for_index(cursor_col_in_row).into() })
-                                    .unwrap_or(0.0);
+                                let cursor_x: f32 = shaped.as_ref().map_or(0.0, |l| -> f32 {
+                                    l.x_for_index(cursor_col_in_row).into()
+                                });
                                 let visible_cursor_x = cursor_x + prev_offset;
                                 let padding = 4.0_f32;
                                 let new_offset = if visible_cursor_x < 0.0 {
@@ -906,10 +903,9 @@ impl IntoElement for InlineInputElement {
                             }
                             InlineInputAlignment::Center => {
                                 let available_width: f32 = row_bounds.size.width.into();
-                                let text_width: f32 = shaped
-                                    .as_ref()
-                                    .map(|l| -> f32 { l.x_for_index(line_str.len()).into() })
-                                    .unwrap_or(0.0);
+                                let text_width: f32 = shaped.as_ref().map_or(0.0, |l| -> f32 {
+                                    l.x_for_index(line_str.len()).into()
+                                });
                                 px(((available_width - text_width).max(0.0) * 0.5).round())
                             }
                         }
@@ -945,15 +941,13 @@ impl IntoElement for InlineInputElement {
                         .enumerate()
                         .rev()
                         .find(|&(_, s)| *s <= selection_start)
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
+                        .map_or(0, |(i, _)| i);
                     let sel_end_row = line_start_bytes
                         .iter()
                         .enumerate()
                         .rev()
                         .find(|&(_, s)| *s <= selection_end)
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
+                        .map_or(0, |(i, _)| i);
 
                     if sel_start_row == sel_end_row {
                         let row_bounds = &line_bounds_vec[sel_start_row];
@@ -963,12 +957,10 @@ impl IntoElement for InlineInputElement {
                         let end_col = selection_end - row_start_byte;
                         let start_x = shaped_lines[sel_start_row]
                             .as_ref()
-                            .map(|l| l.x_for_index(start_col))
-                            .unwrap_or(px(0.0));
+                            .map_or(px(0.0), |l| l.x_for_index(start_col));
                         let end_x = shaped_lines[sel_start_row]
                             .as_ref()
-                            .map(|l| l.x_for_index(end_col))
-                            .unwrap_or(px(0.0));
+                            .map_or(px(0.0), |l| l.x_for_index(end_col));
                         Some(fill(
                             Bounds::from_corners(
                                 point(row_bounds.left() + offset_x + start_x, row_bounds.top()),
@@ -988,8 +980,7 @@ impl IntoElement for InlineInputElement {
                     let offset_x = line_offset_xs[cursor_row];
                     let cursor_x_in_row = shaped_lines[cursor_row]
                         .as_ref()
-                        .map(|l| l.x_for_index(cursor_col_in_row))
-                        .unwrap_or(px(0.0));
+                        .map_or(px(0.0), |l| l.x_for_index(cursor_col_in_row));
                     let cursor_x = px({
                         let x: f32 = cursor_x_in_row.into();
                         x.round()
@@ -1008,11 +999,10 @@ impl IntoElement for InlineInputElement {
                                         .as_ref()
                                         .map(|l| l.x_for_index(next_col) - cursor_x_in_row)
                                 })
-                                .map(|delta| {
+                                .map_or(fallback_width, |delta| {
                                     let w: f32 = delta.into();
                                     w.max(1.0)
-                                })
-                                .unwrap_or(fallback_width);
+                                });
                             px(width)
                         }
                     };
@@ -1101,8 +1091,7 @@ impl IntoElement for InlineInputElement {
                         .iter()
                         .zip(prepaint.line_offset_xs.iter())
                         .zip(painted_lines.iter())
-                        .enumerate()
-                        .map(|(_, ((rb, &ox), pl))| {
+                        .map(|((rb, &ox), pl)| {
                             let start = byte_offset;
                             if let Some(line) = pl {
                                 byte_offset += line.len;
@@ -1117,8 +1106,7 @@ impl IntoElement for InlineInputElement {
                 let cursor_row = prepaint.cursor_row;
                 let (cursor_bounds, cursor_offset_x) = line_metas
                     .get(cursor_row)
-                    .map(|(_, b, ox)| (*b, *ox))
-                    .unwrap_or((all_bounds, px(0.0)));
+                    .map_or((all_bounds, px(0.0)), |(_, b, ox)| (*b, *ox));
                 let cursor_line = painted_lines.into_iter().nth(cursor_row).flatten();
 
                 view.update(cx, |this, _cx| {
@@ -1612,7 +1600,7 @@ impl EntityInputHandler for TerminalView {
         if self.has_active_inline_input() {
             self.apply_inline_input_mutation(
                 move |state| {
-                    state.replace_and_mark_text_in_range(range, new_text, new_selected_range)
+                    state.replace_and_mark_text_in_range(range, new_text, new_selected_range);
                 },
                 cx,
             );

@@ -54,7 +54,7 @@ impl AppConfig {
                     diagnostics.push(ConfigDiagnostic {
                         line_number,
                         kind: ConfigDiagnosticKind::UnknownSection,
-                        message: format!("Unknown section '[{}]'", section),
+                        message: format!("Unknown section '[{section}]'"),
                     });
                 }
                 continue;
@@ -90,14 +90,13 @@ impl AppConfig {
                     Err(ColorEntryError::UnknownKey) => diagnostics.push(ConfigDiagnostic {
                         line_number,
                         kind: ConfigDiagnosticKind::UnknownColorKey,
-                        message: format!("Unknown color key '{}'", key),
+                        message: format!("Unknown color key '{key}'"),
                     }),
                     Err(ColorEntryError::InvalidValue) => diagnostics.push(ConfigDiagnostic {
                         line_number,
                         kind: ConfigDiagnosticKind::InvalidValue,
                         message: format!(
-                            "Invalid color value '{}' for '{}': expected #RRGGBB",
-                            value, key
+                            "Invalid color value '{value}' for '{key}': expected #RRGGBB"
                         ),
                     }),
                 }
@@ -143,8 +142,7 @@ impl AppConfig {
                             line_number,
                             kind: ConfigDiagnosticKind::InvalidValue,
                             message: format!(
-                                "Invalid task field '{}' for '{}': expected command, layout, or working_dir",
-                                task_field, key
+                                "Invalid task field '{task_field}' for '{key}': expected command, layout, or working_dir"
                             ),
                         });
                     }
@@ -155,8 +153,7 @@ impl AppConfig {
                         line_number,
                         kind: ConfigDiagnosticKind::InvalidValue,
                         message: format!(
-                            "Invalid task key '{}': task names must not contain '.'",
-                            key
+                            "Invalid task key '{key}': task names must not contain '.'"
                         ),
                     });
                     continue;
@@ -168,7 +165,7 @@ impl AppConfig {
                 diagnostics.push(ConfigDiagnostic {
                     line_number,
                     kind: ConfigDiagnosticKind::UnknownRootKey,
-                    message: format!("Unknown root key '{}'", key),
+                    message: format!("Unknown root key '{key}'"),
                 });
                 continue;
             };
@@ -179,8 +176,7 @@ impl AppConfig {
                         line_number,
                         kind: ConfigDiagnosticKind::DuplicateRootKey,
                         message: format!(
-                            "Duplicate root key '{}' (first defined on line {})",
-                            key, first_line
+                            "Duplicate root key '{key}' (first defined on line {first_line})"
                         ),
                     });
                 } else {
@@ -793,7 +789,7 @@ impl AppConfig {
                 diagnostics.push(ConfigDiagnostic {
                     line_number: task.first_line,
                     kind: ConfigDiagnosticKind::InvalidValue,
-                    message: format!("Task '{}' is missing required field 'command'", task_name),
+                    message: format!("Task '{task_name}' is missing required field 'command'"),
                 });
                 continue;
             };
@@ -1015,9 +1011,6 @@ fn push_invalid_value(
     diagnostics.push(ConfigDiagnostic {
         line_number,
         kind: ConfigDiagnosticKind::InvalidValue,
-        message: format!(
-            "Invalid value '{}' for '{}': expected {}",
-            value, key, expected
-        ),
+        message: format!("Invalid value '{value}' for '{key}': expected {expected}"),
     });
 }

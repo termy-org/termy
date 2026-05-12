@@ -36,13 +36,8 @@ pub fn fetch_latest_release_with_source(source: &impl ReleaseSource) -> Result<R
     let version = normalize_release_version(&payload.tag_name);
 
     let arch = current_arch();
-    let asset =
-        select_platform_asset(&payload.assets, current_platform(), arch).with_context(|| {
-            format!(
-                "No installer asset found for this platform (arch: '{}')",
-                arch
-            )
-        })?;
+    let asset = select_platform_asset(&payload.assets, current_platform(), arch)
+        .with_context(|| format!("No installer asset found for this platform (arch: '{arch}')"))?;
 
     Ok(ReleaseInfo {
         version,
@@ -132,7 +127,7 @@ mod tests {
     fn asset(name: &str) -> ReleaseAsset {
         ReleaseAsset {
             name: name.to_string(),
-            download_url: format!("https://example.com/{}", name),
+            download_url: format!("https://example.com/{name}"),
         }
     }
 }

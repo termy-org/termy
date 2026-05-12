@@ -1,6 +1,5 @@
 use super::super::{
-    COMMAND_PALETTE_INPUT_BG_ALPHA, COMMAND_PALETTE_INPUT_SELECTION_ALPHA,
-    COMMAND_PALETTE_INPUT_SOLID_ALPHA, COMMAND_PALETTE_PANEL_BG_ALPHA,
+    COMMAND_PALETTE_INPUT_SELECTION_ALPHA, COMMAND_PALETTE_PANEL_BG_ALPHA,
     COMMAND_PALETTE_PANEL_SOLID_ALPHA, COMMAND_PALETTE_ROW_SELECTED_BG_ALPHA,
     COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA, COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA,
     COMMAND_PALETTE_SHORTCUT_BG_ALPHA, COMMAND_PALETTE_SHORTCUT_TEXT_ALPHA,
@@ -9,7 +8,6 @@ use super::super::{
 };
 
 pub(in super::super) const COMMAND_PALETTE_PANEL_RADIUS: f32 = 12.0;
-pub(in super::super) const COMMAND_PALETTE_INPUT_RADIUS: f32 = 8.0;
 pub(super) const COMMAND_PALETTE_ROW_RADIUS: f32 = 6.0;
 pub(super) const COMMAND_PALETTE_SHORTCUT_RADIUS: f32 = 4.0;
 
@@ -19,10 +17,8 @@ pub(in super::super) struct CommandPaletteStyle {
     pub(in super::super) panel_border: gpui::Rgba,
     pub(in super::super) primary_text: gpui::Rgba,
     pub(in super::super) muted_text: gpui::Rgba,
-    pub(in super::super) input_bg: gpui::Rgba,
     pub(in super::super) input_selection: gpui::Rgba,
     pub(super) selected_bg: gpui::Rgba,
-    pub(super) selected_border: gpui::Rgba,
     pub(super) shortcut_bg: gpui::Rgba,
     pub(super) shortcut_border: gpui::Rgba,
     pub(super) shortcut_text: gpui::Rgba,
@@ -57,10 +53,6 @@ impl CommandPaletteStyle {
         let selected_bg = overlay_style.chrome_panel_cursor(COMMAND_PALETTE_ROW_SELECTED_BG_ALPHA);
         let primary_text = overlay_style.panel_foreground(OVERLAY_PRIMARY_TEXT_ALPHA);
         let muted_text = overlay_style.panel_foreground(OVERLAY_MUTED_TEXT_ALPHA);
-        let input_bg = overlay_style.chrome_panel_background_with_floor(
-            COMMAND_PALETTE_INPUT_BG_ALPHA,
-            COMMAND_PALETTE_INPUT_SOLID_ALPHA,
-        );
         let input_selection =
             overlay_style.chrome_panel_cursor(COMMAND_PALETTE_INPUT_SELECTION_ALPHA);
         let shortcut_bg = overlay_style.chrome_panel_cursor(COMMAND_PALETTE_SHORTCUT_BG_ALPHA);
@@ -75,10 +67,8 @@ impl CommandPaletteStyle {
             panel_border,
             primary_text,
             muted_text,
-            input_bg,
             input_selection,
             selected_bg,
-            selected_border: panel_border,
             shortcut_bg,
             shortcut_border: panel_border,
             shortcut_text,
@@ -95,7 +85,6 @@ mod tests {
     #[test]
     fn rounded_geometry_uses_consistent_radii() {
         assert_eq!(COMMAND_PALETTE_PANEL_RADIUS, 12.0);
-        assert_eq!(COMMAND_PALETTE_INPUT_RADIUS, 8.0);
         assert_eq!(COMMAND_PALETTE_ROW_RADIUS, 6.0);
         assert_eq!(COMMAND_PALETTE_SHORTCUT_RADIUS, 4.0);
     }

@@ -140,7 +140,7 @@ pub(crate) fn spawn_control_threads<W, R>(
             let exit_reason = Some(error.message.clone());
             fail_all_pending(current_command, pending_rx, error);
             signal_fatal_exit(fatal_exit_tx, exit_reason.clone());
-            let _ = notifications.push(TmuxNotification::Exit(exit_reason));
+            notifications.push(TmuxNotification::Exit(exit_reason));
             let _ = flush_notification_coalescer(notifications, notifications_tx, event_wakeup_tx);
         };
 
@@ -155,7 +155,7 @@ pub(crate) fn spawn_control_threads<W, R>(
                     TmuxControlError::channel("tmux control mode read failure"),
                 );
                 signal_fatal_exit(&fatal_exit_tx, exit_reason.clone());
-                let _ = notifications.push(TmuxNotification::Exit(exit_reason));
+                notifications.push(TmuxNotification::Exit(exit_reason));
                 let _ = flush_notification_coalescer(
                     &mut notifications,
                     &notifications_tx,
@@ -171,7 +171,7 @@ pub(crate) fn spawn_control_threads<W, R>(
                     TmuxControlError::channel("tmux control mode closed"),
                 );
                 signal_fatal_exit(&fatal_exit_tx, None);
-                let _ = notifications.push(TmuxNotification::Exit(None));
+                notifications.push(TmuxNotification::Exit(None));
                 let _ = flush_notification_coalescer(
                     &mut notifications,
                     &notifications_tx,
@@ -203,18 +203,7 @@ pub(crate) fn spawn_control_threads<W, R>(
             match event {
                 ControlStateEvent::None => {}
                 ControlStateEvent::Notification(notification) => {
-                    if let Err(error) = notifications.push(notification) {
-                        fail_with_exit(
-                            &mut current_command,
-                            &pending_rx,
-                            &notifications_tx,
-                            &fatal_exit_tx,
-                            &mut notifications,
-                            event_wakeup_tx.as_ref(),
-                            error,
-                        );
-                        break;
-                    }
+                    notifications.push(notification);
                 }
                 ControlStateEvent::CommandBegin => {
                     if current_command.is_some() {
@@ -303,7 +292,7 @@ pub(crate) fn spawn_control_threads<W, R>(
                         ),
                     );
                     signal_fatal_exit(&fatal_exit_tx, reason.clone());
-                    let _ = notifications.push(TmuxNotification::Exit(reason));
+                    notifications.push(TmuxNotification::Exit(reason));
                     let _ = flush_notification_coalescer(
                         &mut notifications,
                         &notifications_tx,

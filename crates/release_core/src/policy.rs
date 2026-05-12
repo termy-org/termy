@@ -19,9 +19,9 @@ pub enum PlatformKind {
 
 pub fn compare_versions(current_version: &str, latest_version: &str) -> Result<VersionComparison> {
     let current = Version::parse(current_version)
-        .with_context(|| format!("Invalid current version: {}", current_version))?;
+        .with_context(|| format!("Invalid current version: {current_version}"))?;
     let latest = Version::parse(latest_version)
-        .with_context(|| format!("Invalid latest version: {}", latest_version))?;
+        .with_context(|| format!("Invalid latest version: {latest_version}"))?;
 
     if latest > current {
         Ok(VersionComparison::UpdateAvailable)
@@ -96,7 +96,7 @@ pub fn extension_for_asset_name(name: &str) -> String {
 }
 
 fn find_macos_asset<'a>(assets: &'a [ReleaseAsset], arch: &str) -> Option<&'a ReleaseAsset> {
-    let dmg_suffix = format!("{}.dmg", arch);
+    let dmg_suffix = format!("{arch}.dmg");
     assets
         .iter()
         .find(|asset| asset.name.contains(arch) && asset.name.ends_with(".dmg"))
@@ -219,7 +219,7 @@ mod tests {
     fn asset(name: &str) -> ReleaseAsset {
         ReleaseAsset {
             name: name.to_string(),
-            download_url: format!("https://example.com/{}", name),
+            download_url: format!("https://example.com/{name}"),
         }
     }
 }

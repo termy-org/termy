@@ -64,8 +64,7 @@ pub fn effective_background_opacity(
     preview_opacity: Option<BackgroundOpacityPreview>,
 ) -> f32 {
     preview_opacity
-        .map(|preview| preview.opacity)
-        .unwrap_or(saved_opacity)
+        .map_or(saved_opacity, |preview| preview.opacity)
         .clamp(0.0, 1.0)
 }
 

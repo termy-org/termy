@@ -39,15 +39,13 @@ pub fn prettify_config_contents(contents: &str) -> String {
                     keybinds.push(value);
                 } else {
                     let root_key = canonical_root_key(key)
-                        .map(ToString::to_string)
-                        .unwrap_or_else(|| canonical_unknown_key(key));
+                        .map_or_else(|| canonical_unknown_key(key), ToString::to_string);
                     root_settings.insert(root_key, value);
                 }
             }
             Some("colors") => {
                 let color_key = canonical_color_key(key)
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| canonical_unknown_key(key));
+                    .map_or_else(|| canonical_unknown_key(key), ToString::to_string);
                 colors.insert(color_key, value);
             }
             Some(section) => {
@@ -67,14 +65,14 @@ pub fn prettify_config_contents(contents: &str) -> String {
         }
         if let Some(value) = root_settings.remove(spec.key) {
             let key = spec.key;
-            output.push_str(&format!("{} = {}\n", key, value));
+            output.push_str(&format!("{key} = {value}\n"));
         }
     }
 
     let mut remaining_root_keys: Vec<_> = root_settings.into_iter().collect();
     remaining_root_keys.sort_by(|left, right| left.0.cmp(&right.0));
     for (key, value) in remaining_root_keys {
-        output.push_str(&format!("{} = {}\n", key, value));
+        output.push_str(&format!("{key} = {value}\n"));
     }
 
     if !keybinds.is_empty() {
@@ -82,7 +80,7 @@ pub fn prettify_config_contents(contents: &str) -> String {
             output.push('\n');
         }
         for keybind in keybinds {
-            output.push_str(&format!("keybind = {}\n", keybind));
+            output.push_str(&format!("keybind = {keybind}\n"));
         }
     }
 
@@ -94,14 +92,14 @@ pub fn prettify_config_contents(contents: &str) -> String {
 
         for key in COLOR_SETTING_KEYS {
             if let Some(value) = colors.remove(*key) {
-                output.push_str(&format!("{} = {}\n", key, value));
+                output.push_str(&format!("{key} = {value}\n"));
             }
         }
 
         let mut extra_colors: Vec<_> = colors.into_iter().collect();
         extra_colors.sort_by(|left, right| left.0.cmp(&right.0));
         for (key, value) in extra_colors {
-            output.push_str(&format!("{} = {}\n", key, value));
+            output.push_str(&format!("{key} = {value}\n"));
         }
     }
 
@@ -136,7 +134,7 @@ fn append_section(
     output.push_str("]\n");
 
     for (key, value) in section_values {
-        output.push_str(&format!("{} = {}\n", key, value));
+        output.push_str(&format!("{key} = {value}\n"));
     }
 }
 

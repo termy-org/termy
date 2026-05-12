@@ -65,7 +65,7 @@ pub fn show_config_lines() -> Result<Vec<String>, String> {
     }
 
     let contents = std::fs::read_to_string(&path)
-        .map_err(|error| format!("Failed to read config file: {}", error))?;
+        .map_err(|error| format!("Failed to read config file: {error}"))?;
     if contents.trim().is_empty() {
         lines.push("(empty file - using defaults)".to_string());
         lines.push(String::new());
@@ -97,7 +97,7 @@ pub fn active_theme_colors() -> Result<ThemeColors, String> {
     } else {
         load_installed_theme_colors(&theme_id)
             .or_else(|| termy_themes::resolve_theme(&theme_id))
-            .ok_or_else(|| format!("Unknown theme: {}", theme_id))?
+            .ok_or_else(|| format!("Unknown theme: {theme_id}"))?
     };
 
     apply_custom_colors(&mut colors, &config.colors);

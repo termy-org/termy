@@ -108,16 +108,6 @@ pub(crate) fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn macos_app_installed(bundle: &str) -> bool {
-    macos_app_bundle_path(bundle).is_some()
-}
-
-#[cfg(not(target_os = "macos"))]
-pub(crate) fn macos_app_installed(_bundle: &str) -> bool {
-    false
-}
-
-#[cfg(target_os = "macos")]
 pub(crate) fn macos_app_bundle_path(bundle: &str) -> Option<PathBuf> {
     let system = PathBuf::from("/Applications").join(bundle);
     if system.exists() {

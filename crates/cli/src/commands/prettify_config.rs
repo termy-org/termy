@@ -1,12 +1,9 @@
 use termy_config_core::{config_path, prettify_config_contents};
 
 pub fn run() {
-    let path = match config_path() {
-        Some(path) => path,
-        None => {
-            eprintln!("Could not determine config directory");
-            return;
-        }
+    let Some(path) = config_path() else {
+        eprintln!("Could not determine config directory");
+        return;
     };
 
     if !path.exists() {
@@ -18,7 +15,7 @@ pub fn run() {
     let contents = match std::fs::read_to_string(&path) {
         Ok(contents) => contents,
         Err(error) => {
-            eprintln!("Failed to read config file: {}", error);
+            eprintln!("Failed to read config file: {error}");
             return;
         }
     };
@@ -29,10 +26,10 @@ pub fn run() {
         Ok(()) => {
             println!("Config file prettified: {}", path.display());
             println!();
-            print!("{}", prettified);
+            print!("{prettified}");
         }
         Err(error) => {
-            eprintln!("Failed to write config file: {}", error);
+            eprintln!("Failed to write config file: {error}");
         }
     }
 }

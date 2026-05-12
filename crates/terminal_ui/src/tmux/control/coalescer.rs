@@ -83,29 +83,24 @@ impl NotificationCoalescer {
         self.queue_refresh_if_missing();
     }
 
-    pub(crate) fn push(
-        &mut self,
-        notification: TmuxNotification,
-    ) -> std::result::Result<(), TmuxControlError> {
+    pub(crate) fn push(&mut self, notification: TmuxNotification) {
         match notification {
             TmuxNotification::NeedsRefresh => {
                 self.queue_refresh_if_missing();
             }
             TmuxNotification::Output { pane_id, bytes } => {
                 if bytes.is_empty() {
-                    return Ok(());
+                    return;
                 }
 
-                let mut queued_output_bytes =
-                    match self.queued_output_bytes.checked_add(bytes.len()) {
-                        Some(value) => value,
-                        None => {
-                            // The pending byte count overflowed arithmetic bounds. Drop the
-                            // newest burst, request a refresh, and keep the runtime alive.
-                            self.handle_output_backpressure(bytes.len());
-                            return Ok(());
-                        }
-                    };
+                let Some(mut queued_output_bytes) =
+                    self.queued_output_bytes.checked_add(bytes.len())
+                else {
+                    // The pending byte count overflowed arithmetic bounds. Drop the
+                    // newest burst, request a refresh, and keep the runtime alive.
+                    self.handle_output_backpressure(bytes.len());
+                    return;
+                };
 
                 if queued_output_bytes > self.max_output_bytes {
                     let mut bytes_to_free =
@@ -118,19 +113,19 @@ impl NotificationCoalescer {
                         bytes_to_free = bytes_to_free.saturating_sub(dropped);
                     }
 
-                    queued_output_bytes = match self.queued_output_bytes.checked_add(bytes.len()) {
-                        Some(value) => value,
-                        None => {
-                            self.handle_output_backpressure(bytes.len());
-                            return Ok(());
-                        }
+                    let Some(next_queued_output_bytes) =
+                        self.queued_output_bytes.checked_add(bytes.len())
+                    else {
+                        self.handle_output_backpressure(bytes.len());
+                        return;
                     };
+                    queued_output_bytes = next_queued_output_bytes;
 
                     if queued_output_bytes > self.max_output_bytes {
                         // Single bursts can be larger than the byte cap. Drop the burst
                         // and force a refresh instead of exiting tmux runtime.
                         self.handle_output_backpressure(bytes.len());
-                        return Ok(());
+                        return;
                     }
                 }
 
@@ -142,7 +137,7 @@ impl NotificationCoalescer {
                 {
                     tail_bytes.extend_from_slice(&bytes);
                     self.queued_output_bytes = queued_output_bytes;
-                    return Ok(());
+                    return;
                 }
 
                 self.queued
@@ -165,8 +160,6 @@ impl NotificationCoalescer {
                 self.queued.push_back(TmuxNotification::Exit(reason));
             }
         }
-
-        Ok(())
     }
 
     pub(crate) fn pop_next(&mut self) -> Option<TmuxNotification> {
@@ -228,7 +221,7 @@ pub(crate) fn signal_event_wakeup(event_wakeup_tx: Option<&Sender<()>>) {
     };
 
     match event_wakeup_tx.try_send(()) {
-        Ok(()) | Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {}
+        Ok(()) | Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {}
     }
 }
 
@@ -272,7 +265,7 @@ pub(crate) fn flush_notification_coalescer(
 
 pub(crate) fn signal_fatal_exit(fatal_exit_tx: &Sender<Option<String>>, reason: Option<String>) {
     match fatal_exit_tx.try_send(reason) {
-        Ok(()) | Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {}
+        Ok(()) | Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {}
     }
 }
 
@@ -283,8 +276,8 @@ mod tests {
     #[test]
     fn notification_coalescer_collapses_redundant_refresh_events() {
         let mut c = NotificationCoalescer::default();
-        c.push(TmuxNotification::NeedsRefresh).expect("refresh");
-        c.push(TmuxNotification::NeedsRefresh).expect("refresh");
+        c.push(TmuxNotification::NeedsRefresh);
+        c.push(TmuxNotification::NeedsRefresh);
 
         let drained = c.drain();
         let refresh_count = drained
@@ -300,18 +293,15 @@ mod tests {
         c.push(TmuxNotification::Output {
             pane_id: "%1".to_string(),
             bytes: b"hello".to_vec(),
-        })
-        .expect("output");
+        });
         c.push(TmuxNotification::Output {
             pane_id: "%1".to_string(),
             bytes: b" world".to_vec(),
-        })
-        .expect("output");
+        });
         c.push(TmuxNotification::Output {
             pane_id: "%2".to_string(),
             bytes: b"!".to_vec(),
-        })
-        .expect("output");
+        });
 
         let drained = c.drain();
         assert_eq!(
@@ -335,14 +325,12 @@ mod tests {
         c.push(TmuxNotification::Output {
             pane_id: "%1".to_string(),
             bytes: b"abcd".to_vec(),
-        })
-        .expect("output");
+        });
 
         c.push(TmuxNotification::Output {
             pane_id: "%2".to_string(),
             bytes: b"efgh".to_vec(),
-        })
-        .expect("backpressure handling should keep runtime alive");
+        });
 
         let drained = c.drain();
         assert!(
@@ -373,8 +361,7 @@ mod tests {
         c.push(TmuxNotification::Output {
             pane_id: "%1".to_string(),
             bytes: b"abcdef".to_vec(),
-        })
-        .expect("oversized burst should not terminate coalescer");
+        });
 
         let drained = c.drain();
         let refresh_count = drained
@@ -398,7 +385,7 @@ mod tests {
     #[test]
     fn notification_flush_signals_wakeup_when_notifications_are_enqueued() {
         let mut c = NotificationCoalescer::default();
-        c.push(TmuxNotification::NeedsRefresh).expect("refresh");
+        c.push(TmuxNotification::NeedsRefresh);
 
         let (notifications_tx, notifications_rx) = flume::bounded(4);
         let (event_wakeup_tx, event_wakeup_rx) = flume::bounded(1);
@@ -431,30 +418,23 @@ mod tests {
         c.push(TmuxNotification::Output {
             pane_id: "%1".to_string(),
             bytes: b"bench".to_vec(),
-        })
-        .expect("output");
-
-        let (notifications_tx, notifications_rx) = flume::bounded(1);
-        notifications_tx
-            .send(TmuxNotification::NeedsRefresh)
-            .expect("seed full queue");
-
-        let drain_thread = std::thread::spawn(move || {
-            assert!(matches!(
-                notifications_rx.recv(),
-                Ok(TmuxNotification::NeedsRefresh)
-            ));
-            assert!(matches!(
-                notifications_rx.recv(),
-                Ok(TmuxNotification::NeedsRefresh)
-            ));
         });
 
-        flush_notification_coalescer(&mut c, &notifications_tx, None)
-            .expect("queue overflow should degrade instead of failing");
-        drain_thread
-            .join()
-            .expect("receiver thread should complete");
+        let (notifications_tx, notifications_rx) = flume::bounded(0);
+        let (event_wakeup_tx, event_wakeup_rx) = flume::bounded(1);
+
+        let flush_thread = std::thread::spawn(move || {
+            flush_notification_coalescer(&mut c, &notifications_tx, Some(&event_wakeup_tx))
+                .expect("queue overflow should degrade instead of failing");
+            c
+        });
+
+        event_wakeup_rx.recv().expect("recovery wakeup");
+        assert!(matches!(
+            notifications_rx.recv(),
+            Ok(TmuxNotification::NeedsRefresh)
+        ));
+        let mut c = flush_thread.join().expect("flush thread should complete");
         assert!(
             c.drain().is_empty(),
             "recovery path should collapse to one refresh"
@@ -464,30 +444,23 @@ mod tests {
     #[test]
     fn notification_flush_queue_overflow_preserves_exit_notification() {
         let mut c = NotificationCoalescer::default();
-        c.push(TmuxNotification::Exit(Some("tmux exited".to_string())))
-            .expect("exit");
+        c.push(TmuxNotification::Exit(Some("tmux exited".to_string())));
 
-        let (notifications_tx, notifications_rx) = flume::bounded(1);
-        notifications_tx
-            .send(TmuxNotification::NeedsRefresh)
-            .expect("seed full queue");
+        let (notifications_tx, notifications_rx) = flume::bounded(0);
+        let (event_wakeup_tx, event_wakeup_rx) = flume::bounded(1);
 
-        let drain_thread = std::thread::spawn(move || {
-            assert!(matches!(
-                notifications_rx.recv(),
-                Ok(TmuxNotification::NeedsRefresh)
-            ));
-            assert!(matches!(
-                notifications_rx.recv(),
-                Ok(TmuxNotification::Exit(Some(reason))) if reason == "tmux exited"
-            ));
+        let flush_thread = std::thread::spawn(move || {
+            flush_notification_coalescer(&mut c, &notifications_tx, Some(&event_wakeup_tx))
+                .expect("queue overflow should preserve exit");
+            c
         });
 
-        flush_notification_coalescer(&mut c, &notifications_tx, None)
-            .expect("queue overflow should preserve exit");
-        drain_thread
-            .join()
-            .expect("receiver thread should complete");
+        event_wakeup_rx.recv().expect("recovery wakeup");
+        assert!(matches!(
+            notifications_rx.recv(),
+            Ok(TmuxNotification::Exit(Some(reason))) if reason == "tmux exited"
+        ));
+        let mut c = flush_thread.join().expect("flush thread should complete");
         assert!(
             c.drain().is_empty(),
             "exit recovery should not leave stale backlog"

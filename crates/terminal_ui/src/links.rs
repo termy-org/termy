@@ -127,7 +127,7 @@ pub fn classify_link_token(token: &str) -> Option<String> {
     }
 
     if lower.starts_with("www.") {
-        return Some(format!("https://{}", token));
+        return Some(format!("https://{token}"));
     }
 
     if lower.starts_with("file://") {
@@ -139,7 +139,7 @@ pub fn classify_link_token(token: &str) -> Option<String> {
     }
 
     if is_ipv4_with_optional_port_and_path(token) || looks_like_domain(token) {
-        return Some(format!("http://{}", token));
+        return Some(format!("http://{token}"));
     }
 
     None
@@ -159,7 +159,7 @@ fn extract_local_path_from_file_url(raw_path: &str) -> Option<String> {
 
     let (host, path) = raw_path.split_once('/')?;
     if host.eq_ignore_ascii_case("localhost") {
-        return Some(format!("/{}", path));
+        return Some(format!("/{path}"));
     }
 
     None

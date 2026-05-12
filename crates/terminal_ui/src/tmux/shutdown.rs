@@ -26,10 +26,7 @@ pub(crate) fn normalize_shutdown_teardown_result(
             Ok(())
         }
         Err(error) => Err(error).map_err(|error| {
-            anyhow!(
-                "failed to teardown tmux managed session '{}': {error:#}",
-                session_name
-            )
+            anyhow!("failed to teardown tmux managed session '{session_name}': {error:#}")
         }),
     }
 }
@@ -58,8 +55,7 @@ where
         (Err(detach_error), Some(Ok(()))) => Err(detach_error),
         (Ok(()), Some(Err(teardown_error))) => Err(teardown_error),
         (Err(detach_error), Some(Err(teardown_error))) => Err(anyhow!(
-            "failed shutdown for tmux session '{}': detach failed: {detach_error:#}; teardown failed: {teardown_error:#}",
-            session_name
+            "failed shutdown for tmux session '{session_name}': detach failed: {detach_error:#}; teardown failed: {teardown_error:#}"
         )),
     }
 }

@@ -12,12 +12,12 @@ use alacritty_terminal::term::cell::Flags;
 use flume::{Sender, bounded};
 use gpui::AppContext;
 use gpui::{
-    AnyElement, App, AsyncApp, ClipboardItem, Context, Element, Entity, ExternalPaths, FocusHandle,
-    Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, KeyUpEvent,
-    ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    AnyElement, App, AsyncApp, Bounds, ClipboardItem, Context, Element, Entity, ExternalPaths,
+    FocusHandle, Focusable, Font, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    KeyUpEvent, ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     ParentElement, Pixels, Render, ScrollWheelEvent, SharedString, Size,
     StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window, WindowBackgroundAppearance,
-    div, point, px,
+    div, point, px, relative,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -99,11 +99,18 @@ const SELECTION_BG_ALPHA: f32 = 0.35;
 const DIM_TEXT_FACTOR: f32 = 0.66;
 #[cfg(target_os = "macos")]
 const UPDATE_BANNER_HEIGHT: f32 = 44.0;
-const COMMAND_PALETTE_WIDTH: f32 = 640.0;
+const COMMAND_PALETTE_WIDTH: f32 = 560.0;
 const COMMAND_PALETTE_MAX_ITEMS: usize = 8;
-const COMMAND_PALETTE_ROW_HEIGHT: f32 = 30.0;
+const COMMAND_PALETTE_ROW_HEIGHT: f32 = 34.0;
 const COMMAND_PALETTE_SCROLLBAR_WIDTH: f32 = 8.0;
 const COMMAND_PALETTE_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 18.0;
+const COMMAND_PALETTE_INPUT_HEAD_HEIGHT: f32 = 44.0;
+const COMMAND_PALETTE_INPUT_TEXT_SIZE: f32 = 14.0;
+const COMMAND_PALETTE_ROW_ICON_SIZE: f32 = 14.0;
+const COMMAND_PALETTE_ROW_PADDING_X: f32 = 12.0;
+const COMMAND_PALETTE_SCRIM_ALPHA: f32 = 0.12;
+const COMMAND_PALETTE_DIVIDER_ALPHA: f32 = 0.10;
+const COMMAND_PALETTE_TOP_OFFSET: f32 = 60.0;
 const TERMINAL_SCROLLBAR_GUTTER_WIDTH: f32 = 12.0;
 const TERMINAL_SCROLLBAR_TRACK_WIDTH: f32 = 12.0;
 const TERMINAL_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 40.0;
@@ -143,12 +150,10 @@ const OVERLAY_PANEL_ALPHA_FLOOR_RATIO: f32 = 0.72;
 const OVERLAY_PRIMARY_TEXT_ALPHA: f32 = 0.95;
 const OVERLAY_MUTED_TEXT_ALPHA: f32 = 0.62;
 const COMMAND_PALETTE_PANEL_SOLID_ALPHA: f32 = 0.90;
-const COMMAND_PALETTE_INPUT_SOLID_ALPHA: f32 = 0.76;
 const COMMAND_PALETTE_ROW_SELECTED_BG_ALPHA: f32 = 0.20;
 const COMMAND_PALETTE_SHORTCUT_BG_ALPHA: f32 = 0.10;
 const COMMAND_PALETTE_SHORTCUT_TEXT_ALPHA: f32 = 0.80;
 const COMMAND_PALETTE_PANEL_BG_ALPHA: f32 = 0.98;
-const COMMAND_PALETTE_INPUT_BG_ALPHA: f32 = 0.64;
 const COMMAND_PALETTE_INPUT_SELECTION_ALPHA: f32 = 0.28;
 const COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA: f32 = 0.10;
 const COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA: f32 = 0.42;
@@ -604,6 +609,14 @@ impl Terminal {
         }
     }
 
+    fn set_wakeup_enabled(&self, enabled: bool) {
+        if let Self::Native(terminal) = self
+            && let Ok(terminal) = terminal.lock()
+        {
+            terminal.set_wakeup_enabled(enabled);
+        }
+    }
+
     /// Drain pending events. Returns collected events and whether more remain.
     fn drain_events(&self, host: &mut impl TerminalReplyHost) -> (Vec<TerminalEvent>, bool) {
         match self {
@@ -660,8 +673,7 @@ impl Terminal {
             Self::Tmux(terminal) => terminal.scroll_display(delta_lines),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.scroll_display(delta_lines))
-                .unwrap_or(false),
+                .is_ok_and(|terminal| terminal.scroll_display(delta_lines)),
         }
     }
 
@@ -670,8 +682,7 @@ impl Terminal {
             Self::Tmux(terminal) => terminal.scroll_to_bottom(),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.scroll_to_bottom())
-                .unwrap_or(false),
+                .is_ok_and(|terminal| terminal.scroll_to_bottom()),
         }
     }
 
@@ -680,8 +691,7 @@ impl Terminal {
             Self::Tmux(terminal) => terminal.scroll_state(),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.scroll_state())
-                .unwrap_or((0, 0)),
+                .map_or((0, 0), |terminal| terminal.scroll_state()),
         }
     }
 
@@ -690,8 +700,7 @@ impl Terminal {
             Self::Tmux(terminal) => terminal.cursor_state(),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.cursor_state())
-                .unwrap_or(None),
+                .map_or(None, |terminal| terminal.cursor_state()),
         }
     }
 
@@ -700,8 +709,7 @@ impl Terminal {
             Self::Tmux(terminal) => terminal.cursor_position(),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.cursor_position())
-                .unwrap_or((0, 0)),
+                .map_or((0, 0), |terminal| terminal.cursor_position()),
         }
     }
 
@@ -729,8 +737,7 @@ impl Terminal {
             Self::Tmux(terminal) => terminal.bracketed_paste_mode(),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.bracketed_paste_mode())
-                .unwrap_or(false),
+                .is_ok_and(|terminal| terminal.bracketed_paste_mode()),
         }
     }
 
@@ -739,8 +746,7 @@ impl Terminal {
             Self::Tmux(terminal) => terminal.alternate_screen_mode(),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.alternate_screen_mode())
-                .unwrap_or(false),
+                .is_ok_and(|terminal| terminal.alternate_screen_mode()),
         }
     }
 
@@ -785,8 +791,9 @@ impl Terminal {
             Self::Tmux(terminal) => terminal.take_damage_snapshot(),
             Self::Native(terminal) => terminal
                 .lock()
-                .map(|terminal| terminal.take_damage_snapshot())
-                .unwrap_or(TerminalDamageSnapshot::Full),
+                .map_or(TerminalDamageSnapshot::Full, |terminal| {
+                    terminal.take_damage_snapshot()
+                }),
         }
     }
 
@@ -853,11 +860,11 @@ struct PaneCachedElementIds {
 impl PaneCachedElementIds {
     fn new(id: &str) -> Self {
         Self {
-            pane: SharedString::from(format!("pane-{}", id)),
-            resize_handle_right: SharedString::from(format!("pane-resize-handle-right-{}", id)),
-            resize_handle_bottom: SharedString::from(format!("pane-resize-handle-bottom-{}", id)),
-            focus_accent: SharedString::from(format!("pane-focus-accent-{}", id)),
-            degraded_accent: SharedString::from(format!("pane-degraded-accent-{}", id)),
+            pane: SharedString::from(format!("pane-{id}")),
+            resize_handle_right: SharedString::from(format!("pane-resize-handle-right-{id}")),
+            resize_handle_bottom: SharedString::from(format!("pane-resize-handle-bottom-{id}")),
+            focus_accent: SharedString::from(format!("pane-focus-accent-{id}")),
+            degraded_accent: SharedString::from(format!("pane-degraded-accent-{id}")),
         }
     }
 }
@@ -1621,6 +1628,7 @@ pub struct TerminalView {
     notify_only_unfocused: bool,
     shell_integration_enabled: bool,
     progress_indicator_enabled: bool,
+    progress_indicator_animation_scheduled: bool,
     configured_working_dir: Option<String>,
     child_working_dir_cache: HashMap<u32, ChildWorkingDirCacheEntry>,
     child_working_dir_lookup_pending: HashSet<u32>,
@@ -1707,6 +1715,8 @@ pub struct TerminalView {
     terminal_scrollbar_drag: Option<TerminalScrollbarDragState>,
     terminal_scrollbar_track_hold: Option<TerminalScrollbarTrackHoldState>,
     terminal_scrollbar_track_hold_active: bool,
+    command_palette_scrollbar_drag: Option<TerminalScrollbarDragState>,
+    command_palette_scrollbar_lane_bounds: Option<Bounds<Pixels>>,
     pane_resize_drag: Option<PaneResizeDragState>,
     hovered_pane_divider: Option<HoveredPaneDivider>,
     pane_resize_blocked: bool,
@@ -2348,8 +2358,8 @@ impl TerminalView {
                 let (next_first, first_focus, removed) =
                     Self::native_remove_leaf_from_tree(original_first.clone(), pane_id);
                 if removed {
-                    return match next_first {
-                        Some(next_first) => (
+                    return if let Some(next_first) = next_first {
+                        (
                             Some(NativePaneLayoutNode::Split {
                                 axis,
                                 ratio,
@@ -2358,20 +2368,19 @@ impl TerminalView {
                             }),
                             first_focus,
                             true,
-                        ),
-                        None => {
-                            let focus_id = first_focus
-                                .or_else(|| Self::native_tree_first_leaf_id(&original_second));
-                            (Some(original_second), focus_id, true)
-                        }
+                        )
+                    } else {
+                        let focus_id = first_focus
+                            .or_else(|| Self::native_tree_first_leaf_id(&original_second));
+                        (Some(original_second), focus_id, true)
                     };
                 }
 
                 let (next_second, second_focus, removed) =
                     Self::native_remove_leaf_from_tree(original_second.clone(), pane_id);
                 if removed {
-                    return match next_second {
-                        Some(next_second) => (
+                    return if let Some(next_second) = next_second {
+                        (
                             Some(NativePaneLayoutNode::Split {
                                 axis,
                                 ratio,
@@ -2380,12 +2389,11 @@ impl TerminalView {
                             }),
                             second_focus,
                             true,
-                        ),
-                        None => {
-                            let focus_id = second_focus
-                                .or_else(|| Self::native_tree_first_leaf_id(&original_first));
-                            (Some(original_first), focus_id, true)
-                        }
+                        )
+                    } else {
+                        let focus_id = second_focus
+                            .or_else(|| Self::native_tree_first_leaf_id(&original_first));
+                        (Some(original_first), focus_id, true)
                     };
                 }
 
@@ -2445,6 +2453,25 @@ impl TerminalView {
         {
             false
         }
+    }
+
+    fn dispatch_terminal_notification(&mut self, title: &str, body: &str, cx: &mut Context<Self>) {
+        if !self.notifications_enabled {
+            return;
+        }
+
+        let app_active = termy_native_sdk::is_app_active();
+        if !self.notify_only_unfocused || !app_active {
+            termy_native_sdk::show_notification(title, body);
+        }
+
+        let message = if title.trim().is_empty() || title == "Terminal" {
+            body.to_string()
+        } else {
+            format!("{title}: {body}")
+        };
+        termy_toast::info_long(message);
+        self.notify_overlay(cx);
     }
 
     #[cfg(target_os = "macos")]
@@ -2543,16 +2570,15 @@ impl TerminalView {
         if let Some(prompt) = value
             .rsplit_once("prompt:")
             .map(|(_, prompt)| prompt.trim())
+            && !prompt.is_empty()
         {
-            if !prompt.is_empty() {
-                return Some(prompt);
-            }
+            return Some(prompt);
         }
 
-        if let Some(cwd) = value.strip_prefix("cwd:").map(str::trim) {
-            if !cwd.is_empty() {
-                return Some(cwd);
-            }
+        if let Some(cwd) = value.strip_prefix("cwd:").map(str::trim)
+            && !cwd.is_empty()
+        {
+            return Some(cwd);
         }
 
         Some(value)
@@ -2963,13 +2989,9 @@ impl TerminalView {
             let _ = cx.update(|cx| {
                 this.update(cx, |view, cx| {
                     view.new_tab_animation_scheduled = false;
-                    let still_animating = view
-                        .new_tab_animation_start
-                        .map(|start| {
-                            Instant::now().saturating_duration_since(start)
-                                < NEW_TAB_ANIMATION_DURATION
-                        })
-                        .unwrap_or(false);
+                    let still_animating = view.new_tab_animation_start.is_some_and(|start| {
+                        Instant::now().saturating_duration_since(start) < NEW_TAB_ANIMATION_DURATION
+                    });
                     view.mark_tab_strip_layout_dirty();
                     if still_animating {
                         view.schedule_new_tab_animation(cx);
@@ -3335,14 +3357,13 @@ impl TerminalView {
         let mut dividers = Vec::new();
 
         for pane in &tab.panes {
-            let frame = match TerminalContentRect::new(
+            let Some(frame) = TerminalContentRect::new(
                 outer_padding_x + (f32::from(pane.left) * layout_cell_width),
                 outer_padding_y + (f32::from(pane.top) * layout_cell_height),
                 f32::from(pane.width) * layout_cell_width,
                 f32::from(pane.height) * layout_cell_height,
-            ) {
-                Some(frame) => frame,
-                None => continue,
+            ) else {
+                continue;
             };
 
             let gaps = Self::pane_neighbor_gaps(pane, &tab.panes);
@@ -3965,6 +3986,7 @@ impl TerminalView {
             notify_only_unfocused: config.notify_only_unfocused,
             shell_integration_enabled: config.shell_integration_enabled,
             progress_indicator_enabled: config.progress_indicator_enabled,
+            progress_indicator_animation_scheduled: false,
             configured_working_dir,
             child_working_dir_cache: HashMap::new(),
             child_working_dir_lookup_pending: HashSet::new(),
@@ -4051,6 +4073,8 @@ impl TerminalView {
             terminal_scrollbar_drag: None,
             terminal_scrollbar_track_hold: None,
             terminal_scrollbar_track_hold_active: false,
+            command_palette_scrollbar_drag: None,
+            command_palette_scrollbar_lane_bounds: None,
             pane_resize_drag: None,
             hovered_pane_divider: None,
             pane_resize_blocked: false,
@@ -4089,7 +4113,7 @@ impl TerminalView {
             match view.restore_persisted_native_workspace(cx) {
                 Ok(restored) => restored,
                 Err(error) => {
-                    log::error!("Failed to restore native tab workspace: {}", error);
+                    log::error!("Failed to restore native tab workspace: {error}");
                     termy_toast::error("Failed to restore saved native tabs");
                     false
                 }
@@ -4108,7 +4132,7 @@ impl TerminalView {
                         native_terminal,
                         initial_cols,
                         initial_rows,
-                        startup_predicted_title.clone(),
+                        startup_predicted_title,
                     )];
                     view.active_tab = 0;
                     view.refresh_tab_title(0);
@@ -4212,6 +4236,7 @@ impl TerminalView {
             view.auto_updater = Some(updater);
         }
 
+        view.sync_native_terminal_wakeup_interest();
         view
     }
 
@@ -4304,18 +4329,19 @@ impl TerminalView {
             || native_layout_autosave_changed
             || native_buffer_persistence_changed
         {
-            if native_tab_persistence_changed && !self.native_tab_persistence {
-                if let Err(error) = self.clear_persisted_native_workspace() {
-                    log::error!("Failed to clear saved native tab workspace: {}", error);
-                }
+            if native_tab_persistence_changed
+                && !self.native_tab_persistence
+                && let Err(error) = self.clear_persisted_native_workspace()
+            {
+                log::error!("Failed to clear saved native tab workspace: {error}");
             }
-            if native_buffer_persistence_changed && !self.native_buffer_persistence {
-                if let Err(error) = self.rewrite_persisted_native_workspace_without_buffers() {
-                    log::error!(
-                        "Failed to rewrite saved native tab workspace without buffers: {}",
-                        error
-                    );
-                }
+            if native_buffer_persistence_changed
+                && !self.native_buffer_persistence
+                && let Err(error) = self.rewrite_persisted_native_workspace_without_buffers()
+            {
+                log::error!(
+                    "Failed to rewrite saved native tab workspace without buffers: {error}"
+                );
             }
             if self.native_tab_persistence
                 || self.native_layout_autosave
@@ -4431,24 +4457,21 @@ impl TerminalView {
 
     #[cfg(not(test))]
     fn reload_config_if_changed(&mut self, cx: &mut Context<Self>) -> bool {
-        let path = match self.config_path.clone() {
-            Some(path) => path,
-            None => {
-                let loaded = config::load_runtime_config(
-                    &mut self.last_config_error_message,
-                    "Failed to reload config for terminal view",
-                );
-                self.config_path = loaded.path;
-                self.config_fingerprint = loaded.fingerprint;
-                if loaded.loaded_from_disk {
-                    let changed = self.apply_runtime_config(loaded.config, cx);
-                    if changed {
-                        termy_toast::info("Configuration reloaded");
-                    }
-                    return changed;
+        let Some(path) = self.config_path.clone() else {
+            let loaded = config::load_runtime_config(
+                &mut self.last_config_error_message,
+                "Failed to reload config for terminal view",
+            );
+            self.config_path = loaded.path;
+            self.config_fingerprint = loaded.fingerprint;
+            if loaded.loaded_from_disk {
+                let changed = self.apply_runtime_config(loaded.config, cx);
+                if changed {
+                    termy_toast::info("Configuration reloaded");
                 }
-                return false;
+                return changed;
             }
+            return false;
         };
 
         let Some(fingerprint) = config::config_fingerprint(&path) else {
@@ -4560,10 +4583,7 @@ impl TerminalView {
             // scrolled into history. The background PTY thread already updated the offset
             // before we got here, so we compare against content_scroll_baseline (a value
             // we maintain separately from user-initiated scrolls) to find the delta.
-            let current_offset = self
-                .active_terminal()
-                .map(|t| t.scroll_state().0)
-                .unwrap_or(0);
+            let current_offset = self.active_terminal().map_or(0, |t| t.scroll_state().0);
             if current_offset != self.content_scroll_baseline {
                 self.adjust_selection_for_display_offset_change(
                     self.content_scroll_baseline,
@@ -4604,7 +4624,9 @@ impl TerminalView {
                     .drain_events(&mut reply_host);
                 if has_more {
                     terminal_events_remain = true;
-                    should_redraw = true;
+                    if tab_index == active_tab {
+                        should_redraw = true;
+                    }
                 }
 
                 for event in events {
@@ -4652,17 +4674,16 @@ impl TerminalView {
                                 // Notify for long-running commands when prompt returns
                                 if let Some(duration) =
                                     self.tabs[tab_index].command_lifecycle.elapsed()
+                                    && duration.as_secs_f32() >= self.notification_min_duration
+                                    && self.notifications_enabled
+                                    && (!self.notify_only_unfocused
+                                        || !termy_native_sdk::is_app_active())
                                 {
-                                    if duration.as_secs_f32() >= self.notification_min_duration
-                                        && self.notifications_enabled
-                                        && (!self.notify_only_unfocused
-                                            || !termy_native_sdk::is_app_active())
-                                    {
-                                        termy_native_sdk::show_notification(
-                                            "Command Complete",
-                                            "Long-running command finished",
-                                        );
-                                    }
+                                    self.dispatch_terminal_notification(
+                                        "Command Complete",
+                                        "Long-running command finished",
+                                        cx,
+                                    );
                                 }
                                 self.tabs[tab_index].command_lifecycle.prompt_start();
                             }
@@ -4686,26 +4707,16 @@ impl TerminalView {
                         }
                         // Notification events (OSC 9, OSC 777)
                         TerminalEvent::Notification { title, body } => {
-                            if self.notifications_enabled {
-                                let should_notify = !self.notify_only_unfocused
-                                    || !termy_native_sdk::is_app_active();
-                                if should_notify {
-                                    termy_native_sdk::show_notification(&title, &body);
-                                }
-                            }
+                            self.dispatch_terminal_notification(&title, &body, cx);
                         }
                         TerminalEvent::Notify(msg) => {
-                            if self.notifications_enabled {
-                                let should_notify = !self.notify_only_unfocused
-                                    || !termy_native_sdk::is_app_active();
-                                if should_notify {
-                                    termy_native_sdk::show_notification("Terminal", &msg);
-                                }
-                            }
+                            self.dispatch_terminal_notification("Terminal", &msg, cx);
                         }
                         // Progress indicator (OSC 9;4)
                         TerminalEvent::Progress(state) => {
-                            if self.progress_indicator_enabled {
+                            if self.progress_indicator_enabled
+                                && self.tabs[tab_index].progress_state != state
+                            {
                                 self.tabs[tab_index].progress_state = state;
                                 should_redraw = true;
                             }

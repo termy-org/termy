@@ -37,15 +37,10 @@ pub(super) struct TabItemStrokeRects {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn close_chip_fits_within_close_slot() {
-        assert!(TAB_CLOSE_CHIP_WIDTH < TAB_CLOSE_SLOT_WIDTH);
-        assert!(TAB_CLOSE_CHIP_HEIGHT < TAB_CLOSE_HITBOX);
-    }
-}
+const _: () = {
+    assert!(TAB_CLOSE_CHIP_WIDTH < TAB_CLOSE_SLOT_WIDTH);
+    assert!(TAB_CLOSE_CHIP_HEIGHT < TAB_CLOSE_HITBOX);
+};
 
 impl TerminalView {
     fn render_tab_accessory(
@@ -122,7 +117,12 @@ impl TerminalView {
                                 .text_color(palette.close_button_hover_text)
                         })
                         .cursor_pointer()
-                        .child("📌"),
+                        .child(
+                            gpui::svg()
+                                .path(gpui::SharedString::from("icons/command_palette/pin.svg"))
+                                .size(px(10.0))
+                                .text_color(close_text_color),
+                        ),
                 )
                 .into_any_element();
         }
@@ -447,7 +447,7 @@ impl TerminalView {
             ProgressState::Indeterminate => gpui::rgb(0x3b82f6), // blue
             ProgressState::Clear => return None,
         };
-        let mut bg_color: gpui::Rgba = color.into();
+        let mut bg_color: gpui::Rgba = color;
         bg_color.a *= anim;
         Some(
             div()

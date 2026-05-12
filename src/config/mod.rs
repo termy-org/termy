@@ -153,7 +153,7 @@ pub fn execute_fix_for_toast(toast_id: u64) -> bool {
     };
     for key in &keys {
         if let Err(e) = mutate::remove_raw_root_key_from_config(key) {
-            log::warn!("Failed to fix config key '{}': {}", key, e);
+            log::warn!("Failed to fix config key '{key}': {e}");
         }
     }
     !keys.is_empty()
@@ -183,7 +183,7 @@ pub fn report_config_error_once(
         return;
     }
 
-    log::error!("{}: {}", error_context, error_message);
+    log::error!("{error_context}: {error_message}");
     termy_toast::error(error_message.clone());
     *previous_error = Some(error_message);
 }
@@ -339,8 +339,7 @@ mod tests {
                 termy_config_core::VALID_ROOT_KEYS
                     .iter()
                     .any(|valid| valid.eq_ignore_ascii_case(key)),
-                "unknown root key in DEFAULT_CONFIG: {}",
-                key
+                "unknown root key in DEFAULT_CONFIG: {key}"
             );
         }
     }
@@ -357,8 +356,7 @@ mod tests {
                 termy_config_core::VALID_SECTIONS
                     .iter()
                     .any(|section| section.eq_ignore_ascii_case(section_name)),
-                "unknown section in DEFAULT_CONFIG: {}",
-                section_name
+                "unknown section in DEFAULT_CONFIG: {section_name}"
             );
         }
     }

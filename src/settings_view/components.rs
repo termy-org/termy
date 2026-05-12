@@ -28,7 +28,7 @@ impl SettingsWindow {
     pub(super) fn render_section_header(
         &self,
         title: &'static str,
-        subtitle: &'static str,
+        _legacy_subtitle: &'static str,
         section: SettingsSection,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -38,6 +38,7 @@ impl SettingsWindow {
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
         let text_secondary = self.text_secondary();
+        let subtitle = Self::settings_section_subtitle(section);
         let can_reset = self.section_has_non_default_values(section);
         let mut disabled_bg = bg_input;
         disabled_bg.a *= 0.6;
@@ -51,26 +52,35 @@ impl SettingsWindow {
             .items_end()
             .justify_between()
             .gap_4()
-            .mb_6()
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
+                    .gap(px(4.0))
                     .child(
                         div()
-                            .text_xl()
-                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_size(px(SECTION_TITLE_SIZE))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(text_primary)
                             .child(title),
                     )
-                    .child(div().text_sm().text_color(text_muted).child(subtitle)),
+                    .child(
+                        div()
+                            .text_size(px(SECTION_SUBTITLE_SIZE))
+                            .text_color(text_muted)
+                            .child(subtitle),
+                    ),
             )
-            .child(
+            .child({
+                let is_section_hovered = self.hovered_reset_section == Some(section);
+                let tooltip_bg = self.bg_elevated();
+                let tooltip_border = self.border_color();
+                let tooltip_fg = self.text_primary();
                 div()
                     .id(SharedString::from(format!("reset-section-{section:?}")))
+                    .relative()
                     .px_3()
-                    .py_2()
+                    .py(px(6.0))
                     .rounded(px(SETTINGS_BUTTON_RADIUS))
                     .bg(if can_reset { bg_input } else { disabled_bg })
                     .border_1()
@@ -79,7 +89,7 @@ impl SettingsWindow {
                     } else {
                         disabled_border
                     })
-                    .text_sm()
+                    .text_xs()
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(if can_reset {
                         text_secondary
@@ -89,23 +99,51 @@ impl SettingsWindow {
                     .when(can_reset, |s| {
                         s.cursor_pointer()
                             .hover(move |s| s.bg(hover_bg).text_color(text_primary))
+                            .on_hover(cx.listener(move |view, hovering: &bool, _window, cx| {
+                                if *hovering {
+                                    view.hovered_reset_section = Some(section);
+                                } else if view.hovered_reset_section == Some(section) {
+                                    view.hovered_reset_section = None;
+                                }
+                                cx.notify();
+                            }))
                     })
                     .child("Reset section")
                     .when(can_reset, |s| {
                         s.on_click(cx.listener(move |view, _, _, cx| {
                             view.confirm_reset_section_to_defaults(section, cx);
                         }))
-                    }),
-            )
+                    })
+                    .when(is_section_hovered && can_reset, move |s| {
+                        s.child(
+                            deferred(
+                                div()
+                                    .absolute()
+                                    .top_full()
+                                    .right_0()
+                                    .mt(px(6.0))
+                                    .px(px(8.0))
+                                    .py(px(4.0))
+                                    .rounded(px(6.0))
+                                    .bg(tooltip_bg)
+                                    .border_1()
+                                    .border_color(tooltip_border)
+                                    .text_size(px(11.0))
+                                    .text_color(tooltip_fg)
+                                    .whitespace_nowrap()
+                                    .child("Reset all settings in this section"),
+                            )
+                            .with_priority(20),
+                        )
+                    })
+            })
     }
 
     pub(super) fn render_group_header(&self, title: &'static str) -> impl IntoElement {
         div()
-            .text_xs()
+            .text_size(px(GROUP_TITLE_SIZE))
             .font_weight(gpui::FontWeight::SEMIBOLD)
-            .text_color(self.text_muted())
-            .mt_4()
-            .mb_2()
+            .text_color(self.text_secondary())
             .child(title)
     }
 
@@ -114,43 +152,70 @@ impl SettingsWindow {
         setting_key: &'static str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let bg_input = self.bg_input();
         let hover_bg = self.bg_hover();
-        let border_color = self.border_color();
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
         let can_reset = !self.is_setting_at_default(setting_key);
-        let mut disabled_bg = bg_input;
-        disabled_bg.a *= 0.6;
-        let mut disabled_border = border_color;
-        disabled_border.a *= 0.6;
         let mut disabled_text = text_muted;
-        disabled_text.a *= 0.6;
+        disabled_text.a *= 0.35;
+        let icon_color = if can_reset { text_muted } else { disabled_text };
+        let is_hovered = self.hovered_reset_setting == Some(setting_key);
+        let tooltip_bg = self.bg_elevated();
+        let tooltip_border = self.border_color();
+        let tooltip_fg = self.text_primary();
 
         div()
             .id(SharedString::from(format!("reset-setting-{setting_key}")))
-            .px_2()
-            .py_1()
-            .rounded(px(SETTINGS_BUTTON_RADIUS))
-            .bg(if can_reset { bg_input } else { disabled_bg })
-            .border_1()
-            .border_color(if can_reset {
-                border_color
-            } else {
-                disabled_border
-            })
-            .text_xs()
-            .font_weight(gpui::FontWeight::MEDIUM)
-            .text_color(if can_reset { text_muted } else { disabled_text })
+            .w(px(22.0))
+            .h(px(22.0))
+            .relative()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(SETTINGS_INPUT_RADIUS))
             .when(can_reset, |s| {
                 s.cursor_pointer()
-                    .hover(move |s| s.bg(hover_bg).text_color(text_primary))
+                    .hover(move |s| s.bg(hover_bg))
+                    .on_hover(cx.listener(move |view, hovering: &bool, _window, cx| {
+                        if *hovering {
+                            view.hovered_reset_setting = Some(setting_key);
+                        } else if view.hovered_reset_setting == Some(setting_key) {
+                            view.hovered_reset_setting = None;
+                        }
+                        cx.notify();
+                    }))
             })
-            .child("Reset")
+            .child(
+                svg()
+                    .path(SharedString::from("icons/settings/reset.svg"))
+                    .size(px(13.0))
+                    .text_color(if can_reset { text_primary } else { icon_color }),
+            )
             .when(can_reset, |s| {
                 s.on_click(cx.listener(move |view, _, _, cx| {
                     view.confirm_reset_setting_to_default(setting_key, cx);
                 }))
+            })
+            .when(is_hovered && can_reset, |s| {
+                s.child(
+                    deferred(
+                        div()
+                            .absolute()
+                            .bottom(px(28.0))
+                            .right(px(-4.0))
+                            .px(px(8.0))
+                            .py(px(4.0))
+                            .rounded(px(6.0))
+                            .bg(tooltip_bg)
+                            .border_1()
+                            .border_color(tooltip_border)
+                            .text_size(px(11.0))
+                            .text_color(tooltip_fg)
+                            .whitespace_nowrap()
+                            .child("Reset to default"),
+                    )
+                    .with_priority(20),
+                )
             })
     }
 
@@ -166,55 +231,42 @@ impl SettingsWindow {
         on_toggle: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> AnyElement {
         let is_search_match = self.setting_matches_sidebar_query(search_key);
-        let row_border = if is_search_match {
-            self.accent_with_alpha(0.55)
-        } else {
-            self.border_color()
-        };
-        let row_bg = if is_search_match {
-            self.accent_with_alpha(0.08)
-        } else {
-            self.bg_card()
-        };
-        let toggle_label_color = if checked {
-            self.accent()
-        } else {
-            self.text_muted()
-        };
+        let match_stripe = self.accent_with_alpha(0.85);
+        let match_bg = self.accent_with_alpha(0.06);
 
-        // Keep toggle rows shrink-safe in narrow content areas.
-        // `justify_between` with a growing left column can inflate intrinsic width
-        // and push the control cluster beyond the visible viewport.
         let row = div()
             .w_full()
+            .relative()
             .flex()
             .items_center()
             .gap_4()
-            .py_3()
-            .px_4()
-            .rounded(px(SETTINGS_BUTTON_RADIUS))
-            .bg(row_bg)
-            .border_1()
-            .border_color(row_border)
+            .py(px(CARD_ROW_PADDING_Y))
+            .px(px(CARD_ROW_PADDING_X))
+            .when(is_search_match, |s| s.bg(match_bg))
+            .when(is_search_match, |s| {
+                s.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top(px(6.0))
+                        .bottom(px(6.0))
+                        .w(px(2.0))
+                        .bg(match_stripe),
+                )
+            })
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .min_w(px(0.0))
                     .flex_col()
-                    .gap(px(2.0))
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(self.text_primary())
-                            .child(title),
-                    )
+                    .gap(px(1.0))
+                    .child(div().text_sm().text_color(self.text_primary()).child(title))
                     .child(
                         div()
                             .text_xs()
                             .text_color(self.text_muted())
-                            .line_height(px(17.0))
+                            .line_height(px(16.0))
                             .child(description),
                     ),
             )
@@ -224,16 +276,7 @@ impl SettingsWindow {
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap_3()
-                    .child(
-                        div()
-                            .w(px(24.0))
-                            .text_xs()
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(toggle_label_color)
-                            .text_align(TextAlign::Center)
-                            .child(if checked { "On" } else { "Off" }),
-                    )
+                    .gap_2()
                     .child(self.render_switch(id, checked, cx, on_toggle))
                     .child(self.render_reset_setting_button(search_key, cx)),
             );
@@ -275,34 +318,6 @@ impl SettingsWindow {
         )
     }
 
-    pub(super) fn render_config_row(
-        &mut self,
-        setting: RootSettingId,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let spec = termy_config_core::root_setting_spec(setting);
-        let value = root_setting_default_value(&self.config, setting)?;
-
-        if spec.value_kind == RootSettingValueKind::Boolean {
-            let checked = value.parse::<bool>().unwrap_or(false);
-            Some(
-                self.render_root_bool_setting_row(
-                    spec.key, spec.key, setting, checked, "Saved", cx,
-                ),
-            )
-        } else {
-            let field = Self::root_setting_to_editable_field(setting)?;
-            Some(self.render_editable_row(
-                spec.key,
-                field,
-                spec.title,
-                spec.description,
-                self.editable_field_value(field),
-                cx,
-            ))
-        }
-    }
-
     pub(super) fn render_switch(
         &self,
         id: impl Into<SharedString>,
@@ -315,10 +330,11 @@ impl SettingsWindow {
         bg_off.a = 0.34;
         let track_color = if checked { accent } else { bg_off };
         let knob_color = self.contrasting_text_for_fill(track_color, self.bg_card());
+        let knob_top = (SETTINGS_SWITCH_HEIGHT - SETTINGS_SWITCH_KNOB_SIZE) * 0.5;
         let knob_left = if checked {
-            SETTINGS_SWITCH_WIDTH - SETTINGS_SWITCH_KNOB_SIZE - 2.0
+            SETTINGS_SWITCH_WIDTH - SETTINGS_SWITCH_KNOB_SIZE - knob_top
         } else {
-            2.0
+            knob_top
         };
 
         div()
@@ -332,7 +348,7 @@ impl SettingsWindow {
             .child(
                 div()
                     .absolute()
-                    .top(px(3.0))
+                    .top(px(knob_top))
                     .left(px(knob_left))
                     .w(px(SETTINGS_SWITCH_KNOB_SIZE))
                     .h(px(SETTINGS_SWITCH_KNOB_SIZE))
@@ -362,8 +378,7 @@ impl SettingsWindow {
         let query = self
             .active_input
             .as_ref()
-            .map(|input| input.state.text())
-            .unwrap_or("");
+            .map_or("", |input| input.state.text());
         if Self::field_uses_click_only_dropdown(field) {
             self.dropdown_options_for_field(field, "")
         } else {
@@ -476,6 +491,9 @@ impl SettingsWindow {
         };
 
         if is_numeric {
+            let chevron_size = px(11.0);
+            let stepper_w = px(NUMERIC_STEP_BUTTON_SIZE);
+            let stepper_h = px(NUMERIC_STEP_BUTTON_SIZE * 0.5);
             return div()
                 .h_full()
                 .flex()
@@ -484,49 +502,64 @@ impl SettingsWindow {
                 .gap_2()
                 .child(
                     div()
-                        .id(SharedString::from(format!("dec-{field:?}")))
-                        .w(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .h(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .rounded(px(SETTINGS_BUTTON_RADIUS))
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .bg(bg_card)
-                        .text_color(text_primary)
-                        .text_sm()
-                        .child("-")
-                        .on_click(cx.listener(move |view, _, _, cx| {
-                            cx.stop_propagation();
-                            view.step_numeric_field(field, -1, cx);
-                        })),
-                )
-                .child(
-                    div()
                         .flex_1()
                         .text_sm()
                         .text_color(text_secondary)
-                        .text_align(TextAlign::Center)
                         .child(display_value),
                 )
                 .child(
                     div()
-                        .id(SharedString::from(format!("inc-{field:?}")))
-                        .w(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .h(px(NUMERIC_STEP_BUTTON_SIZE))
-                        .rounded(px(SETTINGS_BUTTON_RADIUS))
-                        .cursor_pointer()
                         .flex()
+                        .flex_col()
                         .items_center()
                         .justify_center()
-                        .bg(bg_card)
-                        .text_color(text_primary)
-                        .text_sm()
-                        .child("+")
-                        .on_click(cx.listener(move |view, _, _, cx| {
-                            cx.stop_propagation();
-                            view.step_numeric_field(field, 1, cx);
-                        })),
+                        .w(stepper_w)
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("inc-{field:?}")))
+                                .w(stepper_w)
+                                .h(stepper_h)
+                                .cursor_pointer()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_t(px(SETTINGS_INPUT_RADIUS - 2.0))
+                                .text_color(text_primary)
+                                .hover(|s| s.bg(bg_card))
+                                .child(
+                                    svg()
+                                        .path(SharedString::from("icons/settings/chevron-up.svg"))
+                                        .size(chevron_size)
+                                        .text_color(text_primary),
+                                )
+                                .on_click(cx.listener(move |view, _, _, cx| {
+                                    cx.stop_propagation();
+                                    view.step_numeric_field(field, 1, cx);
+                                })),
+                        )
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("dec-{field:?}")))
+                                .w(stepper_w)
+                                .h(stepper_h)
+                                .cursor_pointer()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_b(px(SETTINGS_INPUT_RADIUS - 2.0))
+                                .text_color(text_primary)
+                                .hover(|s| s.bg(bg_card))
+                                .child(
+                                    svg()
+                                        .path(SharedString::from("icons/settings/chevron-down.svg"))
+                                        .size(chevron_size)
+                                        .text_color(text_primary),
+                                )
+                                .on_click(cx.listener(move |view, _, _, cx| {
+                                    cx.stop_propagation();
+                                    view.step_numeric_field(field, -1, cx);
+                                })),
+                        ),
                 )
                 .into_any_element();
         }
@@ -541,8 +574,10 @@ impl SettingsWindow {
                     .active_input
                     .as_ref()
                     .filter(|input| input.field == field)
-                    .map(|input| Self::masked_secret_value(input.state.text()))
-                    .unwrap_or_else(|| Self::masked_secret_value(&display_value));
+                    .map_or_else(
+                        || Self::masked_secret_value(&display_value),
+                        |input| Self::masked_secret_value(input.state.text()),
+                    );
 
                 let font = Font {
                     family: self.config.font_family.clone().into(),
@@ -624,11 +659,16 @@ impl SettingsWindow {
             );
         }
         if uses_dropdown {
+            let chevron_path = if is_active {
+                "icons/settings/chevron-up.svg"
+            } else {
+                "icons/settings/chevron-down.svg"
+            };
             readonly = readonly.child(
-                div()
-                    .text_xs()
-                    .text_color(self.text_muted())
-                    .child(if is_active { "▲" } else { "▼" }),
+                svg()
+                    .path(SharedString::from(chevron_path))
+                    .size(px(12.0))
+                    .text_color(self.text_muted()),
             );
         }
         readonly.into_any_element()
@@ -732,18 +772,10 @@ impl SettingsWindow {
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
         let is_search_match = self.setting_matches_sidebar_query(search_key);
-        let row_border = if is_search_match {
-            self.accent_with_alpha(0.55)
-        } else {
-            border_color
-        };
-        let row_bg = if is_search_match {
-            self.accent_with_alpha(0.08)
-        } else {
-            bg_card
-        };
+        let match_stripe = self.accent_with_alpha(0.85);
+        let match_bg = self.accent_with_alpha(0.06);
         let dropdown_options = self.active_dropdown_options(field, is_active, uses_dropdown);
-        let dropdown_open = is_active && uses_dropdown && !dropdown_options.is_empty();
+        let _dropdown_open = is_active && uses_dropdown && !dropdown_options.is_empty();
         let dropdown = self.editable_dropdown_overlay(
             field,
             dropdown_options,
@@ -768,18 +800,23 @@ impl SettingsWindow {
         let row = div()
             .id(SharedString::from(format!("editable-row-{field:?}")))
             .w_full()
+            .relative()
             .flex()
             .items_center()
             .gap_4()
-            .py_3()
-            .px_4()
-            .rounded(px(SETTINGS_BUTTON_RADIUS))
-            .bg(row_bg)
-            .border_1()
-            .border_color(if dropdown_open {
-                Rgba::default()
-            } else {
-                row_border
+            .py(px(CARD_ROW_PADDING_Y))
+            .px(px(CARD_ROW_PADDING_X))
+            .when(is_search_match, |s| s.bg(match_bg))
+            .when(is_search_match, |s| {
+                s.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top(px(6.0))
+                        .bottom(px(6.0))
+                        .w(px(2.0))
+                        .bg(match_stripe),
+                )
             })
             .cursor_pointer()
             .when(!is_numeric, |s| {
@@ -848,7 +885,7 @@ impl SettingsWindow {
                                 div()
                                     .h_full()
                                     .px_2()
-                                    .rounded(px(SETTINGS_BUTTON_RADIUS))
+                                    .rounded(px(SETTINGS_INPUT_RADIUS))
                                     .bg(input_bg)
                                     .border_1()
                                     .border_color(if is_active && accent_inner_border {
@@ -1094,7 +1131,7 @@ impl SettingsWindow {
             .child(
                 canvas(
                     {
-                        let this = cx.entity().clone();
+                        let this = cx.entity();
                         move |bounds, _, cx| {
                             this.update(cx, |view, _| {
                                 view.background_opacity_slider_bounds = Some(bounds);
@@ -1202,16 +1239,8 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let is_search_match = self.setting_matches_sidebar_query(search_key);
-        let row_border = if is_search_match {
-            self.accent_with_alpha(0.55)
-        } else {
-            self.border_color()
-        };
-        let row_bg = if is_search_match {
-            self.accent_with_alpha(0.08)
-        } else {
-            self.bg_card()
-        };
+        let match_stripe = self.accent_with_alpha(0.85);
+        let match_bg = self.accent_with_alpha(0.06);
         let border_color = self.border_color();
         let input_bg = self.bg_input();
         let text_primary = self.text_primary();
@@ -1240,15 +1269,24 @@ impl SettingsWindow {
         let row = div()
             .id("editable-row-background-opacity")
             .w_full()
+            .relative()
             .flex()
             .items_center()
             .gap_4()
-            .py_3()
-            .px_4()
-            .rounded(px(SETTINGS_BUTTON_RADIUS))
-            .bg(row_bg)
-            .border_1()
-            .border_color(row_border)
+            .py(px(CARD_ROW_PADDING_Y))
+            .px(px(CARD_ROW_PADDING_X))
+            .when(is_search_match, |s| s.bg(match_bg))
+            .when(is_search_match, |s| {
+                s.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top(px(6.0))
+                        .bottom(px(6.0))
+                        .w(px(2.0))
+                        .bg(match_stripe),
+                )
+            })
             .child(
                 div()
                     .flex()

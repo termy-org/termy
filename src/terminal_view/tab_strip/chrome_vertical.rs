@@ -92,10 +92,10 @@ pub(super) fn compute_vertical_tab_chrome_layout(
         );
         match side {
             HorizontalBoundaryOwnerSide::Top => {
-                tab_strokes[tab_index].top_boundary = Some(local_rect)
+                tab_strokes[tab_index].top_boundary = Some(local_rect);
             }
             HorizontalBoundaryOwnerSide::Bottom => {
-                tab_strokes[tab_index].bottom_boundary = Some(local_rect)
+                tab_strokes[tab_index].bottom_boundary = Some(local_rect);
             }
         }
     };

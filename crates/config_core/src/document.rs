@@ -260,7 +260,7 @@ fn normalize_newline(contents: &str) -> String {
     } else if contents.ends_with('\n') {
         contents.to_string()
     } else {
-        format!("{}\n", contents)
+        format!("{contents}\n")
     }
 }
 

@@ -28,9 +28,7 @@ const ONBOARDING_WINDOW_HEIGHT: f32 = 600.0;
 const RECOMMENDED_THEME_LIMIT: usize = 9;
 
 pub(crate) fn config_file_exists() -> bool {
-    termy_config_core::config_path()
-        .map(|path| path.exists())
-        .unwrap_or(false)
+    termy_config_core::config_path().is_some_and(|path| path.exists())
 }
 
 fn force_onboarding_env() -> bool {
@@ -52,7 +50,7 @@ pub(crate) fn should_show_onboarding(was_first_run: bool, config: &AppConfig) ->
 
 fn mark_complete_in_config() {
     if let Err(error) = config::set_root_setting(RootSettingId::OnboardingComplete, "true") {
-        log::error!("Failed to mark onboarding complete: {}", error);
+        log::error!("Failed to mark onboarding complete: {error}");
     }
 }
 
@@ -230,7 +228,7 @@ pub(crate) fn open_onboarding_window(cx: &mut App) -> Result<(), String> {
         |window, cx| cx.new(|cx| OnboardingWindow::new(window, cx)),
     )
     .map(|_| ())
-    .map_err(|error| format!("Failed to open onboarding window: {}", error))
+    .map_err(|error| format!("Failed to open onboarding window: {error}"))
 }
 
 #[cfg(test)]

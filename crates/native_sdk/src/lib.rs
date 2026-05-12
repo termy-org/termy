@@ -168,13 +168,11 @@ pub fn app_icon_png_for_path(path: &str, size_px: f64) -> Option<Vec<u8>> {
 
         let _ = unsafe { MainThreadMarker::new_unchecked() };
         let ns_path = NSString::from_str(path);
-        let workspace = unsafe { NSWorkspace::sharedWorkspace() };
-        let image = unsafe { workspace.iconForFile(&ns_path) };
-        unsafe {
-            image.setSize(NSSize::new(size_px, size_px));
-        }
-        let tiff_data = unsafe { image.TIFFRepresentation() }?;
-        let bitmap_rep = unsafe { NSBitmapImageRep::imageRepWithData(&tiff_data) }?;
+        let workspace = NSWorkspace::sharedWorkspace();
+        let image = workspace.iconForFile(&ns_path);
+        image.setSize(NSSize::new(size_px, size_px));
+        let tiff_data = image.TIFFRepresentation()?;
+        let bitmap_rep = NSBitmapImageRep::imageRepWithData(&tiff_data)?;
         let properties = NSDictionary::new();
         let png_data = unsafe {
             bitmap_rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)
@@ -279,9 +277,7 @@ pub fn show_copy_paste_context_menu(
             can_paste: bool,
         ) -> Option<ContextMenuAction> {
             let app = NSApplication::sharedApplication(mtm);
-            let Some(_current_event) = app.currentEvent() else {
-                return None;
-            };
+            let _current_event = app.currentEvent()?;
 
             let menu = NSMenu::new(mtm);
             menu.setAutoenablesItems(false);
@@ -336,16 +332,17 @@ pub fn show_copy_paste_context_menu(
         }
 
         if let Some(mtm) = MainThreadMarker::new() {
-            return show_copy_paste_context_menu_on_main(
-                mtm,
-                buffer_position_label,
-                can_copy,
-                can_paste,
-            );
-        }
-        return run_on_main(|mtm| {
             show_copy_paste_context_menu_on_main(mtm, buffer_position_label, can_copy, can_paste)
-        });
+        } else {
+            run_on_main(|mtm| {
+                show_copy_paste_context_menu_on_main(
+                    mtm,
+                    buffer_position_label,
+                    can_copy,
+                    can_paste,
+                )
+            })
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -469,9 +466,7 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
             pinned: bool,
         ) -> Option<TabContextMenuAction> {
             let app = NSApplication::sharedApplication(mtm);
-            let Some(_current_event) = app.currentEvent() else {
-                return None;
-            };
+            let _current_event = app.currentEvent()?;
 
             let menu = NSMenu::new(mtm);
             menu.setAutoenablesItems(false);
@@ -521,9 +516,10 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
         }
 
         if let Some(mtm) = MainThreadMarker::new() {
-            return show_tab_context_menu_on_main(mtm, pinned);
+            show_tab_context_menu_on_main(mtm, pinned)
+        } else {
+            run_on_main(|mtm| show_tab_context_menu_on_main(mtm, pinned))
         }
-        return run_on_main(|mtm| show_tab_context_menu_on_main(mtm, pinned));
     }
 
     #[cfg(target_os = "windows")]
@@ -633,9 +629,7 @@ pub fn show_agent_project_context_menu(
             git_panel_visible: bool,
         ) -> Option<AgentProjectContextMenuAction> {
             let app = NSApplication::sharedApplication(mtm);
-            let Some(_current_event) = app.currentEvent() else {
-                return None;
-            };
+            let _current_event = app.currentEvent()?;
 
             let menu = NSMenu::new(mtm);
             menu.setAutoenablesItems(false);
@@ -753,16 +747,12 @@ pub fn show_agent_project_context_menu(
         }
 
         if let Some(mtm) = MainThreadMarker::new() {
-            return show_agent_project_context_menu_on_main(
-                mtm,
-                pinned,
-                collapsed,
-                git_panel_visible,
-            );
-        }
-        return run_on_main(move |mtm| {
             show_agent_project_context_menu_on_main(mtm, pinned, collapsed, git_panel_visible)
-        });
+        } else {
+            run_on_main(move |mtm| {
+                show_agent_project_context_menu_on_main(mtm, pinned, collapsed, git_panel_visible)
+            })
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -937,9 +927,7 @@ pub fn show_agent_thread_context_menu(
             git_panel_visible: bool,
         ) -> Option<AgentThreadContextMenuAction> {
             let app = NSApplication::sharedApplication(mtm);
-            let Some(_current_event) = app.currentEvent() else {
-                return None;
-            };
+            let _current_event = app.currentEvent()?;
 
             let menu = NSMenu::new(mtm);
             menu.setAutoenablesItems(false);
@@ -1026,16 +1014,17 @@ pub fn show_agent_thread_context_menu(
         }
 
         if let Some(mtm) = MainThreadMarker::new() {
-            return show_agent_thread_context_menu_on_main(
-                mtm,
-                has_live_session,
-                pinned,
-                git_panel_visible,
-            );
-        }
-        return run_on_main(move |mtm| {
             show_agent_thread_context_menu_on_main(mtm, has_live_session, pinned, git_panel_visible)
-        });
+        } else {
+            run_on_main(move |mtm| {
+                show_agent_thread_context_menu_on_main(
+                    mtm,
+                    has_live_session,
+                    pinned,
+                    git_panel_visible,
+                )
+            })
+        }
     }
 
     #[cfg(target_os = "windows")]

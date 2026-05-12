@@ -37,7 +37,7 @@ impl MenuItem {
         ]
     }
 
-    fn label(&self) -> &'static str {
+    fn label(self) -> &'static str {
         match self {
             Self::ShowConfig => "Show Config",
             Self::ListFonts => "List Fonts",
@@ -50,7 +50,7 @@ impl MenuItem {
         }
     }
 
-    fn description(&self) -> &'static str {
+    fn description(self) -> &'static str {
         match self {
             Self::ShowConfig => "Display current configuration settings",
             Self::ListFonts => "Show available monospace fonts on your system",
@@ -79,7 +79,7 @@ impl App {
         state.select(Some(0));
 
         let items = MenuItem::all();
-        let content = get_content_for_item(&items[0]);
+        let content = get_content_for_item(items[0]);
 
         Self {
             menu_state: state,
@@ -124,7 +124,7 @@ impl App {
     fn update_content(&mut self) {
         self.scroll_offset = 0;
         if let Some(index) = self.menu_state.selected() {
-            self.content = get_content_for_item(&self.items[index]);
+            self.content = get_content_for_item(self.items[index]);
         }
     }
 
@@ -141,7 +141,7 @@ impl App {
     }
 }
 
-fn get_content_for_item(item: &MenuItem) -> Vec<String> {
+fn get_content_for_item(item: MenuItem) -> Vec<String> {
     match item {
         MenuItem::ShowConfig => providers::show_config_lines().unwrap_or_else(|error| vec![error]),
         MenuItem::ListFonts => providers::list_fonts_lines(),
@@ -191,7 +191,7 @@ fn get_validate_config_content() -> Vec<String> {
     if !errors.is_empty() {
         lines.push("Errors:".to_string());
         for error in errors {
-            lines.push(format!("  {}", error));
+            lines.push(format!("  {error}"));
         }
     }
 
@@ -201,7 +201,7 @@ fn get_validate_config_content() -> Vec<String> {
         }
         lines.push("Warnings:".to_string());
         for warning in warnings {
-            lines.push(format!("  {}", warning));
+            lines.push(format!("  {warning}"));
         }
     }
 
@@ -210,7 +210,7 @@ fn get_validate_config_content() -> Vec<String> {
 
 pub fn run() {
     if let Err(error) = run_tui() {
-        eprintln!("Error: {}", error);
+        eprintln!("Error: {error}");
     }
 }
 

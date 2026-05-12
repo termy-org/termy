@@ -72,7 +72,7 @@ fn decode_snapshot_field(value: &str) -> Result<String> {
         index += 1;
         let escape = bytes
             .get(index)
-            .ok_or_else(|| anyhow!("invalid trailing escape in snapshot field '{}'", value))?;
+            .ok_or_else(|| anyhow!("invalid trailing escape in snapshot field '{value}'"))?;
         match escape {
             b'\\' => {
                 output.push(b'\\');
@@ -93,25 +93,22 @@ fn decode_snapshot_field(value: &str) -> Result<String> {
             b'x' => {
                 let hex = bytes
                     .get(index + 1..index + 3)
-                    .ok_or_else(|| anyhow!("invalid hex escape in snapshot field '{}'", value))?;
+                    .ok_or_else(|| anyhow!("invalid hex escape in snapshot field '{value}'"))?;
                 let hi = (hex[0] as char)
                     .to_digit(16)
-                    .ok_or_else(|| anyhow!("invalid hex escape in snapshot field '{}'", value))?;
+                    .ok_or_else(|| anyhow!("invalid hex escape in snapshot field '{value}'"))?;
                 let lo = (hex[1] as char)
                     .to_digit(16)
-                    .ok_or_else(|| anyhow!("invalid hex escape in snapshot field '{}'", value))?;
+                    .ok_or_else(|| anyhow!("invalid hex escape in snapshot field '{value}'"))?;
                 output.push(((hi << 4) | lo) as u8);
                 index += 3;
             }
             b'0'..=b'7' => {
                 let octal = bytes
                     .get(index..index + 3)
-                    .ok_or_else(|| anyhow!("invalid octal escape in snapshot field '{}'", value))?;
+                    .ok_or_else(|| anyhow!("invalid octal escape in snapshot field '{value}'"))?;
                 if !octal.iter().all(|digit| (b'0'..=b'7').contains(digit)) {
-                    return Err(anyhow!(
-                        "invalid octal escape in snapshot field '{}'",
-                        value
-                    ));
+                    return Err(anyhow!("invalid octal escape in snapshot field '{value}'"));
                 }
                 let decoded =
                     ((octal[0] - b'0') << 6) | ((octal[1] - b'0') << 3) | (octal[2] - b'0');
@@ -128,7 +125,7 @@ fn decode_snapshot_field(value: &str) -> Result<String> {
     }
 
     String::from_utf8(output)
-        .with_context(|| format!("snapshot field is not valid utf-8: '{}'", value))
+        .with_context(|| format!("snapshot field is not valid utf-8: '{value}'"))
 }
 
 fn parse_snapshot_fields<const N: usize>(line: &str, kind: &str) -> Result<[String; N]> {
@@ -141,10 +138,7 @@ fn parse_snapshot_fields<const N: usize>(line: &str, kind: &str) -> Result<[Stri
     let field_count = fields.len();
 
     fields.try_into().map_err(|_| {
-        anyhow!(
-            "invalid tmux {kind} line: expected {N} fields, got {field_count}: '{}'",
-            line
-        )
+        anyhow!("invalid tmux {kind} line: expected {N} fields, got {field_count}: '{line}'")
     })
 }
 
@@ -152,20 +146,20 @@ fn parse_snapshot_bool(value: &str, field: &str, kind: &str, line: &str) -> Resu
     match value {
         "0" => Ok(false),
         "1" => Ok(true),
-        _ => Err(anyhow!("invalid {field} in tmux {kind} line: '{}'", line)),
+        _ => Err(anyhow!("invalid {field} in tmux {kind} line: '{line}'")),
     }
 }
 
 fn parse_snapshot_u16(value: &str, field: &str, kind: &str, line: &str) -> Result<u16> {
     value
         .parse::<u16>()
-        .with_context(|| format!("invalid {field} in tmux {kind} line: '{}'", line))
+        .with_context(|| format!("invalid {field} in tmux {kind} line: '{line}'"))
 }
 
 fn parse_snapshot_i32(value: &str, field: &str, kind: &str, line: &str) -> Result<i32> {
     value
         .parse::<i32>()
-        .with_context(|| format!("invalid {field} in tmux {kind} line: '{}'", line))
+        .with_context(|| format!("invalid {field} in tmux {kind} line: '{line}'"))
 }
 
 pub(crate) fn parse_session_summaries(output: &str) -> Result<Vec<TmuxSessionSummary>> {

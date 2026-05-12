@@ -37,7 +37,7 @@ impl TerminalView {
 
     fn open_config_action(&mut self, cx: &mut Context<Self>) {
         if let Err(error) = crate::app_actions::open_config_file() {
-            log::error!("Failed to open config file from command action: {}", error);
+            log::error!("Failed to open config file from command action: {error}");
             termy_toast::error(error);
             self.notify_overlay(cx);
         }
@@ -50,10 +50,7 @@ impl TerminalView {
                 cx.notify();
             }
             Err(error) => {
-                log::error!(
-                    "Failed to prettify config file from command action: {}",
-                    error
-                );
+                log::error!("Failed to prettify config file from command action: {error}");
                 termy_toast::error(error);
                 self.notify_overlay(cx);
             }
@@ -93,11 +90,10 @@ impl TerminalView {
     }
 
     fn app_info_action(&mut self, cx: &mut Context<Self>) {
-        let config_path = self
-            .config_path
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "unknown".to_string());
+        let config_path = self.config_path.as_ref().map_or_else(
+            || "unknown".to_string(),
+            |path| path.to_string_lossy().into_owned(),
+        );
         let message = format!(
             "Termy v{} | {}-{} | config: {}",
             crate::APP_VERSION,
@@ -116,7 +112,7 @@ impl TerminalView {
         }
 
         if let Err(error) = crate::app_actions::open_settings_window(cx) {
-            log::error!("{}", error);
+            log::error!("{error}");
             termy_toast::error(error);
             self.notify_overlay(cx);
         }

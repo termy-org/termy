@@ -160,9 +160,7 @@ impl QueryColorSlot {
 
 impl TerminalQueryColors {
     pub(crate) fn resolve_color(self, live_colors: &Colors, index: usize) -> Option<AnsiRgb> {
-        let Some(slot) = QueryColorSlot::from_index(index) else {
-            return None;
-        };
+        let slot = QueryColorSlot::from_index(index)?;
 
         slot.live_color(live_colors)
             .or_else(|| self.fallback_color(slot))
@@ -264,11 +262,13 @@ mod tests {
 
     #[test]
     fn live_foreground_override_wins_over_fallback() {
-        let mut defaults = TerminalQueryColors::default();
-        defaults.foreground = AnsiRgb {
-            r: 0xaa,
-            g: 0xbb,
-            b: 0xcc,
+        let defaults = TerminalQueryColors {
+            foreground: AnsiRgb {
+                r: 0xaa,
+                g: 0xbb,
+                b: 0xcc,
+            },
+            ..TerminalQueryColors::default()
         };
         let live = term_colors_after_bytes(b"\x1b]10;#123456\x07");
         assert_eq!(
@@ -283,11 +283,13 @@ mod tests {
 
     #[test]
     fn reset_foreground_reverts_to_fallback() {
-        let mut defaults = TerminalQueryColors::default();
-        defaults.foreground = AnsiRgb {
-            r: 0x44,
-            g: 0x55,
-            b: 0x66,
+        let defaults = TerminalQueryColors {
+            foreground: AnsiRgb {
+                r: 0x44,
+                g: 0x55,
+                b: 0x66,
+            },
+            ..TerminalQueryColors::default()
         };
         let live = term_colors_after_bytes(b"\x1b]10;#123456\x07\x1b]110\x07");
         assert_eq!(
@@ -316,12 +318,14 @@ mod tests {
 
     #[test]
     fn cursor_queries_require_live_override() {
-        let mut defaults = TerminalQueryColors::default();
-        defaults.cursor = Some(AnsiRgb {
-            r: 0xab,
-            g: 0xcd,
-            b: 0xef,
-        });
+        let defaults = TerminalQueryColors {
+            cursor: Some(AnsiRgb {
+                r: 0xab,
+                g: 0xcd,
+                b: 0xef,
+            }),
+            ..TerminalQueryColors::default()
+        };
         let empty_live = term_colors_after_bytes(b"");
         assert_eq!(
             defaults.resolve_color(&empty_live, NamedColor::Cursor as usize),

@@ -146,7 +146,7 @@ fn overlay_class() -> *const Class {
                 );
             }
 
-            decl.register() as *const Class as usize
+            std::ptr::from_ref::<Class>(decl.register()) as usize
         })
         .to_owned() as *const Class
 }

@@ -151,20 +151,15 @@ impl SearchResults {
     }
 
     pub fn is_current_match(&self, line: i32, col: usize) -> bool {
-        self.current()
-            .map(|m| m.contains(line, col))
-            .unwrap_or(false)
+        self.current().is_some_and(|m| m.contains(line, col))
     }
 
     pub fn is_any_match(&self, line: i32, col: usize) -> bool {
-        self.match_ranges_by_line
-            .get(&line)
-            .map(|ranges| {
-                ranges
-                    .iter()
-                    .any(|(start_col, end_col)| col >= *start_col && col < *end_col)
-            })
-            .unwrap_or(false)
+        self.match_ranges_by_line.get(&line).is_some_and(|ranges| {
+            ranges
+                .iter()
+                .any(|(start_col, end_col)| col >= *start_col && col < *end_col)
+        })
     }
 
     pub fn matches_in_range(&self, min_line: i32, max_line: i32) -> Vec<&SearchMatch> {

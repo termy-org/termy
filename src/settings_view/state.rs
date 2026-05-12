@@ -200,45 +200,6 @@ impl SettingsWindow {
         root_setting_default_value(&defaults, setting)
     }
 
-    pub(super) fn root_setting_to_editable_field(id: RootSettingId) -> Option<EditableField> {
-        match id {
-            RootSettingId::Theme => Some(EditableField::Theme),
-            RootSettingId::FontFamily => Some(EditableField::FontFamily),
-            RootSettingId::FontSize => Some(EditableField::FontSize),
-            RootSettingId::LineHeight => Some(EditableField::LineHeight),
-            RootSettingId::PaddingX => Some(EditableField::PaddingX),
-            RootSettingId::PaddingY => Some(EditableField::PaddingY),
-            RootSettingId::BackgroundOpacity => Some(EditableField::BackgroundOpacity),
-            RootSettingId::Shell => Some(EditableField::Shell),
-            RootSettingId::Term => Some(EditableField::Term),
-            RootSettingId::Colorterm => Some(EditableField::Colorterm),
-            RootSettingId::TmuxBinary => Some(EditableField::TmuxBinary),
-            RootSettingId::ScrollbackHistory => Some(EditableField::ScrollbackHistory),
-            RootSettingId::InactiveTabScrollback => Some(EditableField::InactiveTabScrollback),
-            RootSettingId::MouseScrollMultiplier => Some(EditableField::ScrollMultiplier),
-            RootSettingId::CursorStyle => Some(EditableField::CursorStyle),
-            RootSettingId::ScrollbarVisibility => Some(EditableField::ScrollbarVisibility),
-            RootSettingId::ScrollbarStyle => Some(EditableField::ScrollbarStyle),
-            RootSettingId::PaneFocusEffect => Some(EditableField::PaneFocusEffect),
-            RootSettingId::PaneFocusStrength => Some(EditableField::PaneFocusStrength),
-            RootSettingId::TabTitleFallback => Some(EditableField::TabFallbackTitle),
-            RootSettingId::TabTitlePriority => Some(EditableField::TabTitlePriority),
-            RootSettingId::TabTitleMode => Some(EditableField::TabTitleMode),
-            RootSettingId::TabTitleExplicitPrefix => Some(EditableField::TabTitleExplicitPrefix),
-            RootSettingId::TabTitlePromptFormat => Some(EditableField::TabTitlePromptFormat),
-            RootSettingId::TabTitleCommandFormat => Some(EditableField::TabTitleCommandFormat),
-            RootSettingId::TabCloseVisibility => Some(EditableField::TabCloseVisibility),
-            RootSettingId::TabWidthMode => Some(EditableField::TabWidthMode),
-            RootSettingId::VerticalTabsWidth => Some(EditableField::VerticalTabsWidth),
-            RootSettingId::WorkingDir => Some(EditableField::WorkingDirectory),
-            RootSettingId::WorkingDirFallback => Some(EditableField::WorkingDirFallback),
-            RootSettingId::NotificationMinDuration => Some(EditableField::NotificationMinDuration),
-            RootSettingId::WindowWidth => Some(EditableField::WindowWidth),
-            RootSettingId::WindowHeight => Some(EditableField::WindowHeight),
-            _ => None,
-        }
-    }
-
     fn root_setting_section(section: SettingsSection) -> Option<CoreSettingsSection> {
         match section {
             SettingsSection::Appearance => Some(CoreSettingsSection::Appearance),
@@ -362,8 +323,7 @@ impl SettingsWindow {
         };
         let title = "Reset Section";
         let message = format!(
-            "Are you sure you want to reset all {} settings to their default values?",
-            section_name
+            "Are you sure you want to reset all {section_name} settings to their default values?"
         );
 
         cx.spawn(async move |this, cx: &mut AsyncApp| {
@@ -1097,7 +1057,7 @@ impl SettingsWindow {
                 self.config.mouse_scroll_multiplier = next;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::MouseScrollMultiplier,
-                    &format!("{:.3}", next),
+                    &format!("{next:.3}"),
                 )
             }
             EditableField::PaneFocusStrength => {
@@ -1106,7 +1066,7 @@ impl SettingsWindow {
                 self.config.pane_focus_strength = next;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::PaneFocusStrength,
-                    &format!("{:.3}", next),
+                    &format!("{next:.3}"),
                 )
             }
             EditableField::WindowWidth => {
@@ -1145,7 +1105,7 @@ impl SettingsWindow {
                     &next.to_string(),
                 )
             }
-            _ => Err(format!("Unsupported numeric field: {:?}", field)),
+            _ => Err(format!("Unsupported numeric field: {field:?}")),
         };
 
         if let Err(error) = result {

@@ -204,7 +204,7 @@ impl TmuxClient {
     }
 
     pub fn set_client_size(&self, cols: u16, rows: u16) -> Result<()> {
-        let size = format!("{}x{}", cols, rows);
+        let size = format!("{cols}x{rows}");
         let command = tmux_command_line(&["refresh-client", "-C", size.as_str()]);
         // `refresh-client -C` operates on the *current control client*.
         // Running it as an out-of-band tmux process can fail with no client
@@ -230,22 +230,15 @@ impl TmuxClient {
 
     pub fn poll_notifications(&self) -> Vec<TmuxNotification> {
         let mut coalescer = NotificationCoalescer::with_output_byte_limit(usize::MAX);
-        let mut coalescer_error = None::<String>;
         for notification in self.notifications_rx.try_iter() {
             // Draining already-bounded channel contents cannot grow unbounded;
             // this second-stage coalescing keeps refresh/output bursts from
             // triggering redraw storms in the UI event loop.
-            if let Err(error) = coalescer.push(notification) {
-                coalescer_error = Some(error.message);
-                break;
-            }
+            coalescer.push(notification);
         }
 
         if let Some(exit_reason) = self.fatal_exit_rx.try_iter().last() {
             return vec![TmuxNotification::Exit(exit_reason)];
-        }
-        if let Some(error) = coalescer_error {
-            return vec![TmuxNotification::Exit(Some(error))];
         }
 
         coalescer.drain()
@@ -607,14 +600,12 @@ impl TmuxClient {
             Ok(response) => response,
             Err(RecvTimeoutError::Timeout) => {
                 return Err(anyhow!(TmuxControlError::channel(format!(
-                    "timed out waiting for command completion after {:?}: '{}'",
-                    timeout, command
+                    "timed out waiting for command completion after {timeout:?}: '{command}'"
                 ))));
             }
             Err(RecvTimeoutError::Disconnected) => {
                 return Err(anyhow!(TmuxControlError::channel(format!(
-                    "tmux control worker channel disconnected before command completion: '{}'",
-                    command
+                    "tmux control worker channel disconnected before command completion: '{command}'"
                 ))));
             }
         };
@@ -890,12 +881,10 @@ mod tests {
     #[test]
     fn backpressure_single_oversized_burst_forces_refresh_warning_without_exit() {
         let mut coalescer = NotificationCoalescer::with_output_byte_limit(8);
-        coalescer
-            .push(TmuxNotification::Output {
-                pane_id: "%9".to_string(),
-                bytes: b"0123456789abcdef".to_vec(),
-            })
-            .expect("coalescer should survive oversized burst");
+        coalescer.push(TmuxNotification::Output {
+            pane_id: "%9".to_string(),
+            bytes: b"0123456789abcdef".to_vec(),
+        });
 
         let drained = coalescer.drain();
         assert!(
@@ -1012,9 +1001,8 @@ mod tests {
             None,
         );
 
-        let error = match result {
-            Err(e) => e,
-            Ok(_) => panic!("empty session name must be rejected"),
+        let Err(error) = result else {
+            panic!("empty session name must be rejected");
         };
         assert!(error.to_string().contains("cannot be empty"));
     }

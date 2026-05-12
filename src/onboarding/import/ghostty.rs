@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use termy_config_core::RootSettingId;
-use termy_themes::{Rgb8, ThemeColors};
+use termy_themes::{Rgb8, ThemeColors, normalize_theme_id};
 
 use super::{
     DetectedSource, ImportSourceKind, ImportedConfig, clamp_opacity, extract_app_icon,
@@ -61,27 +61,40 @@ pub(crate) fn import(path: &Path) -> Result<ImportedConfig, String> {
         &mut theme_ref,
     )?;
 
-    let mut have_inline = !palette.is_empty() || !named.is_empty();
     if let Some(name) = theme_ref.as_ref()
-        && !have_inline
         && let Some(theme_path) = resolve_theme_file(name)
     {
-        parse_file(
+        merge_theme_file(
             &theme_path,
-            0,
             &mut imported,
             &mut palette,
             &mut named,
             &mut theme_ref,
         )?;
-        have_inline = !palette.is_empty() || !named.is_empty();
     }
 
-    if have_inline {
+    if !palette.is_empty() || !named.is_empty() {
         imported.theme = build_theme(&palette, &named, &mut imported.warnings);
     }
 
     Ok(imported)
+}
+
+fn merge_theme_file(
+    theme_path: &Path,
+    imported: &mut ImportedConfig,
+    palette: &mut HashMap<u8, Rgb8>,
+    named: &mut HashMap<String, Rgb8>,
+    theme_ref: &mut Option<String>,
+) -> Result<(), String> {
+    let inline_palette = palette.clone();
+    let inline_named = named.clone();
+    palette.clear();
+    named.clear();
+    parse_file(theme_path, 0, imported, palette, named, theme_ref)?;
+    palette.extend(inline_palette);
+    named.extend(inline_named);
+    Ok(())
 }
 
 fn parse_file(
@@ -149,26 +162,20 @@ fn parse_file(
                     .settings
                     .push((RootSettingId::FontFamily, value.to_string()));
             }
-            "font-size" => {
-                if value.parse::<f32>().is_ok() {
-                    imported
-                        .settings
-                        .push((RootSettingId::FontSize, value.to_string()));
-                }
+            "font-size" if value.parse::<f32>().is_ok() => {
+                imported
+                    .settings
+                    .push((RootSettingId::FontSize, value.to_string()));
             }
-            "window-padding-x" => {
-                if value.parse::<f32>().is_ok() {
-                    imported
-                        .settings
-                        .push((RootSettingId::PaddingX, value.to_string()));
-                }
+            "window-padding-x" if value.parse::<f32>().is_ok() => {
+                imported
+                    .settings
+                    .push((RootSettingId::PaddingX, value.to_string()));
             }
-            "window-padding-y" => {
-                if value.parse::<f32>().is_ok() {
-                    imported
-                        .settings
-                        .push((RootSettingId::PaddingY, value.to_string()));
-                }
+            "window-padding-y" if value.parse::<f32>().is_ok() => {
+                imported
+                    .settings
+                    .push((RootSettingId::PaddingY, value.to_string()));
             }
             "background-opacity" => {
                 if let Ok(opacity) = value.parse::<f32>() {
@@ -212,12 +219,10 @@ fn parse_file(
                         .push((RootSettingId::ScrollbackHistory, lines.to_string()));
                 }
             }
-            "command" => {
-                if !value.is_empty() {
-                    imported
-                        .settings
-                        .push((RootSettingId::Shell, value.to_string()));
-                }
+            "command" if !value.is_empty() => {
+                imported
+                    .settings
+                    .push((RootSettingId::Shell, value.to_string()));
             }
             _ => {}
         }
@@ -227,12 +232,52 @@ fn parse_file(
 
 fn resolve_theme_file(name: &str) -> Option<PathBuf> {
     let home = home_dir()?;
-    let candidates = vec![
-        home.join(".config/ghostty/themes").join(name),
-        home.join("Library/Application Support/com.mitchellh.ghostty/themes")
-            .join(name),
+    let mut dirs = vec![
+        home.join(".config/ghostty/themes"),
+        home.join("Library/Application Support/com.mitchellh.ghostty/themes"),
     ];
-    first_existing(&candidates)
+    if let Some(app_path) = macos_app_bundle_path("Ghostty.app") {
+        dirs.push(app_path.join("Contents/Resources/ghostty/themes"));
+    }
+    resolve_theme_file_in_dirs(name, dirs.iter().map(PathBuf::as_path))
+}
+
+fn resolve_theme_file_in_dirs<'a>(
+    name: &str,
+    dirs: impl IntoIterator<Item = &'a Path>,
+) -> Option<PathBuf> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let dirs: Vec<&Path> = dirs.into_iter().collect();
+    let exact_candidates: Vec<PathBuf> = dirs.iter().map(|dir| dir.join(trimmed)).collect();
+    if let Some(path) = first_existing(&exact_candidates) {
+        return Some(path);
+    }
+
+    let normalized = normalize_theme_id(trimmed);
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if file_name.eq_ignore_ascii_case(trimmed)
+                || normalize_theme_id(file_name) == normalized
+            {
+                return Some(path);
+            }
+        }
+    }
+    None
 }
 
 fn expand_user(value: &str, relative_to: &Path) -> PathBuf {
@@ -275,8 +320,7 @@ fn build_theme(
     }
     if !missing.is_empty() {
         warnings.push(format!(
-            "Ghostty palette missing indices {:?}; filled with black",
-            missing
+            "Ghostty palette missing indices {missing:?}; filled with black"
         ));
     }
 
@@ -299,14 +343,14 @@ mod tests {
 
     fn write_file(contents: &str) -> NamedTempFile {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "{}", contents).unwrap();
+        write!(file, "{contents}").unwrap();
         file
     }
 
     #[test]
     fn parses_palette_and_settings() {
         let palette = (0..16u8)
-            .map(|i| format!("palette = {i}=#{:02x}{:02x}{:02x}", i, i, i))
+            .map(|i| format!("palette = {i}=#{i:02x}{i:02x}{i:02x}"))
             .collect::<Vec<_>>()
             .join("\n");
         let config = format!(
@@ -352,5 +396,64 @@ mod tests {
         let imported = import(file.path()).unwrap();
         assert_eq!(imported.settings.len(), 1);
         assert!(imported.theme.is_none());
+    }
+
+    #[test]
+    fn resolves_theme_names_from_candidate_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let theme_path = dir.path().join("TokyoNight Moon");
+        std::fs::write(&theme_path, "foreground = #ffffff\n").unwrap();
+
+        assert_eq!(
+            resolve_theme_file_in_dirs("tokyonight-moon", [dir.path()]),
+            Some(theme_path)
+        );
+    }
+
+    #[test]
+    fn referenced_theme_fills_inline_partial_colors() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config");
+        let theme_path = dir.path().join("Abernathy");
+        let palette = (0..16u8)
+            .map(|index| format!("palette = {index}=#{index:02x}{index:02x}{index:02x}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&config_path, "cursor-color = #ff00ff\ntheme = Abernathy\n").unwrap();
+        std::fs::write(
+            &theme_path,
+            format!(
+                "{palette}\nforeground = #eeeeec\nbackground = #111416\ncursor-color = #bbbbbb\n"
+            ),
+        )
+        .unwrap();
+
+        let mut imported = ImportedConfig::new(ImportSourceKind::Ghostty);
+        let mut palette = HashMap::new();
+        let mut named = HashMap::new();
+        let mut theme_ref = None;
+        parse_file(
+            &config_path,
+            0,
+            &mut imported,
+            &mut palette,
+            &mut named,
+            &mut theme_ref,
+        )
+        .unwrap();
+        merge_theme_file(
+            &theme_path,
+            &mut imported,
+            &mut palette,
+            &mut named,
+            &mut theme_ref,
+        )
+        .unwrap();
+
+        let theme = build_theme(&palette, &named, &mut imported.warnings).expect("theme");
+        assert_eq!(theme.foreground, Rgb8::new(0xee, 0xee, 0xec));
+        assert_eq!(theme.background, Rgb8::new(0x11, 0x14, 0x16));
+        assert_eq!(theme.cursor, Rgb8::new(0xff, 0x00, 0xff));
+        assert_eq!(theme.ansi[15], Rgb8::new(15, 15, 15));
     }
 }

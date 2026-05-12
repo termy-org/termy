@@ -65,8 +65,7 @@ pub(crate) fn theme_store_registry_url() -> String {
 fn current_unix_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// Fetches themes from the repo registry. Returns `(themes, from_cache)` where `from_cache`
@@ -103,16 +102,16 @@ pub(crate) fn fetch_theme_store_themes_blocking(
             // Not modified — ureq 2.x returns Ok for any status < 400, so 304
             // lands here (with an empty body) instead of in the Err arm. Fall
             // back to the cache and refresh its timestamp.
-            if let Some(mut cache) = cached {
-                if cache.registry_url == registry_url {
-                    cache.fetched_at = current_unix_timestamp();
-                    if let Some(path) = theme_store_cache_path() {
-                        if let Ok(bytes) = bincode::serialize(&cache) {
-                            let _ = std::fs::write(&path, bytes);
-                        }
-                    }
-                    return Ok((cache.themes, false));
+            if let Some(mut cache) = cached
+                && cache.registry_url == registry_url
+            {
+                cache.fetched_at = current_unix_timestamp();
+                if let Some(path) = theme_store_cache_path()
+                    && let Ok(bytes) = bincode::serialize(&cache)
+                {
+                    let _ = std::fs::write(&path, bytes);
                 }
+                return Ok((cache.themes, false));
             }
             Err("Server returned 304 Not Modified but no matching local cache exists".to_string())
         }
@@ -165,10 +164,10 @@ fn save_theme_store_cache(themes: &[ThemeStoreTheme], registry_url: &str, etag: 
     }
 
     // Clean up legacy JSON cache to avoid confusion.
-    if let Some(legacy_path) = path.parent().map(|p| p.join("theme_store_cache.json")) {
-        if legacy_path.exists() {
-            let _ = std::fs::remove_file(&legacy_path);
-        }
+    if let Some(legacy_path) = path.parent().map(|p| p.join("theme_store_cache.json"))
+        && legacy_path.exists()
+    {
+        let _ = std::fs::remove_file(&legacy_path);
     }
 
     let cache = ThemeRegistryCache {
@@ -190,7 +189,7 @@ fn save_theme_store_cache(themes: &[ThemeStoreTheme], registry_url: &str, etag: 
             }
         }
         Err(error) => {
-            log::debug!("Failed to serialize theme store cache: {}", error);
+            log::debug!("Failed to serialize theme store cache: {error}");
         }
     }
 }

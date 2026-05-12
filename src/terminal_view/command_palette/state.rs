@@ -2,10 +2,10 @@ use super::super::*;
 use super::state_layouts::SavedLayoutIntent;
 use super::state_tmux::{TmuxSessionIntent, TmuxSessionRow, TmuxSessionStatusHint};
 use crate::config::SHELL_DECIDE_THEME_ID;
-use gpui::{Rgba, UniformListScrollHandle};
-use serde::{Deserialize, Serialize};
+use gpui::UniformListScrollHandle;
 use std::collections::HashMap;
 #[cfg(unix)]
+#[cfg(test)]
 use std::os::unix::fs::PermissionsExt;
 use termy_terminal_ui::TmuxSocketTarget;
 
@@ -16,6 +16,7 @@ pub(in super::super) enum CommandPaletteMode {
     TmuxSessions,
     Layouts,
     Tasks,
+    AppInfo,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,6 +100,13 @@ pub(super) enum CommandPaletteItemKind {
         working_dir: Option<String>,
         layout_name: Option<String>,
     },
+    AppInfoEntry {
+        label: &'static str,
+        value: String,
+    },
+    AppInfoCopyAll {
+        payload: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,9 +137,37 @@ impl CommandPaletteItem {
         }
     }
 
+    pub(super) fn app_info_entry(label: &'static str, value: String) -> Self {
+        let truncated = if value.len() > 60 {
+            format!("{}…", &value[..59])
+        } else {
+            value.clone()
+        };
+        let keywords = format!("info {label} {value}").to_ascii_lowercase();
+        Self {
+            title: format!("{label}: {truncated}"),
+            keywords,
+            enabled: true,
+            status_hint: Some("Copy"),
+            tmux_status_hint: None,
+            kind: CommandPaletteItemKind::AppInfoEntry { label, value },
+        }
+    }
+
+    pub(super) fn app_info_copy_all(payload: String) -> Self {
+        Self {
+            title: "Copy all to clipboard".to_string(),
+            keywords: "copy all info clipboard".to_string(),
+            enabled: true,
+            status_hint: Some("Copy"),
+            tmux_status_hint: None,
+            kind: CommandPaletteItemKind::AppInfoCopyAll { payload },
+        }
+    }
+
     pub(super) fn theme(theme_id: String, is_active: bool) -> Self {
         let title = if is_active {
-            format!("\u{2713} {}", theme_id)
+            format!("\u{2713} {theme_id}")
         } else {
             theme_id.clone()
         };
@@ -421,8 +457,7 @@ impl CommandPaletteState {
     pub(super) fn scroll_dt_seconds(&mut self, now: Instant) -> f32 {
         let dt = self
             .scroll_last_tick
-            .map(|last| (now - last).as_secs_f32())
-            .unwrap_or(1.0 / 60.0);
+            .map_or(1.0 / 60.0, |last| (now - last).as_secs_f32());
         self.scroll_last_tick = Some(now);
         dt
     }
@@ -634,6 +669,7 @@ fn resolve_user_path_from_shell() -> Option<String> {
     if path.is_empty() { None } else { Some(path) }
 }
 
+#[cfg(test)]
 fn command_exists_in_path(command: &str, path_env: &str) -> bool {
     if command.is_empty() {
         return false;
@@ -644,11 +680,13 @@ fn command_exists_in_path(command: &str, path_env: &str) -> bool {
         .any(|entry| command_exists_in_dir(&entry, command))
 }
 
+#[cfg(test)]
 fn command_exists_in_dir(dir: &std::path::Path, command: &str) -> bool {
     let candidate = dir.join(command);
     candidate_is_executable(&candidate)
 }
 
+#[cfg(test)]
 fn candidate_is_executable(candidate: &std::path::Path) -> bool {
     let Ok(metadata) = std::fs::metadata(candidate) else {
         return false;
@@ -831,7 +869,10 @@ mod tests {
     #[test]
     fn target_scroll_y_only_moves_when_selection_leaves_viewport() {
         assert_eq!(command_palette_target_scroll_y(0.0, 2, 12), Some(0.0));
-        assert_eq!(command_palette_target_scroll_y(0.0, 9, 12), Some(60.0));
+        assert_eq!(
+            command_palette_target_scroll_y(0.0, 9, 12),
+            Some((10.0 * COMMAND_PALETTE_ROW_HEIGHT) - command_palette_viewport_height())
+        );
         assert_eq!(command_palette_target_scroll_y(90.0, 0, 12), Some(0.0));
         assert_eq!(command_palette_target_scroll_y(0.0, 0, 0), None);
     }

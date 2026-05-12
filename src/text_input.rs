@@ -506,8 +506,7 @@ impl TextInputState {
         let utf8_index = self
             .last_layout
             .as_ref()
-            .map(|layout| layout.closest_index_for_x(local_x))
-            .unwrap_or(0);
+            .map_or(0, |layout| layout.closest_index_for_x(local_x));
         self.utf8_to_utf16(utf8_index)
     }
 
@@ -662,8 +661,9 @@ impl<V: TextInputProvider + gpui::Render + EntityInputHandler> IntoElement for T
                     let focused = prepaint_focus_handle.is_focused(window);
                     let cursor_visible = view.cursor_visible();
                     let cursor_width = view.cursor_width(font_size_value);
-                    view.text_input_state()
-                        .map(|state| {
+                    view.text_input_state().map_or_else(
+                        || (String::new(), 0..0, 0, None, focused, false, cursor_width),
+                        |state| {
                             (
                                 state.text().to_string(),
                                 state.selected_range(),
@@ -673,10 +673,8 @@ impl<V: TextInputProvider + gpui::Render + EntityInputHandler> IntoElement for T
                                 cursor_visible,
                                 cursor_width,
                             )
-                        })
-                        .unwrap_or_else(|| {
-                            (String::new(), 0..0, 0, None, focused, false, cursor_width)
-                        })
+                        },
+                    )
                 };
 
                 let line = if text.is_empty() {
@@ -715,7 +713,7 @@ impl<V: TextInputProvider + gpui::Render + EntityInputHandler> IntoElement for T
                         if marked_end < text.len() {
                             runs.push(TextRun {
                                 len: text.len() - marked_end,
-                                ..base_run.clone()
+                                ..base_run
                             });
                         }
                         runs
@@ -733,8 +731,7 @@ impl<V: TextInputProvider + gpui::Render + EntityInputHandler> IntoElement for T
 
                 let line_width = line
                     .as_ref()
-                    .map(|line| line.x_for_index(text.len()))
-                    .unwrap_or(px(0.0));
+                    .map_or(px(0.0), |line| line.x_for_index(text.len()));
                 let line_offset_x = match alignment {
                     TextInputAlignment::Left => px(0.0),
                     TextInputAlignment::Center => {
@@ -751,12 +748,10 @@ impl<V: TextInputProvider + gpui::Render + EntityInputHandler> IntoElement for T
                 let selection = if selection_start < selection_end {
                     let start_x = line
                         .as_ref()
-                        .map(|line| line.x_for_index(selection_start))
-                        .unwrap_or(px(0.0));
+                        .map_or(px(0.0), |line| line.x_for_index(selection_start));
                     let end_x = line
                         .as_ref()
-                        .map(|line| line.x_for_index(selection_end))
-                        .unwrap_or(px(0.0));
+                        .map_or(px(0.0), |line| line.x_for_index(selection_end));
                     Some(fill(
                         Bounds::from_corners(
                             point(
@@ -777,8 +772,7 @@ impl<V: TextInputProvider + gpui::Render + EntityInputHandler> IntoElement for T
                 let cursor = if focused && cursor_visible && selection_start == selection_end {
                     let cursor_x = line
                         .as_ref()
-                        .map(|line| line.x_for_index(cursor_utf8))
-                        .unwrap_or(px(0.0));
+                        .map_or(px(0.0), |line| line.x_for_index(cursor_utf8));
                     let cursor_x = px({
                         let x: f32 = cursor_x.into();
                         x.round()
@@ -801,9 +795,9 @@ impl<V: TextInputProvider + gpui::Render + EntityInputHandler> IntoElement for T
                 TextInputPrepaintState {
                     line,
                     line_bounds,
+                    line_offset_x,
                     selection,
                     cursor,
-                    line_offset_x,
                 }
             },
             move |bounds, mut prepaint, window, cx| {

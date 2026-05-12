@@ -15,7 +15,6 @@ members = [
   "crates/search",
   "crates/xtask",
   "crates/cli",
-  "crates/termy_api",
 ]
 resolver = "2"
 

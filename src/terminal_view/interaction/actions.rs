@@ -119,7 +119,7 @@ impl TerminalView {
                 }
             }
             CommandAction::ManageTmuxSessions => {
-                self.open_tmux_session_palette_with_intent(TmuxSessionIntent::AttachOrSwitch, cx)
+                self.open_tmux_session_palette_with_intent(TmuxSessionIntent::AttachOrSwitch, cx);
             }
             CommandAction::ManageSavedLayouts => {
                 self.open_saved_layouts_palette(cx);

@@ -61,7 +61,7 @@ impl TerminalView {
                     }
                     #[cfg(not(target_os = "windows"))]
                     {
-                        termy_toast::success(format!("CLI installed to {}", path_str));
+                        termy_toast::success(format!("CLI installed to {path_str}"));
                     }
                 }
 

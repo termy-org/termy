@@ -2,59 +2,6 @@ use super::*;
 
 impl OnboardingWindow {
     pub(super) fn render_welcome(&self, cx: &mut Context<Self>) -> AnyElement {
-        let halo_outer = div()
-            .absolute()
-            .top(px(0.0))
-            .left(px(0.0))
-            .w(px(180.0))
-            .h(px(180.0))
-            .rounded_full()
-            .bg(self.accent_with_alpha(0.18))
-            .with_animation(
-                "onboarding-halo-outer",
-                Animation::new(Duration::from_millis(3600))
-                    .repeat()
-                    .with_easing(pulsating_between(0.0, 0.55)),
-                |this, delta| this.opacity(delta),
-            );
-        let halo_inner = div()
-            .absolute()
-            .top(px(28.0))
-            .left(px(28.0))
-            .w(px(124.0))
-            .h(px(124.0))
-            .rounded_full()
-            .bg(self.accent_with_alpha(0.32))
-            .with_animation(
-                "onboarding-halo-inner",
-                Animation::new(Duration::from_millis(2600))
-                    .repeat()
-                    .with_easing(pulsating_between(0.25, 0.95)),
-                |this, delta| this.opacity(delta),
-            );
-        let logo_image = div()
-            .absolute()
-            .top(px(34.0))
-            .left(px(34.0))
-            .w(px(112.0))
-            .h(px(112.0))
-            .child(
-                img(Path::new(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/assets/icon.svg"
-                )))
-                .size_full()
-                .object_fit(ObjectFit::Contain),
-            );
-
-        let logo_stack = div()
-            .relative()
-            .w(px(180.0))
-            .h(px(180.0))
-            .child(halo_outer)
-            .child(halo_inner)
-            .child(logo_image);
-
         let title = div()
             .text_color(self.text_primary())
             .font_weight(FontWeight::BOLD)
@@ -86,7 +33,6 @@ impl OnboardingWindow {
             .flex_col()
             .items_center()
             .gap_6()
-            .child(logo_stack)
             .child(
                 div()
                     .flex()
@@ -131,7 +77,7 @@ impl OnboardingWindow {
                     .child("Detecting installed terminals…"),
             );
         } else {
-            for source in sources.iter() {
+            for source in &sources {
                 let is_selected = selected == Some(source.kind);
                 grid = grid.child(self.render_import_source_card(source, is_selected, cx));
             }
@@ -275,11 +221,10 @@ impl OnboardingWindow {
                 .max_w(px(680.0));
             let themes = self.themes.clone();
             let selected = self.selected_theme_slug.clone();
-            for theme in themes.iter() {
+            for theme in &themes {
                 let is_selected = selected
                     .as_ref()
-                    .map(|slug| slug.eq_ignore_ascii_case(&theme.slug))
-                    .unwrap_or(false);
+                    .is_some_and(|slug| slug.eq_ignore_ascii_case(&theme.slug));
                 grid = grid.child(self.render_theme_card(theme, is_selected, cx));
             }
             grid.into_any_element()

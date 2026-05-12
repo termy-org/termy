@@ -154,7 +154,7 @@ pub(crate) fn open_settings_window(cx: &mut App) -> Result<(), String> {
         |window, cx| cx.new(|cx| SettingsWindow::new(window, cx)),
     )
     .map(|_| ())
-    .map_err(|error| format!("Failed to open settings window: {}", error))
+    .map_err(|error| format!("Failed to open settings window: {error}"))
 }
 
 #[cfg(test)]

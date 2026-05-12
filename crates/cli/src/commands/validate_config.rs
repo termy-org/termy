@@ -2,12 +2,9 @@ use termy_command_core::{KeybindDirective, KeybindLineRef, parse_keybind_directi
 use termy_config_core::{AppConfig, ConfigDiagnosticKind, config_path};
 
 pub fn run() {
-    let path = match config_path() {
-        Some(p) => p,
-        None => {
-            eprintln!("Could not determine config directory");
-            std::process::exit(1);
-        }
+    let Some(path) = config_path() else {
+        eprintln!("Could not determine config directory");
+        std::process::exit(1);
     };
 
     println!("Config file: {}", path.display());
@@ -22,7 +19,7 @@ pub fn run() {
         Ok(c) => c,
         Err(e) => {
             println!("Status: Failed to read file");
-            println!("Error: {}", e);
+            println!("Error: {e}");
             std::process::exit(1);
         }
     };
@@ -37,7 +34,7 @@ pub fn run() {
             println!();
             println!("Errors:");
             for error in &errors {
-                println!("  {}", error);
+                println!("  {error}");
             }
         }
 
@@ -45,7 +42,7 @@ pub fn run() {
             println!();
             println!("Warnings:");
             for warning in &warnings {
-                println!("  {}", warning);
+                println!("  {warning}");
             }
         }
 

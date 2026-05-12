@@ -42,9 +42,9 @@ impl TerminalView {
         active_scrollback_history: usize,
         inactive_tab_scrollback: Option<usize>,
     ) -> usize {
-        inactive_tab_scrollback
-            .map(|inactive_history| inactive_history.max(active_scrollback_history))
-            .unwrap_or(active_scrollback_history)
+        inactive_tab_scrollback.map_or(active_scrollback_history, |inactive_history| {
+            inactive_history.max(active_scrollback_history)
+        })
     }
 
     fn hydration_capture_row_budget(scrollback_history: usize, pane_height: u16) -> usize {

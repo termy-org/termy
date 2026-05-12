@@ -87,9 +87,9 @@ pub(crate) fn verify_tmux_version(
     let output = command
         .arg("-V")
         .output()
-        .with_context(|| format!("failed to execute '{}' -V", binary))?;
+        .with_context(|| format!("failed to execute '{binary}' -V"))?;
     if !output.status.success() {
-        return Err(anyhow!("'{} -V' failed", binary));
+        return Err(anyhow!("'{binary} -V' failed"));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -99,13 +99,10 @@ pub(crate) fn verify_tmux_version(
         .ok_or_else(|| anyhow!("unable to parse tmux version output: '{}'", stdout.trim()))?;
 
     let (major, minor) = parse_version_prefix(version)
-        .ok_or_else(|| anyhow!("unsupported tmux version format: '{}'", version))?;
+        .ok_or_else(|| anyhow!("unsupported tmux version format: '{version}'"))?;
     if (major, minor) < (minimum_major, minimum_minor) {
         return Err(anyhow!(
-            "tmux {}.{}+ required, found {}",
-            minimum_major,
-            minimum_minor,
-            version
+            "tmux {minimum_major}.{minimum_minor}+ required, found {version}"
         ));
     }
 

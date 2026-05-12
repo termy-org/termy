@@ -36,16 +36,10 @@ fn update_config_contents<R>(
         .write(true)
         .open(&lock_path)
         .map_err(|source| {
-            format!(
-                "Failed to open config lock file '{}': {}",
-                lock_path_display, source
-            )
+            format!("Failed to open config lock file '{lock_path_display}': {source}")
         })?;
     process_lock_file.lock_exclusive().map_err(|source| {
-        format!(
-            "Failed to lock config lock file '{}': {}",
-            lock_path_display, source
-        )
+        format!("Failed to lock config lock file '{lock_path_display}': {source}")
     })?;
 
     let mut config_lock_file = fs::OpenOptions::new()
@@ -86,10 +80,7 @@ fn update_config_contents<R>(
     write_atomic(&config_path, &updated).map_err(|error| error.to_string())?;
     notify_config_changed();
     process_lock_file.unlock().map_err(|source| {
-        format!(
-            "Failed to unlock config lock file '{}': {}",
-            lock_path_display, source
-        )
+        format!("Failed to unlock config lock file '{lock_path_display}': {source}")
     })?;
     Ok(result)
 }
@@ -110,7 +101,7 @@ pub fn remove_raw_root_key_from_config(key: &str) -> Result<(), String> {
 pub fn set_theme_in_config(theme_id: &str) -> Result<String, String> {
     let theme = parse_theme_id(theme_id).ok_or_else(|| "Invalid theme id".to_string())?;
     set_root_setting(RootSettingId::Theme, &theme)?;
-    Ok(format!("Theme set to {}", theme))
+    Ok(format!("Theme set to {theme}"))
 }
 
 pub fn set_color_setting(color: ColorSettingId, value: Option<&str>) -> Result<(), String> {
@@ -157,10 +148,10 @@ pub fn upsert_task(task: TaskConfig) -> Result<(), String> {
 
 pub fn import_colors_from_json(json_path: &Path) -> Result<String, String> {
     let contents =
-        fs::read_to_string(json_path).map_err(|e| format!("Failed to read file: {}", e))?;
+        fs::read_to_string(json_path).map_err(|e| format!("Failed to read file: {e}"))?;
 
     let json: serde_json::Value =
-        serde_json::from_str(&contents).map_err(|e| format!("Invalid JSON: {}", e))?;
+        serde_json::from_str(&contents).map_err(|e| format!("Invalid JSON: {e}"))?;
 
     let colors = json
         .as_object()
@@ -178,10 +169,10 @@ pub fn import_colors_from_json(json_path: &Path) -> Result<String, String> {
 
         let hex = value
             .as_str()
-            .ok_or_else(|| format!("Color '{}' must be a hex string", key))?;
+            .ok_or_else(|| format!("Color '{key}' must be a hex string"))?;
 
         if Rgb8::from_hex(hex).is_none() {
-            return Err(format!("Invalid hex color for '{}': {}", key, hex));
+            return Err(format!("Invalid hex color for '{key}': {hex}"));
         }
 
         let is_canonical_key = key.eq_ignore_ascii_case(color_setting_spec(id).key);
@@ -207,7 +198,7 @@ pub fn import_colors_from_json(json_path: &Path) -> Result<String, String> {
         })
         .collect::<Vec<_>>();
     update_config_contents(|existing| Ok((apply_color_updates(existing, &updates), ())))?;
-    Ok(format!("Imported {} colors", color_count))
+    Ok(format!("Imported {color_count} colors"))
 }
 
 fn upsert_task_lines(contents: &str, task: &TaskConfig) -> String {

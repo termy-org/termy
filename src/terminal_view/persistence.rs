@@ -169,7 +169,7 @@ impl TerminalView {
                     "horizontal" => PaneResizeAxis::Horizontal,
                     "vertical" => PaneResizeAxis::Vertical,
                     other => {
-                        return Err(format!("layout tree split axis '{}' is invalid", other));
+                        return Err(format!("layout tree split axis '{other}' is invalid"));
                     }
                 };
                 let ratio = value
@@ -195,7 +195,7 @@ impl TerminalView {
                     )?),
                 })
             }
-            other => Err(format!("layout tree node kind '{}' is invalid", other)),
+            other => Err(format!("layout tree node kind '{other}' is invalid")),
         }
     }
 
@@ -307,7 +307,7 @@ impl TerminalView {
                 })
             }).collect::<Vec<_>>(),
         }))
-        .map_err(|error| format!("Failed to encode native tab workspace: {}", error))?;
+        .map_err(|error| format!("Failed to encode native tab workspace: {error}"))?;
         Self::write_persisted_native_workspace_atomically(path, &contents)
     }
 
@@ -328,12 +328,12 @@ impl TerminalView {
             )
         })?;
         temp.write_all(contents.as_bytes())
-            .map_err(|error| format!("Failed to write workspace state: {}", error))?;
+            .map_err(|error| format!("Failed to write workspace state: {error}"))?;
         temp.flush()
-            .map_err(|error| format!("Failed to flush workspace state: {}", error))?;
+            .map_err(|error| format!("Failed to flush workspace state: {error}"))?;
         temp.as_file()
             .sync_all()
-            .map_err(|error| format!("Failed to sync workspace state: {}", error))?;
+            .map_err(|error| format!("Failed to sync workspace state: {error}"))?;
         temp.persist(path).map_err(|error| {
             format!(
                 "Failed to persist workspace state '{}': {}",
@@ -432,10 +432,10 @@ impl TerminalView {
         root: &Value,
     ) -> Result<PersistedNativeWorkspace, String> {
         fn value_u16(value: &Value, field: &str) -> Result<u16, String> {
-            let raw = value.as_u64().ok_or_else(|| {
-                format!("workspace field '{}' must be an unsigned integer", field)
-            })?;
-            u16::try_from(raw).map_err(|_| format!("workspace field '{}' exceeds u16 range", field))
+            let raw = value
+                .as_u64()
+                .ok_or_else(|| format!("workspace field '{field}' must be an unsigned integer"))?;
+            u16::try_from(raw).map_err(|_| format!("workspace field '{field}' exceeds u16 range"))
         }
 
         let tabs_value = root
@@ -447,7 +447,7 @@ impl TerminalView {
             let panes_value = tab_value
                 .get("panes")
                 .and_then(Value::as_array)
-                .ok_or_else(|| format!("workspace tab {} is missing 'panes'", tab_index))?;
+                .ok_or_else(|| format!("workspace tab {tab_index} is missing 'panes'"))?;
             if panes_value.is_empty() {
                 continue;
             }
@@ -457,27 +457,20 @@ impl TerminalView {
                 panes.push(PersistedNativePane {
                     left: value_u16(
                         pane_value.get("left").ok_or_else(|| {
-                            format!(
-                                "workspace tab {} pane {} is missing 'left'",
-                                tab_index, pane_index
-                            )
+                            format!("workspace tab {tab_index} pane {pane_index} is missing 'left'")
                         })?,
                         "left",
                     )?,
                     top: value_u16(
                         pane_value.get("top").ok_or_else(|| {
-                            format!(
-                                "workspace tab {} pane {} is missing 'top'",
-                                tab_index, pane_index
-                            )
+                            format!("workspace tab {tab_index} pane {pane_index} is missing 'top'")
                         })?,
                         "top",
                     )?,
                     width: value_u16(
                         pane_value.get("width").ok_or_else(|| {
                             format!(
-                                "workspace tab {} pane {} is missing 'width'",
-                                tab_index, pane_index
+                                "workspace tab {tab_index} pane {pane_index} is missing 'width'"
                             )
                         })?,
                         "width",
@@ -486,8 +479,7 @@ impl TerminalView {
                     height: value_u16(
                         pane_value.get("height").ok_or_else(|| {
                             format!(
-                                "workspace tab {} pane {} is missing 'height'",
-                                tab_index, pane_index
+                                "workspace tab {tab_index} pane {pane_index} is missing 'height'"
                             )
                         })?,
                         "height",
@@ -548,7 +540,7 @@ impl TerminalView {
         contents: &str,
     ) -> Result<PersistedNativeWorkspaceState, String> {
         let root: Value = serde_json::from_str(contents)
-            .map_err(|error| format!("Invalid native tab workspace JSON: {}", error))?;
+            .map_err(|error| format!("Invalid native tab workspace JSON: {error}"))?;
         let version = root
             .get("version")
             .and_then(Value::as_u64)
@@ -579,11 +571,11 @@ impl TerminalView {
                         .and_then(Value::as_str)
                         .map(str::trim)
                         .filter(|name| !name.is_empty())
-                        .ok_or_else(|| format!("saved layout {} is missing 'name'", layout_index))?
+                        .ok_or_else(|| format!("saved layout {layout_index} is missing 'name'"))?
                         .to_string();
                     let workspace = Self::parse_persisted_native_workspace_value(
                         layout_value.get("workspace").ok_or_else(|| {
-                            format!("saved layout '{}' is missing 'workspace'", name)
+                            format!("saved layout '{name}' is missing 'workspace'")
                         })?,
                     )?;
                     layouts.push(PersistedNamedLayout { name, workspace });
@@ -595,7 +587,7 @@ impl TerminalView {
                     layouts,
                 })
             }
-            _ => Err(format!("Unsupported workspace state version {}", version)),
+            _ => Err(format!("Unsupported workspace state version {version}")),
         }
     }
 
@@ -645,7 +637,7 @@ impl TerminalView {
                 Some(&self.terminal_runtime),
                 None,
             )
-            .map_err(|error| format!("Failed to restore saved tab: {}", error))?;
+            .map_err(|error| format!("Failed to restore saved tab: {error}"))?;
             let tab_id = self.allocate_tab_id();
             let mut tab = Self::create_native_tab(
                 tab_id,
@@ -679,7 +671,7 @@ impl TerminalView {
                     Some(&self.terminal_runtime),
                     None,
                 )
-                .map_err(|error| format!("Failed to restore saved pane: {}", error))?;
+                .map_err(|error| format!("Failed to restore saved pane: {error}"))?;
                 if self.native_buffer_persistence
                     && let Some(buffer) = pane.buffer.as_deref()
                 {
@@ -775,7 +767,7 @@ impl TerminalView {
         let path = match Self::persisted_native_workspace_path() {
             Ok(path) => path,
             Err(error) => {
-                log::error!("Failed to resolve native workspace state path: {}", error);
+                log::error!("Failed to resolve native workspace state path: {error}");
                 return None;
             }
         };
@@ -795,7 +787,7 @@ impl TerminalView {
         self.native_persist_revision
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         if let Err(error) = Self::apply_persisted_native_workspace_write_request(request) {
-            log::error!("Failed to persist native tab workspace: {}", error);
+            log::error!("Failed to persist native tab workspace: {error}");
         }
     }
 
@@ -816,7 +808,7 @@ impl TerminalView {
             if let Err(error) =
                 TerminalView::apply_persisted_native_workspace_write_request(request)
             {
-                log::error!("Failed to persist native tab workspace: {}", error);
+                log::error!("Failed to persist native tab workspace: {error}");
             }
         });
     }
@@ -908,7 +900,7 @@ impl TerminalView {
             .layouts
             .into_iter()
             .find(|layout| layout.name.eq_ignore_ascii_case(layout_name))
-            .ok_or_else(|| format!("Saved layout \"{}\" was not found", layout_name))?;
+            .ok_or_else(|| format!("Saved layout \"{layout_name}\" was not found"))?;
         self.restore_workspace(layout.workspace, cx)?;
         self.current_named_layout = Some(layout.name);
         self.sync_persisted_native_workspace();
@@ -932,15 +924,14 @@ impl TerminalView {
                 && !layout.name.eq_ignore_ascii_case(current_layout_name)
         }) {
             return Err(format!(
-                "A saved layout named \"{}\" already exists",
-                next_layout_name
+                "A saved layout named \"{next_layout_name}\" already exists"
             ));
         }
         let layout = state
             .layouts
             .iter_mut()
             .find(|layout| layout.name.eq_ignore_ascii_case(current_layout_name))
-            .ok_or_else(|| format!("Saved layout \"{}\" was not found", current_layout_name))?;
+            .ok_or_else(|| format!("Saved layout \"{current_layout_name}\" was not found"))?;
         layout.name = next_layout_name.to_string();
         let update_current_named_layout = self
             .current_named_layout
@@ -970,7 +961,7 @@ impl TerminalView {
             .layouts
             .retain(|layout| !layout.name.eq_ignore_ascii_case(layout_name));
         if state.layouts.len() == previous_len {
-            return Err(format!("Saved layout \"{}\" was not found", layout_name));
+            return Err(format!("Saved layout \"{layout_name}\" was not found"));
         }
         let clear_current_named_layout = self
             .current_named_layout
@@ -1132,7 +1123,7 @@ mod tests {
                     PersistedNativeLayoutNode::Leaf { pane: 1 }
                 ));
             }
-            other => panic!("unexpected layout tree: {:?}", other),
+            other => panic!("unexpected layout tree: {other:?}"),
         }
     }
 

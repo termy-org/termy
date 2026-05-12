@@ -71,9 +71,8 @@ fn parse_file(
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let (key, value) = match split_kv(trimmed) {
-            Some(parts) => parts,
-            None => continue,
+        let Some((key, value)) = split_kv(trimmed) else {
+            continue;
         };
 
         match key {
@@ -107,24 +106,22 @@ fn parse_file(
             "geninclude" => {
                 imported
                     .warnings
-                    .push(format!("Ignored geninclude (runs script): {}", value));
+                    .push(format!("Ignored geninclude (runs script): {value}"));
             }
             "envinclude" => {
                 imported
                     .warnings
-                    .push(format!("Ignored envinclude: {}", value));
+                    .push(format!("Ignored envinclude: {value}"));
             }
             "font_family" => {
                 imported
                     .settings
                     .push((RootSettingId::FontFamily, value.to_string()));
             }
-            "font_size" => {
-                if value.parse::<f32>().is_ok() {
-                    imported
-                        .settings
-                        .push((RootSettingId::FontSize, value.to_string()));
-                }
+            "font_size" if value.parse::<f32>().is_ok() => {
+                imported
+                    .settings
+                    .push((RootSettingId::FontSize, value.to_string()));
             }
             "window_padding_width" => {
                 let parts: Vec<&str> = value.split_whitespace().collect();
@@ -179,12 +176,10 @@ fn parse_file(
                         .push((RootSettingId::ScrollbackHistory, clamped.to_string()));
                 }
             }
-            "shell" => {
-                if !value.is_empty() && !value.eq_ignore_ascii_case(".") {
-                    imported
-                        .settings
-                        .push((RootSettingId::Shell, value.to_string()));
-                }
+            "shell" if !value.is_empty() && !value.eq_ignore_ascii_case(".") => {
+                imported
+                    .settings
+                    .push((RootSettingId::Shell, value.to_string()));
             }
             "foreground" => {
                 if let Some(color) = parse_hex_color(value) {
@@ -268,8 +263,7 @@ fn build_theme(
     }
     if !missing.is_empty() {
         warnings.push(format!(
-            "Kitty palette missing indices {:?}; filled with black",
-            missing
+            "Kitty palette missing indices {missing:?}; filled with black"
         ));
     }
     Some(ThemeColors {
@@ -288,14 +282,14 @@ mod tests {
 
     fn write_file(contents: &str) -> NamedTempFile {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "{}", contents).unwrap();
+        write!(file, "{contents}").unwrap();
         file
     }
 
     #[test]
     fn parses_basic_settings_and_palette() {
         let palette = (0..16u8)
-            .map(|i| format!("color{i} #{:02x}{:02x}{:02x}", i, i, i))
+            .map(|i| format!("color{i} #{i:02x}{i:02x}{i:02x}"))
             .collect::<Vec<_>>()
             .join("\n");
         let config = format!(

@@ -36,10 +36,8 @@ mod tests {
         let section_lower =
             SettingsWindow::settings_section_label(metadata.section).to_ascii_lowercase();
         let keywords_lower = metadata.keywords.join(" ").to_ascii_lowercase();
-        let haystack_lower = format!(
-            "{} {} {} {}",
-            title_lower, description_lower, section_lower, keywords_lower
-        );
+        let haystack_lower =
+            format!("{title_lower} {description_lower} {section_lower} {keywords_lower}");
 
         SearchableSetting {
             metadata,
@@ -168,6 +166,30 @@ impl SettingsWindow {
         }
     }
 
+    pub(super) fn settings_section_subtitle(section: SettingsSection) -> &'static str {
+        match section {
+            SettingsSection::Appearance => "Customize the look and feel",
+            SettingsSection::Terminal => "Configure terminal behavior",
+            SettingsSection::Tabs => "Tab bar and split-pane behavior",
+            SettingsSection::ThemeStore => "Browse and install themes",
+            SettingsSection::Advanced => "Power-user options",
+            SettingsSection::Colors => "Per-ANSI color overrides",
+            SettingsSection::Keybindings => "Keyboard shortcuts",
+        }
+    }
+
+    pub(super) fn section_icon_path(section: SettingsSection) -> &'static str {
+        match section {
+            SettingsSection::Appearance => "icons/settings/appearance.svg",
+            SettingsSection::Terminal => "icons/settings/terminal.svg",
+            SettingsSection::Tabs => "icons/settings/tabs.svg",
+            SettingsSection::ThemeStore => "icons/settings/themes.svg",
+            SettingsSection::Advanced => "icons/settings/advanced.svg",
+            SettingsSection::Colors => "icons/settings/colors.svg",
+            SettingsSection::Keybindings => "icons/settings/keybindings.svg",
+        }
+    }
+
     pub(super) fn settings_sections_in_order(&self) -> Vec<SettingsSection> {
         vec![
             SettingsSection::Appearance,
@@ -230,10 +252,8 @@ impl SettingsWindow {
                 let section_lower =
                     Self::settings_section_label(metadata.section).to_ascii_lowercase();
                 let keywords_lower = metadata.keywords.join(" ").to_ascii_lowercase();
-                let haystack_lower = format!(
-                    "{} {} {} {}",
-                    title_lower, description_lower, section_lower, keywords_lower
-                );
+                let haystack_lower =
+                    format!("{title_lower} {description_lower} {section_lower} {keywords_lower}");
 
                 SearchableSetting {
                     metadata,
@@ -568,32 +588,29 @@ impl SettingsWindow {
             .flex()
             .flex_col()
             .child(
-                div().px_5().pt_10().pb_2().child(
-                    div()
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(self.text_muted())
-                        .child("SETTINGS"),
-                ),
+                div()
+                    .pt_8()
+                    .px_3()
+                    .pb_3()
+                    .child(self.render_sidebar_search(cx)),
             )
-            .child(self.render_sidebar_search(cx))
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(2.0))
-                    .px_3()
+                    .px_2()
                     .child(self.render_sidebar_item("Appearance", SettingsSection::Appearance, cx))
                     .child(self.render_sidebar_item("Terminal", SettingsSection::Terminal, cx))
                     .child(self.render_sidebar_item("Tabs", SettingsSection::Tabs, cx))
                     .child(self.render_sidebar_item("Themes", SettingsSection::ThemeStore, cx))
-                    .child(self.render_sidebar_item("Advanced", SettingsSection::Advanced, cx))
                     .child(self.render_sidebar_item("Colors", SettingsSection::Colors, cx))
                     .child(self.render_sidebar_item(
                         "Keybindings",
                         SettingsSection::Keybindings,
                         cx,
-                    )),
+                    ))
+                    .child(self.render_sidebar_item("Advanced", SettingsSection::Advanced, cx)),
             )
             .child(div().flex_1())
             .child(self.render_sidebar_footer(cx))
@@ -869,7 +886,8 @@ impl SettingsWindow {
             return container.into_any_element();
         }
 
-        let mut preview = div().flex().flex_col().gap(px(2.0));
+        let _ = (bg_input, border_color);
+        let mut preview = div().flex().flex_col().gap(px(1.0)).mt(px(6.0));
         for setting in all_results.into_iter().take(SETTINGS_SEARCH_PREVIEW_LIMIT) {
             let key = setting.metadata.key;
             let section_label = Self::settings_section_label(setting.metadata.section);
@@ -878,10 +896,7 @@ impl SettingsWindow {
                     .id(SharedString::from(format!("search-preview-{key}")))
                     .px_2()
                     .py_1()
-                    .rounded(px(SETTINGS_BUTTON_RADIUS))
-                    .bg(bg_input)
-                    .border_1()
-                    .border_color(border_color)
+                    .rounded(px(SETTINGS_INPUT_RADIUS))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover_bg))
                     .child(
@@ -947,17 +962,18 @@ impl SettingsWindow {
         let hover_bg = self.bg_hover();
         let text_primary = self.text_primary();
         let text_secondary = self.text_secondary();
-        let accent = self.accent();
+        let icon_path = Self::section_icon_path(section);
+        let icon_tint = self.icon_color(is_active);
 
         div()
             .id(SharedString::from(label))
-            .px_3()
-            .py(px(10.0))
+            .h(px(SIDEBAR_ITEM_HEIGHT))
+            .px_2()
             .rounded(px(SETTINGS_BUTTON_RADIUS))
             .cursor_pointer()
             .flex()
             .items_center()
-            .gap_3()
+            .gap(px(10.0))
             .bg(if is_active {
                 active_bg
             } else {
@@ -969,6 +985,12 @@ impl SettingsWindow {
                 }
             })
             .hover(|s| s.bg(hover_bg))
+            .child(
+                svg()
+                    .path(SharedString::from(icon_path))
+                    .size(px(SIDEBAR_ICON_SIZE))
+                    .text_color(icon_tint),
+            )
             .child(
                 div()
                     .text_sm()
@@ -984,16 +1006,6 @@ impl SettingsWindow {
                     })
                     .child(label),
             )
-            .when(is_active, |s| {
-                s.child(
-                    div()
-                        .ml_auto()
-                        .w(px(3.0))
-                        .h(px(16.0))
-                        .rounded(px(SETTINGS_BUTTON_RADIUS))
-                        .bg(accent),
-                )
-            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |view, _event: &MouseDownEvent, window, cx| {

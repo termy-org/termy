@@ -326,7 +326,7 @@ fn textual_sequence_base(
     None
 }
 
-fn pure_text_event_text<'a>(keystroke: &'a Keystroke) -> Option<&'a str> {
+fn pure_text_event_text(keystroke: &Keystroke) -> Option<&str> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = keystroke;
@@ -684,11 +684,11 @@ impl<'a> SequenceBuilder<'a> {
     }
 }
 
-fn associated_text<'a>(
-    keystroke: &'a Keystroke,
+fn associated_text(
+    keystroke: &Keystroke,
     event_kind: TerminalKeyEventKind,
     keyboard_mode: TerminalKeyboardMode,
-) -> Option<&'a str> {
+) -> Option<&str> {
     // `associated_text` is only part of kitty's report-all protocol, so
     // `Keystroke.key_char` must stay out of legacy/non-report-all sequences.
     if !keyboard_mode.report_all_keys_as_esc()

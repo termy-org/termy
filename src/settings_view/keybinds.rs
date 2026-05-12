@@ -71,7 +71,7 @@ impl SettingsWindow {
         let mut lines = Vec::with_capacity(entries.len() + 1);
         lines.push("clear".to_string());
         for (action_name, trigger) in entries {
-            lines.push(format!("{}={}", trigger, action_name));
+            lines.push(format!("{trigger}={action_name}"));
         }
         lines
     }
@@ -286,7 +286,7 @@ impl SettingsWindow {
                     .map(|modifier| Self::modifier_display_label(modifier))
                     .collect::<Vec<_>>()
                     .join(" + ");
-                Some(format!("{} + {}", modifiers, key))
+                Some(format!("{modifiers} + {key}"))
             })
             .collect::<Vec<_>>();
 
@@ -320,7 +320,7 @@ impl SettingsWindow {
         match Self::canonicalize_captured_trigger(key, event.keystroke.modifiers) {
             Ok(Some(trigger)) => self.assign_action_binding(action, &trigger, cx),
             Ok(None) => {}
-            Err(error) => termy_toast::error(format!("Invalid key combo: {}", error)),
+            Err(error) => termy_toast::error(format!("Invalid key combo: {error}")),
         }
     }
 
@@ -336,10 +336,10 @@ impl SettingsWindow {
         let binding_display = if is_capturing {
             "Press shortcut...".to_string()
         } else {
-            action_bindings
-                .get(&action)
-                .map(|trigger| Self::display_trigger_for_os(trigger))
-                .unwrap_or_else(|| "Unbound".to_string())
+            action_bindings.get(&action).map_or_else(
+                || "Unbound".to_string(),
+                |trigger| Self::display_trigger_for_os(trigger),
+            )
         };
         let bg_card = self.bg_card();
         let border_color = self.border_color();
@@ -357,18 +357,16 @@ impl SettingsWindow {
             text_secondary
         };
 
+        let _ = bg_card;
         div()
-            .id(SharedString::from(format!("keybind-row-{}", config_name)))
+            .id(SharedString::from(format!("keybind-row-{config_name}")))
             .flex()
             .items_center()
             .justify_between()
             .gap_4()
-            .py_3()
-            .px_4()
-            .rounded(px(SETTINGS_CARD_RADIUS))
-            .bg(bg_card)
-            .border_1()
-            .border_color(if is_capturing { accent } else { border_color })
+            .py(px(CARD_ROW_PADDING_Y))
+            .px(px(CARD_ROW_PADDING_X))
+            .when(is_capturing, |s| s.bg(self.accent_with_alpha(0.06)))
             .child(self.render_keybinding_row_labels(
                 action_title,
                 config_name,
@@ -494,14 +492,33 @@ impl SettingsWindow {
             .into_iter()
             .map(|action| self.render_keybinding_row(action, &action_bindings, cx))
             .collect::<Vec<_>>();
-        let bg_card = self.bg_card();
+        let card_bg = self.bg_elevated();
         let border_color = self.border_color();
+        let divider = self.divider_color();
         let text_muted = self.text_muted();
+
+        let total = rows.len();
+        let mut card = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .rounded(px(SETTINGS_CARD_RADIUS))
+            .bg(card_bg)
+            .border_1()
+            .border_color(border_color)
+            .overflow_hidden();
+        for (index, row) in rows.into_iter().enumerate() {
+            let mut wrapper = div().w_full().child(row);
+            if index + 1 < total {
+                wrapper = wrapper.border_b_1().border_color(divider);
+            }
+            card = card.child(wrapper);
+        }
 
         div()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(CARD_GAP))
             .child(self.render_section_header(
                 "Keybindings",
                 "Click a shortcut box, then press a key combo",
@@ -509,31 +526,14 @@ impl SettingsWindow {
                 cx,
             ))
             .child(
-                div().flex().items_center().mt_4().mb_2().child(
-                    div()
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(text_muted)
-                        .child("SHORTCUTS"),
-                ),
-            )
-            .child(
                 self.wrap_setting_with_scroll_anchor(
                     keybind_meta.key,
                     div()
                         .flex()
                         .flex_col()
-                        .gap_2()
-                        .child(
-                            div()
-                                .py_4()
-                                .px_4()
-                                .rounded(px(SETTINGS_CARD_RADIUS))
-                                .bg(bg_card)
-                                .border_1()
-                                .border_color(border_color)
-                                .child(div().flex().flex_col().gap_2().children(rows)),
-                        )
+                        .gap(px(8.0))
+                        .child(self.render_group_header("Shortcuts"))
+                        .child(card)
                         .into_any_element(),
                 ),
             )

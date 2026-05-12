@@ -127,10 +127,7 @@ impl CommandPaletteItem {
         };
 
         Self {
-            title: format!(
-                "Rename \"{}\" -> \"{}\"",
-                current_session_name, rendered_next_name
-            ),
+            title: format!("Rename \"{current_session_name}\" -> \"{rendered_next_name}\""),
             keywords: format!(
                 "tmux rename session {} {}",
                 current_session_name.replace('-', " "),
@@ -178,7 +175,7 @@ impl CommandPaletteItem {
     ) -> Self {
         let session_name = session_name.trim().to_string();
         Self {
-            title: format!("Create tmux Session \"{}\"", session_name),
+            title: format!("Create tmux Session \"{session_name}\""),
             keywords: format!(
                 "tmux attach create switch session {}",
                 session_name.replace('-', " ")

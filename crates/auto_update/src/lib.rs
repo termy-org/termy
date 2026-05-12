@@ -57,7 +57,7 @@ impl AutoUpdater {
             .background_executor()
             .spawn(async move { check_for_updates(&current_version) });
 
-        let weak = entity.clone();
+        let weak = entity;
         cx.spawn(async move |cx: &mut AsyncApp| {
             let result = bg.await;
             cx.update(|cx| {
@@ -75,8 +75,8 @@ impl AutoUpdater {
                             this.state = UpdateState::UpToDate;
                         }
                         Err(e) => {
-                            log::warn!("Update check failed: {}", e);
-                            this.state = UpdateState::Error(format!("{}", e));
+                            log::warn!("Update check failed: {e}");
+                            this.state = UpdateState::Error(format!("{e}"));
                         }
                     }
                     cx.notify();
@@ -141,7 +141,7 @@ impl AutoUpdater {
         .detach();
 
         // Download completion
-        let weak_done = entity.clone();
+        let weak_done = entity;
         cx.spawn(async move |cx: &mut AsyncApp| {
             let result = bg.await;
             cx.update(|cx| {
@@ -157,7 +157,7 @@ impl AutoUpdater {
                             };
                         }
                         Err(e) => {
-                            this.state = UpdateState::Error(format!("Download failed: {}", e));
+                            this.state = UpdateState::Error(format!("Download failed: {e}"));
                         }
                     }
                     cx.notify();
@@ -192,7 +192,7 @@ impl AutoUpdater {
             .background_executor()
             .spawn(async move { do_install(&installer_path) });
 
-        let weak = entity.clone();
+        let weak = entity;
         cx.spawn(async move |cx: &mut AsyncApp| {
             let result = bg.await;
             cx.update(|cx| {
@@ -203,7 +203,7 @@ impl AutoUpdater {
                             this.state = UpdateState::Installed { version };
                         }
                         Err(e) => {
-                            this.state = UpdateState::Error(format!("Install failed: {}", e));
+                            this.state = UpdateState::Error(format!("Install failed: {e}"));
                         }
                     }
                     cx.notify();
@@ -224,7 +224,7 @@ fn cache_installer_path(version: &str, extension: &str) -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let cache_dir = PathBuf::from(home).join("Library/Caches/Termy");
     let _ = std::fs::create_dir_all(&cache_dir);
-    cache_dir.join(format!("update-{}.{}", version, extension))
+    cache_dir.join(format!("update-{version}.{extension}"))
 }
 
 #[cfg(target_os = "windows")]
@@ -332,8 +332,7 @@ fn do_install(dmg_path: &PathBuf) -> Result<()> {
             let is_app = path
                 .extension()
                 .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("app"))
-                .unwrap_or(false);
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("app"));
             if !is_app {
                 continue;
             }

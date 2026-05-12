@@ -8,142 +8,6 @@ use super::state::{TabStripOrientation, TabStripOverflowState};
 #[cfg(test)]
 use super::chrome;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn gutter_divider_never_shows() {
-        // Gutter divider is disabled - should always return false
-        assert!(!TerminalView::should_render_gutter_divider(
-            TabStripOverflowState {
-                left: false,
-                right: false,
-            },
-            false,
-        ));
-        assert!(!TerminalView::should_render_gutter_divider(
-            TabStripOverflowState {
-                left: false,
-                right: true,
-            },
-            false,
-        ));
-        assert!(!TerminalView::should_render_gutter_divider(
-            TabStripOverflowState {
-                left: true,
-                right: true,
-            },
-            false,
-        ));
-    }
-
-    #[test]
-    fn gutter_divider_hides_at_true_max_right_scroll() {
-        assert!(!TerminalView::should_render_gutter_divider(
-            TabStripOverflowState {
-                left: true,
-                right: false,
-            },
-            false,
-        ));
-    }
-
-    #[test]
-    fn left_inset_divider_hides_without_left_overflow() {
-        assert!(!TerminalView::should_render_left_inset_divider(
-            TabStripOverflowState {
-                left: false,
-                right: true,
-            },
-            false,
-        ));
-        assert!(!TerminalView::should_render_left_inset_divider(
-            TabStripOverflowState {
-                left: false,
-                right: false,
-            },
-            false,
-        ));
-    }
-
-    #[test]
-    fn left_inset_divider_shows_when_left_overflow_exists() {
-        assert!(TerminalView::should_render_left_inset_divider(
-            TabStripOverflowState {
-                left: true,
-                right: true,
-            },
-            false,
-        ));
-        assert!(TerminalView::should_render_left_inset_divider(
-            TabStripOverflowState {
-                left: true,
-                right: false,
-            },
-            false,
-        ));
-    }
-
-    #[test]
-    fn gutter_divider_hides_when_tab_boundary_already_occupies_right_edge() {
-        assert!(!TerminalView::should_render_gutter_divider(
-            TabStripOverflowState {
-                left: false,
-                right: true,
-            },
-            true,
-        ));
-    }
-
-    #[test]
-    fn left_inset_divider_hides_when_tab_boundary_already_occupies_left_edge() {
-        assert!(!TerminalView::should_render_left_inset_divider(
-            TabStripOverflowState {
-                left: true,
-                right: true,
-            },
-            true,
-        ));
-    }
-
-    #[test]
-    fn edge_divider_collision_detects_fractional_overlap_on_both_edges() {
-        let layout = chrome::compute_tab_chrome_layout(
-            [100.0],
-            chrome::TabChromeInput {
-                active_index: Some(0),
-                tabbar_height: TABBAR_HEIGHT,
-                tab_item_height: TAB_ITEM_HEIGHT,
-                horizontal_padding: TAB_HORIZONTAL_PADDING,
-                tab_item_gap: TAB_ITEM_GAP,
-            },
-        );
-
-        let collisions = TerminalView::edge_divider_collision_state(&layout, -0.49, 100.0);
-        assert!(collisions.left);
-        assert!(collisions.right);
-    }
-
-    #[test]
-    fn edge_divider_collision_ignores_fractional_non_overlap_on_both_edges() {
-        let layout = chrome::compute_tab_chrome_layout(
-            [100.0],
-            chrome::TabChromeInput {
-                active_index: Some(0),
-                tabbar_height: TABBAR_HEIGHT,
-                tab_item_height: TAB_ITEM_HEIGHT,
-                horizontal_padding: TAB_HORIZONTAL_PADDING,
-                tab_item_gap: TAB_ITEM_GAP,
-            },
-        );
-
-        let collisions = TerminalView::edge_divider_collision_state(&layout, -1.01, 100.0);
-        assert!(!collisions.left);
-        assert!(!collisions.right);
-    }
-}
-
 impl TerminalView {
     fn render_inset_lane(
         id: &'static str,
@@ -542,5 +406,141 @@ impl TerminalView {
                 )
             }))
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gutter_divider_never_shows() {
+        // Gutter divider is disabled - should always return false
+        assert!(!TerminalView::should_render_gutter_divider(
+            TabStripOverflowState {
+                left: false,
+                right: false,
+            },
+            false,
+        ));
+        assert!(!TerminalView::should_render_gutter_divider(
+            TabStripOverflowState {
+                left: false,
+                right: true,
+            },
+            false,
+        ));
+        assert!(!TerminalView::should_render_gutter_divider(
+            TabStripOverflowState {
+                left: true,
+                right: true,
+            },
+            false,
+        ));
+    }
+
+    #[test]
+    fn gutter_divider_hides_at_true_max_right_scroll() {
+        assert!(!TerminalView::should_render_gutter_divider(
+            TabStripOverflowState {
+                left: true,
+                right: false,
+            },
+            false,
+        ));
+    }
+
+    #[test]
+    fn left_inset_divider_hides_without_left_overflow() {
+        assert!(!TerminalView::should_render_left_inset_divider(
+            TabStripOverflowState {
+                left: false,
+                right: true,
+            },
+            false,
+        ));
+        assert!(!TerminalView::should_render_left_inset_divider(
+            TabStripOverflowState {
+                left: false,
+                right: false,
+            },
+            false,
+        ));
+    }
+
+    #[test]
+    fn left_inset_divider_shows_when_left_overflow_exists() {
+        assert!(TerminalView::should_render_left_inset_divider(
+            TabStripOverflowState {
+                left: true,
+                right: true,
+            },
+            false,
+        ));
+        assert!(TerminalView::should_render_left_inset_divider(
+            TabStripOverflowState {
+                left: true,
+                right: false,
+            },
+            false,
+        ));
+    }
+
+    #[test]
+    fn gutter_divider_hides_when_tab_boundary_already_occupies_right_edge() {
+        assert!(!TerminalView::should_render_gutter_divider(
+            TabStripOverflowState {
+                left: false,
+                right: true,
+            },
+            true,
+        ));
+    }
+
+    #[test]
+    fn left_inset_divider_hides_when_tab_boundary_already_occupies_left_edge() {
+        assert!(!TerminalView::should_render_left_inset_divider(
+            TabStripOverflowState {
+                left: true,
+                right: true,
+            },
+            true,
+        ));
+    }
+
+    #[test]
+    fn edge_divider_collision_detects_fractional_overlap_on_both_edges() {
+        let layout = chrome::compute_tab_chrome_layout(
+            [100.0],
+            chrome::TabChromeInput {
+                active_index: Some(0),
+                tabbar_height: TABBAR_HEIGHT,
+                tab_item_height: TAB_ITEM_HEIGHT,
+                horizontal_padding: TAB_HORIZONTAL_PADDING,
+                tab_item_gap: TAB_ITEM_GAP,
+            },
+        );
+
+        let collisions = TerminalView::edge_divider_collision_state(&layout, -0.49, 100.0);
+        assert!(collisions.left);
+        assert!(collisions.right);
+    }
+
+    #[test]
+    fn edge_divider_collision_ignores_fractional_non_overlap_on_both_edges() {
+        let layout = chrome::compute_tab_chrome_layout(
+            [100.0],
+            chrome::TabChromeInput {
+                active_index: Some(0),
+                tabbar_height: TABBAR_HEIGHT,
+                tab_item_height: TAB_ITEM_HEIGHT,
+                horizontal_padding: TAB_HORIZONTAL_PADDING,
+                tab_item_gap: TAB_ITEM_GAP,
+            },
+        );
+
+        let collisions = TerminalView::edge_divider_collision_state(&layout, -1.01, 100.0);
+        assert!(!collisions.left);
+        assert!(!collisions.right);
     }
 }

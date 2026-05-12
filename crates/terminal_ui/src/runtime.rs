@@ -46,6 +46,9 @@ pub struct TabTitleShellIntegration {
 
 const DEFAULT_TERM: &str = "xterm-256color";
 const DEFAULT_COLORTERM: &str = "truecolor";
+const TERMY_TERM_PROGRAM: &str = "termy";
+const GHOSTTY_COMPAT_TERM_PROGRAM: &str = "ghostty";
+const GHOSTTY_COMPAT_TERM_PROGRAM_VERSION: &str = "1.2.0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkingDirFallback {
@@ -366,7 +369,22 @@ fn pty_env_overrides(
         env_overrides.insert("COLORTERM".to_string(), colorterm.to_string());
     }
 
-    env_overrides.insert("TERM_PROGRAM".to_string(), "termy".to_string());
+    // Claude Code and similar CLIs gate terminal progress/notification escape
+    // sequences on known terminal identities. Termy supports Ghostty's OSC
+    // progress protocol, so advertise that compatibility to child processes
+    // while keeping TERM conservative for terminfo.
+    env_overrides.insert(
+        "TERM_PROGRAM".to_string(),
+        GHOSTTY_COMPAT_TERM_PROGRAM.to_string(),
+    );
+    env_overrides.insert(
+        "TERM_PROGRAM_VERSION".to_string(),
+        GHOSTTY_COMPAT_TERM_PROGRAM_VERSION.to_string(),
+    );
+    env_overrides.insert(
+        "TERMY_TERM_PROGRAM".to_string(),
+        TERMY_TERM_PROGRAM.to_string(),
+    );
 
     // Locale overrides are intentionally Unix-only. POSIX shells use libc locale
     // (`LC_*`/`LANG`) for wcwidth/prompt width, while native Windows shells
@@ -376,7 +394,7 @@ fn pty_env_overrides(
         apply_utf8_locale_overrides(&mut env_overrides);
     }
 
-    let shell_integration_enabled = shell_integration.map(|cfg| cfg.enabled).unwrap_or(false);
+    let shell_integration_enabled = shell_integration.is_some_and(|cfg| cfg.enabled);
     env_overrides.insert(
         "TERMY_SHELL_INTEGRATION".to_string(),
         if shell_integration_enabled { "1" } else { "0" }.to_string(),
@@ -452,11 +470,10 @@ pub fn normalize_working_directory_candidate(candidate: Option<&str>) -> Option<
         return None;
     }
 
-    Some(
-        resolve_working_directory_path(Some(candidate))
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| candidate.to_string()),
-    )
+    Some(resolve_working_directory_path(Some(candidate)).map_or_else(
+        || candidate.to_string(),
+        |path| path.to_string_lossy().into_owned(),
+    ))
 }
 
 fn default_working_directory_with_fallback(fallback: WorkingDirFallback) -> Option<PathBuf> {
@@ -468,11 +485,6 @@ fn default_working_directory_with_fallback(fallback: WorkingDirFallback) -> Opti
     }
 
     env::current_dir().ok()
-}
-
-#[cfg(unix)]
-fn pty_child_pid(pty: &tty::Pty) -> Option<u32> {
-    Some(pty.child().id())
 }
 
 #[cfg(target_os = "windows")]
@@ -608,6 +620,7 @@ pub struct JsonEventListener {
     wake_tx: Option<Sender<()>>,
     replay_suppressed: Arc<AtomicBool>,
     wakeup_queued: Arc<AtomicBool>,
+    wakeup_enabled: Arc<AtomicBool>,
 }
 
 impl JsonEventListener {
@@ -617,6 +630,7 @@ impl JsonEventListener {
             wake_tx,
             replay_suppressed: Arc::new(AtomicBool::new(false)),
             wakeup_queued: Arc::new(AtomicBool::new(false)),
+            wakeup_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -624,15 +638,23 @@ impl JsonEventListener {
         self.replay_suppressed.store(suppressed, Ordering::Release);
     }
 
+    fn set_wakeup_enabled(&self, enabled: bool) {
+        self.wakeup_enabled.store(enabled, Ordering::Release);
+    }
+
     fn reset_wakeup_queued(&self) {
         self.wakeup_queued.store(false, Ordering::Release);
     }
 
-    fn send_terminal_event(&self, event: TerminalEvent) {
-        let _ = self.events_tx.send(RuntimeEvent::Terminal(event));
+    fn send_wake_signal(&self) {
         if let Some(wake_tx) = &self.wake_tx {
             let _ = wake_tx.try_send(());
         }
+    }
+
+    fn send_terminal_event(&self, event: TerminalEvent) {
+        let _ = self.events_tx.send(RuntimeEvent::Terminal(event));
+        self.send_wake_signal();
     }
 }
 
@@ -643,18 +665,22 @@ impl EventListener for JsonEventListener {
         }
         if matches!(event, AlacEvent::Wakeup) {
             increment_runtime_wakeup_count();
+            let wakeup_enabled = self.wakeup_enabled.load(Ordering::Acquire);
             if self.wakeup_queued.swap(true, Ordering::AcqRel) {
-                if let Some(wake_tx) = &self.wake_tx {
-                    let _ = wake_tx.try_send(());
+                if wakeup_enabled {
+                    self.send_wake_signal();
                 }
                 return;
             }
+            let _ = self.events_tx.send(RuntimeEvent::Alacritty(event));
+            if wakeup_enabled {
+                self.send_wake_signal();
+            }
+            return;
         }
         let _ = self.events_tx.send(RuntimeEvent::Alacritty(event));
-        if let Some(wake_tx) = &self.wake_tx {
-            // This channel only nudges the UI thread to drain terminal events promptly.
-            let _ = wake_tx.try_send(());
-        }
+        // This channel only nudges the UI thread to drain terminal events promptly.
+        self.send_wake_signal();
     }
 }
 
@@ -975,10 +1001,8 @@ impl NativeEventLoop {
                                 continue;
                             }
 
-                            if event.readable {
-                                if self.pty_read(&mut state, &mut buf).is_err() {
-                                    break 'event_loop;
-                                }
+                            if event.readable && self.pty_read(&mut state, &mut buf).is_err() {
+                                break 'event_loop;
                             }
 
                             if event.writable && self.pty_write(&mut state).is_err() {
@@ -1122,13 +1146,16 @@ impl Terminal {
         let term_config = runtime_config.term_options().term_config();
 
         // Create the terminal emulator
-        let listener = JsonEventListener::new(events_tx.clone(), event_wakeup_tx);
+        let listener = JsonEventListener::new(events_tx, event_wakeup_tx);
         let term = Term::new(term_config, &size, listener.clone());
         let term = Arc::new(FairMutex::new(term));
 
         // Create PTY
         let window_id = 0;
         let pty = tty::new(&pty_options, size.into(), window_id)?;
+        #[cfg(unix)]
+        let child_pid = Some(pty.child().id());
+        #[cfg(not(unix))]
         let child_pid = pty_child_pid(&pty);
 
         // Create and spawn the event loop
@@ -1143,7 +1170,7 @@ impl Terminal {
 
         Ok(Self {
             term,
-            listener: listener.clone(),
+            listener,
             parser: FairMutex::new(ansi::Processor::new()),
             pty_tx,
             events_rx,
@@ -1155,6 +1182,10 @@ impl Terminal {
 
     pub fn child_pid(&self) -> Option<u32> {
         self.child_pid
+    }
+
+    pub fn set_wakeup_enabled(&self, enabled: bool) {
+        self.listener.set_wakeup_enabled(enabled);
     }
 
     /// Write bytes to the PTY (user input)
@@ -1433,12 +1464,13 @@ mod tests {
     #[cfg(target_os = "windows")]
     use super::quote_shell_program_if_needed;
     use super::{
-        DEFAULT_TERM, JsonEventListener, RuntimeEvent, TerminalCursorState, TerminalDamageSnapshot,
-        TerminalEvent, TerminalRuntimeConfig, TerminalSize, WorkingDirFallback,
-        cursor_position_from_term, cursor_state_from_term, drain_runtime_events,
-        normalize_working_directory_candidate, pty_env_overrides, resolve_launch_working_directory,
-        resolve_shell_path, take_term_damage_snapshot, terminal_event_from_osc,
-        termmode_to_terminal_mouse_mode, user_home_dir,
+        DEFAULT_TERM, GHOSTTY_COMPAT_TERM_PROGRAM, GHOSTTY_COMPAT_TERM_PROGRAM_VERSION,
+        JsonEventListener, RuntimeEvent, TERMY_TERM_PROGRAM, TerminalCursorState,
+        TerminalDamageSnapshot, TerminalEvent, TerminalRuntimeConfig, TerminalSize,
+        WorkingDirFallback, cursor_position_from_term, cursor_state_from_term,
+        drain_runtime_events, normalize_working_directory_candidate, pty_env_overrides,
+        resolve_launch_working_directory, resolve_shell_path, take_term_damage_snapshot,
+        terminal_event_from_osc, termmode_to_terminal_mouse_mode, user_home_dir,
     };
     use crate::grid::TerminalCursorStyle;
     use crate::keyboard::{TerminalKeyEventKind, TerminalKeyboardMode, keystroke_to_input};
@@ -1783,6 +1815,40 @@ mod tests {
             events[0],
             RuntimeEvent::Alacritty(alacritty_terminal::event::Event::Wakeup)
         ));
+    }
+
+    #[test]
+    fn json_event_listener_can_suppress_plain_wakeup_signals() {
+        let (events_tx, events_rx) = unbounded();
+        let (wake_tx, wake_rx) = unbounded();
+        let listener = JsonEventListener::new(events_tx, Some(wake_tx));
+        listener.set_wakeup_enabled(false);
+
+        listener.send_event(alacritty_terminal::event::Event::Wakeup);
+        listener.send_event(alacritty_terminal::event::Event::Wakeup);
+
+        let events: Vec<_> = events_rx.try_iter().collect();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            RuntimeEvent::Alacritty(alacritty_terminal::event::Event::Wakeup)
+        ));
+        assert_eq!(wake_rx.try_iter().count(), 0);
+    }
+
+    #[test]
+    fn json_event_listener_still_wakes_for_metadata_when_wakeups_are_suppressed() {
+        let (events_tx, _events_rx) = unbounded();
+        let (wake_tx, wake_rx) = unbounded();
+        let listener = JsonEventListener::new(events_tx, Some(wake_tx));
+        listener.set_wakeup_enabled(false);
+
+        listener.send_event(alacritty_terminal::event::Event::Title("ready".to_string()));
+        listener.send_terminal_event(TerminalEvent::Progress(
+            crate::shell_integration::ProgressState::Indeterminate,
+        ));
+
+        assert_eq!(wake_rx.try_iter().count(), 2);
     }
 
     #[test]
@@ -2270,6 +2336,23 @@ mod tests {
     }
 
     #[test]
+    fn env_overrides_advertise_ghostty_progress_capability() {
+        let env = pty_env_overrides(None, &TerminalRuntimeConfig::default());
+        assert_eq!(
+            env.get("TERM_PROGRAM").map(String::as_str),
+            Some(GHOSTTY_COMPAT_TERM_PROGRAM)
+        );
+        assert_eq!(
+            env.get("TERM_PROGRAM_VERSION").map(String::as_str),
+            Some(GHOSTTY_COMPAT_TERM_PROGRAM_VERSION)
+        );
+        assert_eq!(
+            env.get("TERMY_TERM_PROGRAM").map(String::as_str),
+            Some(TERMY_TERM_PROGRAM)
+        );
+    }
+
+    #[test]
     fn env_overrides_allow_disabling_colorterm() {
         let config = TerminalRuntimeConfig {
             colorterm: None,
@@ -2420,7 +2503,7 @@ mod tests {
 
         let updated = TerminalRuntimeConfig {
             scrollback_history: 8,
-            ..initial.clone()
+            ..initial
         };
         term.set_options(updated.term_options().term_config());
         let mut parser: ansi::Processor = ansi::Processor::new();
@@ -2445,7 +2528,7 @@ mod tests {
 
         let updated = TerminalRuntimeConfig {
             default_cursor_style: TerminalCursorStyle::Line,
-            ..initial.clone()
+            ..initial
         };
         term.set_options(updated.term_options().term_config());
         let mut parser: ansi::Processor = ansi::Processor::new();

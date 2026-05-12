@@ -193,7 +193,7 @@ fn enum_keys_parse_table_driven() {
         ("always", TabCloseVisibility::Always),
     ];
     for (input, expected) in tab_close_cases {
-        let config = parse(&format!("tab_close_visibility = {}\n", input));
+        let config = parse(&format!("tab_close_visibility = {input}\n"));
         assert_eq!(config.tab_close_visibility, expected);
     }
     assert_eq!(
@@ -207,7 +207,7 @@ fn enum_keys_parse_table_driven() {
         ("active_grow_sticky", TabWidthMode::ActiveGrowSticky),
     ];
     for (input, expected) in tab_width_cases {
-        let config = parse(&format!("tab_width_mode = {}\n", input));
+        let config = parse(&format!("tab_width_mode = {input}\n"));
         assert_eq!(config.tab_width_mode, expected);
     }
     assert_eq!(
@@ -217,7 +217,7 @@ fn enum_keys_parse_table_driven() {
 
     let cursor_style_cases = [("line", CursorStyle::Line), ("bar", CursorStyle::Line)];
     for (input, expected) in cursor_style_cases {
-        let config = parse(&format!("cursor_style = {}\n", input));
+        let config = parse(&format!("cursor_style = {input}\n"));
         assert_eq!(config.cursor_style, expected);
     }
     assert_eq!(
@@ -231,7 +231,7 @@ fn enum_keys_parse_table_driven() {
         ("on_scroll", TerminalScrollbarVisibility::OnScroll),
     ];
     for (input, expected) in scrollbar_visibility_cases {
-        let config = parse(&format!("scrollbar_visibility = {}\n", input));
+        let config = parse(&format!("scrollbar_visibility = {input}\n"));
         assert_eq!(config.terminal_scrollbar_visibility, expected);
     }
     assert_eq!(
@@ -251,7 +251,7 @@ fn enum_keys_parse_table_driven() {
         ("theme", TerminalScrollbarStyle::Theme),
     ];
     for (input, expected) in scrollbar_style_cases {
-        let config = parse(&format!("scrollbar_style = {}\n", input));
+        let config = parse(&format!("scrollbar_style = {input}\n"));
         assert_eq!(config.terminal_scrollbar_style, expected);
     }
     assert_eq!(
@@ -266,7 +266,7 @@ fn enum_keys_parse_table_driven() {
         ("minimal", PaneFocusEffect::Minimal),
     ];
     for (input, expected) in pane_focus_effect_cases {
-        let config = parse(&format!("pane_focus_effect = {}\n", input));
+        let config = parse(&format!("pane_focus_effect = {input}\n"));
         assert_eq!(config.pane_focus_effect, expected);
     }
     assert_eq!(
@@ -279,7 +279,7 @@ fn enum_keys_parse_table_driven() {
         ("process", WorkingDirFallback::Process),
     ];
     for (input, expected) in fallback_cases {
-        let config = parse(&format!("working_dir_fallback = {}\n", input));
+        let config = parse(&format!("working_dir_fallback = {input}\n"));
         assert_eq!(config.working_dir_fallback, expected);
     }
     assert_eq!(
@@ -354,29 +354,28 @@ fn bool_root_settings_parse_table_driven_from_schema() {
         let key = spec.key;
         assert!(
             bool_root_setting_value(&defaults, spec.id).is_some(),
-            "missing bool accessor for {}",
-            key
+            "missing bool accessor for {key}"
         );
 
-        let enabled = parse(&format!("{} = true\n", key));
+        let enabled = parse(&format!("{key} = true\n"));
         assert_eq!(bool_root_setting_value(&enabled, spec.id), Some(true));
 
-        let enabled_numeric = parse(&format!("{} = 1\n", key));
+        let enabled_numeric = parse(&format!("{key} = 1\n"));
         assert_eq!(
             bool_root_setting_value(&enabled_numeric, spec.id),
             Some(true)
         );
 
-        let disabled = parse(&format!("{} = false\n", key));
+        let disabled = parse(&format!("{key} = false\n"));
         assert_eq!(bool_root_setting_value(&disabled, spec.id), Some(false));
 
-        let disabled_numeric = parse(&format!("{} = 0\n", key));
+        let disabled_numeric = parse(&format!("{key} = 0\n"));
         assert_eq!(
             bool_root_setting_value(&disabled_numeric, spec.id),
             Some(false)
         );
 
-        let invalid = parse(&format!("{} = maybe\n", key));
+        let invalid = parse(&format!("{key} = maybe\n"));
         assert_eq!(
             bool_root_setting_value(&invalid, spec.id),
             bool_root_setting_value(&defaults, spec.id)
@@ -395,7 +394,7 @@ fn numeric_keys_parse_table_driven() {
         ("font_size", 16.0, defaults.font_size),
     ];
     for (key, expected, fallback) in positive_float_cases {
-        let valid = parse(&format!("{} = {}\n", key, expected));
+        let valid = parse(&format!("{key} = {expected}\n"));
         let parsed = match key {
             "vertical_tabs_width" => valid.vertical_tabs_width,
             "window_width" => valid.window_width,
@@ -405,7 +404,7 @@ fn numeric_keys_parse_table_driven() {
         };
         assert_eq!(parsed, expected);
 
-        let invalid = parse(&format!("{} = -1\n", key));
+        let invalid = parse(&format!("{key} = -1\n"));
         let parsed = match key {
             "vertical_tabs_width" => invalid.vertical_tabs_width,
             "window_width" => invalid.window_width,
@@ -438,7 +437,7 @@ fn numeric_keys_parse_table_driven() {
 
     let non_negative_float_cases = [("padding_x", 2.0), ("padding_y", 4.0)];
     for (key, expected) in non_negative_float_cases {
-        let valid = parse(&format!("{} = {}\n", key, expected));
+        let valid = parse(&format!("{key} = {expected}\n"));
         let parsed = match key {
             "padding_x" => valid.padding_x,
             "padding_y" => valid.padding_y,
@@ -446,7 +445,7 @@ fn numeric_keys_parse_table_driven() {
         };
         assert_eq!(parsed, expected);
 
-        let invalid = parse(&format!("{} = -1\n", key));
+        let invalid = parse(&format!("{key} = -1\n"));
         let parsed = match key {
             "padding_x" => invalid.padding_x,
             "padding_y" => invalid.padding_y,

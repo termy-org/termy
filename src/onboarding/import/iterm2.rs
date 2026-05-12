@@ -45,25 +45,19 @@ fn import_main_plist(path: &Path) -> Result<ImportedConfig, String> {
         .map_err(|error| format!("Failed to read plist {}: {error}", path.display()))?;
     let mut imported = ImportedConfig::new(ImportSourceKind::ITerm2);
 
-    let dict = match value.as_dictionary() {
-        Some(d) => d,
-        None => {
-            imported
-                .warnings
-                .push("iTerm2 plist root is not a dictionary".into());
-            return Ok(imported);
-        }
+    let Some(dict) = value.as_dictionary() else {
+        imported
+            .warnings
+            .push("iTerm2 plist root is not a dictionary".into());
+        return Ok(imported);
     };
 
     let bookmarks = dict.get("New Bookmarks").and_then(|v| v.as_array());
-    let bookmark = match bookmarks.and_then(|list| pick_default_bookmark(list)) {
-        Some(b) => b,
-        None => {
-            imported
-                .warnings
-                .push("No iTerm2 profile found in plist".into());
-            return Ok(imported);
-        }
+    let Some(bookmark) = bookmarks.and_then(|list| pick_default_bookmark(list)) else {
+        imported
+            .warnings
+            .push("No iTerm2 profile found in plist".into());
+        return Ok(imported);
     };
 
     apply_bookmark_to_imported(bookmark, &mut imported);
@@ -125,8 +119,7 @@ fn pick_default_bookmark(bookmarks: &[Value]) -> Option<&plist::Dictionary> {
         let is_default = dict
             .get("Default Bookmark")
             .and_then(|v| v.as_string())
-            .map(|s| s.eq_ignore_ascii_case("yes"))
-            .unwrap_or(false);
+            .is_some_and(|s| s.eq_ignore_ascii_case("yes"));
         if is_default {
             return Some(dict);
         }
@@ -151,14 +144,14 @@ fn apply_bookmark_to_imported(bookmark: &plist::Dictionary, imported: &mut Impor
         let clamped = spacing.clamp(0.8, 2.5);
         imported
             .settings
-            .push((RootSettingId::LineHeight, format!("{:.3}", clamped)));
+            .push((RootSettingId::LineHeight, format!("{clamped:.3}")));
     }
 
     if let Some(transparency) = bookmark.get("Transparency").and_then(value_as_f64) {
         let opacity = clamp_opacity((1.0 - transparency as f32).max(0.0));
         imported
             .settings
-            .push((RootSettingId::BackgroundOpacity, format!("{:.3}", opacity)));
+            .push((RootSettingId::BackgroundOpacity, format!("{opacity:.3}")));
     }
     if let Some(blur) = bookmark.get("Blur").and_then(|v| v.as_boolean()) {
         imported
@@ -205,8 +198,7 @@ fn apply_bookmark_to_imported(bookmark: &plist::Dictionary, imported: &mut Impor
     let custom_cmd = bookmark
         .get("Custom Command")
         .and_then(|v| v.as_string())
-        .map(|s| s.eq_ignore_ascii_case("yes"))
-        .unwrap_or(false);
+        .is_some_and(|s| s.eq_ignore_ascii_case("yes"));
     if custom_cmd
         && let Some(command) = bookmark.get("Command").and_then(|v| v.as_string())
         && !command.is_empty()
@@ -229,17 +221,16 @@ fn extract_theme_from_dict(
 
     let mut ansi = [Rgb8::new(0, 0, 0); 16];
     let mut missing = Vec::new();
-    for index in 0..16 {
+    for (index, ansi_color) in ansi.iter_mut().enumerate() {
         let key = format!("Ansi {index} Color");
         match parse_color_dict(dict.get(&key)) {
-            Some(color) => ansi[index] = color,
+            Some(color) => *ansi_color = color,
             None => missing.push(index),
         }
     }
     if !missing.is_empty() {
         warnings.push(format!(
-            "iTerm2 palette missing indices {:?}; filled with black",
-            missing
+            "iTerm2 palette missing indices {missing:?}; filled with black"
         ));
     }
     Some(ThemeColors {

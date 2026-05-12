@@ -313,7 +313,7 @@ impl TerminalView {
                 self.refresh_tab_title(self.active_tab);
                 self.mark_tab_strip_layout_dirty();
                 self.reset_tab_interaction_state();
-                self.scroll_active_tab_into_view(self.tab_strip_orientation());
+                self.sync_tab_strip_for_active_tab();
                 self.schedule_persist_native_workspace();
                 self.start_new_tab_animation(tab_id, cx);
                 cx.notify();
@@ -379,7 +379,7 @@ impl TerminalView {
         self.reset_tab_drag_state();
 
         self.clear_selection();
-        self.scroll_active_tab_into_view(self.tab_strip_orientation());
+        self.sync_tab_strip_for_active_tab();
         self.schedule_persist_native_workspace();
         cx.notify();
     }
@@ -1336,7 +1336,7 @@ impl TerminalView {
         let vertical_cover_target = removed_bottom.saturating_sub(removed_top);
         let horizontal_cover_target = removed_right.saturating_sub(removed_left);
 
-        let mut candidates = vec![
+        let mut candidates = [
             NativeCloseCandidate {
                 direction: NativeCloseDirection::Left,
                 pane_indices: left_candidates,

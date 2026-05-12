@@ -111,7 +111,7 @@ fn parse_recursive(
         } else {
             imported
                 .warnings
-                .push(format!("Alacritty import not found: {}", import_path));
+                .push(format!("Alacritty import not found: {import_path}"));
         }
     }
 
@@ -453,7 +453,7 @@ mod tests {
 
     fn write_file(contents: &str) -> NamedTempFile {
         let mut file = NamedTempFile::new().unwrap();
-        write!(file, "{}", contents).unwrap();
+        write!(file, "{contents}").unwrap();
         file
     }
 

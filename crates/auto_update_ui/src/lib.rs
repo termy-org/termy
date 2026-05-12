@@ -43,7 +43,7 @@ impl UpdateBannerModel {
         match state {
             UpdateState::Available { version, .. } => Some(Self {
                 badge: "Available",
-                message: format!("Version {} is ready", version),
+                message: format!("Version {version} is ready"),
                 detail: Some("A new update is available for install.".to_string()),
                 progress_percent: None,
                 tone: UpdateBannerTone::Info,
@@ -72,14 +72,14 @@ impl UpdateBannerModel {
                 };
 
                 let detail = if let Some(percent) = progress_percent {
-                    Some(format!("Downloading {}%", percent))
+                    Some(format!("Downloading {percent}%"))
                 } else {
                     Some(format!("Downloaded {} KB", *downloaded / 1024))
                 };
 
                 Some(Self {
                     badge: "Downloading",
-                    message: format!("Fetching version {}", version),
+                    message: format!("Fetching version {version}"),
                     detail,
                     progress_percent,
                     tone: UpdateBannerTone::Info,
@@ -88,7 +88,7 @@ impl UpdateBannerModel {
             }
             UpdateState::Downloaded { version, .. } => Some(Self {
                 badge: "Ready",
-                message: format!("Version {} is downloaded", version),
+                message: format!("Version {version} is downloaded"),
                 detail: Some("Install now to finish the update.".to_string()),
                 progress_percent: Some(100),
                 tone: UpdateBannerTone::Success,
@@ -100,7 +100,7 @@ impl UpdateBannerModel {
             }),
             UpdateState::Installing { version } => Some(Self {
                 badge: "Installing",
-                message: format!("Installing version {}", version),
+                message: format!("Installing version {version}"),
                 detail: Some("Finishing system update steps...".to_string()),
                 progress_percent: None,
                 tone: UpdateBannerTone::Info,
@@ -108,7 +108,7 @@ impl UpdateBannerModel {
             }),
             UpdateState::Installed { version } => Some(Self {
                 badge: "Installed",
-                message: format!("Version {} installed", version),
+                message: format!("Version {version} installed"),
                 detail: Some("Restart Termy to apply the update.".to_string()),
                 progress_percent: None,
                 tone: UpdateBannerTone::Success,

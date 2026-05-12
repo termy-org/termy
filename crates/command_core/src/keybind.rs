@@ -375,8 +375,7 @@ fn canonicalize_trigger_component(component: &str) -> Result<String, String> {
 
     if rest.is_empty() {
         return Err(format!(
-            "invalid keybind trigger component `{}`: missing key",
-            component
+            "invalid keybind trigger component `{component}`: missing key"
         ));
     }
 

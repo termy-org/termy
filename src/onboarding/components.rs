@@ -265,7 +265,7 @@ impl OnboardingWindow {
         let muted = self.text_muted();
         let accent = self.accent();
 
-        let mut chips = div().flex().gap_2().items_center();
+        let mut chips = div().flex().flex_wrap().gap_2().items_center();
         chips = chips.child(self.render_status_chip(
             "App installed",
             source.app_installed,
@@ -283,10 +283,11 @@ impl OnboardingWindow {
             Some(SharedString::from(hint))
         } else if !importable {
             Some(SharedString::from("No config file detected"))
-        } else if let Some(path) = source.config_path.as_ref() {
-            Some(SharedString::from(path.display().to_string()))
         } else {
-            None
+            source
+                .config_path
+                .as_ref()
+                .map(|path| SharedString::from(path.display().to_string()))
         };
 
         let icon_element: Option<AnyElement> = source.icon_path.as_ref().map(|path| {
@@ -297,20 +298,20 @@ impl OnboardingWindow {
                 .into_any_element()
         });
 
-        let mut title_row = div().flex().items_center().gap_3();
+        let mut title_row = div().flex().items_center().gap_3().min_w(px(0.0));
         if let Some(icon) = icon_element {
             title_row = title_row.child(icon);
         }
-        title_row = title_row
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .text_base()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(SharedString::from(kind.display_name())),
-            )
-            .child(chips);
+        title_row = title_row.child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .text_base()
+                .font_weight(FontWeight::SEMIBOLD)
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .child(SharedString::from(kind.display_name())),
+        );
 
         let mut card = div()
             .id(SharedString::from(format!(
@@ -328,7 +329,8 @@ impl OnboardingWindow {
             .border_1()
             .border_color(border)
             .text_color(title_color)
-            .child(title_row);
+            .child(title_row)
+            .child(chips);
 
         if let Some(text) = hint_text {
             card = card.child(div().text_xs().text_color(muted).child(text));
@@ -406,17 +408,16 @@ impl OnboardingWindow {
         let text_muted = self.text_muted();
 
         let preview = self.theme_previews.get(&preview_slug);
-        let (swatch_bg, swatch_fg, swatch_accent) = match preview {
-            Some(colors) => (
+        let (swatch_bg, swatch_fg, swatch_accent) = if let Some(colors) = preview {
+            (
                 rgba_from_rgb8(colors.background),
                 rgba_from_rgb8(colors.foreground),
                 rgba_from_rgb8(colors.cursor),
-            ),
-            None => {
-                let mut placeholder = self.text_primary();
-                placeholder.a = 0.18;
-                (placeholder, placeholder, placeholder)
-            }
+            )
+        } else {
+            let mut placeholder = self.text_primary();
+            placeholder.a = 0.18;
+            (placeholder, placeholder, placeholder)
         };
 
         let swatch_border = {

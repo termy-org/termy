@@ -5,7 +5,7 @@ use crate::constants::{
     DEFAULT_TAB_TITLE_EXPLICIT_PREFIX, DEFAULT_TAB_TITLE_FALLBACK, DEFAULT_TAB_TITLE_PROMPT_FORMAT,
     DEFAULT_TERM, DEFAULT_TMUX_BINARY, DEFAULT_TMUX_ENABLED, DEFAULT_TMUX_PERSISTENCE,
     DEFAULT_TMUX_SHOW_ACTIVE_PANE_BORDER, DEFAULT_WARN_ON_QUIT,
-    DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS, SHELL_DECIDE_THEME_ID,
+    DEFAULT_WARN_ON_QUIT_WITH_RUNNING_PROCESS,
 };
 
 pub type ThemeId = String;
@@ -330,7 +330,7 @@ pub struct TaskConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            theme: SHELL_DECIDE_THEME_ID.to_string(),
+            theme: "termy".to_string(),
             chrome_contrast: false,
             auto_update: true,
             tmux_enabled: DEFAULT_TMUX_ENABLED,

@@ -27,11 +27,8 @@ impl TerminalView {
             return title.to_string();
         }
 
-        let trimmed = path_part.trim_end_matches(|c: char| c == '/' || c == '\\');
-        let basename = trimmed
-            .rsplit(|c: char| c == '/' || c == '\\')
-            .next()
-            .unwrap_or("");
+        let trimmed = path_part.trim_end_matches(['/', '\\']);
+        let basename = trimmed.rsplit(['/', '\\']).next().unwrap_or("");
         if basename.is_empty() {
             path_part.to_string()
         } else {

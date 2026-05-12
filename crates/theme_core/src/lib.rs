@@ -101,11 +101,9 @@ pub fn normalize_theme_id(theme_id: &str) -> String {
                 normalized.push(ch);
                 last_dash = false;
             }
-            '-' | '_' | ' ' => {
-                if !normalized.is_empty() && !last_dash {
-                    normalized.push('-');
-                    last_dash = true;
-                }
+            '-' | '_' | ' ' if !normalized.is_empty() && !last_dash => {
+                normalized.push('-');
+                last_dash = true;
             }
             _ => {}
         }
@@ -209,8 +207,7 @@ pub fn registry_file_url(index_url: &str, file: &str) -> String {
 
     let base = index_url
         .rsplit_once('/')
-        .map(|(base, _)| base)
-        .unwrap_or_else(|| index_url.trim_end_matches('/'));
+        .map_or_else(|| index_url.trim_end_matches('/'), |(base, _)| base);
     format!(
         "{}/{}",
         base.trim_end_matches('/'),

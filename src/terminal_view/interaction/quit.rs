@@ -62,7 +62,7 @@ impl TerminalView {
                         cx.quit();
                     }
                     Err(error) => {
-                        termy_toast::error(format!("Restart failed: {}", error));
+                        termy_toast::error(format!("Restart failed: {error}"));
                         self.notify_overlay(cx);
                     }
                 }
@@ -78,7 +78,7 @@ impl TerminalView {
     }
 
     fn restart_application(&self) -> Result<(), String> {
-        let exe = std::env::current_exe().map_err(|e| format!("current_exe failed: {}", e))?;
+        let exe = std::env::current_exe().map_err(|e| format!("current_exe failed: {e}"))?;
 
         #[cfg(target_os = "macos")]
         {
@@ -87,8 +87,7 @@ impl TerminalView {
                 .find(|path| {
                     path.extension()
                         .and_then(|ext| ext.to_str())
-                        .map(|ext| ext.eq_ignore_ascii_case("app"))
-                        .unwrap_or(false)
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
                 })
                 .map(PathBuf::from);
 
@@ -97,17 +96,17 @@ impl TerminalView {
                     .arg("-n")
                     .arg(&app_bundle)
                     .status()
-                    .map_err(|e| format!("failed to launch app bundle: {}", e))?;
+                    .map_err(|e| format!("failed to launch app bundle: {e}"))?;
                 if status.success() {
                     return Ok(());
                 }
-                return Err(format!("open returned non-success status: {}", status));
+                return Err(format!("open returned non-success status: {status}"));
             }
         }
 
         Command::new(&exe)
             .spawn()
-            .map_err(|e| format!("failed to spawn executable: {}", e))?;
+            .map_err(|e| format!("failed to spawn executable: {e}"))?;
         Ok(())
     }
 

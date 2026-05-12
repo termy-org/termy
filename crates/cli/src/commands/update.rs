@@ -8,12 +8,12 @@ pub fn run() {
 
     match check_for_updates(CURRENT_VERSION) {
         Ok(UpdateCheck::UpToDate) => {
-            println!("You're up to date! (v{})", CURRENT_VERSION);
+            println!("You're up to date! (v{CURRENT_VERSION})");
         }
         Ok(UpdateCheck::UpdateAvailable(release)) => {
             println!("Update available!");
             println!();
-            println!("  Current version: v{}", CURRENT_VERSION);
+            println!("  Current version: v{CURRENT_VERSION}");
             println!("  Latest version:  v{}", release.version);
             println!();
             println!("Download at: {}", release.release_url);
@@ -21,7 +21,7 @@ pub fn run() {
             println!("Or update via the Termy app: Command Palette > Check for Updates");
         }
         Err(error) => {
-            eprintln!("Failed to check for updates: {}", error);
+            eprintln!("Failed to check for updates: {error}");
         }
     }
 }

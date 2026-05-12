@@ -2,12 +2,9 @@ use std::process::Command;
 use termy_config_core::config_path;
 
 pub fn run() {
-    let path = match config_path() {
-        Some(p) => p,
-        None => {
-            eprintln!("Could not determine config directory");
-            return;
-        }
+    let Some(path) = config_path() else {
+        eprintln!("Could not determine config directory");
+        return;
     };
 
     if !path.exists() {
@@ -15,12 +12,12 @@ pub fn run() {
         if let Some(parent) = path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
-            eprintln!("Failed to create config directory: {}", e);
+            eprintln!("Failed to create config directory: {e}");
             return;
         }
         // Create empty config file
         if let Err(e) = std::fs::write(&path, "") {
-            eprintln!("Failed to create config file: {}", e);
+            eprintln!("Failed to create config file: {e}");
             return;
         }
     }
@@ -34,7 +31,7 @@ pub fn run() {
         match status {
             Ok(s) if s.success() => return,
             Ok(_) => eprintln!("Editor exited with error"),
-            Err(e) => eprintln!("Failed to run {}: {}", editor, e),
+            Err(e) => eprintln!("Failed to run {editor}: {e}"),
         }
     }
 

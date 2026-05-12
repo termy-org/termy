@@ -106,7 +106,7 @@ fn export_theme_impl(
 
     metadata.schema = Some(METADATA_SCHEMA_REF.to_string());
     metadata.name = name.trim().to_string();
-    metadata.slug = slug.clone();
+    metadata.slug = slug;
     metadata.description = description.to_string();
     upsert_version(
         &mut metadata.versions,
@@ -131,9 +131,8 @@ fn export_theme_impl(
 
 fn validate_theme_repo_impl(repo: &Path) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
-    let generated_index = match build_index(repo, &mut errors) {
-        Some(index) => index,
-        None => return Err(errors),
+    let Some(generated_index) = build_index(repo, &mut errors) else {
+        return Err(errors);
     };
 
     let index_path = repo.join("index.json");
@@ -141,7 +140,7 @@ fn validate_theme_repo_impl(repo: &Path) -> Result<(), Vec<String>> {
         Ok(contents) => match serde_json::from_str::<ThemeRegistryIndex>(&contents) {
             Ok(index) if index == generated_index => {}
             Ok(_) => {
-                errors.push("index.json is stale; regenerate it with -export-theme".to_string())
+                errors.push("index.json is stale; regenerate it with -export-theme".to_string());
             }
             Err(error) => errors.push(format!("index.json is invalid JSON: {error}")),
         },
@@ -185,9 +184,8 @@ fn build_index(repo: &Path, errors: &mut Vec<String>) -> Option<ThemeRegistryInd
         }
         let dir_slug = entry.file_name().to_string_lossy().to_string();
         let metadata_path = path.join("metadata.json");
-        let metadata = match read_metadata(&metadata_path, errors) {
-            Some(metadata) => metadata,
-            None => continue,
+        let Some(metadata) = read_metadata(&metadata_path, errors) else {
+            continue;
         };
         validate_metadata(repo, &dir_slug, &metadata, errors);
         if let Some(version) = metadata

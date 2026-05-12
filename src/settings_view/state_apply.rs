@@ -91,7 +91,7 @@ impl SettingsWindow {
                 self.config.font_size = parsed;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::FontSize,
-                    &format!("{}", parsed),
+                    &format!("{parsed}"),
                 )
             }
             EditableField::LineHeight => {
@@ -127,7 +127,7 @@ impl SettingsWindow {
                 self.config.padding_x = parsed;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::PaddingX,
-                    &format!("{}", parsed),
+                    &format!("{parsed}"),
                 )
             }
             EditableField::PaddingY => {
@@ -140,7 +140,7 @@ impl SettingsWindow {
                 self.config.padding_y = parsed;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::PaddingY,
-                    &format!("{}", parsed),
+                    &format!("{parsed}"),
                 )
             }
             _ => unreachable!("invalid appearance field"),
@@ -329,7 +329,7 @@ impl SettingsWindow {
                 self.config.pane_focus_strength = normalized;
                 config::set_root_setting(
                     termy_config_core::RootSettingId::PaneFocusStrength,
-                    &format!("{:.3}", normalized),
+                    &format!("{normalized:.3}"),
                 )
             }
             _ => unreachable!("invalid terminal field"),

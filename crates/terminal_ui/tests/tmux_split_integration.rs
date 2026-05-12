@@ -84,7 +84,7 @@ fn tmux_client_count(binary: &str) -> usize {
     if stderr.contains("no current client") || stderr.contains("no server running on") {
         return 0;
     }
-    panic!("list-clients failed for test socket: {}", stderr);
+    panic!("list-clients failed for test socket: {stderr}");
 }
 
 fn tmux_has_session(binary: &str, session_name: &str) -> bool {
@@ -98,10 +98,7 @@ fn tmux_has_session(binary: &str, session_name: &str) -> bool {
     if stderr.contains("can't find session") || stderr.contains("no server running on") {
         return false;
     }
-    panic!(
-        "has-session failed for test socket and session '{}': {}",
-        session_name, stderr
-    );
+    panic!("has-session failed for test socket and session '{session_name}': {stderr}");
 }
 
 fn wait_for_tmux_settle() {
@@ -288,10 +285,7 @@ fn assert_pane_pwd(client: &TmuxClient, pane_id: &str, expected_dir: &Path) {
         thread::sleep(Duration::from_millis(100));
     }
 
-    panic!(
-        "pane '{}' never reported cwd '{}'; last capture:\n{}",
-        pane_id, expected, last_capture
-    );
+    panic!("pane '{pane_id}' never reported cwd '{expected}'; last capture:\n{last_capture}");
 }
 
 #[test]
@@ -584,8 +578,7 @@ fn tmux_capture_full_rejoins_wrapped_input_rows() {
         .expect("resized pane should exist");
     assert!(
         pane_width <= 40,
-        "expected wrapped-pane width <= 40, got {}",
-        pane_width
+        "expected wrapped-pane width <= 40, got {pane_width}"
     );
 
     let wrapped_input = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz";
@@ -600,13 +593,11 @@ fn tmux_capture_full_rejoins_wrapped_input_rows() {
 
     assert!(
         capture_text.contains("abcdefghijklmnopqrstuvwxyz"),
-        "capture should include typed input: '{}'",
-        capture_text
+        "capture should include typed input: '{capture_text}'"
     );
     assert!(
         capture_text.contains(wrapped_input),
-        "capture should rejoin wrapped rows in full-history mode: '{}'",
-        capture_text
+        "capture should rejoin wrapped rows in full-history mode: '{capture_text}'"
     );
 }
 
@@ -627,8 +618,7 @@ fn managed_nonpersistent_drop_kills_session() {
 
     assert!(
         !tmux_has_session(binary.as_str(), session_name.as_str()),
-        "non-persistent managed session '{}' must be torn down on drop",
-        session_name
+        "non-persistent managed session '{session_name}' must be torn down on drop"
     );
     assert_eq!(
         tmux_client_count(binary.as_str()),
@@ -654,8 +644,7 @@ fn managed_persistent_drop_keeps_session_but_removes_client() {
 
     assert!(
         tmux_has_session(binary.as_str(), session_name.as_str()),
-        "persistent managed session '{}' must survive drop",
-        session_name
+        "persistent managed session '{session_name}' must survive drop"
     );
     assert_eq!(
         tmux_client_count(binary.as_str()),

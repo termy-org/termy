@@ -49,7 +49,7 @@ impl CommandPaletteItem {
         let exists_title = if trimmed.is_empty() {
             "Save Current Layout".to_string()
         } else {
-            format!("Save Current Layout as \"{}\"", trimmed)
+            format!("Save Current Layout as \"{trimmed}\"")
         };
         let enabled = !trimmed.is_empty();
         Self {
@@ -109,10 +109,7 @@ impl CommandPaletteItem {
             next_layout_name.as_str()
         };
         Self {
-            title: format!(
-                "Rename \"{}\" -> \"{}\"",
-                current_layout_name, rendered_next
-            ),
+            title: format!("Rename \"{current_layout_name}\" -> \"{rendered_next}\""),
             keywords: format!(
                 "saved layout rename {} {}",
                 current_layout_name.replace('-', " "),
@@ -141,7 +138,7 @@ impl CommandPaletteItem {
 
     pub(super) fn saved_layout_delete(layout_name: &str) -> Self {
         Self {
-            title: format!("Delete \"{}\"", layout_name),
+            title: format!("Delete \"{layout_name}\""),
             keywords: format!("saved layout delete {}", layout_name.replace('-', " ")),
             enabled: true,
             status_hint: None,

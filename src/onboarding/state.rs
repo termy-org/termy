@@ -106,7 +106,7 @@ impl OnboardingWindow {
                 Err(_) => Vec::new(),
             };
 
-            let _ = cx.update(|cx| {
+            cx.update(|cx| {
                 let _ = this.update(cx, |view, cx| {
                     view.themes_loading = false;
                     match result {
@@ -116,7 +116,7 @@ impl OnboardingWindow {
                             view.themes_error = None;
                         }
                         Err(error) => {
-                            log::error!("Onboarding registry fetch failed: {}", error);
+                            log::error!("Onboarding registry fetch failed: {error}");
                             view.themes.clear();
                             view.themes_error = Some(error);
                         }
@@ -137,7 +137,7 @@ impl OnboardingWindow {
                     .await;
                     match result {
                         Ok(colors) => {
-                            let _ = cx.update(|cx| {
+                            cx.update(|cx| {
                                 let _ = preview_this.update(cx, |view, cx| {
                                     view.theme_previews.insert(preview_slug.clone(), colors);
                                     cx.notify();
@@ -146,10 +146,7 @@ impl OnboardingWindow {
                         }
                         Err(error) => {
                             log::warn!(
-                                "Onboarding preview fetch failed for {} ({}): {}",
-                                preview_slug,
-                                preview_url,
-                                error
+                                "Onboarding preview fetch failed for {preview_slug} ({preview_url}): {error}"
                             );
                         }
                     }
@@ -202,8 +199,7 @@ impl OnboardingWindow {
             .import_sources
             .iter()
             .find(|source| source.kind == kind)
-            .map(DetectedSource::importable)
-            .unwrap_or(false);
+            .is_some_and(DetectedSource::importable);
         if !importable {
             return;
         }
@@ -233,7 +229,7 @@ impl OnboardingWindow {
 
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let result = smol::unblock(move || import::run_import(&source)).await;
-            let _ = cx.update(|cx| {
+            cx.update(|cx| {
                 let _ = this.update(cx, |view, cx| {
                     view.importing = false;
                     match result {
@@ -258,7 +254,7 @@ impl OnboardingWindow {
         let mut applied_cursor_blink: Option<bool> = None;
         let mut applied_opacity: Option<f32> = None;
 
-        for (id, value) in imported.settings.iter() {
+        for (id, value) in &imported.settings {
             match crate::config::set_root_setting(*id, value) {
                 Ok(()) => {
                     applied_settings += 1;
@@ -376,17 +372,17 @@ impl OnboardingWindow {
             let result =
                 smol::unblock(move || theme_store::install_theme_from_store_blocking(theme)).await;
 
-            let _ = cx.update(|cx| {
+            cx.update(|cx| {
                 let _ = this.update(cx, |view, cx| {
                     view.installing_theme = false;
                     match result {
                         Ok(installed) => {
-                            view.installed_theme_slug = Some(installed.slug.clone());
-                            termy_toast::success(format!("Installed {}", theme_name));
+                            view.installed_theme_slug = Some(installed.slug);
+                            termy_toast::success(format!("Installed {theme_name}"));
                             view.next_step(cx);
                         }
                         Err(error) => {
-                            log::error!("Onboarding theme install failed: {}", error);
+                            log::error!("Onboarding theme install failed: {error}");
                             termy_toast::error(error);
                             let _ = install_slug;
                         }
@@ -406,52 +402,50 @@ impl OnboardingWindow {
 
         let mut errors: Vec<String> = Vec::new();
 
-        if let Some(slug) = self.installed_theme_slug.clone() {
-            if let Err(error) = config::set_theme_in_config(&slug) {
-                errors.push(error);
-            }
+        if let Some(slug) = self.installed_theme_slug.clone()
+            && let Err(error) = config::set_theme_in_config(&slug)
+        {
+            errors.push(error);
         }
 
         let font_size = self.font_choice.size();
-        if (font_size - AppConfig::default().font_size).abs() > f32::EPSILON {
-            if let Err(error) =
+        if (font_size - AppConfig::default().font_size).abs() > f32::EPSILON
+            && let Err(error) =
                 config::set_root_setting(RootSettingId::FontSize, &format!("{font_size}"))
-            {
-                errors.push(error);
-            }
+        {
+            errors.push(error);
         }
 
-        if self.tabs_choice == TabsChoice::Vertical {
-            if let Err(error) = config::set_root_setting(RootSettingId::VerticalTabs, "true") {
-                errors.push(error);
-            }
+        if self.tabs_choice == TabsChoice::Vertical
+            && let Err(error) = config::set_root_setting(RootSettingId::VerticalTabs, "true")
+        {
+            errors.push(error);
         }
 
-        if self.cursor_choice == CursorChoice::Static {
-            if let Err(error) = config::set_root_setting(RootSettingId::CursorBlink, "false") {
-                errors.push(error);
-            }
+        if self.cursor_choice == CursorChoice::Static
+            && let Err(error) = config::set_root_setting(RootSettingId::CursorBlink, "false")
+        {
+            errors.push(error);
         }
 
         if (self.background_opacity - AppConfig::default().background_opacity).abs() > f32::EPSILON
-        {
-            if let Err(error) = config::set_root_setting(
+            && let Err(error) = config::set_root_setting(
                 RootSettingId::BackgroundOpacity,
                 &format!("{:.3}", self.background_opacity),
-            ) {
-                errors.push(error);
-            }
+            )
+        {
+            errors.push(error);
         }
 
         mark_complete_in_config();
 
         for error in &errors {
-            log::error!("Onboarding finalize error: {}", error);
+            log::error!("Onboarding finalize error: {error}");
             termy_toast::error(error.clone());
         }
 
         if let Err(error) = crate::open_main_window_with_runtime_config(cx) {
-            log::error!("Failed to open main window after onboarding: {}", error);
+            log::error!("Failed to open main window after onboarding: {error}");
             termy_toast::error(error);
         }
 
@@ -467,7 +461,7 @@ impl OnboardingWindow {
         mark_complete_in_config();
 
         if let Err(error) = crate::open_main_window_with_runtime_config(cx) {
-            log::error!("Failed to open main window after onboarding: {}", error);
+            log::error!("Failed to open main window after onboarding: {error}");
             termy_toast::error(error);
         }
 

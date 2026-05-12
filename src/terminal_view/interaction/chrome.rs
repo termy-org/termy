@@ -27,14 +27,6 @@ impl TerminalView {
         }
     }
 
-    pub(in super::super) fn tab_strip_sidebar_width(&self) -> f32 {
-        if self.vertical_tabs && self.should_render_tab_strip_chrome() {
-            self.effective_vertical_tab_strip_width()
-        } else {
-            0.0
-        }
-    }
-
     pub(in super::super) fn vertical_tab_strip_header_height(&self) -> f32 {
         if self.vertical_tabs && self.should_render_tab_strip_chrome() {
             TABBAR_HEIGHT
@@ -288,7 +280,10 @@ mod tests {
 
     #[test]
     fn vertical_bottom_shelf_height_matches_control_clearance() {
-        assert_eq!(VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT, 38.0);
+        assert_eq!(
+            VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT,
+            VERTICAL_TITLEBAR_CONTROL_BUTTON_SIZE + (VERTICAL_TAB_STRIP_PADDING * 2.0)
+        );
     }
 
     #[test]
@@ -301,7 +296,7 @@ mod tests {
                 VERTICAL_NEW_TAB_SHELF_HEIGHT,
                 VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT,
             ),
-            490.0
+            600.0 - 34.0 - VERTICAL_NEW_TAB_SHELF_HEIGHT - VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT
         );
     }
 
@@ -315,7 +310,7 @@ mod tests {
                 VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT,
                 VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT,
             ),
-            490.0
+            600.0 - 34.0 - (VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT * 2.0)
         );
     }
 }

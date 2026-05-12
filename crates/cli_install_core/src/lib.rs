@@ -58,10 +58,7 @@ pub fn install_cli(configured_shell: Option<&str>) -> Result<InstallCliResult, S
         let path_str = install_path.display().to_string();
         let shell_setup = configure_install_cli_shell_path(configured_shell, &install_path)
             .map_err(|error| {
-                format!(
-                    "CLI installed to {} but automated PATH setup failed: {}",
-                    path_str, error
-                )
+                format!("CLI installed to {path_str} but automated PATH setup failed: {error}")
             })?;
 
         Ok(InstallCliResult {
@@ -124,8 +121,7 @@ fn resolve_install_cli_shell(
 
     parse_install_cli_shell(candidate).ok_or_else(|| {
         format!(
-            "Unsupported shell '{}' for automated PATH setup. Supported shells: zsh, bash, fish.",
-            candidate
+            "Unsupported shell '{candidate}' for automated PATH setup. Supported shells: zsh, bash, fish."
         )
     })
 }
@@ -323,9 +319,7 @@ fn path_exists_or_symlink(path: &Path) -> bool {
 }
 
 fn managed_target_binary_exists(path: &Path) -> bool {
-    std::fs::metadata(path)
-        .map(|metadata| metadata.is_file())
-        .unwrap_or(false)
+    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
 }
 
 fn managed_target_dir_in_path(target_path: &Path, path_env: Option<&OsStr>) -> bool {
@@ -423,7 +417,7 @@ fn absolute_install_cli_source_path(path: &Path) -> Result<PathBuf, String> {
     }
 
     let cwd = std::env::current_dir()
-        .map_err(|error| format!("Failed to resolve current directory: {}", error))?;
+        .map_err(|error| format!("Failed to resolve current directory: {error}"))?;
     Ok(cwd.join(path))
 }
 

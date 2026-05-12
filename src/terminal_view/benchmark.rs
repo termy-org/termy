@@ -3,7 +3,7 @@ use std::{
     env,
     fs::{self, File},
     io::{BufWriter, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 use sysinfo::{ProcessesToUpdate, System, get_current_pid};
@@ -260,8 +260,7 @@ impl BenchmarkSession {
             .refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
         self.system
             .process(pid)
-            .map(|process| (process.cpu_usage(), process.memory()))
-            .unwrap_or((0.0, 0))
+            .map_or((0.0, 0), |process| (process.cpu_usage(), process.memory()))
     }
 
     fn write_metrics(&self) -> Result<(), String> {
@@ -461,13 +460,12 @@ fn duration_millis(duration: Duration) -> u64 {
     millis.min(u128::from(u64::MAX)) as u64
 }
 
-fn temp_path(path: &PathBuf) -> PathBuf {
-    let mut temp = path.clone();
+fn temp_path(path: &Path) -> PathBuf {
+    let mut temp = path.to_path_buf();
     let extension = path
         .extension()
         .and_then(|extension| extension.to_str())
-        .map(|extension| format!("{extension}.tmp"))
-        .unwrap_or_else(|| "tmp".to_string());
+        .map_or_else(|| "tmp".to_string(), |extension| format!("{extension}.tmp"));
     temp.set_extension(extension);
     temp
 }

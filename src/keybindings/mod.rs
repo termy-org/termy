@@ -157,8 +157,7 @@ fn report_warnings(warnings: &[KeybindWarning]) {
             "lines"
         };
         termy_toast::warning(format!(
-            "Ignored {} invalid keybind {}",
-            invalid_keybind_warning_count, noun
+            "Ignored {invalid_keybind_warning_count} invalid keybind {noun}"
         ));
     }
 }
@@ -168,9 +167,7 @@ fn debug_assert_trigger_is_valid_for_gpui(trigger: &str) {
     for component in trigger.split_whitespace() {
         debug_assert!(
             Keystroke::parse(component).is_ok(),
-            "command_core emitted unsupported GPUI keybind trigger component `{}` from `{}`",
-            component,
-            trigger
+            "command_core emitted unsupported GPUI keybind trigger component `{component}` from `{trigger}`"
         );
     }
 }

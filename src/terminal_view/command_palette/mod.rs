@@ -5,7 +5,6 @@ use state::{
     CommandPaletteCommandIntent, CommandPaletteItem, CommandPaletteItemKind,
     command_palette_next_scroll_y, command_palette_target_scroll_y, ordered_theme_ids_for_palette,
 };
-use std::path::Path;
 use termy_command_core::{CommandAvailability, CommandCapabilities, CommandUnavailableReason};
 
 mod render;
@@ -21,6 +20,81 @@ pub(super) use state_tmux::TmuxSessionIntent;
 
 pub(super) fn prewarm_user_path_resolution() {
     state::prewarm_user_path_resolution();
+}
+
+fn command_icon_path(id: termy_command_core::CommandId) -> &'static str {
+    use termy_command_core::CommandId::*;
+    match id {
+        NewTab => "icons/command_palette/new-tab.svg",
+        CloseTab | ClosePane | ClosePaneOrTab => "icons/command_palette/close-tab.svg",
+        MoveTabLeft | SwitchTabLeft => "icons/command_palette/tab-left.svg",
+        MoveTabRight | SwitchTabRight => "icons/command_palette/tab-right.svg",
+        SwitchToTab1 | SwitchToTab2 | SwitchToTab3 | SwitchToTab4 | SwitchToTab5
+        | SwitchToTab6 | SwitchToTab7 | SwitchToTab8 | SwitchToTab9 => {
+            "icons/command_palette/tab-right.svg"
+        }
+        RenameTab => "icons/command_palette/rename.svg",
+        SplitPaneVertical => "icons/command_palette/split-right.svg",
+        SplitPaneHorizontal => "icons/command_palette/split-down.svg",
+        FocusPaneLeft | FocusPaneRight | FocusPaneUp | FocusPaneDown | FocusPaneNext
+        | FocusPanePrevious => "icons/command_palette/focus-pane.svg",
+        ResizePaneLeft | ResizePaneRight | ResizePaneUp | ResizePaneDown => {
+            "icons/command_palette/resize-pane.svg"
+        }
+        TogglePaneZoom => "icons/command_palette/zoom-pane.svg",
+        MinimizeWindow => "icons/command_palette/minimize.svg",
+        ManageTmuxSessions => "icons/settings/terminal.svg",
+        ManageSavedLayouts => "icons/command_palette/layout.svg",
+        RunTask => "icons/command_palette/play.svg",
+        AppInfo => "icons/command_palette/info.svg",
+        RestartApp => "icons/command_palette/restart.svg",
+        OpenConfig | PrettifyConfig | OpenSettings => "icons/settings/advanced.svg",
+        ImportColors => "icons/settings/colors.svg",
+        SwitchTheme => "icons/settings/themes.svg",
+        ZoomIn => "icons/command_palette/zoom-in.svg",
+        ZoomOut => "icons/command_palette/zoom-out.svg",
+        ZoomReset => "icons/command_palette/zoom-reset.svg",
+        OpenSearch | CloseSearch | SearchNext | SearchPrevious
+        | ToggleSearchCaseSensitive | ToggleSearchRegex => "icons/settings/search.svg",
+        CheckForUpdates => "icons/command_palette/check-update.svg",
+        Quit => "icons/command_palette/power.svg",
+        ToggleCommandPalette => "icons/command_palette/command.svg",
+        Copy | Paste => "icons/command_palette/clipboard.svg",
+        InstallCli => "icons/command_palette/cli.svg",
+        ToggleTabBarVisibility | ToggleVerticalTabSidebar => "icons/command_palette/sidebar.svg",
+    }
+}
+
+fn palette_item_icon_path(item: &CommandPaletteItem) -> &'static str {
+    match &item.kind {
+        CommandPaletteItemKind::Command(action) => command_icon_path(action.to_command_id()),
+        CommandPaletteItemKind::Theme(_) => "icons/settings/themes.svg",
+        CommandPaletteItemKind::TmuxSessionAttachOrSwitch { .. }
+        | CommandPaletteItemKind::TmuxSessionCreateAndAttach { .. }
+        | CommandPaletteItemKind::TmuxSessionDetachCurrent
+        | CommandPaletteItemKind::TmuxSessionOpenRenameMode
+        | CommandPaletteItemKind::TmuxSessionOpenKillMode
+        | CommandPaletteItemKind::TmuxSessionRenameSelect { .. }
+        | CommandPaletteItemKind::TmuxSessionRenameApply { .. }
+        | CommandPaletteItemKind::TmuxSessionKill { .. } => "icons/settings/terminal.svg",
+        CommandPaletteItemKind::SavedLayoutOpen { .. }
+        | CommandPaletteItemKind::SavedLayoutOpenTasksMode { .. }
+        | CommandPaletteItemKind::SavedLayoutOpenSaveMode
+        | CommandPaletteItemKind::SavedLayoutSaveAs { .. }
+        | CommandPaletteItemKind::SavedLayoutOpenRenameMode
+        | CommandPaletteItemKind::SavedLayoutRenameSelect { .. }
+        | CommandPaletteItemKind::SavedLayoutRenameApply { .. }
+        | CommandPaletteItemKind::SavedLayoutOpenDeleteMode
+        | CommandPaletteItemKind::SavedLayoutDelete { .. } => "icons/command_palette/layout.svg",
+        CommandPaletteItemKind::TaskOpenCreateGlobalMode
+        | CommandPaletteItemKind::TaskOpenCreateLayoutMode { .. }
+        | CommandPaletteItemKind::TaskOpenSaveCurrentCommandGlobalMode
+        | CommandPaletteItemKind::TaskOpenSaveCurrentCommandLayoutMode { .. }
+        | CommandPaletteItemKind::TaskCreate { .. }
+        | CommandPaletteItemKind::Task { .. } => "icons/command_palette/play.svg",
+        CommandPaletteItemKind::AppInfoEntry { .. } => "icons/command_palette/info.svg",
+        CommandPaletteItemKind::AppInfoCopyAll { .. } => "icons/command_palette/clipboard.svg",
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,7 +295,60 @@ impl TerminalView {
                 items
             }
             CommandPaletteMode::Tasks => self.command_palette_task_items(),
+            CommandPaletteMode::AppInfo => self.command_palette_app_info_items(),
         }
+    }
+
+    fn command_palette_app_info_items(&self) -> Vec<CommandPaletteItem> {
+        let entries = self.collect_app_info_entries();
+        let payload = entries
+            .iter()
+            .map(|(label, value)| format!("{label}: {value}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut items = Vec::with_capacity(entries.len() + 1);
+        items.push(CommandPaletteItem::app_info_copy_all(payload));
+        for (label, value) in entries {
+            items.push(CommandPaletteItem::app_info_entry(label, value));
+        }
+        items
+    }
+
+    fn collect_app_info_entries(&self) -> Vec<(&'static str, String)> {
+        let config_path = self.config_path.as_ref().map_or_else(
+            || "unknown".to_string(),
+            |path| path.to_string_lossy().into_owned(),
+        );
+        let mut system = sysinfo::System::new_all();
+        system.refresh_memory();
+        let total_memory_mb = system.total_memory() / (1024 * 1024);
+        let used_memory_mb = system.used_memory() / (1024 * 1024);
+        let cpu_brand = system
+            .cpus()
+            .first()
+            .map(|c| c.brand().trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "unknown".to_string());
+        let cpu_count = system.cpus().len();
+        let host_name = sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string());
+        let os_version = sysinfo::System::long_os_version()
+            .unwrap_or_else(|| std::env::consts::OS.to_string());
+
+        vec![
+            ("Version", crate::APP_VERSION.to_string()),
+            (
+                "Platform",
+                format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+            ),
+            ("OS", os_version),
+            ("Host", host_name),
+            ("CPU", format!("{cpu_brand} ({cpu_count} cores)")),
+            (
+                "Memory",
+                format!("{used_memory_mb} MB / {total_memory_mb} MB"),
+            ),
+            ("Config", config_path),
+        ]
     }
 
     fn saved_layout_tasks_item_for_state(
@@ -239,7 +366,7 @@ impl TerminalView {
 
         let layout_name = current_named_layout?;
         Some(CommandPaletteItem {
-            title: format!("Run Tasks for \"{}\"", layout_name),
+            title: format!("Run Tasks for \"{layout_name}\""),
             keywords: format!("saved layout tasks run {}", layout_name.replace('-', " ")),
             enabled: true,
             status_hint: None,
@@ -368,7 +495,7 @@ impl TerminalView {
                         items.insert(
                             2.min(items.len()),
                             CommandPaletteItem {
-                                title: format!("New Task for \"{}\"…", layout_name),
+                                title: format!("New Task for \"{layout_name}\"…"),
                                 keywords: format!(
                                     "task new create add layout {}",
                                     layout_name.replace('-', " ")
@@ -384,7 +511,7 @@ impl TerminalView {
                         items.insert(
                             3.min(items.len()),
                             CommandPaletteItem {
-                                title: format!("Save Current Command for \"{}\"…", layout_name),
+                                title: format!("Save Current Command for \"{layout_name}\"…"),
                                 keywords: format!(
                                     "task save current command active layout {}",
                                     layout_name.replace('-', " ")
@@ -443,8 +570,8 @@ impl TerminalView {
 
         CommandPaletteItem {
             title: match layout_name.as_deref() {
-                Some(layout_name) => format!("Save Task \"{}\" for \"{}\"", task_name, layout_name),
-                None => format!("Save Task \"{}\"", task_name),
+                Some(layout_name) => format!("Save Task \"{task_name}\" for \"{layout_name}\""),
+                None => format!("Save Task \"{task_name}\""),
             },
             keywords: format!(
                 "task save create {} {}",
@@ -683,7 +810,7 @@ impl TerminalView {
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             loop {
                 smol::Timer::after(Duration::from_millis(16)).await;
-                let keep_animating = match cx.update(|cx| {
+                let Ok(keep_animating) = cx.update(|cx| {
                     this.update(cx, |view, cx| {
                         let changed = view.tick_command_palette_scroll_animation();
                         if changed {
@@ -694,9 +821,8 @@ impl TerminalView {
                         }
                         view.command_palette.is_scroll_animating()
                     })
-                }) {
-                    Ok(keep_animating) => keep_animating,
-                    _ => break,
+                }) else {
+                    break;
                 };
 
                 if !keep_animating {
@@ -853,6 +979,7 @@ impl TerminalView {
                 CommandPaletteEscapeAction::BackToTaskBrowse
             }
             CommandPaletteMode::Tasks => CommandPaletteEscapeAction::BackToCommands,
+            CommandPaletteMode::AppInfo => CommandPaletteEscapeAction::BackToCommands,
         }
     }
 
@@ -896,10 +1023,10 @@ impl TerminalView {
                     self.notify_overlay(cx);
                     return;
                 }
-                self.execute_command_palette_action(action, window, cx)
+                self.execute_command_palette_action(action, window, cx);
             }
             CommandPaletteItemKind::Theme(theme_id) => {
-                self.select_theme_from_palette(theme_id.as_str(), cx)
+                self.select_theme_from_palette(theme_id.as_str(), cx);
             }
             CommandPaletteItemKind::TmuxSessionAttachOrSwitch {
                 session_name,
@@ -916,13 +1043,13 @@ impl TerminalView {
                 cx,
             ),
             CommandPaletteItemKind::TmuxSessionDetachCurrent => {
-                self.detach_current_tmux_session_from_palette(cx)
+                self.detach_current_tmux_session_from_palette(cx);
             }
             CommandPaletteItemKind::TmuxSessionOpenRenameMode => {
-                self.open_tmux_session_rename_mode_from_palette(cx)
+                self.open_tmux_session_rename_mode_from_palette(cx);
             }
             CommandPaletteItemKind::TmuxSessionOpenKillMode => {
-                self.open_tmux_session_kill_mode_from_palette(cx)
+                self.open_tmux_session_kill_mode_from_palette(cx);
             }
             CommandPaletteItemKind::TmuxSessionRenameSelect {
                 session_name,
@@ -957,22 +1084,22 @@ impl TerminalView {
                 cx,
             ),
             CommandPaletteItemKind::SavedLayoutOpen { layout_name } => {
-                self.load_saved_layout_from_palette(layout_name.as_str(), cx)
+                self.load_saved_layout_from_palette(layout_name.as_str(), cx);
             }
             CommandPaletteItemKind::SavedLayoutOpenTasksMode { layout_name } => {
-                self.open_tasks_palette_from_saved_layout(layout_name.as_str(), cx)
+                self.open_tasks_palette_from_saved_layout(layout_name.as_str(), cx);
             }
             CommandPaletteItemKind::SavedLayoutOpenSaveMode => {
-                self.open_save_layout_input_from_palette(cx)
+                self.open_save_layout_input_from_palette(cx);
             }
             CommandPaletteItemKind::SavedLayoutSaveAs { layout_name } => {
-                self.save_current_layout_from_palette(layout_name.as_str(), item.enabled, cx)
+                self.save_current_layout_from_palette(layout_name.as_str(), item.enabled, cx);
             }
             CommandPaletteItemKind::SavedLayoutOpenRenameMode => {
-                self.open_saved_layout_rename_mode_from_palette(cx)
+                self.open_saved_layout_rename_mode_from_palette(cx);
             }
             CommandPaletteItemKind::SavedLayoutRenameSelect { layout_name } => {
-                self.select_saved_layout_for_rename_from_palette(layout_name.as_str(), cx)
+                self.select_saved_layout_for_rename_from_palette(layout_name.as_str(), cx);
             }
             CommandPaletteItemKind::SavedLayoutRenameApply {
                 current_layout_name,
@@ -984,19 +1111,19 @@ impl TerminalView {
                 cx,
             ),
             CommandPaletteItemKind::SavedLayoutOpenDeleteMode => {
-                self.open_saved_layout_delete_mode_from_palette(cx)
+                self.open_saved_layout_delete_mode_from_palette(cx);
             }
             CommandPaletteItemKind::SavedLayoutDelete { layout_name } => {
-                self.delete_saved_layout_from_palette(layout_name.as_str(), cx)
+                self.delete_saved_layout_from_palette(layout_name.as_str(), cx);
             }
             CommandPaletteItemKind::TaskOpenCreateGlobalMode => {
-                self.open_task_create_input_from_palette(None, cx)
+                self.open_task_create_input_from_palette(None, cx);
             }
             CommandPaletteItemKind::TaskOpenCreateLayoutMode { layout_name } => {
-                self.open_task_create_input_from_palette(Some(layout_name.as_str()), cx)
+                self.open_task_create_input_from_palette(Some(layout_name.as_str()), cx);
             }
             CommandPaletteItemKind::TaskOpenSaveCurrentCommandGlobalMode => {
-                self.open_save_current_command_task_input_from_palette(None, cx)
+                self.open_save_current_command_task_input_from_palette(None, cx);
             }
             CommandPaletteItemKind::TaskOpenSaveCurrentCommandLayoutMode { layout_name } => self
                 .open_save_current_command_task_input_from_palette(Some(layout_name.as_str()), cx),
@@ -1023,6 +1150,17 @@ impl TerminalView {
                 layout_name.as_deref(),
                 cx,
             ),
+            CommandPaletteItemKind::AppInfoEntry { label, value } => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(value.clone()));
+                termy_toast::success(format!("Copied {label}"));
+                self.notify_overlay(cx);
+            }
+            CommandPaletteItemKind::AppInfoCopyAll { payload } => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(payload.clone()));
+                termy_toast::success("Copied app info to clipboard");
+                self.close_command_palette(cx);
+                self.notify_overlay(cx);
+            }
         }
     }
 
@@ -1217,7 +1355,7 @@ impl TerminalView {
         match self.load_named_layout(layout_name, cx) {
             Ok(()) => {
                 self.close_command_palette(cx);
-                termy_toast::success(format!("Loaded layout \"{}\"", layout_name));
+                termy_toast::success(format!("Loaded layout \"{layout_name}\""));
                 self.notify_overlay(cx);
             }
             Err(error) => {
@@ -1296,7 +1434,7 @@ impl TerminalView {
         match self.delete_named_layout(layout_name) {
             Ok(()) => {
                 self.close_command_palette(cx);
-                termy_toast::success(format!("Deleted layout \"{}\"", layout_name));
+                termy_toast::success(format!("Deleted layout \"{layout_name}\""));
                 self.notify_overlay(cx);
             }
             Err(error) => {
@@ -1337,7 +1475,7 @@ impl TerminalView {
             }
             Ok(false) => {
                 self.close_command_palette(cx);
-                termy_toast::info(format!("Theme already set to {}", theme_id));
+                termy_toast::info(format!("Theme already set to {theme_id}"));
                 self.notify_overlay(cx);
             }
             Err(error) => {
@@ -1353,6 +1491,11 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if action == CommandAction::AppInfo {
+            self.set_command_palette_mode(CommandPaletteMode::AppInfo, false, cx);
+            return;
+        }
+
         let keep_open = Self::command_palette_should_stay_open(action);
         if !keep_open {
             self.close_command_palette(cx);

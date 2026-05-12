@@ -119,6 +119,7 @@ impl TerminalView {
         cx.notify();
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn terminal_grid_size_for_pane_count(
         pane_count: usize,
         viewport_width: f32,
@@ -239,8 +240,7 @@ impl TerminalView {
         let font_id = text_system.resolve_font(&font);
         let cell_width = text_system
             .advance(font_id, font_size, 'M')
-            .map(|advance| advance.width)
-            .unwrap_or(px(9.0));
+            .map_or(px(9.0), |advance| advance.width);
 
         let cell_height = font_size * self.line_height;
 
@@ -346,7 +346,7 @@ impl TerminalView {
         }
 
         // Throttle resize to avoid SIGWINCH flood during window drag
-        let can_resize = self.last_resize_applied_at.map_or(true, |last| {
+        let can_resize = self.last_resize_applied_at.is_none_or(|last| {
             now.duration_since(last) >= Duration::from_millis(RESIZE_THROTTLE_MS)
         });
         let mut needs_throttle_follow_up = false;

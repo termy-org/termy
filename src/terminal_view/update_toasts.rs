@@ -21,14 +21,14 @@ fn update_toast_effect(state: Option<&UpdateState>) -> UpdateToastEffect {
     match state {
         Some(UpdateState::Available { version, .. }) => UpdateToastEffect::Enqueue {
             kind: termy_toast::ToastKind::Info,
-            message: format!("Update v{} available", version),
+            message: format!("Update v{version} available"),
         },
         Some(UpdateState::Downloaded { version, .. }) => UpdateToastEffect::Enqueue {
             kind: termy_toast::ToastKind::Success,
-            message: format!("v{} ready to install", version),
+            message: format!("v{version} ready to install"),
         },
         Some(UpdateState::Installing { version }) => UpdateToastEffect::StartOrUpdateProgress {
-            message: format!("Installing v{}", version),
+            message: format!("Installing v{version}"),
         },
         Some(UpdateState::Installed { version }) => UpdateToastEffect::FinishProgressOrEnqueue {
             kind: termy_toast::ToastKind::Success,
@@ -36,7 +36,7 @@ fn update_toast_effect(state: Option<&UpdateState>) -> UpdateToastEffect {
         },
         Some(UpdateState::Error(message)) => UpdateToastEffect::FinishProgressOrEnqueue {
             kind: termy_toast::ToastKind::Error,
-            message: format!("Update failed: {}", message),
+            message: format!("Update failed: {message}"),
         },
         Some(UpdateState::UpToDate) => UpdateToastEffect::DismissProgressToast,
         _ => UpdateToastEffect::None,
@@ -46,7 +46,7 @@ fn update_toast_effect(state: Option<&UpdateState>) -> UpdateToastEffect {
 fn installed_update_toast_message(version: &str) -> String {
     #[cfg(target_os = "macos")]
     {
-        format!("v{} installed \u{2014} reopen from /Applications", version)
+        format!("v{version} installed \u{2014} reopen from /Applications")
     }
     #[cfg(target_os = "windows")]
     {

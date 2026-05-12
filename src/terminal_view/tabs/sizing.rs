@@ -2,6 +2,25 @@ use super::*;
 use crate::terminal_view::tab_strip::state::TabStripOrientation;
 
 impl TerminalView {
+    pub(in crate::terminal_view) fn sync_native_terminal_wakeup_interest(&self) {
+        if self.runtime_kind() != RuntimeKind::Native {
+            return;
+        }
+
+        for (tab_index, tab) in self.tabs.iter().enumerate() {
+            let tab_visible = tab_index == self.active_tab;
+            for pane in &tab.panes {
+                pane.terminal.set_wakeup_enabled(tab_visible);
+            }
+        }
+
+        for snapshot in self.native_pane_zoom_snapshots.values() {
+            for pane in &snapshot.other_panes {
+                pane.terminal.set_wakeup_enabled(false);
+            }
+        }
+    }
+
     pub(crate) fn sync_tab_strip_for_active_tab(&mut self) {
         if self.tab_strip_orientation() == TabStripOrientation::Horizontal {
             self.sync_tab_display_widths_for_viewport_if_needed(
@@ -9,6 +28,7 @@ impl TerminalView {
             );
         }
         self.scroll_active_tab_into_view(self.tab_strip_orientation());
+        self.sync_native_terminal_wakeup_interest();
     }
 
     pub(crate) fn tab_strip_fixed_content_width(&self) -> f32 {
@@ -427,8 +447,10 @@ mod tests {
                 tab_heights: vec![16.0, 48.0],
             });
 
-        // Row 1 bottom (16 + 48) minus list_height (40) = 24
-        assert_eq!(layout.scroll_target_for_active_row(1, 0.0), Some(24.0));
+        assert_eq!(
+            layout.scroll_target_for_active_row(1, 0.0),
+            Some(16.0 + TAB_ITEM_GAP + 48.0 - 40.0)
+        );
     }
 
     #[test]
@@ -488,7 +510,8 @@ mod tests {
     #[test]
     fn effective_tab_max_width_shrinks_for_crowded_tabs() {
         let effective = TerminalView::effective_tab_max_width_for_viewport(1600.0, 8);
-        assert_float_eq(effective, 200.0);
+        let expected = (1600.0 - (TAB_HORIZONTAL_PADDING * 2.0) - (TAB_ITEM_GAP * 7.0)) / 8.0;
+        assert_float_eq(effective, expected);
         assert!(effective < TAB_MAX_WIDTH);
     }
 

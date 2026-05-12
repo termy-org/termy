@@ -1,6 +1,6 @@
 use super::{
-    Context, EditableField, IntoElement, ParentElement, SettingsSection, SettingsWindow, Styled,
-    div,
+    CARD_GAP, Context, EditableField, IntoElement, ParentElement, SettingsSection, SettingsWindow,
+    Styled, div, px,
 };
 
 impl SettingsWindow {
@@ -8,10 +8,10 @@ impl SettingsWindow {
         let rows = termy_config_core::color_setting_specs()
             .iter()
             .map(|spec| {
-                let display = self
-                    .custom_color_for_id(spec.id)
-                    .map(|rgb| format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b))
-                    .unwrap_or_else(|| "Theme default".to_string());
+                let display = self.custom_color_for_id(spec.id).map_or_else(
+                    || "Theme default".to_string(),
+                    |rgb| format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b),
+                );
                 self.render_editable_row(
                     spec.key,
                     EditableField::Color(spec.id),
@@ -26,13 +26,13 @@ impl SettingsWindow {
         div()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(CARD_GAP))
             .child(self.render_section_header(
                 "Colors",
                 "Override individual terminal colors",
                 SettingsSection::Colors,
                 cx,
             ))
-            .child(self.render_settings_group("OVERRIDES", rows))
+            .child(self.render_settings_group("Overrides", rows))
     }
 }

@@ -120,7 +120,7 @@ impl ToastManager {
     /// Tick with optional hovered toast ID - hovered toasts don't expire
     pub fn tick_with_hovered(&mut self, hovered_id: Option<u64>) {
         let now = Instant::now();
-        for toast in self.active.iter_mut() {
+        for toast in &mut self.active {
             let is_hovered = hovered_id == Some(toast.id);
             match (is_hovered, toast.paused_at) {
                 (true, None) => {

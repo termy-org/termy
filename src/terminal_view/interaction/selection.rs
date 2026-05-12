@@ -487,8 +487,7 @@ impl TerminalView {
     pub(in super::super) fn sync_content_scroll_baseline(&mut self) {
         self.content_scroll_baseline = self
             .active_terminal()
-            .map(|t| t.scroll_state().0)
-            .unwrap_or(self.content_scroll_baseline);
+            .map_or(self.content_scroll_baseline, |t| t.scroll_state().0);
     }
 
     /// Adjust selection positions to compensate for display_offset changes caused by
@@ -589,7 +588,7 @@ impl TerminalView {
                     && line[start_col - 2]
                         .is_some_and(|c| Self::terminal_selection_char_class(c) == class) =>
                 {
-                    start_col -= 1
+                    start_col -= 1;
                 }
                 Some(c) if Self::terminal_selection_char_class(c) == class => start_col -= 1,
                 _ => break,
@@ -604,7 +603,7 @@ impl TerminalView {
                     && line[end_col + 2]
                         .is_some_and(|c| Self::terminal_selection_char_class(c) == class) =>
                 {
-                    end_col += 1
+                    end_col += 1;
                 }
                 Some(c) if Self::terminal_selection_char_class(c) == class => end_col += 1,
                 _ => break,
@@ -676,8 +675,7 @@ impl TerminalView {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()
-                .map(|_| true)
-                .unwrap_or(false)
+                .is_ok_and(|_| true)
         }
         #[cfg(target_os = "linux")]
         {

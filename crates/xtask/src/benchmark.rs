@@ -504,7 +504,7 @@ fn run_echo_train(duration: Duration) -> Result<()> {
     let reserved_post_idle = ECHO_TRAIN_POST_IDLE.min(remaining);
     let emit_budget = remaining.saturating_sub(reserved_post_idle);
     let budget_iterations = (emit_budget.as_millis() / ECHO_TRAIN_INTERVAL.as_millis()) as u64;
-    let iterations = budget_iterations.max(1).min(ECHO_TRAIN_DEFAULT_ITERATIONS);
+    let iterations = budget_iterations.clamp(1, ECHO_TRAIN_DEFAULT_ITERATIONS);
     let glyphs = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
     for seq in 0..iterations {
@@ -628,7 +628,7 @@ fn run_alt_screen_anim(duration: Duration) -> Result<()> {
             for col in 0..cols {
                 let ch = if col == band || col == (band + 1) % cols {
                     '#'
-                } else if (col + row + frame) % 7 == 0 {
+                } else if (col + row + frame).is_multiple_of(7) {
                     '.'
                 } else {
                     ' '
@@ -1013,6 +1013,7 @@ fn create_ghostty_launch_artifacts(
     Ok(GhosttyLaunchArtifacts { config_path })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn activity_monitor_termy_command(
     build: &BenchmarkTargetSpec,
     trace_path: &Path,
@@ -1095,6 +1096,7 @@ fn activity_monitor_ghostty_command(
     command
 }
 
+#[allow(clippy::too_many_arguments)]
 fn animation_hitches_termy_command(
     build: &BenchmarkTargetSpec,
     trace_path: &Path,
@@ -1282,8 +1284,7 @@ fn parse_animation_summary(
     let total_span = frame_starts
         .first()
         .zip(frame_starts.last())
-        .map(|(first, last)| last.saturating_sub(*first))
-        .unwrap_or(0);
+        .map_or(0, |(first, last)| last.saturating_sub(*first));
 
     let mut sorted_intervals = frame_intervals;
     sorted_intervals.sort_unstable();
@@ -1545,10 +1546,10 @@ fn parse_hitch_durations(xml: &str, launched_pid: u32) -> Result<Vec<u64>> {
             }
         }
 
-        if process_pid.is_some_and(|pid| pid == launched_pid) {
-            if let Some(duration_ns) = duration_ns {
-                durations.push(duration_ns);
-            }
+        if process_pid.is_some_and(|pid| pid == launched_pid)
+            && let Some(duration_ns) = duration_ns
+        {
+            durations.push(duration_ns);
         }
     }
 
@@ -1606,8 +1607,7 @@ fn summarize_idle_burst_latency(
         .iter()
         .rev()
         .find(|frame| frame.monotonic_ns < burst_start)
-        .map(|frame| frame.total_frames)
-        .unwrap_or(0);
+        .map_or(0, |frame| frame.total_frames);
 
     Ok(IdleBurstLatencySummary {
         first_frame_after_burst_ms: first_frame
@@ -2176,18 +2176,14 @@ fn render_report(summary: &ComparisonSummary) -> String {
         ));
         report.push_str(&format!(
             "| Hitches | {} | {} | {} |\n",
-            scenario
-                .baseline
-                .animation_summary
-                .as_ref()
-                .map(|summary| summary.hitch_count.to_string())
-                .unwrap_or_else(|| "n/a".to_string()),
-            scenario
-                .candidate
-                .animation_summary
-                .as_ref()
-                .map(|summary| summary.hitch_count.to_string())
-                .unwrap_or_else(|| "n/a".to_string()),
+            scenario.baseline.animation_summary.as_ref().map_or_else(
+                || "n/a".to_string(),
+                |summary| summary.hitch_count.to_string()
+            ),
+            scenario.candidate.animation_summary.as_ref().map_or_else(
+                || "n/a".to_string(),
+                |summary| summary.hitch_count.to_string()
+            ),
             format_option_i64(scenario.deltas.hitch_count),
         ));
         report.push_str(&format!(
@@ -2567,21 +2563,15 @@ fn format_frame_capture_status_label(status: &FrameCaptureStatus) -> String {
 }
 
 fn format_option_u64(value: Option<u64>) -> String {
-    value
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "n/a".to_string())
+    value.map_or_else(|| "n/a".to_string(), |value| value.to_string())
 }
 
 fn format_option_i64(value: Option<i64>) -> String {
-    value
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "n/a".to_string())
+    value.map_or_else(|| "n/a".to_string(), |value| value.to_string())
 }
 
 fn format_option_f32(value: Option<f32>) -> String {
-    value
-        .map(|value| format!("{value:.2}"))
-        .unwrap_or_else(|| "n/a".to_string())
+    value.map_or_else(|| "n/a".to_string(), |value| format!("{value:.2}"))
 }
 
 #[cfg(test)]

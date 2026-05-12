@@ -37,6 +37,49 @@ fn desaturate_rgb(color: gpui::Rgba, amount: f32) -> gpui::Rgba {
 }
 
 const COMMAND_PALETTE_BACKDROP_STRENGTH: f32 = 1.0;
+const TERMINAL_PROGRESS_LOADER_HEIGHT: f32 = 2.0;
+const TERMINAL_PROGRESS_INDETERMINATE_WIDTH: f32 = 0.22;
+const TERMINAL_PROGRESS_INDETERMINATE_CYCLE_MS: u128 = 3_400;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TerminalProgressLoaderFill {
+    left_ratio: f32,
+    width_ratio: f32,
+}
+
+fn terminal_progress_loader_fill(
+    state: ProgressState,
+    elapsed_ms: u128,
+) -> Option<TerminalProgressLoaderFill> {
+    if !state.is_active() {
+        return None;
+    }
+
+    if let Some(percent) = state.percentage() {
+        return Some(TerminalProgressLoaderFill {
+            left_ratio: 0.0,
+            width_ratio: (f32::from(percent) / 100.0).clamp(0.0, 1.0),
+        });
+    }
+
+    let cycle_position = (elapsed_ms % TERMINAL_PROGRESS_INDETERMINATE_CYCLE_MS) as f32
+        / TERMINAL_PROGRESS_INDETERMINATE_CYCLE_MS as f32;
+    let directional_progress = if cycle_position <= 0.5 {
+        cycle_position * 2.0
+    } else {
+        (1.0 - cycle_position) * 2.0
+    };
+    let eased_progress = smoothstep(directional_progress);
+    Some(TerminalProgressLoaderFill {
+        left_ratio: eased_progress * (1.0 - TERMINAL_PROGRESS_INDETERMINATE_WIDTH),
+        width_ratio: TERMINAL_PROGRESS_INDETERMINATE_WIDTH,
+    })
+}
+
+fn smoothstep(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
+}
 
 #[cfg(any(target_os = "macos", test))]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -990,8 +1033,7 @@ impl TerminalView {
         let dt_ms = self
             .render_metrics
             .last_emit_at
-            .map(|last_emit| now.duration_since(last_emit).as_millis())
-            .unwrap_or(0);
+            .map_or(0, |last_emit| now.duration_since(last_emit).as_millis());
 
         log::info!(
             "render_metrics dt_ms={} render={} grid_paint={} full={} partial={} reuse={} dirty_span={} patched_cell={} shape_line={} shape_hit={} shape_miss={} total_render={} total_grid_paint={} total_full={} total_partial={} total_reuse={} total_dirty_span={} total_patched_cell={} total_shape_line={} total_shape_hit={} total_shape_miss={}",
@@ -1170,74 +1212,88 @@ impl TerminalView {
     ) -> Option<AnyElement> {
         let model = termy_auto_update_ui::UpdateBannerModel::from_state(state)?;
         let updater_weak = self.auto_updater.as_ref().map(|e| e.downgrade());
+        let overlay_style = self.overlay_style();
 
-        let mut banner_bg = colors.background;
-        banner_bg.a = 0.88;
-        let mut border_color = colors.foreground;
-        border_color.a = 0.16;
-        let mut muted_text = colors.foreground;
-        muted_text.a = 0.72;
+        let banner_bg = overlay_style.chrome_panel_background_with_floor(0.92, 0.86);
+        let border_color = overlay_style.chrome_panel_neutral(0.18);
+        let primary_text = overlay_style.panel_foreground(0.94);
+        let muted_text = overlay_style.panel_foreground(0.62);
 
-        let tone = match model.tone {
+        let (tone_bg, tone_fg) = match model.tone {
             termy_auto_update_ui::UpdateBannerTone::Info => {
-                let mut color = colors.cursor;
-                color.a = 0.22;
-                color
+                let mut bg = colors.cursor;
+                bg.a = 0.18;
+                (bg, colors.cursor)
             }
-            termy_auto_update_ui::UpdateBannerTone::Success => gpui::Rgba {
-                r: 0.25,
-                g: 0.66,
-                b: 0.36,
-                a: 0.24,
-            },
-            termy_auto_update_ui::UpdateBannerTone::Error => gpui::Rgba {
-                r: 0.85,
-                g: 0.31,
-                b: 0.31,
-                a: 0.24,
-            },
+            termy_auto_update_ui::UpdateBannerTone::Success => {
+                let success = gpui::Rgba {
+                    r: 0.42,
+                    g: 0.78,
+                    b: 0.55,
+                    a: 1.0,
+                };
+                let mut bg = success;
+                bg.a = 0.18;
+                (bg, success)
+            }
+            termy_auto_update_ui::UpdateBannerTone::Error => {
+                let error = gpui::Rgba {
+                    r: 0.92,
+                    g: 0.45,
+                    b: 0.48,
+                    a: 1.0,
+                };
+                let mut bg = error;
+                bg.a = 0.18;
+                (bg, error)
+            }
+        };
+
+        let icon_path = match model.tone {
+            termy_auto_update_ui::UpdateBannerTone::Info => "icons/command_palette/check-update.svg",
+            termy_auto_update_ui::UpdateBannerTone::Success => "icons/command_palette/info.svg",
+            termy_auto_update_ui::UpdateBannerTone::Error => "icons/command_palette/info.svg",
         };
 
         let mut actions = div().flex().items_center().gap(px(6.0));
         for button in model.buttons {
             let action = button.action;
             let updater_weak = updater_weak.clone();
-            let (button_bg, button_text, button_border) = match button.style {
-                termy_auto_update_ui::UpdateButtonStyle::Primary => {
-                    let mut bg = colors.cursor;
-                    bg.a = 0.96;
-                    (
-                        bg,
-                        colors.background,
-                        gpui::Rgba {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 0.0,
-                        },
-                    )
-                }
-                termy_auto_update_ui::UpdateButtonStyle::Secondary => {
-                    let mut bg = colors.foreground;
-                    bg.a = 0.08;
-                    let mut border = colors.foreground;
-                    border.a = 0.2;
-                    (bg, colors.foreground, border)
-                }
+            let is_primary =
+                matches!(button.style, termy_auto_update_ui::UpdateButtonStyle::Primary);
+            let primary_bg = colors.cursor;
+            let primary_label_color = colors.background;
+            let mut secondary_bg = colors.foreground;
+            secondary_bg.a = 0.08;
+            let mut secondary_hover_bg = colors.foreground;
+            secondary_hover_bg.a = 0.14;
+
+            let mut primary_hover_bg = colors.cursor;
+            primary_hover_bg.a = 0.85;
+
+            let (button_bg, hover_bg, button_text) = if is_primary {
+                (primary_bg, primary_hover_bg, primary_label_color)
+            } else {
+                (secondary_bg, secondary_hover_bg, primary_text)
             };
 
             actions = actions.child(
                 div()
-                    .px(px(9.0))
-                    .py(px(3.0))
+                    .id(gpui::ElementId::from(
+                        gpui::SharedString::from(format!("update-banner-btn-{:?}", action)),
+                    ))
+                    .h(px(26.0))
+                    .px(px(12.0))
                     .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
                     .bg(button_bg)
-                    .border_1()
-                    .border_color(button_border)
-                    .text_size(px(11.0))
+                    .text_size(px(11.5))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(button_text)
                     .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .hover(move |s| s.bg(hover_bg))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _event, _window, cx| match action {
@@ -1266,7 +1322,7 @@ impl TerminalView {
                                         cx.quit();
                                     }
                                     Err(error) => {
-                                        termy_toast::error(format!("Restart failed: {}", error));
+                                        termy_toast::error(format!("Restart failed: {error}"));
                                         this.notify_overlay(cx);
                                     }
                                 }
@@ -1286,14 +1342,14 @@ impl TerminalView {
 
         let progress_element = model.progress_percent.map(|progress| {
             let mut progress_track = colors.foreground;
-            progress_track.a = 0.14;
-            let progress_width = 130.0;
+            progress_track.a = 0.12;
+            let progress_width = 140.0;
             let fill_width = (f32::from(progress) / 100.0) * progress_width;
 
             div()
-                .mt(px(2.0))
+                .mt(px(4.0))
                 .w(px(progress_width))
-                .h(px(4.0))
+                .h(px(3.0))
                 .rounded_full()
                 .bg(progress_track)
                 .child(
@@ -1318,40 +1374,60 @@ impl TerminalView {
                 .child(
                     div()
                         .size_full()
-                        .px(px(10.0))
+                        .px(px(14.0))
                         .flex()
                         .items_center()
                         .justify_between()
+                        .gap(px(12.0))
                         .child(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(10.0))
+                                .gap(px(12.0))
                                 .child(
                                     div()
-                                        .px(px(8.0))
-                                        .py(px(3.0))
-                                        .rounded_full()
-                                        .bg(tone)
-                                        .text_size(px(10.0))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_color(colors.foreground)
-                                        .child(model.badge),
+                                        .w(px(28.0))
+                                        .h(px(28.0))
+                                        .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
+                                        .bg(tone_bg)
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child(
+                                            gpui::svg()
+                                                .path(gpui::SharedString::from(icon_path))
+                                                .size(px(15.0))
+                                                .text_color(tone_fg),
+                                        ),
                                 )
                                 .child(
                                     div()
                                         .flex()
                                         .flex_col()
+                                        .gap(px(1.0))
                                         .child(
                                             div()
-                                                .text_size(px(12.0))
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .text_color(colors.foreground)
-                                                .child(model.message),
+                                                .flex()
+                                                .items_center()
+                                                .gap(px(8.0))
+                                                .child(
+                                                    div()
+                                                        .text_size(px(13.0))
+                                                        .font_weight(FontWeight::SEMIBOLD)
+                                                        .text_color(primary_text)
+                                                        .child(model.message),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(px(10.0))
+                                                        .font_weight(FontWeight::MEDIUM)
+                                                        .text_color(tone_fg)
+                                                        .child(model.badge),
+                                                ),
                                         )
                                         .children(model.detail.map(|detail| {
                                             div()
-                                                .text_size(px(10.0))
+                                                .text_size(px(11.0))
                                                 .text_color(muted_text)
                                                 .child(detail)
                                                 .into_any()
@@ -1375,7 +1451,7 @@ impl TerminalView {
         }
 
         let mut container = div().flex().flex_col().gap(px(6.0));
-        for toast in self.toast_manager.active().iter() {
+        for toast in self.toast_manager.active() {
             let toast_id = toast.id;
             let toast_message = toast.message.clone();
             let toast_action_label = toast.action_label.clone();
@@ -1651,17 +1727,14 @@ impl TerminalView {
         let overlay_style = self.overlay_style();
 
         let url = &link.target;
-        // Convert file:/// URLs to a readable path, contracting ~ for home dir.
         let display_url = if let Some(path) = url.strip_prefix("file:///") {
-            let path = format!("/{}", path);
-            // Percent-decode common sequences (spaces, etc.)
+            let path = format!("/{path}");
             let path = path.replace("%20", " ");
-            // Contract home directory to ~
             #[cfg(unix)]
             let path = if let Some(home) = dirs::home_dir() {
                 let home_str = home.to_string_lossy();
                 if let Some(rel) = path.strip_prefix(home_str.as_ref()) {
-                    format!("~{}", rel)
+                    format!("~{rel}")
                 } else {
                     path
                 }
@@ -1683,18 +1756,100 @@ impl TerminalView {
             div()
                 .id("link-preview-overlay")
                 .absolute()
-                .bottom(px(6.0))
-                .left(px(6.0))
+                .bottom(px(8.0))
+                .left(px(8.0))
                 .max_w(px(600.0))
-                .px(px(8.0))
-                .py(px(3.0))
+                .px(px(10.0))
+                .py(px(5.0))
                 .rounded(px(TERMINAL_OVERLAY_GEOMETRY.panel_radius))
-                .bg(overlay_style.chrome_panel_background(0.88))
+                .bg(overlay_style.chrome_panel_background(0.92))
                 .border_1()
-                .border_color(overlay_style.chrome_panel_neutral(0.20))
+                .border_color(overlay_style.chrome_panel_neutral(0.22))
+                .shadow_sm()
                 .text_size(px(11.5))
-                .text_color(overlay_style.panel_foreground(0.85))
+                .text_color(overlay_style.panel_foreground(0.90))
                 .child(display_url)
+                .into_any_element(),
+        )
+    }
+
+    fn schedule_progress_indicator_animation(&mut self, cx: &mut Context<Self>) {
+        if self.progress_indicator_animation_scheduled {
+            return;
+        }
+
+        self.progress_indicator_animation_scheduled = true;
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            smol::Timer::after(Duration::from_millis(16)).await;
+            let _ = cx.update(|cx| {
+                this.update(cx, |view, cx| {
+                    view.progress_indicator_animation_scheduled = false;
+                    if view
+                        .tabs
+                        .get(view.active_tab)
+                        .is_some_and(|tab| tab.progress_state.is_indeterminate())
+                    {
+                        cx.notify();
+                    }
+                })
+            });
+        })
+        .detach();
+    }
+
+    fn render_terminal_progress_loader(
+        &mut self,
+        _now: Instant,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.progress_indicator_enabled {
+            return None;
+        }
+
+        let state = self.tabs.get(self.active_tab)?.progress_state;
+        if !state.is_active() {
+            return None;
+        }
+        if state.is_indeterminate() {
+            self.schedule_progress_indicator_animation(cx);
+        }
+
+        let elapsed_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let fill = terminal_progress_loader_fill(state, elapsed_ms)?;
+        let mut track_color = self.colors.foreground;
+        track_color.a = self.scaled_chrome_alpha(0.10);
+        let mut fill_color = match state {
+            ProgressState::InProgress(_) | ProgressState::Indeterminate => self.colors.cursor,
+            ProgressState::Error(_) => gpui::rgb(0xef4444),
+            ProgressState::Warning(_) => gpui::rgb(0xf59e0b),
+            ProgressState::Clear => return None,
+        };
+        fill_color.a = self.scaled_chrome_alpha(0.92);
+
+        Some(
+            div()
+                .id("terminal-progress-loader")
+                .absolute()
+                .top_0()
+                .left_0()
+                .right_0()
+                .h(px(TERMINAL_PROGRESS_LOADER_HEIGHT))
+                .overflow_hidden()
+                .rounded_full()
+                .bg(track_color)
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .left(relative(fill.left_ratio))
+                        .w(relative(fill.width_ratio))
+                        .rounded_full()
+                        .bg(fill_color),
+                )
                 .into_any_element(),
         )
     }
@@ -1726,7 +1881,7 @@ impl TerminalView {
         #[cfg(target_os = "macos")]
         {
             let _ = cx;
-            return None;
+            None
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -1921,7 +2076,7 @@ impl TerminalView {
         #[cfg(target_os = "macos")]
         {
             let _ = cx;
-            return None;
+            None
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -2197,7 +2352,7 @@ impl TerminalView {
                             .text_size(px(11.0))
                             .font_weight(FontWeight::NORMAL)
                             .text_color(overlay_style.panel_foreground(0.82))
-                            .child(format!("{} x {}", cols, rows)),
+                            .child(format!("{cols} x {rows}")),
                     )
                     .into_any_element()
             });
@@ -2242,14 +2397,13 @@ impl TerminalView {
                 .flex()
                 .flex_col()
                 .gap(px(2.0))
-                .child(format!("Display: {}", display_hint))
-                .child(format!("Render FPS: {:.1}", render_fps))
+                .child(format!("Display: {display_hint}"))
+                .child(format!("Render FPS: {render_fps:.1}"))
                 .child(format!(
-                    "Frame ms p50/p95/p99: {:.2}/{:.2}/{:.2}",
-                    frame_p50_ms, frame_p95_ms, frame_p99_ms
+                    "Frame ms p50/p95/p99: {frame_p50_ms:.2}/{frame_p95_ms:.2}/{frame_p99_ms:.2}"
                 ))
-                .child(format!("CPU: {:.1}%", cpu_percent))
-                .child(format!("MEM: {}", memory))
+                .child(format!("CPU: {cpu_percent:.1}%"))
+                .child(format!("MEM: {memory}"))
                 .child(format!("Drain passes: {terminal_event_drain_passes}"))
                 .child(format!("Redraws: {terminal_redraws}"))
                 .child(format!(
@@ -2765,6 +2919,7 @@ impl Render for TerminalView {
         let terminal_scrollbar_overlay = terminal_scrollbar_layout.and_then(|(surface, layout)| {
             self.render_terminal_scrollbar_overlay(surface, layout, terminal_display_offset > 0)
         });
+        let terminal_progress_loader = self.render_terminal_progress_loader(now, cx);
         let terminal_grid_layer = div()
             .relative()
             .w_full()
@@ -2776,7 +2931,7 @@ impl Render for TerminalView {
             .into_any_element();
         let has_active_inline = self.has_active_inline_input();
         let ime_focus_handle = self.focus_handle.clone();
-        let ime_view = cx.entity().clone();
+        let ime_view = cx.entity();
         let ime_input_layer = canvas(
             move |_bounds, _window, _cx| {},
             move |bounds, _, window, cx| {
@@ -3046,12 +3201,13 @@ impl Render for TerminalView {
                                                     }
                                                 },
                                             )
-                                            .font_family(font_family.clone())
+                                            .font_family(font_family)
                                             .text_size(font_size)
                                             .child(ime_input_layer)
                                             .child(terminal_grid_layer)
                                             .children(ime_preedit_overlay)
-                                            .children(terminal_scrollbar_overlay),
+                                            .children(terminal_scrollbar_overlay)
+                                            .children(terminal_progress_loader),
                                     ),
                             ),
                     ),
@@ -3078,6 +3234,65 @@ impl Render for TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_progress_loader_fill_uses_percentage_width() {
+        assert_eq!(
+            terminal_progress_loader_fill(ProgressState::InProgress(42), 0),
+            Some(TerminalProgressLoaderFill {
+                left_ratio: 0.0,
+                width_ratio: 0.42
+            })
+        );
+    }
+
+    #[test]
+    fn terminal_progress_loader_fill_ping_pongs_indeterminate() {
+        let fill = terminal_progress_loader_fill(ProgressState::Indeterminate, 0).expect("fill");
+        assert_eq!(fill.width_ratio, TERMINAL_PROGRESS_INDETERMINATE_WIDTH);
+        assert_close(fill.left_ratio, 0.0);
+
+        let fill = terminal_progress_loader_fill(
+            ProgressState::Indeterminate,
+            TERMINAL_PROGRESS_INDETERMINATE_CYCLE_MS / 2,
+        )
+        .expect("fill");
+        assert_close(fill.left_ratio, 1.0 - TERMINAL_PROGRESS_INDETERMINATE_WIDTH);
+
+        let fill = terminal_progress_loader_fill(
+            ProgressState::Indeterminate,
+            TERMINAL_PROGRESS_INDETERMINATE_CYCLE_MS,
+        )
+        .expect("fill");
+        assert_close(fill.left_ratio, 0.0);
+    }
+
+    #[test]
+    fn terminal_progress_loader_fill_is_symmetric_during_ping_pong() {
+        let outbound = terminal_progress_loader_fill(
+            ProgressState::Indeterminate,
+            TERMINAL_PROGRESS_INDETERMINATE_CYCLE_MS / 4,
+        )
+        .expect("outbound fill");
+        let inbound = terminal_progress_loader_fill(
+            ProgressState::Indeterminate,
+            TERMINAL_PROGRESS_INDETERMINATE_CYCLE_MS * 3 / 4,
+        )
+        .expect("inbound fill");
+        assert_close(outbound.left_ratio, inbound.left_ratio);
+    }
+
+    #[test]
+    fn terminal_progress_loader_fill_hides_clear_state() {
+        assert_eq!(terminal_progress_loader_fill(ProgressState::Clear, 0), None);
+    }
+
+    fn assert_close(left: f32, right: f32) {
+        assert!(
+            (left - right).abs() < 0.0001,
+            "expected {left} to be close to {right}"
+        );
+    }
 
     #[test]
     fn update_banner_layout_stays_full_width_without_vertical_sidebar_chrome() {
@@ -3168,11 +3383,12 @@ mod tests {
         bg: AnsiColor,
         flags: Flags,
     ) -> alacritty_terminal::term::cell::Cell {
-        let mut cell = alacritty_terminal::term::cell::Cell::default();
-        cell.fg = fg;
-        cell.bg = bg;
-        cell.flags = flags;
-        cell
+        alacritty_terminal::term::cell::Cell {
+            fg,
+            bg,
+            flags,
+            ..alacritty_terminal::term::cell::Cell::default()
+        }
     }
 
     fn tmux_test_pane(id: &str, left: u16, top: u16, cols: u16, rows: u16) -> TerminalPane {

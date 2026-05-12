@@ -1,7 +1,7 @@
 use super::super::*;
 use super::style::{
-    COMMAND_PALETTE_INPUT_RADIUS, COMMAND_PALETTE_PANEL_RADIUS, COMMAND_PALETTE_ROW_RADIUS,
-    COMMAND_PALETTE_SHORTCUT_RADIUS, CommandPaletteStyle,
+    COMMAND_PALETTE_PANEL_RADIUS, COMMAND_PALETTE_ROW_RADIUS, COMMAND_PALETTE_SHORTCUT_RADIUS,
+    CommandPaletteStyle,
 };
 use super::*;
 use crate::ui::scrollbar::{self, ScrollbarPaintStyle, ScrollbarRange};
@@ -10,6 +10,98 @@ use gpui::uniform_list;
 use std::ops::Range;
 
 impl TerminalView {
+    pub(super) fn command_palette_scrollbar_range(
+        &self,
+        viewport_height: f32,
+        item_count: usize,
+    ) -> ScrollbarRange {
+        let scroll_handle = self.command_palette.base_scroll_handle();
+        let max_offset_from_handle: f32 = scroll_handle.max_offset().height.into();
+        let estimated_content_height = item_count as f32 * COMMAND_PALETTE_ROW_HEIGHT;
+        let estimated_max_offset = (estimated_content_height - viewport_height).max(0.0);
+        let max_offset = max_offset_from_handle.max(estimated_max_offset);
+        let offset_y: f32 = scroll_handle.offset().y.into();
+        let offset = (-offset_y).max(0.0);
+        ScrollbarRange {
+            offset,
+            max_offset,
+            viewport_extent: viewport_height,
+            track_extent: viewport_height,
+        }
+    }
+
+    fn apply_command_palette_scroll_offset(&mut self, offset: f32, max_offset: f32) {
+        let clamped = offset.clamp(0.0, max_offset);
+        self.command_palette
+            .base_scroll_handle()
+            .set_offset(point(px(0.0), px(-clamped)));
+    }
+
+    pub(super) fn handle_command_palette_scrollbar_mouse_down(
+        &mut self,
+        window_y: f32,
+        viewport_height: f32,
+        item_count: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(bounds) = self.command_palette_scrollbar_lane_bounds else {
+            return;
+        };
+        let lane_top: f32 = bounds.top().into();
+        let local_y = window_y - lane_top;
+        let range = self.command_palette_scrollbar_range(viewport_height, item_count);
+        let Some(metrics) =
+            scrollbar::compute_metrics(range, COMMAND_PALETTE_SCROLLBAR_MIN_THUMB_HEIGHT)
+        else {
+            return;
+        };
+        let thumb_top = metrics.thumb_top;
+        let thumb_bottom = thumb_top + metrics.thumb_height;
+        if local_y >= thumb_top && local_y <= thumb_bottom {
+            self.command_palette_scrollbar_drag = Some(TerminalScrollbarDragState {
+                thumb_grab_offset: local_y - thumb_top,
+            });
+        } else {
+            let new_offset = scrollbar::offset_from_track_click(local_y, range, metrics);
+            self.apply_command_palette_scroll_offset(new_offset, range.max_offset);
+            self.command_palette_scrollbar_drag = Some(TerminalScrollbarDragState {
+                thumb_grab_offset: metrics.thumb_height * 0.5,
+            });
+        }
+        self.notify_overlay(cx);
+    }
+
+    pub(super) fn handle_command_palette_scrollbar_drag(
+        &mut self,
+        window_y: f32,
+        viewport_height: f32,
+        item_count: usize,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(drag) = self.command_palette_scrollbar_drag else {
+            return;
+        };
+        let Some(bounds) = self.command_palette_scrollbar_lane_bounds else {
+            return;
+        };
+        let lane_top: f32 = bounds.top().into();
+        let local_y = window_y - lane_top;
+        let range = self.command_palette_scrollbar_range(viewport_height, item_count);
+        let Some(metrics) =
+            scrollbar::compute_metrics(range, COMMAND_PALETTE_SCROLLBAR_MIN_THUMB_HEIGHT)
+        else {
+            return;
+        };
+        let target_thumb_top = (local_y - drag.thumb_grab_offset).clamp(0.0, metrics.travel);
+        let new_offset = scrollbar::offset_from_thumb_top(target_thumb_top, range, metrics);
+        self.apply_command_palette_scroll_offset(new_offset, range.max_offset);
+        self.notify_overlay(cx);
+    }
+
+    pub(super) fn finish_command_palette_scrollbar_drag(&mut self) -> bool {
+        self.command_palette_scrollbar_drag.take().is_some()
+    }
+
     fn command_palette_scrollbar_metrics(
         &self,
         viewport_height: f32,
@@ -77,7 +169,9 @@ impl TerminalView {
                 | CommandPaletteItemKind::TaskOpenSaveCurrentCommandGlobalMode
                 | CommandPaletteItemKind::TaskOpenSaveCurrentCommandLayoutMode { .. }
                 | CommandPaletteItemKind::TaskCreate { .. }
-                | CommandPaletteItemKind::Task { .. } => None,
+                | CommandPaletteItemKind::Task { .. }
+                | CommandPaletteItemKind::AppInfoEntry { .. }
+                | CommandPaletteItemKind::AppInfoCopyAll { .. } => None,
             };
             let title = item.title.clone();
             let status_hint = item.status_hint;
@@ -91,23 +185,24 @@ impl TerminalView {
             } else {
                 style.muted_text
             };
-            let agent_avatar: Option<AnyElement> = None;
+            let icon_path = palette_item_icon_path(&item);
+            let icon_tint = if is_selected {
+                style.primary_text
+            } else if is_enabled {
+                style.muted_text
+            } else {
+                style.muted_text
+            };
 
             rows.push(
                 div()
                     .id(("command-palette-item", index))
                     .w_full()
                     .h(px(COMMAND_PALETTE_ROW_HEIGHT))
-                    .px(px(10.0))
+                    .px(px(COMMAND_PALETTE_ROW_PADDING_X))
                     .rounded(px(COMMAND_PALETTE_ROW_RADIUS))
                     .bg(if is_selected {
                         style.selected_bg
-                    } else {
-                        transparent
-                    })
-                    .border_1()
-                    .border_color(if is_selected {
-                        style.selected_border
                     } else {
                         transparent
                     })
@@ -124,7 +219,7 @@ impl TerminalView {
                             cx.stop_propagation();
                         }),
                     )
-                    .text_size(px(12.0))
+                    .text_size(px(13.0))
                     .text_color(text_color)
                     .child(
                         div()
@@ -132,15 +227,20 @@ impl TerminalView {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .gap(px(8.0))
+                            .gap(px(10.0))
                             .child(
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap(px(8.0))
+                                    .gap(px(12.0))
                                     .flex_1()
                                     .min_w(px(0.0))
-                                    .children(agent_avatar)
+                                    .child(
+                                        gpui::svg()
+                                            .path(gpui::SharedString::from(icon_path))
+                                            .size(px(COMMAND_PALETTE_ROW_ICON_SIZE))
+                                            .text_color(icon_tint),
+                                    )
                                     .child(div().flex_1().truncate().child(title)),
                             )
                             .child(
@@ -212,17 +312,18 @@ impl TerminalView {
             },
             CommandPaletteMode::Tasks => match self.current_named_layout.as_deref() {
                 Some(layout_name) if self.command_palette.task_intent() == TaskIntent::Browse => {
-                    format!("Tasks: {}", layout_name)
+                    format!("Tasks: {layout_name}")
                 }
                 _ => match self.command_palette.task_intent() {
                     TaskIntent::Browse => "Tasks".to_string(),
                     TaskIntent::CreateGlobalInput => "Tasks: New".to_string(),
                     TaskIntent::CreateLayoutInput => match self.current_named_layout.as_deref() {
-                        Some(layout_name) => format!("Tasks: New for {}", layout_name),
+                        Some(layout_name) => format!("Tasks: New for {layout_name}"),
                         None => "Tasks: New".to_string(),
                     },
                 },
             },
+            CommandPaletteMode::AppInfo => "App Info".to_string(),
         };
         let footer_hint = match self.command_palette.mode() {
             CommandPaletteMode::Commands => "Enter: Run  Esc: Close  Up/Down: Navigate",
@@ -258,6 +359,7 @@ impl TerminalView {
                     "Format: name: command  Enter: Save Task  Esc: Back"
                 }
             },
+            CommandPaletteMode::AppInfo => "Enter: Copy  Esc: Back  Up/Down: Navigate",
         };
         let style = CommandPaletteStyle::resolve(self);
         let input_font = Font {
@@ -320,6 +422,7 @@ impl TerminalView {
                 .child(list);
 
             if let Some(metrics) = self.command_palette_scrollbar_metrics(list_height, item_count) {
+                let drag_active = self.command_palette_scrollbar_drag.is_some();
                 let paint_style = ScrollbarPaintStyle {
                     width: COMMAND_PALETTE_SCROLLBAR_WIDTH,
                     track_radius: 4.0,
@@ -333,27 +436,146 @@ impl TerminalView {
                     marker_color: None,
                     current_marker_color: None,
                 };
+                let bounds_entity = cx.entity().clone();
                 list_container = list_container.child(
                     div()
+                        .id("command-palette-scrollbar-lane")
                         .w(px(COMMAND_PALETTE_SCROLLBAR_WIDTH + 4.0))
-                        .h_full()
+                        .h(px(list_height))
                         .pl(px(2.0))
                         .pr(px(2.0))
+                        .cursor_pointer()
+                        .child(
+                            gpui::canvas(
+                                move |bounds, _, cx| {
+                                    bounds_entity.update(cx, |view, _| {
+                                        view.command_palette_scrollbar_lane_bounds = Some(bounds);
+                                    });
+                                },
+                                |_, _, _, _| {},
+                            )
+                            .absolute()
+                            .size_full(),
+                        )
                         .child(scrollbar::render_vertical(
                             "command-palette-scrollbar",
                             metrics,
                             paint_style,
-                            false,
+                            drag_active,
                             &[],
                             None,
                             0.0,
-                        )),
+                        ))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
+                                cx.stop_propagation();
+                                let y: f32 = event.position.y.into();
+                                this.handle_command_palette_scrollbar_mouse_down(
+                                    y,
+                                    list_height,
+                                    item_count,
+                                    cx,
+                                );
+                            }),
+                        ),
                 );
             }
 
             list_container.into_any_element()
         };
 
+        let scrim_color = gpui::Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: COMMAND_PALETTE_SCRIM_ALPHA,
+        };
+        let mut divider = style.muted_text;
+        divider.a = COMMAND_PALETTE_DIVIDER_ALPHA;
+
+        let mode_chip: Option<AnyElement> = if matches!(
+            self.command_palette.mode(),
+            CommandPaletteMode::Commands
+        ) {
+            None
+        } else {
+            Some(
+                div()
+                    .flex_none()
+                    .h(px(22.0))
+                    .px(px(8.0))
+                    .rounded(px(COMMAND_PALETTE_SHORTCUT_RADIUS))
+                    .bg(style.shortcut_bg)
+                    .border_1()
+                    .border_color(style.shortcut_border)
+                    .text_size(px(10.0))
+                    .text_color(style.muted_text)
+                    .flex()
+                    .items_center()
+                    .child(mode_title.clone())
+                    .into_any_element(),
+            )
+        };
+
+        let input_head = div()
+            .id("command-palette-input")
+            .w_full()
+            .h(px(COMMAND_PALETTE_INPUT_HEAD_HEIGHT))
+            .px(px(COMMAND_PALETTE_ROW_PADDING_X + 4.0))
+            .flex()
+            .items_center()
+            .gap(px(12.0))
+            .child(
+                gpui::svg()
+                    .path(gpui::SharedString::from("icons/settings/search.svg"))
+                    .size(px(18.0))
+                    .text_color(style.muted_text),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .h(px(22.0))
+                    .relative()
+                    .child(self.render_inline_input_layer(
+                        input_font,
+                        px(COMMAND_PALETTE_INPUT_TEXT_SIZE),
+                        style.primary_text.into(),
+                        style.input_selection.into(),
+                        InlineInputAlignment::Left,
+                        cx,
+                    )),
+            )
+            .children(mode_chip);
+
+        let panel = div()
+            .id("command-palette-panel")
+            .w(px(COMMAND_PALETTE_WIDTH))
+            .rounded(px(COMMAND_PALETTE_PANEL_RADIUS))
+            .bg(style.panel_bg)
+            .border_1()
+            .border_color(style.panel_border)
+            .overflow_hidden()
+            .flex()
+            .flex_col()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
+            .child(input_head)
+            .child(div().h(px(1.0)).w_full().bg(divider))
+            .child(div().w_full().px(px(6.0)).py(px(6.0)).child(list));
+
+        let footer = div()
+            .pt(px(10.0))
+            .text_size(px(11.0))
+            .text_color(style.muted_text)
+            .child(footer_hint);
+
+        let scrollbar_drag_active = self.command_palette_scrollbar_drag.is_some();
         div()
             .id("command-palette-modal")
             .size_full()
@@ -361,6 +583,7 @@ impl TerminalView {
             .top_0()
             .left_0()
             .occlude()
+            .bg(scrim_color)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _event, _window, cx| {
@@ -368,6 +591,31 @@ impl TerminalView {
                     cx.stop_propagation();
                 }),
             )
+            .when(scrollbar_drag_active, |s| {
+                s.on_mouse_move(cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
+                    if !event.dragging() {
+                        return;
+                    }
+                    let y: f32 = event.position.y.into();
+                    this.handle_command_palette_scrollbar_drag(y, list_height, item_count, cx);
+                }))
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
+                        if this.finish_command_palette_scrollbar_drag() {
+                            this.notify_overlay(cx);
+                        }
+                    }),
+                )
+                .on_mouse_up_out(
+                    MouseButton::Left,
+                    cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
+                        if this.finish_command_palette_scrollbar_drag() {
+                            this.notify_overlay(cx);
+                        }
+                    }),
+                )
+            })
             .child(
                 div()
                     .size_full()
@@ -377,63 +625,14 @@ impl TerminalView {
                     .flex()
                     .flex_col()
                     .items_center()
-                    .pt(px(36.0))
+                    .pt(px(COMMAND_PALETTE_TOP_OFFSET))
                     .child(
                         div()
-                            .id("command-palette-panel")
-                            .w(px(COMMAND_PALETTE_WIDTH))
-                            .px(px(10.0))
-                            .py(px(10.0))
-                            .rounded(px(COMMAND_PALETTE_PANEL_RADIUS))
-                            .bg(style.panel_bg)
-                            .border_1()
-                            .border_color(style.panel_border)
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|_this, _event, _window, cx| {
-                                    cx.stop_propagation();
-                                }),
-                            )
-                            .child(
-                                div()
-                                    .w_full()
-                                    .pb(px(6.0))
-                                    .text_size(px(11.0))
-                                    .text_color(style.muted_text)
-                                    .child(mode_title),
-                            )
-                            .child(
-                                div()
-                                    .id("command-palette-input")
-                                    .w_full()
-                                    .h(px(34.0))
-                                    .px(px(10.0))
-                                    .py(px(8.0))
-                                    .relative()
-                                    .rounded(px(COMMAND_PALETTE_INPUT_RADIUS))
-                                    .bg(style.input_bg)
-                                    .border_1()
-                                    .border_color(style.panel_border)
-                                    .child(div().w_full().h_full().relative().child(
-                                        self.render_inline_input_layer(
-                                            input_font.clone(),
-                                            px(13.0),
-                                            style.primary_text.into(),
-                                            style.input_selection.into(),
-                                            InlineInputAlignment::Left,
-                                            cx,
-                                        ),
-                                    )),
-                            )
-                            .child(div().h(px(8.0)))
-                            .child(list)
-                            .child(
-                                div()
-                                    .pt(px(8.0))
-                                    .text_size(px(11.0))
-                                    .text_color(style.muted_text)
-                                    .child(footer_hint),
-                            ),
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .child(panel)
+                            .child(footer),
                     ),
             )
             .into_any()

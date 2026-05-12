@@ -109,7 +109,6 @@ impl TerminalView {
 
         if action == termy_native_sdk::ContextMenuAction::CopyBufferPosition {
             self.execute_terminal_context_menu_copy_buffer_position(cx);
-            return;
         }
     }
 

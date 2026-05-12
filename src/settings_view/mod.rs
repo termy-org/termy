@@ -8,7 +8,7 @@ use gpui::{
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit,
     ParentElement, Pixels, Render, Rgba, ScrollAnchor, ScrollHandle, ScrollWheelEvent,
     SharedString, StatefulInteractiveElement, Styled, StyledImage, TextAlign, WeakEntity, Window,
-    WindowBackgroundAppearance, canvas, deferred, div, img, point, prelude::FluentBuilder, px,
+    WindowBackgroundAppearance, canvas, deferred, div, img, point, prelude::FluentBuilder, px, svg,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -41,10 +41,12 @@ use self::search::SearchableSetting;
 use self::state::{ActiveTextInput, DropdownOption, EditableField};
 use input_mode::KeyInputMode;
 
-const SIDEBAR_WIDTH: f32 = 220.0;
+const SIDEBAR_WIDTH: f32 = 208.0;
+const SIDEBAR_ICON_SIZE: f32 = 18.0;
+const SIDEBAR_ITEM_HEIGHT: f32 = 30.0;
 const SETTINGS_CONTROL_WIDTH: f32 = 360.0;
-const SETTINGS_CONTROL_HEIGHT: f32 = 36.0;
-const NUMERIC_STEP_BUTTON_SIZE: f32 = 26.0;
+const SETTINGS_CONTROL_HEIGHT: f32 = 30.0;
+const NUMERIC_STEP_BUTTON_SIZE: f32 = 22.0;
 const SETTINGS_INPUT_TEXT_SIZE: f32 = 13.0;
 const SETTINGS_CONFIG_WATCH_INTERVAL_MS: u64 = 750;
 const SETTINGS_SEARCH_NAV_THROTTLE_MS: u64 = 70;
@@ -56,18 +58,26 @@ const SETTINGS_SCROLLBAR_TRACK_ALPHA: f32 = 0.10;
 const SETTINGS_SCROLLBAR_THUMB_ALPHA: f32 = 0.42;
 const SETTINGS_SCROLLBAR_THUMB_ACTIVE_ALPHA: f32 = 0.58;
 const SETTINGS_OVERLAY_PANEL_ALPHA_FLOOR_RATIO: f32 = 0.72;
-const SETTINGS_SWITCH_WIDTH: f32 = 48.0;
-const SETTINGS_SWITCH_HEIGHT: f32 = 26.0;
-const SETTINGS_SWITCH_KNOB_SIZE: f32 = 20.0;
+const SETTINGS_SWITCH_WIDTH: f32 = 36.0;
+const SETTINGS_SWITCH_HEIGHT: f32 = 20.0;
+const SETTINGS_SWITCH_KNOB_SIZE: f32 = 16.0;
 const SETTINGS_SEARCH_PREVIEW_LIMIT: usize = 6;
 const SETTINGS_SLIDER_VALUE_WIDTH: f32 = 60.0;
 const SETTINGS_OPACITY_STEP_RATIO: f32 = 0.05;
 const SETTINGS_CONTROL_INNER_PADDING: f32 = 8.0;
 const SETTINGS_OPACITY_CONTROL_GAP: f32 = 6.0;
-const SETTINGS_CARD_RADIUS: f32 = 8.0;
+const SETTINGS_CARD_RADIUS: f32 = 10.0;
 const SETTINGS_INPUT_RADIUS: f32 = 6.0;
 const SETTINGS_BUTTON_RADIUS: f32 = 6.0;
-const SETTINGS_SWITCH_RADIUS: f32 = 13.0;
+const SETTINGS_SWITCH_RADIUS: f32 = 10.0;
+const SECTION_TITLE_SIZE: f32 = 22.0;
+const SECTION_SUBTITLE_SIZE: f32 = 13.0;
+const GROUP_TITLE_SIZE: f32 = 12.0;
+const CARD_GAP: f32 = 22.0;
+const CARD_ROW_PADDING_X: f32 = 14.0;
+const CARD_ROW_PADDING_Y: f32 = 9.0;
+const CONTENT_GUTTER_X: f32 = 28.0;
+const CONTENT_GUTTER_Y: f32 = 20.0;
 static NEXT_BACKGROUND_OPACITY_PREVIEW_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum SettingsSection {
@@ -84,6 +94,11 @@ pub(crate) enum SettingsSection {
 struct BackgroundOpacityDragState {
     start_local_x: f32,
     start_ratio: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ScrollbarDragState {
+    thumb_grab_offset: f32,
 }
 
 pub struct SettingsWindow {
@@ -114,6 +129,10 @@ pub struct SettingsWindow {
     preview_background_opacity: Option<config::BackgroundOpacityPreview>,
     background_opacity_drag_state: Option<BackgroundOpacityDragState>,
     background_opacity_slider_bounds: Option<Bounds<Pixels>>,
+    scrollbar_drag_state: Option<ScrollbarDragState>,
+    scrollbar_lane_bounds: Option<Bounds<Pixels>>,
+    hovered_reset_setting: Option<&'static str>,
+    hovered_reset_section: Option<SettingsSection>,
     scroll_animation_token: u64,
     colors: TerminalColors,
     last_window_background_appearance: Option<WindowBackgroundAppearance>,
@@ -182,6 +201,10 @@ impl SettingsWindow {
             preview_background_opacity: config::current_background_opacity_preview(),
             background_opacity_drag_state: None,
             background_opacity_slider_bounds: None,
+            scrollbar_drag_state: None,
+            scrollbar_lane_bounds: None,
+            hovered_reset_setting: None,
+            hovered_reset_section: None,
             scroll_animation_token: 0,
             colors,
             last_window_background_appearance: None,
@@ -344,7 +367,7 @@ impl SettingsWindow {
                             if let Err(error) = theme_store::persist_installed_theme_versions(
                                 &view.theme_store_installed_versions,
                             ) {
-                                log::error!("Failed to persist installed theme state: {}", error);
+                                log::error!("Failed to persist installed theme state: {error}");
                             }
                             let _ = view.reload_config_if_changed(cx);
                         }
@@ -394,7 +417,7 @@ impl SettingsWindow {
                 self.theme_store_installed_versions.remove(&key);
                 if self.config.theme.eq_ignore_ascii_case(&key) {
                     if let Err(error) = config::set_theme_in_config(config::SHELL_DECIDE_THEME_ID) {
-                        log::error!("Failed to reset theme during uninstall: {}", error);
+                        log::error!("Failed to reset theme during uninstall: {error}");
                         termy_toast::error("Failed to reset selected theme");
                         return;
                     }
@@ -405,12 +428,10 @@ impl SettingsWindow {
             }
             Ok(false) => {
                 termy_toast::info("Theme is not installed");
-                return;
             }
             Err(error) => {
-                log::error!("Failed to uninstall theme: {}", error);
+                log::error!("Failed to uninstall theme: {error}");
                 termy_toast::error(error);
-                return;
             }
         }
     }
@@ -456,7 +477,7 @@ impl SettingsWindow {
                             termy_toast::success("Logged out from theme store");
                         }
                         Err(error) => {
-                            log::error!("Failed to logout from theme store: {}", error);
+                            log::error!("Failed to logout from theme store: {error}");
                             view.theme_store_auth_error = Some(error.clone());
                             termy_toast::error(error);
                         }
@@ -479,8 +500,7 @@ impl SettingsWindow {
         user.github_login
             .chars()
             .next()
-            .map(|ch| ch.to_ascii_uppercase().to_string())
-            .unwrap_or_else(|| "?".to_string())
+            .map_or_else(|| "?".to_string(), |ch| ch.to_ascii_uppercase().to_string())
     }
 
     pub(super) fn open_url(url: &str) -> Result<(), String> {
@@ -582,21 +602,18 @@ impl SettingsWindow {
     }
 
     fn reload_config_if_changed(&mut self, _cx: &mut Context<Self>) -> bool {
-        let path = match self.config_path.clone() {
-            Some(path) => path,
-            None => {
-                let loaded = config::load_runtime_config(
-                    &mut self.last_config_error_message,
-                    "Failed to reload config for settings view",
-                );
-                self.config_path = loaded.path;
-                self.config_fingerprint = loaded.fingerprint;
-                return if loaded.loaded_from_disk {
-                    self.apply_runtime_config(loaded.config)
-                } else {
-                    false
-                };
-            }
+        let Some(path) = self.config_path.clone() else {
+            let loaded = config::load_runtime_config(
+                &mut self.last_config_error_message,
+                "Failed to reload config for settings view",
+            );
+            self.config_path = loaded.path;
+            self.config_fingerprint = loaded.fingerprint;
+            return if loaded.loaded_from_disk {
+                self.apply_runtime_config(loaded.config)
+            } else {
+                false
+            };
         };
 
         let Some(fingerprint) = config::config_fingerprint(&path) else {
@@ -917,7 +934,7 @@ impl TextInputProvider for SettingsWindow {
             .as_ref()
             .and_then(|input| Self::uses_text_input_for_field(input.field).then_some(&input.state));
 
-        settings_input.or_else(|| {
+        settings_input.or({
             if self.sidebar_search_active {
                 Some(&self.sidebar_search_state)
             } else if self.theme_store_search_active {
@@ -1054,8 +1071,11 @@ impl Render for SettingsWindow {
         self.sync_window_background_appearance(window);
         let bg = self.bg_primary();
         let settings_scrollbar_metrics = self.settings_scrollbar_metrics(window);
+        let scrollbar_thumb_active = self.scrollbar_drag_state.is_some();
         let settings_scrollbar_lane = {
+            let bounds_entity = cx.entity();
             div()
+                .id("settings-scrollbar-lane")
                 .flex_none()
                 .w(px(SETTINGS_SCROLLBAR_WIDTH + 4.0))
                 .min_w(px(SETTINGS_SCROLLBAR_WIDTH + 4.0))
@@ -1063,17 +1083,38 @@ impl Render for SettingsWindow {
                 .h_full()
                 .pl(px(2.0))
                 .pr(px(2.0))
+                .cursor_pointer()
+                .child(
+                    canvas(
+                        move |bounds, _, cx| {
+                            bounds_entity.update(cx, |view, _| {
+                                view.scrollbar_lane_bounds = Some(bounds);
+                            });
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full(),
+                )
                 .when_some(settings_scrollbar_metrics, |s, metrics| {
                     s.child(ui_scrollbar::render_vertical(
                         "settings-content-scrollbar",
                         metrics,
                         self.settings_scrollbar_style(),
-                        false,
+                        scrollbar_thumb_active,
                         &[],
                         None,
                         0.0,
                     ))
                 })
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|view, event: &MouseDownEvent, window, cx| {
+                        cx.stop_propagation();
+                        let y: f32 = event.position.y.into();
+                        view.handle_scrollbar_mouse_down(y, window, cx);
+                    }),
+                )
         };
         div()
             .id("settings-root")
@@ -1125,6 +1166,31 @@ impl Render for SettingsWindow {
                     }),
                 )
             })
+            .when(self.scrollbar_drag_state.is_some(), |s| {
+                s.on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+                    if !event.dragging() {
+                        return;
+                    }
+                    let y: f32 = event.position.y.into();
+                    view.handle_scrollbar_drag(y, window, cx);
+                }))
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
+                        if view.finish_scrollbar_drag() {
+                            cx.notify();
+                        }
+                    }),
+                )
+                .on_mouse_up_out(
+                    MouseButton::Left,
+                    cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
+                        if view.finish_scrollbar_drag() {
+                            cx.notify();
+                        }
+                    }),
+                )
+            })
             .flex()
             .size_full()
             .bg(bg)
@@ -1148,7 +1214,8 @@ impl Render for SettingsWindow {
                             .overflow_y_scroll()
                             .track_scroll(&self.content_scroll_handle)
                             .overflow_x_hidden()
-                            .p_6()
+                            .px(px(CONTENT_GUTTER_X))
+                            .py(px(CONTENT_GUTTER_Y))
                             .child(self.render_content(cx)),
                     )
                     .child(settings_scrollbar_lane),

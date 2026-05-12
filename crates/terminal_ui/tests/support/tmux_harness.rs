@@ -66,10 +66,7 @@ exec tmux -f /dev/null \"${args[@]}\"\n";
 
 pub(crate) fn tmux_preflight(binary: &str) {
     TmuxClient::verify_tmux_version(binary, 3, 3).unwrap_or_else(|error| {
-        panic!(
-            "tmux integration preflight failed for binary '{}': {error}",
-            binary
-        )
+        panic!("tmux integration preflight failed for binary '{binary}': {error}")
     });
 }
 
@@ -105,8 +102,7 @@ impl IsolatedTmuxEnvGuard {
 
         let now_ns = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or(0);
+            .map_or(0, |duration| duration.as_nanos());
         let sequence = TMUX_TMPDIR_COUNTER.fetch_add(1, Ordering::Relaxed);
         let unique_suffix = format!("{}-{now_ns}-{sequence}", process::id());
         let tmux_tmpdir = PathBuf::from("/tmp").join(format!("ttmx-{unique_suffix}"));
