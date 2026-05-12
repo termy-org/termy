@@ -255,6 +255,159 @@ impl OnboardingWindow {
             .into_any_element()
     }
 
+    pub(super) fn render_import_source_card(
+        &self,
+        source: &DetectedSource,
+        is_selected: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let kind = source.kind;
+        let importable = source.importable();
+        let card_bg = if is_selected {
+            self.accent_with_alpha(0.10)
+        } else {
+            self.bg_card()
+        };
+        let border = if is_selected {
+            self.accent_with_alpha(0.85)
+        } else {
+            self.border_color()
+        };
+        let hover_bg = self.bg_card_hover();
+        let title_color = if importable {
+            self.text_primary()
+        } else {
+            self.text_muted()
+        };
+        let muted = self.text_muted();
+        let accent = self.accent();
+
+        let mut chips = div().flex().gap_2().items_center();
+        chips = chips.child(self.render_status_chip(
+            "App installed",
+            source.app_installed,
+            accent,
+            muted,
+        ));
+        chips = chips.child(self.render_status_chip(
+            "Config found",
+            source.config_path.is_some(),
+            accent,
+            muted,
+        ));
+
+        let hint_text: Option<SharedString> = if let Some(hint) = source.status_hint.clone() {
+            Some(SharedString::from(hint))
+        } else if !importable {
+            Some(SharedString::from("No config file detected"))
+        } else if let Some(path) = source.config_path.as_ref() {
+            Some(SharedString::from(path.display().to_string()))
+        } else {
+            None
+        };
+
+        let icon_element: Option<AnyElement> = source.icon_path.as_ref().map(|path| {
+            img(Path::new(path.as_path()))
+                .w(px(32.0))
+                .h(px(32.0))
+                .object_fit(ObjectFit::Contain)
+                .into_any_element()
+        });
+
+        let mut title_row = div()
+            .flex()
+            .items_center()
+            .gap_3();
+        if let Some(icon) = icon_element {
+            title_row = title_row.child(icon);
+        }
+        title_row = title_row
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .text_base()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(SharedString::from(kind.display_name())),
+            )
+            .child(chips);
+
+        let mut card = div()
+            .id(SharedString::from(format!(
+                "onboarding-import-{}",
+                kind.slug()
+            )))
+            .flex()
+            .flex_col()
+            .gap_2()
+            .p_4()
+            .w(px(300.0))
+            .min_h(px(116.0))
+            .rounded(px(10.0))
+            .bg(card_bg)
+            .border_1()
+            .border_color(border)
+            .text_color(title_color)
+            .child(title_row);
+
+        if let Some(text) = hint_text {
+            card = card.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(text),
+            );
+        }
+
+        if importable {
+            card = card
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover_bg))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
+                        cx.stop_propagation();
+                        view.select_import_source(kind, cx);
+                    }),
+                );
+        } else {
+            card = card.opacity(0.55);
+        }
+
+        card.into_any_element()
+    }
+
+    fn render_status_chip(
+        &self,
+        label: &'static str,
+        active: bool,
+        accent: Rgba,
+        muted: Rgba,
+    ) -> AnyElement {
+        let (bg, color) = if active {
+            let mut bg = accent;
+            bg.a = 0.18;
+            (bg, accent)
+        } else {
+            let mut bg = muted;
+            bg.a = 0.10;
+            (bg, muted)
+        };
+        let prefix = if active { "✓" } else { "·" };
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .px_2()
+            .py_1()
+            .rounded(px(999.0))
+            .bg(bg)
+            .text_xs()
+            .text_color(color)
+            .child(SharedString::from(format!("{prefix} {label}")))
+            .into_any_element()
+    }
+
     pub(super) fn render_theme_card(
         &self,
         theme: &ThemeStoreTheme,

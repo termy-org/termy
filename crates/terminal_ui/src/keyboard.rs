@@ -61,10 +61,21 @@ pub fn keystroke_to_input(
     keyboard_mode: TerminalKeyboardMode,
     prompt_shortcuts_enabled: bool,
 ) -> Option<Vec<u8>> {
+    // "Natural text editing" shortcuts (cmd/alt+arrows, cmd+backspace, etc.) send
+    // legacy bytes (Ctrl-U, ESC b, ...) even when the kitty keyboard protocol is
+    // active, so they keep working in TUIs that opted into enhanced reporting.
+    if matches!(
+        event_kind,
+        TerminalKeyEventKind::Press | TerminalKeyEventKind::Repeat
+    ) && let Some(input) = modified_special_keystroke_input(keystroke, prompt_shortcuts_enabled)
+    {
+        return Some(input.to_vec());
+    }
+
     if !keyboard_mode.enhanced_reporting_active() {
         return match event_kind {
             TerminalKeyEventKind::Press | TerminalKeyEventKind::Repeat => {
-                basic_keystroke_to_input(keystroke, keyboard_mode, prompt_shortcuts_enabled, true)
+                basic_keystroke_to_input(keystroke, keyboard_mode)
             }
             TerminalKeyEventKind::Release => None,
         };
@@ -72,7 +83,7 @@ pub fn keystroke_to_input(
 
     enhanced_keystroke_to_input(keystroke, event_kind, keyboard_mode).or_else(|| match event_kind {
         TerminalKeyEventKind::Press | TerminalKeyEventKind::Repeat => {
-            basic_keystroke_to_input(keystroke, keyboard_mode, prompt_shortcuts_enabled, false)
+            basic_keystroke_to_input(keystroke, keyboard_mode)
         }
         TerminalKeyEventKind::Release => None,
     })
@@ -110,16 +121,7 @@ fn modifiers_are_empty(modifiers: Modifiers) -> bool {
 fn basic_keystroke_to_input(
     keystroke: &Keystroke,
     keyboard_mode: TerminalKeyboardMode,
-    prompt_shortcuts_enabled: bool,
-    allow_prompt_shortcuts: bool,
 ) -> Option<Vec<u8>> {
-    if allow_prompt_shortcuts
-        && let Some(modified_input) =
-            modified_special_keystroke_input(keystroke, prompt_shortcuts_enabled)
-    {
-        return Some(modified_input.to_vec());
-    }
-
     let key = keystroke.key.as_str();
     let modifiers = keystroke.modifiers;
 
@@ -446,7 +448,8 @@ fn modified_special_keystroke_input(
             return match key {
                 "left" | "home" => Some(b"\x01"),
                 "right" | "end" => Some(b"\x05"),
-                "backspace" | "delete" => Some(b"\x15"),
+                "backspace" => Some(b"\x15"),
+                "delete" => Some(b"\x0b"),
                 _ => None,
             };
         }
@@ -909,8 +912,37 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
-    fn enhanced_mode_suppresses_prompt_shortcuts() {
+    fn enhanced_mode_preserves_natural_editing_shortcuts() {
+        let modifiers = Modifiers {
+            platform: true,
+            ..Modifiers::default()
+        };
+
+        assert_eq!(
+            keystroke_to_input(
+                &keystroke("left", None, modifiers),
+                TerminalKeyEventKind::Press,
+                disambiguate_mode(),
+                true,
+            ),
+            Some(b"\x01".to_vec())
+        );
+        assert_eq!(
+            keystroke_to_input(
+                &keystroke("backspace", None, modifiers),
+                TerminalKeyEventKind::Press,
+                disambiguate_mode(),
+                true,
+            ),
+            Some(b"\x15".to_vec())
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn enhanced_mode_does_not_remap_platform_modifier() {
         let modifiers = Modifiers {
             platform: true,
             ..Modifiers::default()

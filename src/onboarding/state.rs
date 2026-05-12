@@ -1,8 +1,12 @@
 use super::*;
+use crate::onboarding::import::{
+    self, DetectedSource, ImportSourceKind, ImportedConfig, detect_sources,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Step {
     Welcome,
+    Import,
     Theme,
     Settings,
     Done,
@@ -12,14 +16,15 @@ impl Step {
     pub(super) fn index(self) -> usize {
         match self {
             Self::Welcome => 0,
-            Self::Theme => 1,
-            Self::Settings => 2,
-            Self::Done => 3,
+            Self::Import => 1,
+            Self::Theme => 2,
+            Self::Settings => 3,
+            Self::Done => 4,
         }
     }
 
     pub(super) fn total() -> usize {
-        4
+        5
     }
 }
 
@@ -173,12 +178,168 @@ impl OnboardingWindow {
 
     pub(super) fn next_step(&mut self, cx: &mut Context<Self>) {
         let next = match self.step {
-            Step::Welcome => Step::Theme,
+            Step::Welcome => Step::Import,
+            Step::Import => Step::Theme,
             Step::Theme => Step::Settings,
             Step::Settings => Step::Done,
             Step::Done => Step::Done,
         };
         self.go_to(next, cx);
+    }
+
+    pub(super) fn ensure_import_sources(&mut self, cx: &mut Context<Self>) {
+        if self.import_detected {
+            return;
+        }
+        self.import_detected = true;
+        let sources = detect_sources();
+        self.import_sources = sources;
+        cx.notify();
+    }
+
+    pub(super) fn select_import_source(
+        &mut self,
+        kind: ImportSourceKind,
+        cx: &mut Context<Self>,
+    ) {
+        let importable = self
+            .import_sources
+            .iter()
+            .find(|source| source.kind == kind)
+            .map(DetectedSource::importable)
+            .unwrap_or(false);
+        if !importable {
+            return;
+        }
+        self.selected_source = Some(kind);
+        cx.notify();
+    }
+
+    pub(super) fn run_selected_import(&mut self, cx: &mut Context<Self>) {
+        let Some(kind) = self.selected_source else {
+            self.next_step(cx);
+            return;
+        };
+        let Some(source) = self
+            .import_sources
+            .iter()
+            .find(|source| source.kind == kind)
+            .cloned()
+        else {
+            return;
+        };
+        if !source.importable() || self.importing {
+            return;
+        }
+        self.importing = true;
+        self.import_error = None;
+        cx.notify();
+
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let result = smol::unblock(move || import::run_import(&source)).await;
+            let _ = cx.update(|cx| {
+                let _ = this.update(cx, |view, cx| {
+                    view.importing = false;
+                    match result {
+                        Ok(imported) => view.apply_imported_config(imported, cx),
+                        Err(error) => {
+                            log::error!("Onboarding import failed: {error}");
+                            view.import_error = Some(error.clone());
+                            termy_toast::error(error);
+                        }
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    fn apply_imported_config(&mut self, imported: ImportedConfig, cx: &mut Context<Self>) {
+        let mut applied_settings = 0usize;
+        let mut errors: Vec<String> = Vec::new();
+        let mut applied_font_size: Option<f32> = None;
+        let mut applied_cursor_blink: Option<bool> = None;
+        let mut applied_opacity: Option<f32> = None;
+
+        for (id, value) in imported.settings.iter() {
+            match crate::config::set_root_setting(*id, value) {
+                Ok(()) => {
+                    applied_settings += 1;
+                    match id {
+                        RootSettingId::FontSize => {
+                            if let Ok(size) = value.parse::<f32>() {
+                                applied_font_size = Some(size);
+                            }
+                        }
+                        RootSettingId::CursorBlink => {
+                            applied_cursor_blink = Some(value == "true");
+                        }
+                        RootSettingId::BackgroundOpacity => {
+                            if let Ok(opacity) = value.parse::<f32>() {
+                                applied_opacity = Some(opacity);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Err(error) => errors.push(error),
+            }
+        }
+
+        if let Some(size) = applied_font_size {
+            self.font_choice = match size {
+                s if s <= 12.5 => FontChoice::Compact,
+                s if s <= 14.5 => FontChoice::Default,
+                s if s <= 16.5 => FontChoice::Comfortable,
+                _ => FontChoice::Large,
+            };
+        }
+        if let Some(blink) = applied_cursor_blink {
+            self.cursor_choice = if blink {
+                CursorChoice::Blink
+            } else {
+                CursorChoice::Static
+            };
+        }
+        if let Some(opacity) = applied_opacity {
+            self.background_opacity = opacity;
+        }
+
+        let mut installed_theme_name: Option<String> = None;
+        if let Some(colors) = imported.theme.as_ref() {
+            let slug = format!("imported-{}", imported.source.slug());
+            let display = format!("Imported from {}", imported.source.display_name());
+            match crate::theme_store::install_local_theme_blocking(&slug, &display, colors) {
+                Ok(installed) => {
+                    self.installed_theme_slug = Some(installed.slug);
+                    installed_theme_name = Some(display);
+                }
+                Err(error) => errors.push(error),
+            }
+        }
+
+        for error in &errors {
+            log::error!("Import application error: {error}");
+        }
+        for warning in &imported.warnings {
+            log::warn!("Import warning ({}): {warning}", imported.source.display_name());
+        }
+
+        let mut summary = format!("Imported from {}", imported.source.display_name());
+        if applied_settings > 0 || installed_theme_name.is_some() {
+            summary.push_str(&format!(
+                " — {} setting{} applied",
+                applied_settings,
+                if applied_settings == 1 { "" } else { "s" }
+            ));
+            if installed_theme_name.is_some() {
+                summary.push_str(" + theme");
+            }
+        }
+        termy_toast::success(summary);
+
+        self.go_to(Step::Done, cx);
     }
 
     pub(super) fn install_selected_theme(&mut self, cx: &mut Context<Self>) {
@@ -342,6 +503,13 @@ impl OnboardingWindow {
         if event.keystroke.key == "enter" {
             match self.step {
                 Step::Welcome => self.next_step(cx),
+                Step::Import => {
+                    if self.selected_source.is_some() {
+                        self.run_selected_import(cx);
+                    } else {
+                        self.next_step(cx);
+                    }
+                }
                 Step::Theme => {
                     if self.selected_theme_slug.is_some() {
                         self.install_selected_theme(cx);

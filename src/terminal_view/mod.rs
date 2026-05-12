@@ -1643,6 +1643,7 @@ pub struct TerminalView {
     cursor_style: AppCursorStyle,
     cursor_blink: bool,
     cursor_blink_visible: bool,
+    last_cursor_input_at: Option<Instant>,
     background_opacity: f32,
     chrome_contrast: bool,
     background_opacity_cells: bool,
@@ -3982,6 +3983,7 @@ impl TerminalView {
             cursor_style: config.cursor_style,
             cursor_blink: config.cursor_blink,
             cursor_blink_visible: true,
+            last_cursor_input_at: None,
             background_opacity: config.background_opacity,
             chrome_contrast: config.chrome_contrast,
             background_opacity_cells: config.background_opacity_cells,
@@ -4494,12 +4496,25 @@ impl TerminalView {
             return true;
         }
 
+        // Hold the cursor solid for one blink interval after the last keystroke
+        // so sustained typing doesn't fight the 530ms toggle. Matches xterm.
+        if let Some(t) = self.last_cursor_input_at
+            && t.elapsed() < Duration::from_millis(CURSOR_BLINK_INTERVAL_MS)
+        {
+            if !self.cursor_blink_visible {
+                self.cursor_blink_visible = true;
+                return true;
+            }
+            return false;
+        }
+
         self.cursor_blink_visible = !self.cursor_blink_visible;
         true
     }
 
     pub(super) fn reset_cursor_blink_phase(&mut self) {
         self.cursor_blink_visible = true;
+        self.last_cursor_input_at = Some(Instant::now());
     }
 
     pub(super) fn cursor_visible_for_focus(&self, focused: bool) -> bool {

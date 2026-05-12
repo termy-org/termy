@@ -5269,6 +5269,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
+name = "plist"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "092791278e026273c1b65bbdcfbba3a300f2994c896bd01ab01da613c29c46f1"
+dependencies = [
+ "base64",
+ "indexmap",
+ "quick-xml 0.39.4",
+ "serde",
+ "time",
+]
+
+[[package]]
 name = "png"
 version = "0.17.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5493,6 +5506,15 @@ name = "quick-xml"
 version = "0.38.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.39.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
 dependencies = [
  "memchr",
 ]
@@ -7352,7 +7374,7 @@ dependencies = [
 
 [[package]]
 name = "termy"
-version = "0.1.83"
+version = "0.1.84"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -7369,6 +7391,7 @@ dependencies = [
  "log",
  "objc",
  "parking_lot",
+ "plist",
  "raw-window-handle",
  "rfd",
  "serde",
@@ -7386,6 +7409,7 @@ dependencies = [
  "termy_terminal_ui",
  "termy_themes",
  "termy_toast",
+ "toml 0.8.23",
  "ureq",
  "url",
  "webbrowser",
@@ -7442,7 +7466,7 @@ dependencies = [
 
 [[package]]
 name = "termy_cli"
-version = "0.1.83"
+version = "0.1.84"
 dependencies = [
  "anyhow",
  "clap",
@@ -7612,6 +7636,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
 dependencies = [
  "deranged",
+ "itoa",
  "num-conv",
  "powerfmt",
  "serde_core",

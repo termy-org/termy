@@ -2,7 +2,8 @@ use crate::config;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use termy_themes::{
-    ThemeColors, ThemeRegistryIndex, normalize_theme_id, parse_theme_colors_json, registry_file_url,
+    ThemeColors, ThemeRegistryIndex, normalize_theme_id, parse_theme_colors_json,
+    registry_file_url, theme_colors_json_pretty,
 };
 
 const DEFAULT_THEME_STORE_API_URL: &str = "https://api.termy.run";
@@ -379,6 +380,35 @@ pub(crate) fn install_theme_from_store_blocking(
         slug: normalized_slug,
         version: installed_version,
         message: format!("Installed theme '{}'", theme.name),
+    })
+}
+
+pub(crate) fn install_local_theme_blocking(
+    slug: &str,
+    display_name: &str,
+    colors: &ThemeColors,
+) -> Result<InstalledTheme, String> {
+    let normalized_slug = normalize_slug(slug)?;
+    let contents = theme_colors_json_pretty(colors, Some("./theme.schema.json"))?;
+
+    let path = installed_theme_file_path(&normalized_slug)
+        .ok_or_else(|| "Config path unavailable".to_string())?;
+    let Some(parent) = path.parent() else {
+        return Err("Invalid installed theme path".to_string());
+    };
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("Failed to create installed theme directory: {error}"))?;
+    std::fs::write(&path, contents)
+        .map_err(|error| format!("Failed to write installed theme file: {error}"))?;
+
+    let mut installed_versions = load_installed_theme_versions();
+    installed_versions.insert(normalized_slug.clone(), String::new());
+    persist_installed_theme_versions(&installed_versions)?;
+
+    Ok(InstalledTheme {
+        slug: normalized_slug,
+        version: String::new(),
+        message: format!("Installed theme '{display_name}'"),
     })
 }
 

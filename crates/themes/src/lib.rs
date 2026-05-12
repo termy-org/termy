@@ -15,7 +15,7 @@ mod tomorrow_night;
 use std::sync::{OnceLock, RwLock};
 pub use termy_theme_core::{
     Rgb8, ThemeColors, ThemeRegistryEntry, ThemeRegistryIndex, normalize_theme_id,
-    parse_theme_colors_json, registry_file_url,
+    parse_theme_colors_json, registry_file_url, theme_colors_json_pretty,
 };
 
 pub trait ThemeProvider: Send + Sync {

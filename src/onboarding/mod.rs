@@ -16,10 +16,12 @@ use termy_config_core::RootSettingId;
 use termy_themes::{Rgb8, ThemeColors, parse_theme_colors_json};
 
 mod components;
+mod import;
 mod sections;
 mod state;
 mod style;
 
+use import::{DetectedSource, ImportSourceKind};
 use state::{CursorChoice, FontChoice, Step, TabsChoice};
 
 const ONBOARDING_WINDOW_WIDTH: f32 = 760.0;
@@ -92,6 +94,12 @@ pub struct OnboardingWindow {
     installing_theme: bool,
     installed_theme_slug: Option<String>,
 
+    import_sources: Vec<DetectedSource>,
+    import_detected: bool,
+    selected_source: Option<ImportSourceKind>,
+    importing: bool,
+    import_error: Option<String>,
+
     cursor_choice: CursorChoice,
     tabs_choice: TabsChoice,
     font_choice: FontChoice,
@@ -117,6 +125,11 @@ impl OnboardingWindow {
             selected_theme_slug: None,
             installing_theme: false,
             installed_theme_slug: None,
+            import_sources: Vec::new(),
+            import_detected: false,
+            selected_source: None,
+            importing: false,
+            import_error: None,
             cursor_choice: CursorChoice::Blink,
             tabs_choice: TabsChoice::Horizontal,
             font_choice: FontChoice::Default,
@@ -125,6 +138,7 @@ impl OnboardingWindow {
             finalizing: false,
         };
         view.kick_off_theme_fetch(cx);
+        view.ensure_import_sources(cx);
         view
     }
 }
@@ -132,8 +146,12 @@ impl OnboardingWindow {
 impl Render for OnboardingWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let bg = self.colors.background;
+        if self.step == Step::Import {
+            self.ensure_import_sources(cx);
+        }
         let body = match self.step {
             Step::Welcome => self.render_welcome(cx),
+            Step::Import => self.render_import(cx),
             Step::Theme => self.render_theme(cx),
             Step::Settings => self.render_settings(cx),
             Step::Done => self.render_done(cx),
@@ -223,8 +241,9 @@ mod tests {
     #[test]
     fn step_indices_cover_total() {
         assert_eq!(Step::Welcome.index(), 0);
-        assert_eq!(Step::Theme.index(), 1);
-        assert_eq!(Step::Settings.index(), 2);
+        assert_eq!(Step::Import.index(), 1);
+        assert_eq!(Step::Theme.index(), 2);
+        assert_eq!(Step::Settings.index(), 3);
         assert_eq!(Step::Done.index(), Step::total() - 1);
     }
 }

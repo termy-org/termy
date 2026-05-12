@@ -155,6 +155,40 @@ fn has_command(cmd: &str) -> bool {
         .is_ok_and(|s| s.success())
 }
 
+/// Read the system icon for any file or app bundle as PNG bytes.
+/// Returns `None` on non-macOS or if icon retrieval fails.
+///
+/// # Safety
+/// Must be called from the main thread.
+pub fn app_icon_png_for_path(path: &str, size_px: f64) -> Option<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSWorkspace};
+        use objc2_foundation::{NSDictionary, NSSize};
+
+        let _ = unsafe { MainThreadMarker::new_unchecked() };
+        let ns_path = NSString::from_str(path);
+        let workspace = unsafe { NSWorkspace::sharedWorkspace() };
+        let image = unsafe { workspace.iconForFile(&ns_path) };
+        unsafe {
+            image.setSize(NSSize::new(size_px, size_px));
+        }
+        let tiff_data = unsafe { image.TIFFRepresentation() }?;
+        let bitmap_rep = unsafe { NSBitmapImageRep::imageRepWithData(&tiff_data) }?;
+        let properties = NSDictionary::new();
+        let png_data = unsafe {
+            bitmap_rep.representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)
+        }?;
+        let bytes = unsafe { png_data.as_bytes_unchecked() };
+        Some(bytes.to_vec())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (path, size_px);
+        None
+    }
+}
+
 /// Set the macOS dock icon from PNG data. No-op on other platforms.
 /// Set the macOS dock icon from PNG data. No-op on other platforms.
 ///
