@@ -138,9 +138,7 @@ fn apply_bookmark_to_imported(bookmark: &plist::Dictionary, imported: &mut Impor
     if let Some(font) = bookmark.get("Normal Font").and_then(|v| v.as_string()) {
         let (family, size) = split_font(font);
         if !family.is_empty() {
-            imported
-                .settings
-                .push((RootSettingId::FontFamily, family));
+            imported.settings.push((RootSettingId::FontFamily, family));
         }
         if let Some(size) = size {
             imported
@@ -175,9 +173,9 @@ fn apply_bookmark_to_imported(bookmark: &plist::Dictionary, imported: &mut Impor
             _ => None,
         };
         if cursor_type == 0 {
-            imported.warnings.push(
-                "iTerm2 underline cursor has no Termy equivalent; using 'line'".into(),
-            );
+            imported
+                .warnings
+                .push("iTerm2 underline cursor has no Termy equivalent; using 'line'".into());
         }
         if let Some(style) = style {
             imported
@@ -257,11 +255,7 @@ fn parse_color_dict(value: Option<&Value>) -> Option<Rgb8> {
     let r = dict.get("Red Component").and_then(value_as_f64)?;
     let g = dict.get("Green Component").and_then(value_as_f64)?;
     let b = dict.get("Blue Component").and_then(value_as_f64)?;
-    Some(Rgb8::new(
-        float_to_rgb(r),
-        float_to_rgb(g),
-        float_to_rgb(b),
-    ))
+    Some(Rgb8::new(float_to_rgb(r), float_to_rgb(g), float_to_rgb(b)))
 }
 
 fn value_as_f64(value: &Value) -> Option<f64> {

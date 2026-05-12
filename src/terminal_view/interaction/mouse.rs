@@ -673,11 +673,11 @@ impl TerminalView {
         }
 
         let lines = if pointer_y < top {
-            // Pointer above viewport: scroll toward history (negative delta)
-            -((top - pointer_y).powf(1.1) / line_height).ceil() as i32
+            // Positive deltas move up into history.
+            ((top - pointer_y).powf(1.1) / line_height).ceil() as i32
         } else if pointer_y > bottom {
-            // Pointer below viewport: scroll toward bottom (positive delta)
-            ((pointer_y - bottom).powf(1.1) / line_height).ceil() as i32
+            // Negative deltas move down toward live output.
+            -((pointer_y - bottom).powf(1.1) / line_height).ceil() as i32
         } else {
             0
         };
@@ -702,7 +702,7 @@ impl TerminalView {
         Self::selection_drag_autoscroll_lines_from_bounds(pointer_y, top, bottom, line_height)
     }
 
-    fn update_selection_head_from_position(
+    pub(in super::super) fn update_selection_head_from_position(
         &mut self,
         position: gpui::Point<Pixels>,
         clamp: bool,
@@ -1168,16 +1168,16 @@ mod tests {
     fn selection_drag_autoscroll_lines_scrolls_up_when_pointer_above_top() {
         let lines =
             TerminalView::selection_drag_autoscroll_lines_from_bounds(90.0, 100.0, 300.0, 20.0);
-        // Negative delta scrolls toward history (up)
-        assert!(lines < 0);
+        // Positive delta scrolls toward history (up).
+        assert!(lines > 0);
     }
 
     #[test]
     fn selection_drag_autoscroll_lines_scrolls_down_when_pointer_below_bottom() {
         let lines =
             TerminalView::selection_drag_autoscroll_lines_from_bounds(330.0, 100.0, 300.0, 20.0);
-        // Positive delta scrolls toward bottom (down)
-        assert!(lines > 0);
+        // Negative delta scrolls toward bottom (down).
+        assert!(lines < 0);
     }
 
     #[test]
@@ -1195,10 +1195,10 @@ mod tests {
         let down =
             TerminalView::selection_drag_autoscroll_lines_from_bounds(10_000.0, 100.0, 300.0, 20.0);
 
-        // up (pointer far above) -> negative, clamped to -MAX
-        assert_eq!(up, -SELECTION_DRAG_AUTOSCROLL_MAX_LINES);
-        // down (pointer far below) -> positive, clamped to +MAX
-        assert_eq!(down, SELECTION_DRAG_AUTOSCROLL_MAX_LINES);
+        // up (pointer far above) -> positive, clamped to +MAX
+        assert_eq!(up, SELECTION_DRAG_AUTOSCROLL_MAX_LINES);
+        // down (pointer far below) -> negative, clamped to -MAX
+        assert_eq!(down, -SELECTION_DRAG_AUTOSCROLL_MAX_LINES);
     }
 
     #[test]

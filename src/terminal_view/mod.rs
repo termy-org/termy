@@ -4616,9 +4616,7 @@ impl TerminalView {
                             }
                         }
                         TerminalEvent::Title(title) => {
-                            if pane_is_active
-                                && self.apply_terminal_title(tab_index, &title, cx)
-                            {
+                            if pane_is_active && self.apply_terminal_title(tab_index, &title, cx) {
                                 should_redraw = true;
                             }
                         }
@@ -4666,7 +4664,9 @@ impl TerminalView {
                         }
                         TerminalEvent::ShellCommandFinished(code) => {
                             if self.shell_integration_enabled {
-                                self.tabs[tab_index].command_lifecycle.command_finished(code);
+                                self.tabs[tab_index]
+                                    .command_lifecycle
+                                    .command_finished(code);
                             }
                         }
                         // Notification events (OSC 9, OSC 777)
@@ -4753,10 +4753,7 @@ impl TerminalView {
         pending_tab_closures: &mut HashSet<TabId>,
         pending_pane_closures: &mut Vec<(TabId, String)>,
     ) -> bool {
-        let simulated_pane_count = simulated_pane_counts
-            .get(&tab_id)
-            .copied()
-            .unwrap_or(0);
+        let simulated_pane_count = simulated_pane_counts.get(&tab_id).copied().unwrap_or(0);
         if Self::native_exit_should_quit_app(*simulated_tab_count, simulated_pane_count) {
             return true;
         }
@@ -4769,9 +4766,12 @@ impl TerminalView {
             simulated_pane_counts.insert(tab_id, 0);
             return false;
         }
-        if pending_pane_closures.iter().any(|(pending_tab, pending_pane)| {
-            *pending_tab == tab_id && pending_pane.as_str() == pane_id
-        }) {
+        if pending_pane_closures
+            .iter()
+            .any(|(pending_tab, pending_pane)| {
+                *pending_tab == tab_id && pending_pane.as_str() == pane_id
+            })
+        {
             return false;
         }
         pending_pane_closures.push((tab_id, pane_id.to_string()));

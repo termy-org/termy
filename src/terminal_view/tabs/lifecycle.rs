@@ -571,8 +571,7 @@ impl TerminalView {
         }
 
         let pane_id = pane_id.to_string();
-        let _ = self
-            .release_forwarded_mouse_presses_for_panes(std::slice::from_ref(&pane_id));
+        let _ = self.release_forwarded_mouse_presses_for_panes(std::slice::from_ref(&pane_id));
         self.clear_native_zoom_snapshot_for_tab_id(tab_id);
 
         if self.ensure_native_layout_tree_for_tab_id(tab_id)

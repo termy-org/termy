@@ -8,9 +8,9 @@ use crate::constants::{
 use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
 use crate::types::{
-    AppConfig, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility,
-    TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
-    TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
+    AppConfig, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility, TabTitleMode,
+    TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility,
+    ThemeId, WorkingDirFallback,
 };
 
 #[derive(Default)]

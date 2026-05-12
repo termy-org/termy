@@ -407,9 +407,7 @@ impl ColorsConfig {
     }
 
     fn is_complete(&self) -> bool {
-        self.primary.is_some()
-            && self.normal.is_some()
-            && self.bright.is_some()
+        self.primary.is_some() && self.normal.is_some() && self.bright.is_some()
     }
 }
 
@@ -520,10 +518,7 @@ white = "#eaeaea"
             .iter()
             .map(|(id, value)| (*id, value.clone()))
             .collect();
-        assert!(settings.contains(&(
-            RootSettingId::FontFamily,
-            "FiraCode Nerd Font".to_string()
-        )));
+        assert!(settings.contains(&(RootSettingId::FontFamily, "FiraCode Nerd Font".to_string())));
         assert!(settings.contains(&(RootSettingId::FontSize, "13.5".to_string())));
         assert!(settings.contains(&(RootSettingId::PaddingX, "8".to_string())));
         assert!(settings.contains(&(RootSettingId::BackgroundOpacity, "0.950".to_string())));
@@ -546,12 +541,7 @@ white = "#eaeaea"
         let imported = import(&yml_path).unwrap();
         assert!(imported.settings.is_empty());
         assert!(imported.theme.is_none());
-        assert!(
-            imported
-                .warnings
-                .iter()
-                .any(|w| w.contains("Legacy YAML"))
-        );
+        assert!(imported.warnings.iter().any(|w| w.contains("Legacy YAML")));
         // suppress unused
         let _ = file.as_file_mut();
         let _ = std::fs::remove_file(yml_path);

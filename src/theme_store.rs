@@ -156,11 +156,7 @@ fn theme_store_cache_path() -> Option<PathBuf> {
     Some(parent.join("theme_registry.cache"))
 }
 
-fn save_theme_store_cache(
-    themes: &[ThemeStoreTheme],
-    registry_url: &str,
-    etag: Option<String>,
-) {
+fn save_theme_store_cache(themes: &[ThemeStoreTheme], registry_url: &str, etag: Option<String>) {
     let Some(path) = theme_store_cache_path() else {
         return;
     };

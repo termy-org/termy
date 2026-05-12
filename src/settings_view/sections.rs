@@ -1171,14 +1171,14 @@ impl SettingsWindow {
                             .bg(install_bg)
                             .text_xs()
                             .font_weight(gpui::FontWeight::MEDIUM)
-                                    .text_color(text_secondary)
-                                    .whitespace_nowrap()
-                                    .cursor_pointer()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
-                                    .child(action_label)
+                            .text_color(text_secondary)
+                            .whitespace_nowrap()
+                            .cursor_pointer()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .hover(move |s| s.bg(install_hover_bg).text_color(text_primary))
+                            .child(action_label)
                             .on_click(cx.listener(move |view, _, _, cx| {
                                 view.confirm_install_theme_store_theme(install_theme.clone(), cx);
                             }))
@@ -1250,7 +1250,7 @@ impl SettingsWindow {
                                                     .whitespace_nowrap()
                                                     .flex()
                                                     .items_center()
-                                                                    .child(format!("v{version_label}")),
+                                                    .child(format!("v{version_label}")),
                                             ),
                                     )
                                     .child(

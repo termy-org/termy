@@ -28,8 +28,27 @@ fn search_counter_label(current: usize, total: usize, query_is_empty: bool) -> O
 }
 
 impl TerminalView {
+    fn normalize_search_prefill(text: &str) -> String {
+        let mut normalized = String::with_capacity(text.len());
+        let mut last_was_line_break = false;
+        for character in text.chars() {
+            if matches!(character, '\n' | '\r') {
+                if !last_was_line_break {
+                    normalized.push(' ');
+                }
+                last_was_line_break = true;
+            } else {
+                normalized.push(character);
+                last_was_line_break = false;
+            }
+        }
+        normalized.trim().to_string()
+    }
+
     fn search_prefill_from_selection(selection: Option<String>) -> Option<String> {
-        selection.filter(|text| !text.trim().is_empty())
+        selection
+            .map(|text| Self::normalize_search_prefill(&text))
+            .filter(|text| !text.is_empty())
     }
 
     pub(super) fn execute_search_command_action(
@@ -318,6 +337,12 @@ impl TerminalView {
             .items_center()
             .px(px(8.0))
             .gap(px(6.0))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
             .child(
                 div()
                     .flex_1()
@@ -334,7 +359,10 @@ impl TerminalView {
                     .flex()
                     .items_center()
                     .child(self.render_inline_input_layer(
-                        Font::default(),
+                        Font {
+                            family: self.font_family.clone(),
+                            ..Font::default()
+                        },
                         px(13.0),
                         strong_text.into(),
                         {
@@ -394,7 +422,7 @@ impl TerminalView {
                                     cx.stop_propagation();
                                 }),
                             )
-                            .child("‹"),
+                            .child("<"),
                     )
                     .child(
                         div()
@@ -417,7 +445,7 @@ impl TerminalView {
                                     cx.stop_propagation();
                                 }),
                             )
-                            .child("›"),
+                            .child(">"),
                     ),
             )
             .child(
@@ -523,7 +551,7 @@ impl TerminalView {
                             cx.stop_propagation();
                         }),
                     )
-                    .child("×"),
+                    .child("x"),
             )
             .into_any()
     }
@@ -594,6 +622,14 @@ mod tests {
         assert_eq!(
             TerminalView::search_prefill_from_selection(Some("panic: missing semicolon".into())),
             Some("panic: missing semicolon".into())
+        );
+    }
+
+    #[test]
+    fn search_prefill_normalizes_multiline_selection_for_single_line_input() {
+        assert_eq!(
+            TerminalView::search_prefill_from_selection(Some("  line-1\r\nline-2\n  ".into())),
+            Some("line-1 line-2".into())
         );
     }
 

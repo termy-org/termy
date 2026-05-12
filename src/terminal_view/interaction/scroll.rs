@@ -438,6 +438,10 @@ impl TerminalView {
             .is_some_and(|terminal| terminal.scroll_display(delta_lines))
         {
             self.sync_content_scroll_baseline();
+            if self.selection_dragging {
+                self.update_selection_head_from_position(event.position, true);
+                self.clear_hovered_link();
+            }
             cx.notify();
         } else {
             self.terminal_scroll_accumulator_y = 0.0;

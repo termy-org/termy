@@ -26,8 +26,7 @@ pub(crate) fn spawn_control_threads<W, R>(
     notifications_tx: Sender<TmuxNotification>,
     fatal_exit_tx: Sender<Option<String>>,
     event_wakeup_tx: Option<Sender<()>>,
-)
-where
+) where
     W: Write + Send + 'static,
     R: Read + Send + 'static,
 {

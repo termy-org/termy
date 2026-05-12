@@ -17,9 +17,7 @@ pub(crate) fn detect() -> DetectedSource {
     let icon_path = app_path
         .as_ref()
         .and_then(|path| extract_app_icon("ghostty", path));
-    let config_path = config_candidates()
-        .into_iter()
-        .find(|path| path.exists());
+    let config_path = config_candidates().into_iter().find(|path| path.exists());
     let status_hint = if config_path.is_none() && app_installed {
         Some("App installed but no config file yet".into())
     } else {
@@ -54,7 +52,14 @@ pub(crate) fn import(path: &Path) -> Result<ImportedConfig, String> {
     let mut named: HashMap<String, Rgb8> = HashMap::new();
     let mut theme_ref: Option<String> = None;
 
-    parse_file(path, 0, &mut imported, &mut palette, &mut named, &mut theme_ref)?;
+    parse_file(
+        path,
+        0,
+        &mut imported,
+        &mut palette,
+        &mut named,
+        &mut theme_ref,
+    )?;
 
     let mut have_inline = !palette.is_empty() || !named.is_empty();
     if let Some(name) = theme_ref.as_ref()
@@ -175,10 +180,9 @@ fn parse_file(
             }
             "background-blur-radius" => {
                 if let Ok(radius) = value.parse::<f32>() {
-                    imported.settings.push((
-                        RootSettingId::BackgroundBlur,
-                        (radius > 0.0).to_string(),
-                    ));
+                    imported
+                        .settings
+                        .push((RootSettingId::BackgroundBlur, (radius > 0.0).to_string()));
                 }
             }
             "cursor-style" => {
@@ -329,8 +333,7 @@ mod tests {
 
     #[test]
     fn missing_palette_indices_become_warnings() {
-        let config =
-            "foreground = #ffffff\nbackground = #000000\ncursor-color = #ff0000\npalette = 0=#000000\n";
+        let config = "foreground = #ffffff\nbackground = #000000\ncursor-color = #ff0000\npalette = 0=#000000\n";
         let file = write_file(config);
         let imported = import(file.path()).unwrap();
         assert!(imported.theme.is_some());

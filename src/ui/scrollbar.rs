@@ -1,4 +1,6 @@
-use gpui::{AnyElement, CursorStyle, InteractiveElement, IntoElement, ParentElement, Rgba, Styled, div, px};
+use gpui::{
+    AnyElement, CursorStyle, InteractiveElement, IntoElement, ParentElement, Rgba, Styled, div, px,
+};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq)]

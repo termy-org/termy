@@ -4,10 +4,9 @@ use crate::theme_store::{self, ThemeStoreTheme};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, AppContext, AsyncApp, Bounds, Context, FocusHandle,
     FontWeight, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ObjectFit, ParentElement, Render, Rgba, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, StyledImage, WeakEntity, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowOptions, div, ease_out_quint, img,
-    pulsating_between, px, size,
+    ObjectFit, ParentElement, Render, Rgba, ScrollHandle, SharedString, StatefulInteractiveElement,
+    Styled, StyledImage, WeakEntity, Window, WindowBackgroundAppearance, WindowBounds,
+    WindowOptions, div, ease_out_quint, img, pulsating_between, px, size,
 };
 use std::collections::HashMap;
 use std::path::Path;

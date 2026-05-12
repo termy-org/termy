@@ -14,12 +14,7 @@ impl OnboardingWindow {
             color
         };
         let current_index = self.step.index();
-        let mut row = div()
-            .flex()
-            .items_center()
-            .justify_center()
-            .gap_2()
-            .py_4();
+        let mut row = div().flex().items_center().justify_center().gap_2().py_4();
         for index in 0..Step::total() {
             let fill = if index == current_index {
                 accent
@@ -28,18 +23,11 @@ impl OnboardingWindow {
             } else {
                 inactive
             };
-            let dot = div()
-                .w(px(8.0))
-                .h(px(8.0))
-                .rounded_full()
-                .bg(fill);
+            let dot = div().w(px(8.0)).h(px(8.0)).rounded_full().bg(fill);
             if index == current_index {
                 row = row.child(
                     dot.with_animation(
-                        SharedString::from(format!(
-                            "onboarding-dot-pulse-{}",
-                            self.step_token
-                        )),
+                        SharedString::from(format!("onboarding-dot-pulse-{}", self.step_token)),
                         Animation::new(Duration::from_millis(1600))
                             .repeat()
                             .with_easing(pulsating_between(0.55, 1.0)),
@@ -210,12 +198,7 @@ impl OnboardingWindow {
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))
             .text_color(label_color)
-            .child(
-                div()
-                    .text_sm()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(label),
-            )
+            .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(label))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
@@ -314,10 +297,7 @@ impl OnboardingWindow {
                 .into_any_element()
         });
 
-        let mut title_row = div()
-            .flex()
-            .items_center()
-            .gap_3();
+        let mut title_row = div().flex().items_center().gap_3();
         if let Some(icon) = icon_element {
             title_row = title_row.child(icon);
         }
@@ -351,12 +331,7 @@ impl OnboardingWindow {
             .child(title_row);
 
         if let Some(text) = hint_text {
-            card = card.child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(text),
-            );
+            card = card.child(div().text_xs().text_color(muted).child(text));
         }
 
         if importable {

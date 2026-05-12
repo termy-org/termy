@@ -197,11 +197,7 @@ impl OnboardingWindow {
         cx.notify();
     }
 
-    pub(super) fn select_import_source(
-        &mut self,
-        kind: ImportSourceKind,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn select_import_source(&mut self, kind: ImportSourceKind, cx: &mut Context<Self>) {
         let importable = self
             .import_sources
             .iter()
@@ -323,7 +319,10 @@ impl OnboardingWindow {
             log::error!("Import application error: {error}");
         }
         for warning in &imported.warnings {
-            log::warn!("Import warning ({}): {warning}", imported.source.display_name());
+            log::warn!(
+                "Import warning ({}): {warning}",
+                imported.source.display_name()
+            );
         }
 
         let mut summary = format!("Imported from {}", imported.source.display_name());

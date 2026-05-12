@@ -100,18 +100,15 @@ impl SearchState {
     }
 
     pub fn config(&self) -> SearchConfig {
-        SearchConfig {
-            case_sensitive: self.is_case_sensitive(),
-            mode: self.mode(),
-        }
+        self.engine.config()
     }
 
     pub fn is_case_sensitive(&self) -> bool {
-        false
+        self.config().case_sensitive
     }
 
     pub fn mode(&self) -> SearchMode {
-        SearchMode::Literal
+        self.config().mode
     }
 
     pub fn search<'a, F>(&mut self, start_line: i32, end_line: i32, line_provider: F)
@@ -221,5 +218,35 @@ mod tests {
         assert_eq!(state.error().map(str::to_string), error);
         assert!(state.results().is_empty());
         assert_eq!(state.results_revision(), revision.wrapping_add(1));
+    }
+
+    #[test]
+    fn toggle_case_sensitive_updates_config_and_recompiles_pattern() {
+        let mut state = SearchState::new();
+        state.set_query("hello");
+
+        state.search(0, 0, |_| Some("Hello"));
+        assert_eq!(state.results().count(), 1);
+
+        state.toggle_case_sensitive();
+        assert!(state.is_case_sensitive());
+
+        state.search(0, 0, |_| Some("Hello"));
+        assert_eq!(state.results().count(), 0);
+    }
+
+    #[test]
+    fn toggle_regex_mode_updates_config_and_recompiles_pattern() {
+        let mut state = SearchState::new();
+        state.set_query("a.c");
+
+        state.search(0, 0, |_| Some("abc"));
+        assert_eq!(state.results().count(), 0);
+
+        state.toggle_regex_mode();
+        assert_eq!(state.mode(), SearchMode::Regex);
+
+        state.search(0, 0, |_| Some("abc"));
+        assert_eq!(state.results().count(), 1);
     }
 }

@@ -149,9 +149,7 @@ pub(crate) fn extract_app_icon(slug: &str, app_path: &Path) -> Option<PathBuf> {
     let cache_dir = icon_cache_dir()?;
     let icon_path = cache_dir.join(format!("{slug}.png"));
     // Re-extract if the .app bundle is newer than the cached PNG (covers app updates).
-    let app_modified = std::fs::metadata(app_path)
-        .and_then(|m| m.modified())
-        .ok();
+    let app_modified = std::fs::metadata(app_path).and_then(|m| m.modified()).ok();
     let cached_modified = std::fs::metadata(&icon_path)
         .and_then(|m| m.modified())
         .ok();

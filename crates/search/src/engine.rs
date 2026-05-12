@@ -75,9 +75,13 @@ impl SearchEngine {
     pub fn set_config(&mut self, config: SearchConfig) {
         if self.config.case_sensitive != config.case_sensitive || self.config.mode != config.mode {
             self.config = config;
-            let pattern = self.pattern.clone();
+            let pattern = std::mem::take(&mut self.pattern);
             let _ = self.set_pattern(&pattern);
         }
+    }
+
+    pub fn config(&self) -> SearchConfig {
+        self.config.clone()
     }
 
     pub fn pattern(&self) -> &str {

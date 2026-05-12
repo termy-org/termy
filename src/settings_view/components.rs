@@ -285,14 +285,11 @@ impl SettingsWindow {
 
         if spec.value_kind == RootSettingValueKind::Boolean {
             let checked = value.parse::<bool>().unwrap_or(false);
-            Some(self.render_root_bool_setting_row(
-                spec.key,
-                spec.key,
-                setting,
-                checked,
-                "Saved",
-                cx,
-            ))
+            Some(
+                self.render_root_bool_setting_row(
+                    spec.key, spec.key, setting, checked, "Saved", cx,
+                ),
+            )
         } else {
             let field = Self::root_setting_to_editable_field(setting)?;
             Some(self.render_editable_row(

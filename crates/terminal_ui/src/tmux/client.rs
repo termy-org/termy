@@ -371,9 +371,7 @@ impl TmuxClient {
         if self.control_client_pid == 0 {
             return match self.run_control_status_args(&["detach-client"]) {
                 Ok(()) => Ok(()),
-                Err(e) if is_tmux_missing_client_error(&e) || is_tmux_no_server_error(&e) => {
-                    Ok(())
-                }
+                Err(e) if is_tmux_missing_client_error(&e) || is_tmux_no_server_error(&e) => Ok(()),
                 Err(e) => Err(e),
             };
         }

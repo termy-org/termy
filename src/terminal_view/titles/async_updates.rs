@@ -47,9 +47,9 @@ impl TerminalView {
 
         let tab = &mut self.tabs[index];
         tab.pending_command_token = tab.pending_command_token.wrapping_add(1);
-        tab.pending_command_title = Some(Self::truncate_tab_title(
-            &Self::shorten_shell_tab_title(&command_title),
-        ));
+        tab.pending_command_title = Some(Self::truncate_tab_title(&Self::shorten_shell_tab_title(
+            &command_title,
+        )));
         let token = tab.pending_command_token;
 
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {

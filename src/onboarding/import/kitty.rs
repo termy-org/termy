@@ -105,10 +105,9 @@ fn parse_file(
                 }
             }
             "geninclude" => {
-                imported.warnings.push(format!(
-                    "Ignored geninclude (runs script): {}",
-                    value
-                ));
+                imported
+                    .warnings
+                    .push(format!("Ignored geninclude (runs script): {}", value));
             }
             "envinclude" => {
                 imported
@@ -324,11 +323,6 @@ mod tests {
         let config = "geninclude /tmp/foo.py\nfont_size 12\n";
         let file = write_file(config);
         let imported = import(file.path()).unwrap();
-        assert!(
-            imported
-                .warnings
-                .iter()
-                .any(|w| w.contains("geninclude"))
-        );
+        assert!(imported.warnings.iter().any(|w| w.contains("geninclude")));
     }
 }

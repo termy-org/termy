@@ -2221,8 +2221,7 @@ impl TerminalGrid {
                             if !col_ranges_overlap(op_range, dirty_range) {
                                 if let Some(prev_op) = prev_row.draw_ops.get(i) {
                                     if text_draw_ops_match_without_row(op, prev_op) {
-                                        row_slot.shaped_lines[i] =
-                                            prev_row.shaped_lines[i].clone();
+                                        row_slot.shaped_lines[i] = prev_row.shaped_lines[i].clone();
                                     }
                                 }
                             }

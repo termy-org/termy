@@ -16,8 +16,7 @@ impl TerminalView {
     pub(crate) fn shorten_shell_tab_title(title: &str) -> String {
         let path_part = match title.split_once(':') {
             Some((prefix, suffix))
-                if prefix.contains('@')
-                    && (suffix.starts_with('/') || suffix.starts_with('~')) =>
+                if prefix.contains('@') && (suffix.starts_with('/') || suffix.starts_with('~')) =>
             {
                 suffix
             }

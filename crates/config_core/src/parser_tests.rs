@@ -1,8 +1,8 @@
 use crate::{
-    AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle,
-    DEFAULT_LINE_HEIGHT, PaneFocusEffect, Rgb8, RootSettingId, RootSettingValueKind,
-    TabCloseVisibility, TabTitleMode, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
-    TerminalScrollbarVisibility, WorkingDirFallback, root_setting_specs,
+    AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle, DEFAULT_LINE_HEIGHT,
+    PaneFocusEffect, Rgb8, RootSettingId, RootSettingValueKind, TabCloseVisibility, TabTitleMode,
+    TabTitleSource, TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility,
+    WorkingDirFallback, root_setting_specs,
 };
 
 fn parse(input: &str) -> AppConfig {
