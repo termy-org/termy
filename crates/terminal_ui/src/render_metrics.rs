@@ -1,6 +1,6 @@
 #[cfg(test)]
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TerminalUiRenderMetricsSnapshot {
@@ -49,8 +49,10 @@ impl TerminalUiRenderMetricsSnapshot {
     }
 }
 
-// Keep render metrics active in release benchmarks and tests. The counters stay
-// dormant unless the app reads them.
+// Keep render metrics dormant on normal paint paths. Benchmarks and explicit
+// render-metrics sessions call `terminal_ui_render_metrics_reset`, which enables
+// collection for the process.
+static METRICS_ENABLED: AtomicBool = AtomicBool::new(false);
 static GRID_PAINT_COUNT: AtomicU64 = AtomicU64::new(0);
 static SHAPE_LINE_CALLS: AtomicU64 = AtomicU64::new(0);
 static SHAPED_LINE_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
@@ -62,6 +64,9 @@ static SPAN_TEXT_SHAPING_US: AtomicU64 = AtomicU64::new(0);
 static SPAN_GRID_PAINT_US: AtomicU64 = AtomicU64::new(0);
 
 fn increment_counter(counter: &AtomicU64) {
+    if !METRICS_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
     counter.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -86,6 +91,9 @@ pub(crate) fn increment_runtime_wakeup_count() {
 }
 
 fn add_to_counter(counter: &AtomicU64, micros: u64) {
+    if !METRICS_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
     counter.fetch_add(micros, Ordering::Relaxed);
 }
 
@@ -120,6 +128,7 @@ pub fn terminal_ui_render_metrics_snapshot() -> TerminalUiRenderMetricsSnapshot 
 }
 
 pub fn terminal_ui_render_metrics_reset() {
+    METRICS_ENABLED.store(true, Ordering::Relaxed);
     GRID_PAINT_COUNT.store(0, Ordering::Relaxed);
     SHAPE_LINE_CALLS.store(0, Ordering::Relaxed);
     SHAPED_LINE_CACHE_HITS.store(0, Ordering::Relaxed);

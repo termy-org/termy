@@ -13,6 +13,10 @@ concurrency:
 
 env:
   VERSION: ${{ github.event.release.tag_name }}
+  CARGO_BUNDLE_VERSION: 0.10.0
+  INNOSETUP_VERSION: 6.7.1
+  APPIMAGETOOL_VERSION: 1.9.1
+  APPIMAGETOOL_X86_64_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
 
 jobs:
   build-dmg:
@@ -35,24 +39,25 @@ jobs:
       VERSION: ${{ github.event.release.tag_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Install cargo-bundle
-        run: cargo install cargo-bundle --locked
+        run: cargo install cargo-bundle --version "$CARGO_BUNDLE_VERSION" --locked
 
       - name: Build DMG
         run: ./scripts/build-dmg.sh --version "$VERSION" --arch "${{ matrix.arch }}" --target "${{ matrix.target }}" --no-layout
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: termy-dmg-${{ matrix.arch }}
           path: target/release/Termy-${{ env.VERSION }}-macos-${{ matrix.arch }}.dmg
@@ -66,25 +71,26 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
+          toolchain: stable
           targets: x86_64-pc-windows-msvc
 
       - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
+        run: choco install innosetup --version="$env:INNOSETUP_VERSION" --no-progress -y
 
       - name: Build Setup.exe
         shell: pwsh
         run: .\scripts\build-setup.ps1 -Version "${env:VERSION}" -Arch x64 -Target x86_64-pc-windows-msvc
 
       - name: Upload Setup artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: termy-setup-x64
           path: target/dist/Termy-${{ env.VERSION }}-x64-Setup.exe
@@ -106,7 +112,7 @@ jobs:
       VERSION: ${{ github.event.release.tag_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install Linux dependencies
         run: |
@@ -125,20 +131,26 @@ jobs:
             libvulkan1
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build Linux tarball
         run: ./scripts/build-linux.sh --version "$VERSION" --arch "${{ matrix.arch }}" --target "${{ matrix.target }}"
 
       - name: Install appimagetool
         run: |
+          case "${{ matrix.arch }}" in
+            x86_64) expected_sha256="$APPIMAGETOOL_X86_64_SHA256" ;;
+            *) echo "Unsupported appimagetool architecture: ${{ matrix.arch }}" >&2; exit 1 ;;
+          esac
           curl -fsSL -o /tmp/appimagetool.AppImage \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage
+            "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-${{ matrix.arch }}.AppImage"
+          echo "${expected_sha256}  /tmp/appimagetool.AppImage" | sha256sum -c -
           chmod +x /tmp/appimagetool.AppImage
           echo "APPIMAGETOOL=/tmp/appimagetool.AppImage" >> "$GITHUB_ENV"
 
@@ -146,14 +158,14 @@ jobs:
         run: APPIMAGETOOL="$APPIMAGETOOL" ./scripts/build-linux.sh --version "$VERSION" --arch "${{ matrix.arch }}" --target "${{ matrix.target }}" --format appimage
 
       - name: Upload Linux tarball artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: termy-linux-tarball-${{ matrix.arch }}
           path: target/dist/Termy-${{ env.VERSION }}-linux-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
 
       - name: Upload Linux AppImage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: termy-linux-appimage-${{ matrix.arch }}
           path: target/dist/Termy-${{ env.VERSION }}-linux-${{ matrix.arch }}.AppImage
@@ -171,13 +183,13 @@ jobs:
       contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
           merge-multiple: true
 
       - name: Attach artifacts to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
@@ -189,7 +201,7 @@ jobs:
           overwrite_files: true
 
       - name: Mark release as latest and not pre-release
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             await github.request("PATCH /repos/{owner}/{repo}/releases/{release_id}", {

@@ -3747,9 +3747,15 @@ impl TerminalView {
                 while event_wakeup_rx.try_recv().is_ok() {}
                 let mut should_schedule = false;
                 let result = cx.update(|cx| {
-                    this.update(cx, |view, _cx| {
+                    this.update(cx, |view, cx| {
                         view.record_benchmark_view_wakeup();
                         view.debug_overlay_stats.record_view_wake_signal();
+                        if view.benchmark_session.is_some() {
+                            if view.process_terminal_events(cx) {
+                                cx.notify();
+                            }
+                            return;
+                        }
                         if !terminal_frame_drain_scheduled.swap(true, Ordering::AcqRel) {
                             should_schedule = true;
                         }
@@ -3774,6 +3780,7 @@ impl TerminalView {
                                 }
                             });
                         });
+                        window.refresh();
                     })
                     .is_err()
                 {
@@ -4115,8 +4122,16 @@ impl TerminalView {
                 loop {
                     smol::Timer::after(BENCHMARK_SAMPLE_INTERVAL).await;
                     let result = cx.update(|cx| {
-                        this.update(cx, |view, _cx| {
+                        this.update(cx, |view, cx| {
                             view.sample_benchmark_session();
+                            let should_exit =
+                                view.benchmark_session.as_ref().is_some_and(|session| {
+                                    session.exit_on_complete()
+                                        && session.completion_deadline_reached(Instant::now())
+                                });
+                            if should_exit {
+                                view.schedule_benchmark_exit(cx);
+                            }
                         })
                     });
                     if result.is_err() {

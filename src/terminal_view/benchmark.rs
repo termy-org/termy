@@ -17,15 +17,18 @@ pub(super) const BENCHMARK_SAMPLE_INTERVAL: Duration = Duration::from_millis(500
 const COMMAND_ENV: &str = "TERMY_BENCHMARK_COMMAND";
 const SCENARIO_ENV: &str = "TERMY_BENCHMARK_SCENARIO";
 const METRICS_PATH_ENV: &str = "TERMY_BENCHMARK_METRICS_PATH";
+const DURATION_SECS_ENV: &str = "TERMY_BENCHMARK_DURATION_SECS";
 const EXIT_ON_COMPLETE_ENV: &str = "TERMY_BENCHMARK_EXIT_ON_COMPLETE";
 const BUILD_LABEL_ENV: &str = "TERMY_BENCHMARK_BUILD_LABEL";
 const GIT_SHA_ENV: &str = "TERMY_BENCHMARK_GIT_SHA";
+const COMPLETION_DEADLINE_GRACE: Duration = Duration::from_millis(750);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct BenchmarkConfig {
     pub command: String,
     pub scenario: String,
     pub metrics_path: PathBuf,
+    pub duration: Option<Duration>,
     pub exit_on_complete: bool,
     pub build_label: Option<String>,
     pub git_sha: Option<String>,
@@ -60,6 +63,7 @@ impl BenchmarkConfig {
             command,
             scenario,
             metrics_path: PathBuf::from(metrics_path),
+            duration: parse_optional_duration()?,
             exit_on_complete: env_flag(EXIT_ON_COMPLETE_ENV),
             build_label: optional_env(BUILD_LABEL_ENV),
             git_sha: optional_env(GIT_SHA_ENV),
@@ -72,6 +76,19 @@ fn optional_env(key: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn parse_optional_duration() -> Result<Option<Duration>, String> {
+    let Some(value) = optional_env(DURATION_SECS_ENV) else {
+        return Ok(None);
+    };
+    let seconds = value
+        .parse::<u64>()
+        .map_err(|error| format!("{DURATION_SECS_ENV} must be a positive integer: {error}"))?;
+    if seconds == 0 {
+        return Err(format!("{DURATION_SECS_ENV} must be greater than zero"));
+    }
+    Ok(Some(Duration::from_secs(seconds)))
 }
 
 fn env_flag(key: &str) -> bool {
@@ -185,6 +202,17 @@ impl BenchmarkSession {
 
     pub fn is_finished(&self) -> bool {
         self.finished
+    }
+
+    pub fn completion_deadline_reached(&self, now: Instant) -> bool {
+        if self.finished {
+            return false;
+        }
+        let Some(duration) = self.config.duration else {
+            return false;
+        };
+        let deadline = duration.saturating_add(COMPLETION_DEADLINE_GRACE);
+        now.saturating_duration_since(self.start_at) >= deadline
     }
 
     fn push_sample(&mut self, now: Instant) {

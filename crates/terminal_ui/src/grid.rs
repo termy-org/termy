@@ -1577,6 +1577,32 @@ fn find_matching_previous_row_ops_index(
     })
 }
 
+enum PreviousRowOps {
+    Full(Vec<CachedRowPaintOps>),
+    Partial(Vec<(usize, CachedRowPaintOps)>),
+}
+
+impl PreviousRowOps {
+    fn get(&self, row: usize) -> Option<&CachedRowPaintOps> {
+        match self {
+            Self::Full(rows) => rows.get(row),
+            Self::Partial(rows) => rows
+                .iter()
+                .find_map(|(previous_row, ops)| (*previous_row == row).then_some(ops)),
+        }
+    }
+
+    fn find_matching_index(&self, row: usize, row_ops: &CachedRowPaintOps) -> Option<usize> {
+        match self {
+            Self::Full(rows) => find_matching_previous_row_ops_index(row, row_ops, rows),
+            Self::Partial(rows) => rows.iter().find_map(|(previous_row, previous_ops)| {
+                cached_row_draw_ops_match_without_row(row_ops, previous_ops)
+                    .then_some(*previous_row)
+            }),
+        }
+    }
+}
+
 impl Element for TerminalGrid {
     type RequestLayoutState = ();
     type PrepaintState = ();
@@ -2148,16 +2174,19 @@ impl TerminalGrid {
         let previous_row_ops = if !style_changed && !cache.row_ops.is_empty() {
             if full_repaint {
                 let replacement = vec![CachedRowPaintOps::default(); self.rows];
-                Some(std::mem::replace(&mut cache.row_ops, replacement))
+                Some(PreviousRowOps::Full(std::mem::replace(
+                    &mut cache.row_ops,
+                    replacement,
+                )))
             } else {
                 let len = cache.row_ops.len();
-                let mut previous = vec![CachedRowPaintOps::default(); len];
+                let mut previous = Vec::with_capacity(dirty_rows.len());
                 for &row in dirty_rows {
                     if row < len {
-                        previous[row] = std::mem::take(&mut cache.row_ops[row]);
+                        previous.push((row, std::mem::take(&mut cache.row_ops[row])));
                     }
                 }
-                Some(previous)
+                Some(PreviousRowOps::Partial(previous))
             }
         } else {
             None
@@ -2199,11 +2228,11 @@ impl TerminalGrid {
             //    row, reuse all its ShapedLine objects (existing logic).
             let mut whole_row_reused = false;
             if let Some(previous_row_ops) = previous_row_ops.as_ref()
-                && let Some(previous_index) =
-                    find_matching_previous_row_ops_index(row, row_slot, previous_row_ops)
+                && let Some(previous_index) = previous_row_ops.find_matching_index(row, row_slot)
             {
-                let previous = &previous_row_ops[previous_index];
-                if previous.shaped_lines.len() == row_slot.shaped_lines.len() {
+                if let Some(previous) = previous_row_ops.get(previous_index)
+                    && previous.shaped_lines.len() == row_slot.shaped_lines.len()
+                {
                     row_slot.shaped_lines.clone_from(&previous.shaped_lines);
                     whole_row_reused = true;
                 }
@@ -2215,7 +2244,10 @@ impl TerminalGrid {
             //    changed (e.g. a single character typed at the cursor).
             if !whole_row_reused {
                 if let Some(dirty_range) = dirty_col_range {
-                    if let Some(prev_row) = previous_row_ops.as_ref().and_then(|ops| ops.get(row)) {
+                    if let Some(prev_row) = previous_row_ops
+                        .as_ref()
+                        .and_then(|previous| previous.get(row))
+                    {
                         for (i, op) in row_slot.draw_ops.iter().enumerate() {
                             let op_range = draw_op_col_range(op);
                             if !col_ranges_overlap(op_range, dirty_range) {

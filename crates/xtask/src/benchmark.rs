@@ -824,6 +824,7 @@ fn run_single_benchmark(
                 &markers_path,
                 scenario,
                 &command,
+                duration_secs,
                 time_limit_secs,
             )
         }
@@ -895,6 +896,7 @@ fn run_single_benchmark(
                 &markers_path,
                 scenario,
                 &command,
+                duration_secs,
                 time_limit_secs,
             )
         }
@@ -1019,6 +1021,7 @@ fn activity_monitor_termy_command(
     markers_path: &Path,
     scenario: Scenario,
     benchmark_command: &str,
+    duration_secs: u64,
     time_limit_secs: u64,
 ) -> Command {
     let mut command = Command::new("xctrace");
@@ -1041,6 +1044,8 @@ fn activity_monitor_termy_command(
             "TERMY_BENCHMARK_METRICS_PATH={}",
             metrics_dir.display()
         ))
+        .arg("--env")
+        .arg(format!("TERMY_BENCHMARK_DURATION_SECS={duration_secs}"))
         .arg("--env")
         .arg(format!(
             "{BENCHMARK_EVENTS_PATH_ENV}={}",
@@ -1098,6 +1103,7 @@ fn animation_hitches_termy_command(
     markers_path: &Path,
     scenario: Scenario,
     benchmark_command: &str,
+    duration_secs: u64,
     time_limit_secs: u64,
 ) -> Command {
     let mut command = Command::new("xctrace");
@@ -1120,6 +1126,8 @@ fn animation_hitches_termy_command(
             "TERMY_BENCHMARK_METRICS_PATH={}",
             metrics_dir.display()
         ))
+        .arg("--env")
+        .arg(format!("TERMY_BENCHMARK_DURATION_SECS={duration_secs}"))
         .arg("--env")
         .arg(format!(
             "{BENCHMARK_EVENTS_PATH_ENV}={}",
@@ -1501,10 +1509,9 @@ fn node_text_content(node: Node<'_, '_>) -> String {
 
 fn parse_hitch_durations(xml: &str, launched_pid: u32) -> Result<Vec<u64>> {
     let doc = Document::parse(xml).context("failed to parse hitches xml")?;
-    let node = doc
-        .descendants()
-        .find(|node| node.has_tag_name("node"))
-        .context("missing hitches node")?;
+    let Some(node) = doc.descendants().find(|node| node.has_tag_name("node")) else {
+        return Ok(Vec::new());
+    };
     let schema = node
         .children()
         .find(|child| child.has_tag_name("schema"))
@@ -2582,8 +2589,8 @@ mod tests {
     use super::{
         BenchmarkDriverSpec, FrameCaptureStatus, FrameEvent, GhosttyVersion, MarkerEvent, Scenario,
         create_ghostty_launch_artifacts, parse_animation_summary, parse_displayed_frame_starts,
-        parse_ghostty_version, parse_single_row_table, render_report, summarize_echo_train_latency,
-        summarize_idle_burst_latency,
+        parse_ghostty_version, parse_hitch_durations, parse_single_row_table, render_report,
+        summarize_echo_train_latency, summarize_idle_burst_latency,
     };
     use std::{fs, path::PathBuf};
 
@@ -2722,6 +2729,16 @@ mod tests {
         assert_eq!(summary.displayed_frame_count, 0);
         assert_eq!(summary.hitch_count, 1);
         assert_eq!(summary.hitch_max_ms, Some(50.0));
+    }
+
+    #[test]
+    fn parse_hitch_durations_treats_empty_export_as_zero_hitches() {
+        let xml = r#"<?xml version="1.0"?>
+<trace-query-result>
+</trace-query-result>"#;
+
+        let hitches = parse_hitch_durations(xml, 42).unwrap();
+        assert!(hitches.is_empty());
     }
 
     #[test]
