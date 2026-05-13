@@ -1,0 +1,25 @@
+---
+title: Configuration Reference
+description: Canonical list of Termy configuration keys and defaults.
+---
+
+The canonical configuration reference is generated from the Rust config schema.
+
+```bash
+just generate-config-doc
+```
+
+The generated source lives at [`docs/configuration.md`](https://github.com/lassejlv/termy/blob/main/docs/configuration.md). The website's [Customize](/docs/customize) pages group the same settings by task and explain common workflows.
+
+## Common Sections
+
+- [Appearance](/docs/customize/appearance)
+- [Terminal Behavior](/docs/customize/terminal-behavior)
+- [Tabs and Titlebar](/docs/customize/tabs-titlebar)
+- [Colors](/docs/customize/colors)
+- [Themes](/docs/customize/themes)
+- [Advanced](/docs/customize/advanced)
+
+## Maintenance Rule
+
+Do not hand-copy new settings into reference tables without updating the generated config docs first. Generated docs are the source of truth for key names and defaults.

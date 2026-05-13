@@ -1,5 +1,5 @@
 {
   "title": "Getting Started",
-  "pages": ["installation", "first-run", "config-file"],
+  "pages": ["installation", "first-run", "config-file", "quickstart-customize"],
   "defaultOpen": true
 }

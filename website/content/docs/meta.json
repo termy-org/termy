@@ -4,11 +4,13 @@
     "index",
     "---Getting Started---",
     "getting-started",
-    "---Configuration---",
-    "configuration",
-    "keybindings",
+    "---Use Termy---",
+    "using-termy",
+    "---Customize---",
+    "customize",
     "---Reference---",
-    "features",
-    "architecture"
+    "reference",
+    "---Developer---",
+    "developer"
   ]
 }

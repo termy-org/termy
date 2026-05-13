@@ -1,0 +1,31 @@
+---
+title: Tabs
+description: Open, switch, rename, and organize tabs.
+---
+
+Tabs are the main unit of terminal work in Termy. Each tab owns a terminal session, and tabs can be reordered, renamed, closed, or restored through layouts and tmux sessions.
+
+## Common Actions
+
+| Action | Default trigger |
+| ------ | --------------- |
+| `new_tab` | `secondary-t` |
+| `close_pane_or_tab` | `secondary-w` |
+| `switch_to_tab_1` ... `switch_to_tab_9` | `secondary-1` ... `secondary-9` |
+| `switch_tab_left` / `switch_tab_right` | configure manually |
+| `move_tab_left` / `move_tab_right` | configure manually |
+| `rename_tab` | configure manually |
+
+## Tab Titles
+
+Tab titles can come from manual renames, explicit escape sequences, shell integration, or fallback text. Configure title behavior in [Tabs and Titlebar](/docs/customize/tabs-titlebar).
+
+## Vertical Tabs
+
+Set `vertical_tabs = true` to move tabs into a left sidebar. Use `toggle_vertical_tab_sidebar` to collapse or expand the sidebar at runtime.
+
+## Related
+
+- [Tabs and Titlebar settings](/docs/customize/tabs-titlebar)
+- [Default keybindings](/docs/reference/keybinding-defaults)
+- [Bindable actions](/docs/reference/actions)

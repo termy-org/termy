@@ -304,6 +304,9 @@ impl OnboardingWindow {
             let display = format!("Imported from {}", imported.source.display_name());
             match crate::theme_store::install_local_theme_blocking(&slug, &display, colors) {
                 Ok(installed) => {
+                    if let Err(error) = crate::config::clear_color_settings() {
+                        errors.push(error);
+                    }
                     self.installed_theme_slug = Some(installed.slug);
                     installed_theme_name = Some(display);
                 }

@@ -1,0 +1,11 @@
+{
+  "title": "Reference",
+  "pages": [
+    "index",
+    "configuration-reference",
+    "keybinding-defaults",
+    "actions",
+    "plugin-protocol"
+  ],
+  "defaultOpen": false
+}

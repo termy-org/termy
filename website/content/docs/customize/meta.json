@@ -1,13 +1,14 @@
 {
-  "title": "Configuration",
+  "title": "Customize",
   "pages": [
     "index",
     "appearance",
-    "terminal",
-    "tabs",
+    "terminal-behavior",
+    "tabs-titlebar",
     "colors",
     "themes",
-    "tasks",
+    "keybindings",
+    "keybinding-examples",
     "advanced"
   ],
   "defaultOpen": true

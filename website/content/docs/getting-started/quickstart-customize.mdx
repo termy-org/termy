@@ -1,0 +1,37 @@
+---
+title: Quickstart: Customize Termy
+description: The shortest path to changing theme, font, tabs, and keybindings.
+---
+
+Termy uses one plain-text config file. Open Settings or edit `~/.config/termy/config.txt` directly.
+
+## Start Here
+
+```txt
+theme = termy
+font_family = JetBrains Mono
+font_size = 14
+line_height = 1.40
+padding_x = 12
+padding_y = 8
+```
+
+## Useful First Changes
+
+| Goal | Setting |
+| ---- | ------- |
+| Use transparent windows | `background_opacity = 0.88` |
+| Enable blur | `background_blur = true` |
+| Keep tab bar visible | `auto_hide_tabbar = false` |
+| Use vertical tabs | `vertical_tabs = true` |
+| Hide command palette shortcuts | `command_palette_show_keybinds = false` |
+
+## Keybindings
+
+```txt
+keybind = secondary-p=toggle_command_palette
+keybind = secondary-t=new_tab
+keybind = secondary-w=close_pane_or_tab
+```
+
+Use [Keybindings](/docs/customize/keybindings) for syntax and [Actions](/docs/reference/actions) for the full action list.

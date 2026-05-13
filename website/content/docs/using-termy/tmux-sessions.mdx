@@ -1,5 +1,5 @@
 ---
-title: Tmux
+title: Tmux Sessions
 description: Built-in tmux runtime integration — persistent sessions, multi-tab attachment, native UI on top.
 ---
 
@@ -74,7 +74,7 @@ tmux list-panes -t termy-1
 
 ## Layouts
 
-Use [tasks](/docs/configuration/tasks) with the `layout` field to scope a task to a saved layout. The tmux session is restored as part of that layout, so a task like:
+Use [tasks](/docs/using-termy/tasks-layouts) with the `layout` field to scope a task to a saved layout. The tmux session is restored as part of that layout, so a task like:
 
 ```txt
 task.dev.command     = cargo run

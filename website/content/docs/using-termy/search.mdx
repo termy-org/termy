@@ -1,0 +1,23 @@
+---
+title: Search
+description: Find text in terminal scrollback.
+---
+
+Use search to find text in the active terminal pane's visible buffer and scrollback.
+
+## Common Actions
+
+| Action | Default trigger |
+| ------ | --------------- |
+| `open_search` | `secondary-f` |
+| `search_next` | `secondary-g` |
+| `search_previous` | `secondary-shift-g` |
+| `close_search` | configure manually |
+| `toggle_search_case_sensitive` | configure manually |
+| `toggle_search_regex` | configure manually |
+
+## Tips
+
+- Use `search_next` and `search_previous` to move through matches without closing search.
+- Bind `toggle_search_regex` if you frequently search with regular expressions.
+- Increase `scrollback_history` in [Terminal Behavior](/docs/customize/terminal-behavior) if you need deeper search history.

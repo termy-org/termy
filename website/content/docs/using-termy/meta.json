@@ -1,0 +1,14 @@
+{
+  "title": "Using Termy",
+  "pages": [
+    "index",
+    "tabs",
+    "splits-panes",
+    "search",
+    "command-palette",
+    "tmux-sessions",
+    "tasks-layouts",
+    "plugins"
+  ],
+  "defaultOpen": true
+}

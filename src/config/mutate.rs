@@ -9,8 +9,8 @@ use std::{
 use fs4::fs_std::FileExt;
 use termy_config_core::{
     ColorSettingId, ColorSettingUpdate, Rgb8, RootSettingId, TaskConfig, apply_color_updates,
-    color_setting_from_key, color_setting_spec, parse_theme_id, prettify_config_contents,
-    remove_raw_root_key as remove_raw_root_key_entry,
+    color_setting_from_key, color_setting_spec, color_setting_specs, parse_theme_id,
+    prettify_config_contents, remove_raw_root_key as remove_raw_root_key_entry,
     remove_root_setting as remove_root_setting_entry, replace_keybind_lines, upsert_root_setting,
 };
 
@@ -119,6 +119,17 @@ pub fn set_color_setting(color: ColorSettingId, value: Option<&str>) -> Result<(
         id: color,
         value: value.map(ToString::to_string),
     }];
+    update_config_contents(|existing| Ok((apply_color_updates(existing, &updates), ())))
+}
+
+pub fn clear_color_settings() -> Result<(), String> {
+    let updates = color_setting_specs()
+        .iter()
+        .map(|spec| ColorSettingUpdate {
+            id: spec.id,
+            value: None,
+        })
+        .collect::<Vec<_>>();
     update_config_contents(|existing| Ok((apply_color_updates(existing, &updates), ())))
 }
 
@@ -274,7 +285,7 @@ mod tests {
     use std::path::Path;
     use std::sync::{LazyLock, Mutex};
 
-    use super::{import_colors_from_json, upsert_task_lines};
+    use super::{clear_color_settings, import_colors_from_json, upsert_task_lines};
     use crate::config::TaskConfig;
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -338,6 +349,29 @@ mod tests {
 
             let result = import_colors_from_json(&json_path).expect("import colors");
             assert!(result.contains("Imported"));
+        });
+    }
+
+    #[test]
+    fn clear_color_settings_removes_existing_color_overrides() {
+        with_temp_xdg_config_home(|temp_dir| {
+            let config_dir = temp_dir.join("xdg").join("termy");
+            std::fs::create_dir_all(&config_dir).expect("create config dir");
+            let config_path = config_dir.join("config.txt");
+            std::fs::write(
+                &config_path,
+                "theme = imported-ghostty\n[colors]\nforeground = #112233\nbackground = #445566\nred = #778899\n",
+            )
+            .expect("write config");
+
+            clear_color_settings().expect("clear colors");
+
+            let contents = std::fs::read_to_string(config_path).expect("read config");
+            assert!(contents.contains("theme = imported-ghostty\n"));
+            assert!(contents.contains("[colors]\n"));
+            assert!(!contents.contains("foreground ="));
+            assert!(!contents.contains("background ="));
+            assert!(!contents.contains("red ="));
         });
     }
 

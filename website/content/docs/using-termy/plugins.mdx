@@ -1,0 +1,21 @@
+---
+title: Plugins
+description: Extend Termy with out-of-process plugin executables.
+---
+
+Plugins are isolated executables discovered from the Termy config directory. They run out-of-process and communicate with Termy over a newline-delimited JSON protocol.
+
+## When to Use Plugins
+
+- Add commands to the command palette.
+- Subscribe to host events such as app start, theme changes, or active tab changes.
+- Publish lightweight plugin status panels.
+- Integrate external tools without embedding them into Termy itself.
+
+## Plugin Location
+
+Plugins live under `<config-dir>/plugins/<plugin-id>/` and each plugin directory must contain `termy-plugin.json`.
+
+## Protocol Reference
+
+See [Plugin Protocol](/docs/reference/plugin-protocol) for the manifest format, handshake messages, permissions, SDK example, and host event list.
