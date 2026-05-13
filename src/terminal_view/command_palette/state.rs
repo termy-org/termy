@@ -138,8 +138,8 @@ impl CommandPaletteItem {
     }
 
     pub(super) fn app_info_entry(label: &'static str, value: String) -> Self {
-        let truncated = if value.len() > 60 {
-            format!("{}…", &value[..59])
+        let truncated = if value.chars().count() > 60 {
+            format!("{}…", value.chars().take(59).collect::<String>())
         } else {
             value.clone()
         };
@@ -945,5 +945,20 @@ mod tests {
         assert!(state.scroll_target_y().is_none());
         assert_eq!(state.scroll_max_y(), 0.0);
         assert!(!state.is_scroll_animating());
+    }
+
+    #[test]
+    fn app_info_entry_truncates_non_ascii_without_panicking() {
+        let value = "ø".repeat(61);
+        let item = CommandPaletteItem::app_info_entry("CPU", value.clone());
+
+        assert!(item.title.contains('…'));
+        assert_eq!(
+            item.kind,
+            CommandPaletteItemKind::AppInfoEntry {
+                label: "CPU",
+                value
+            }
+        );
     }
 }

@@ -229,7 +229,7 @@ fn parse_required_color(
 
 fn parse_hex_color(value: &str) -> Option<Rgb8> {
     let hex = value.strip_prefix('#')?;
-    if hex.len() != 6 {
+    if hex.len() != 6 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return None;
     }
 
@@ -291,6 +291,32 @@ mod tests {
         let colors = parse_theme_colors_json(json).expect("valid colors");
         assert_eq!(colors.foreground, Rgb8::new(0xe5, 0xe5, 0xe5));
         assert_eq!(colors.ansi[3], Rgb8::new(0x33, 0x33, 0x33));
+    }
+
+    #[test]
+    fn rejects_malformed_unicode_hex_without_panicking() {
+        let json = r##"{
+            "foreground": "#€€",
+            "background": "#111111",
+            "cursor": "#ffffff",
+            "black": "#000000",
+            "red": "#111111",
+            "green": "#222222",
+            "yellow": "#333333",
+            "blue": "#444444",
+            "magenta": "#555555",
+            "cyan": "#666666",
+            "white": "#777777",
+            "bright_black": "#888888",
+            "bright_red": "#999999",
+            "bright_green": "#aaaaaa",
+            "bright_yellow": "#bbbbbb",
+            "bright_blue": "#cccccc",
+            "bright_magenta": "#dddddd",
+            "bright_cyan": "#eeeeee",
+            "bright_white": "#ffffff"
+        }"##;
+        assert!(parse_theme_colors_json(json).is_err());
     }
 
     #[test]

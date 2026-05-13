@@ -466,7 +466,7 @@ pub fn resolve_launch_working_directory(
 
 pub fn normalize_working_directory_candidate(candidate: Option<&str>) -> Option<String> {
     let candidate = candidate?.trim();
-    if candidate.is_empty() {
+    if candidate.is_empty() || candidate.bytes().any(|byte| byte.is_ascii_control()) {
         return None;
     }
 
@@ -1590,6 +1590,14 @@ mod tests {
         assert_eq!(
             normalize_working_directory_candidate(Some(" crates/cli ")).as_deref(),
             Some("crates/cli")
+        );
+    }
+
+    #[test]
+    fn normalize_working_directory_candidate_rejects_control_characters() {
+        assert_eq!(
+            normalize_working_directory_candidate(Some("/tmp/project\nrun-shell")),
+            None
         );
     }
 

@@ -22,6 +22,25 @@ pub(crate) fn tmux_command_line(args: &[&str]) -> String {
         .join(" ")
 }
 
+pub(crate) fn tmux_control_command_line(args: &[&str]) -> Result<String, String> {
+    for arg in args {
+        validate_tmux_control_arg(arg)?;
+    }
+    Ok(tmux_command_line(args))
+}
+
+pub(crate) fn validate_tmux_control_arg(value: &str) -> Result<(), String> {
+    if let Some(byte) = value
+        .bytes()
+        .find(|byte| matches!(byte, b'\n' | b'\r' | b'\0'))
+    {
+        return Err(format!(
+            "tmux control argument contains forbidden byte 0x{byte:02x}"
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn next_control_completion_token() -> String {
     let id = CONTROL_COMPLETION_TOKEN_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("{CONTROL_COMPLETION_TOKEN_PREFIX}{id}")
@@ -124,5 +143,12 @@ mod tests {
             quote_tmux_arg("pane name with spaces and 'quote'"),
             "'pane name with spaces and '\\''quote'\\'''"
         );
+    }
+
+    #[test]
+    fn tmux_control_command_line_rejects_protocol_separators() {
+        assert!(tmux_control_command_line(&["new-window", "bad\nrun-shell"]).is_err());
+        assert!(tmux_control_command_line(&["new-window", "bad\rrun-shell"]).is_err());
+        assert!(tmux_control_command_line(&["new-window", "bad\0run-shell"]).is_err());
     }
 }

@@ -340,7 +340,7 @@ impl TerminalView {
     ) {
         let _ = window;
         self.add_tab_with_working_dir(working_dir, cx);
-        if let Some(command) = command.filter(|value| !value.is_empty())
+        if let Some(command) = command.filter(|value| is_safe_deeplink_terminal_input(value))
             && let Some(tab) = self.tabs.get(self.active_tab)
             && let Some(terminal) = tab.active_terminal()
         {
@@ -753,6 +753,10 @@ impl TerminalView {
     ) {
         self.execute_command_action(CommandAction::InstallCli, true, window, cx);
     }
+}
+
+fn is_safe_deeplink_terminal_input(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 4096 && !value.bytes().any(|byte| byte.is_ascii_control())
 }
 
 #[cfg(test)]

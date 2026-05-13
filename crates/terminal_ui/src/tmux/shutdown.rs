@@ -3,15 +3,21 @@ use anyhow::{Result, anyhow};
 use super::types::TmuxShutdownMode;
 
 pub(crate) fn is_tmux_missing_client_error(error: &anyhow::Error) -> bool {
-    error.to_string().contains("can't find client")
+    error_chain_contains(error, "can't find client")
 }
 
 pub(crate) fn is_tmux_missing_session_error(error: &anyhow::Error) -> bool {
-    error.to_string().contains("can't find session")
+    error_chain_contains(error, "can't find session")
 }
 
 pub(crate) fn is_tmux_no_server_error(error: &anyhow::Error) -> bool {
-    error.to_string().contains("no server running on")
+    error_chain_contains(error, "no server running on")
+}
+
+fn error_chain_contains(error: &anyhow::Error, needle: &str) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains(needle))
 }
 
 pub(crate) fn normalize_shutdown_teardown_result(
@@ -101,6 +107,15 @@ mod tests {
             Err(anyhow!(
                 "tmux session kill failed: no server running on /tmp/tmux-501/termy"
             )),
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn teardown_result_checks_wrapped_error_chain() {
+        let result = normalize_shutdown_teardown_result(
+            "test-session",
+            Err(anyhow!("can't find session: test-session").context("tmux session kill failed")),
         );
         assert!(result.is_ok());
     }

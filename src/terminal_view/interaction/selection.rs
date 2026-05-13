@@ -667,6 +667,9 @@ impl TerminalView {
     }
 
     pub(in super::super) fn open_link(url: &str) -> bool {
+        if !is_safe_url_for_system_opener(url) {
+            return false;
+        }
         #[cfg(target_os = "macos")]
         {
             Command::new("open")
@@ -690,20 +693,26 @@ impl TerminalView {
         }
         #[cfg(target_os = "windows")]
         {
-            return Command::new("cmd")
-                .args(["/C", "start", "", url])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .map(|_| true)
-                .unwrap_or(false);
+            webbrowser::open(url).is_ok()
         }
     }
 
     pub(in super::super) fn is_link_modifier(modifiers: gpui::Modifiers) -> bool {
         modifiers.secondary() && !modifiers.alt && !modifiers.function
     }
+}
+
+fn is_safe_url_for_system_opener(url: &str) -> bool {
+    if url.bytes().any(|byte| byte.is_ascii_control()) {
+        return false;
+    }
+
+    #[cfg(target_os = "windows")]
+    if url.bytes().any(|byte| b"&|<>^".contains(&byte)) {
+        return false;
+    }
+
+    true
 }
 
 #[cfg(test)]

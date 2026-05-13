@@ -10,6 +10,7 @@ use super::command::split_control_completion_token;
 use super::command::{
     SEND_INPUT_BULK_HEX_BYTES, SEND_INPUT_CHUNKED_HEX_BYTES, SendInputMode, choose_send_input_mode,
     next_control_completion_token, send_keys_hex_command, tmux_command_line,
+    tmux_control_command_line,
 };
 use super::control::{ControlRequest, NotificationCoalescer, try_enqueue_control_request};
 use std::io::{Read, Write};
@@ -622,7 +623,11 @@ impl TmuxClient {
 
     fn run_control_capture_args(&self, args: &[&str]) -> Result<String> {
         const CONTROL_CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
-        let command = tmux_command_line(args);
+        let command = tmux_control_command_line(args).map_err(|error| {
+            anyhow!(TmuxControlError::protocol(format!(
+                "refusing unsafe tmux capture command: {error}"
+            )))
+        })?;
         let response = self
             .send_control_command_wait_with_timeout(command.as_str(), CONTROL_CAPTURE_TIMEOUT)
             .with_context(|| format!("tmux capture command failed: {command}"))?;
@@ -632,7 +637,11 @@ impl TmuxClient {
     }
 
     fn run_control_status_args(&self, args: &[&str]) -> Result<()> {
-        let command = tmux_command_line(args);
+        let command = tmux_control_command_line(args).map_err(|error| {
+            anyhow!(TmuxControlError::protocol(format!(
+                "refusing unsafe tmux status command: {error}"
+            )))
+        })?;
         self.send_control_command_wait(command.as_str())
             .with_context(|| format!("tmux status command failed: {command}"))
             .map(|_| ())
@@ -945,6 +954,18 @@ mod tests {
         assert_eq!(
             split_horizontal_args("%7", None),
             vec!["split-window", "-t", "%7"]
+        );
+    }
+
+    #[test]
+    fn tmux_window_args_omit_unsafe_working_directories() {
+        assert_eq!(
+            new_window_after_args("@2", Some("/tmp/project\nrun-shell")),
+            vec!["new-window", "-a", "-t", "@2"]
+        );
+        assert_eq!(
+            split_vertical_args("%7", Some("/tmp/#(run-shell)")),
+            vec!["split-window", "-h", "-t", "%7"]
         );
     }
 

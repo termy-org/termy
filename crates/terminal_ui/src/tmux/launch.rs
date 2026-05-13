@@ -120,11 +120,20 @@ pub(crate) fn spawn_tmux_control_mode(
 }
 
 pub(crate) fn append_working_dir_args<'a>(args: &mut Vec<&'a str>, working_dir: Option<&'a str>) {
-    let working_dir = working_dir.map(str::trim).filter(|value| !value.is_empty());
+    let working_dir = working_dir
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .filter(|value| is_safe_tmux_working_dir_arg(value));
     if let Some(working_dir) = working_dir {
         args.push("-c");
         args.push(working_dir);
     }
+}
+
+fn is_safe_tmux_working_dir_arg(value: &str) -> bool {
+    !value
+        .bytes()
+        .any(|byte| byte.is_ascii_control() || byte == b'#')
 }
 
 fn new_session_args<'a>(
@@ -370,6 +379,18 @@ mod tests {
     fn new_session_args_omit_working_directory_when_missing() {
         assert_eq!(
             new_session_args("work", false, Some("  ")),
+            vec!["-CC", "new-session", "-s", "work"]
+        );
+    }
+
+    #[test]
+    fn new_session_args_omit_unsafe_working_directories() {
+        assert_eq!(
+            new_session_args("work", false, Some("/tmp/project\nrun-shell")),
+            vec!["-CC", "new-session", "-s", "work"]
+        );
+        assert_eq!(
+            new_session_args("work", false, Some("/tmp/#(run-shell)")),
             vec!["-CC", "new-session", "-s", "work"]
         );
     }

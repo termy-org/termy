@@ -1,5 +1,8 @@
 use url::Url;
 
+const MAX_DEEPLINK_COMMAND_LEN: usize = 4096;
+const MAX_DEEPLINK_DIR_LEN: usize = 4096;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DeepLinkRoute {
     Activate,
@@ -52,18 +55,12 @@ impl DeepLinkRoute {
         match segments.as_slice() {
             [] => Ok((Self::Activate, None)),
             ["new"] => {
-                let command = url
-                    .query_pairs()
-                    .find_map(|(key, value)| {
-                        key.eq_ignore_ascii_case("cmd").then(|| value.into_owned())
-                    })
-                    .filter(|value| !value.trim().is_empty());
-                let dir = url
-                    .query_pairs()
-                    .find_map(|(key, value)| {
-                        key.eq_ignore_ascii_case("dir").then(|| value.into_owned())
-                    })
-                    .filter(|value| !value.trim().is_empty());
+                let command = parse_query_value(&url, "cmd")
+                    .map(|value| validate_deeplink_text(value, "cmd", MAX_DEEPLINK_COMMAND_LEN))
+                    .transpose()?;
+                let dir = parse_query_value(&url, "dir")
+                    .map(|value| validate_deeplink_text(value, "dir", MAX_DEEPLINK_DIR_LEN))
+                    .transpose()?;
                 let argument = if command.is_none() && dir.is_none() {
                     None
                 } else {
@@ -91,6 +88,24 @@ impl DeepLinkRoute {
             )),
         }
     }
+}
+
+fn parse_query_value(url: &Url, name: &str) -> Option<String> {
+    url.query_pairs()
+        .find_map(|(key, value)| key.eq_ignore_ascii_case(name).then(|| value.into_owned()))
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn validate_deeplink_text(value: String, name: &str, max_len: usize) -> Result<String, String> {
+    if value.len() > max_len {
+        return Err(format!("Termy deeplink {name} value is too long"));
+    }
+    if value.bytes().any(|byte| byte.is_ascii_control()) {
+        return Err(format!(
+            "Termy deeplink {name} value contains unsupported control characters"
+        ));
+    }
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -142,6 +157,12 @@ mod tests {
                 }))
             ))
         );
+    }
+
+    #[test]
+    fn rejects_new_tab_control_characters() {
+        assert!(DeepLinkRoute::parse("termy://new?cmd=git%20status%0A").is_err());
+        assert!(DeepLinkRoute::parse("termy://new?dir=%2Ftmp%2Fdemo%0D").is_err());
     }
 
     #[test]
