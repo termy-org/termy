@@ -730,7 +730,9 @@ mod tests {
     #[test]
     fn link_modifier_requires_secondary_key() {
         assert!(!TerminalView::is_link_modifier(gpui::Modifiers::default()));
-        assert!(TerminalView::is_link_modifier(gpui::Modifiers::secondary_key()));
+        assert!(TerminalView::is_link_modifier(
+            gpui::Modifiers::secondary_key()
+        ));
     }
 
     #[test]
