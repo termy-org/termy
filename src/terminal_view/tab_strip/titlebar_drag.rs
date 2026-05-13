@@ -76,6 +76,10 @@ impl TerminalView {
         let y: f32 = event.position.y.into();
         let interactive_hit = match orientation {
             TabStripOrientation::Horizontal => {
+                if self.tab_strip.drag.is_some() {
+                    self.disarm_titlebar_window_move();
+                    return;
+                }
                 let geometry = self.tab_strip_geometry(window);
                 let scroll_offset_x: f32 =
                     self.tab_strip.horizontal_scroll_handle.offset().x.into();

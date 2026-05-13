@@ -27,7 +27,7 @@ impl TerminalView {
         tab_widths: impl IntoIterator<Item = f32>,
         scroll_offset_x: f32,
     ) -> bool {
-        let tab_top = TOP_STRIP_CONTENT_OFFSET_Y + (TABBAR_HEIGHT - TAB_ITEM_HEIGHT);
+        let tab_top = TOP_STRIP_CONTENT_OFFSET_Y;
         let tab_bottom = TOP_STRIP_CONTENT_OFFSET_Y + TABBAR_HEIGHT;
         if pointer_y < tab_top || pointer_y >= tab_bottom {
             return false;
@@ -143,7 +143,7 @@ mod tests {
     fn shell_hit_test_detects_tabs_and_respects_y_bounds() {
         let widths = [100.0, 120.0];
         let scroll_offset_x = 0.0;
-        let tab_top = TOP_STRIP_CONTENT_OFFSET_Y + (TABBAR_HEIGHT - TAB_ITEM_HEIGHT);
+        let tab_top = TOP_STRIP_CONTENT_OFFSET_Y;
         let tab_bottom = TOP_STRIP_CONTENT_OFFSET_Y + TABBAR_HEIGHT;
         let tab_y = tab_bottom - 1.0;
         let first_tab_left = TAB_HORIZONTAL_PADDING;
@@ -162,7 +162,7 @@ mod tests {
             widths,
             scroll_offset_x
         ));
-        assert!(!TerminalView::unified_titlebar_tab_shell_hit_test(
+        assert!(TerminalView::unified_titlebar_tab_shell_hit_test(
             TAB_HORIZONTAL_PADDING + 20.0,
             TOP_STRIP_CONTENT_OFFSET_Y,
             widths,
@@ -171,6 +171,12 @@ mod tests {
         assert!(TerminalView::unified_titlebar_tab_shell_hit_test(
             TAB_HORIZONTAL_PADDING + 20.0,
             tab_top,
+            widths,
+            scroll_offset_x
+        ));
+        assert!(TerminalView::unified_titlebar_tab_shell_hit_test(
+            TAB_HORIZONTAL_PADDING + 20.0,
+            TOP_STRIP_CONTENT_OFFSET_Y + 1.0,
             widths,
             scroll_offset_x
         ));
