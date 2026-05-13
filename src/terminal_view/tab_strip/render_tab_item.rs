@@ -197,6 +197,7 @@ impl TerminalView {
         let switch_tab_index = input.index;
         let hover_tab_index = input.index;
         let close_tab_index = input.index;
+        let tab_primary_extent = input.tab_primary_extent;
 
         let anim = input.open_anim_progress.unwrap_or(1.0);
 
@@ -383,7 +384,7 @@ impl TerminalView {
                 }
             });
 
-        tab_shell
+        let tab_shell = tab_shell
             .child(
                 div()
                     .flex_1()
@@ -432,8 +433,47 @@ impl TerminalView {
                     .bg(cover_color)
             }))
             .children(drop_marker)
-            .children(Self::render_progress_badge(&input.progress_state, anim))
-            .into_any_element()
+            .children(Self::render_progress_badge(&input.progress_state, anim));
+
+        if orientation == TabStripOrientation::Horizontal {
+            return div()
+                .flex_none()
+                .relative()
+                .w(px(tab_primary_extent))
+                .h(px(TABBAR_HEIGHT))
+                .flex()
+                .items_center()
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
+                        this.on_tab_mouse_down(
+                            orientation,
+                            switch_tab_index,
+                            event.click_count,
+                            cx,
+                        );
+                        cx.stop_propagation();
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
+                        this.open_tab_context_menu(switch_tab_index, event.position, cx);
+                        cx.stop_propagation();
+                    }),
+                )
+                .on_mouse_move(
+                    cx.listener(move |this, event: &MouseMoveEvent, window, cx| {
+                        this.on_tab_mouse_move(orientation, hover_tab_index, event, window, cx);
+                        cx.stop_propagation();
+                    }),
+                )
+                .child(tab_shell)
+                .into_any_element();
+        }
+
+        tab_shell.into_any_element()
     }
 
     fn render_progress_badge(state: &ProgressState, anim: f32) -> Option<impl IntoElement> {
