@@ -1,0 +1,38 @@
+---
+title: Render Metrics
+description: Debug terminal rendering performance.
+icon: Activity
+---
+
+Termy ships a debug-only render metrics overlay for diagnosing rendering churn.
+
+## Enable
+
+```bash
+RUST_LOG=info TERMY_RENDER_METRICS=1 cargo run -p termy
+```
+
+Metrics logs are gated on `debug_assertions`; `--release` builds will not emit `render_metrics` lines.
+
+## Counters
+
+| Counter | Meaning |
+| ------- | ------- |
+| `full` | Full per-pane cell cache rebuild decisions |
+| `partial` | Dirty-span patch decisions |
+| `reuse` | No cell cache update needed |
+| `dirty_span` | Number of dirty spans consumed during partial updates |
+| `patched_cell` | Number of cells patched from dirty spans |
+| `grid_paint` / `shape_line` | Paint + text shaping work that interval |
+
+## Sanity check
+
+During cursor blink, `full` should stay near `0`. Small `partial` or `reuse` values are expected depending on reported terminal damage.
+
+## Benchmarks (macOS only)
+
+```bash
+cargo run -p xtask -- benchmark-compare
+```
+
+Requires `xctrace` / Activity Monitor. Not supported on Linux or Windows.

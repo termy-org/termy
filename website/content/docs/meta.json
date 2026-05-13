@@ -1,0 +1,14 @@
+{
+  "title": "Termy",
+  "pages": [
+    "index",
+    "---Getting Started---",
+    "getting-started",
+    "---Configuration---",
+    "configuration",
+    "keybindings",
+    "---Reference---",
+    "features",
+    "architecture"
+  ]
+}

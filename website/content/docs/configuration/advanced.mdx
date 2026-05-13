@@ -1,0 +1,44 @@
+---
+title: Advanced
+description: Updates, startup, notifications, debug, and safety.
+icon: SlidersHorizontal
+---
+
+## Updates
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `auto_update` | `true` | Enable automatic update checks and notifications. |
+
+## Startup
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `working_dir` | unset | Initial directory for new sessions. |
+| `working_dir_fallback` | `home` (macOS/Win), `process` (Linux) | Used when `working_dir` is unset. Alias: `default_working_dir`. |
+| `native_tab_persistence` | `false` | Restore native tabs and splits across restarts. |
+| `native_layout_autosave` | `false` | Auto-save into the currently loaded named layout. |
+| `native_buffer_persistence` | `false` | Replay saved buffer text when restoring layouts. |
+
+## Safety
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `warn_on_quit` | `false` | Warn every time you try to quit. |
+| `warn_on_quit_with_running_process` | `true` | Warn when a tab has an active process. |
+
+## Notifications
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `notifications_enabled` | `true` | Allow OSC 9/777 desktop notifications. |
+| `notification_min_duration` | `5` | Only notify for commands longer than N seconds. |
+| `notify_only_unfocused` | `true` | Only notify when window is unfocused. |
+
+## Debug & UI
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `show_debug_overlay` | `false` | Show FPS, CPU, and memory in the terminal corner. |
+| `simple_mode` | `false` | Open config file instead of Settings; disable command palette. |
+| `onboarding_complete` | `true` | First-run welcome flow; set `false` to see it again. |

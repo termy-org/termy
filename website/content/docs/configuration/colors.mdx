@@ -1,0 +1,48 @@
+---
+title: Colors
+description: Override theme colors with hex values.
+icon: Pipette
+---
+
+Use the `[colors]` block to override the active theme. Values are 6-digit hex (`#RRGGBB`). For full themes, see [Custom Themes](/docs/configuration/themes).
+
+```txt
+[colors]
+foreground = #e7ebf5
+background = #0b1020
+cursor     = #a7e9a3
+```
+
+## Core
+
+| Key | Aliases | Description |
+| --- | ------- | ----------- |
+| `foreground` | `fg` | Default text color. |
+| `background` | `bg` | Terminal background. |
+| `cursor` | | Cursor color. |
+
+## ANSI 0–7
+
+| Key | Aliases | Description |
+| --- | ------- | ----------- |
+| `black`   | `color0` | ANSI black. |
+| `red`     | `color1` | ANSI red. |
+| `green`   | `color2` | ANSI green. |
+| `yellow`  | `color3` | ANSI yellow. |
+| `blue`    | `color4` | ANSI blue. |
+| `magenta` | `color5` | ANSI magenta. |
+| `cyan`    | `color6` | ANSI cyan. |
+| `white`   | `color7` | ANSI white. |
+
+## ANSI 8–15 (bright)
+
+| Key | Aliases | Description |
+| --- | ------- | ----------- |
+| `bright_black`   | `brightblack`, `color8`  | Bright black. |
+| `bright_red`     | `brightred`, `color9`    | Bright red. |
+| `bright_green`   | `brightgreen`, `color10` | Bright green. |
+| `bright_yellow`  | `brightyellow`, `color11`| Bright yellow. |
+| `bright_blue`    | `brightblue`, `color12`  | Bright blue. |
+| `bright_magenta` | `brightmagenta`, `color13`| Bright magenta. |
+| `bright_cyan`    | `brightcyan`, `color14`  | Bright cyan. |
+| `bright_white`   | `brightwhite`, `color15` | Bright white. |

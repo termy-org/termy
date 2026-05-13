@@ -1,0 +1,41 @@
+---
+title: Splits & Panes
+description: Vertical, horizontal splits and pane navigation.
+icon: Columns
+---
+
+## Splitting
+
+| Action | Default trigger |
+| ------ | --------------- |
+| `split_pane_vertical` | `secondary-d` |
+| `split_pane_horizontal` | `secondary-shift-d` |
+| `close_pane` | (configure) |
+
+## Navigation
+
+| Action | Default trigger |
+| ------ | --------------- |
+| `focus_pane_next` | `secondary-o` |
+| `focus_pane_<dir>` | `secondary-alt-<arrow>` |
+
+## Resize
+
+| Action | Default trigger |
+| ------ | --------------- |
+| `resize_pane_<dir>` | `secondary-alt-shift-<arrow>` |
+
+## Zoom
+
+`toggle_pane_zoom` (default `secondary-enter`) maximizes the focused pane.
+
+## Inactive pane dimming
+
+`pane_focus_effect` controls how inactive panes look:
+
+- `off` — no dimming
+- `soft_spotlight` (default) — subtle dim
+- `cinematic` — strong dim
+- `minimal` — very subtle
+
+Tune intensity with `pane_focus_strength` (`0.0` – `2.0`).

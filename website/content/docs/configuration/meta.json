@@ -1,0 +1,15 @@
+{
+  "title": "Configuration",
+  "icon": "Settings",
+  "pages": [
+    "index",
+    "appearance",
+    "terminal",
+    "tabs",
+    "colors",
+    "themes",
+    "tasks",
+    "advanced"
+  ],
+  "defaultOpen": true
+}

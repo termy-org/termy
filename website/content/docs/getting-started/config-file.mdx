@@ -1,0 +1,55 @@
+---
+title: Config File
+description: Where Termy reads configuration from and how it is structured.
+icon: FileCog
+---
+
+Termy reads configuration from a single plain-text file.
+
+## Location
+
+| Platform | Path |
+| -------- | ---- |
+| macOS    | `~/.config/termy/config.txt` |
+| Linux    | `~/.config/termy/config.txt` |
+| Windows  | `%APPDATA%\termy\config.txt` |
+
+## Syntax
+
+Each setting is a single line in the form `key = value`. Comments start with `#`.
+
+```txt
+# appearance
+theme = termy
+font_family = JetBrains Mono
+font_size = 14
+
+# terminal
+shell = /opt/homebrew/bin/fish
+cursor_style = block
+
+# keybinds (repeatable)
+keybind = cmd-p=toggle_command_palette
+```
+
+## Sections
+
+The `[colors]` block is the only section header; everything else lives at the top level.
+
+```txt
+[colors]
+foreground = #e7ebf5
+background = #0b1020
+cursor     = #a7e9a3
+```
+
+## Tasks
+
+Tasks use a dotted key pattern.
+
+```txt
+task.build.command     = cargo build
+task.build.working_dir = crates/cli
+```
+
+See [Configuration](/docs/configuration) for the full reference.

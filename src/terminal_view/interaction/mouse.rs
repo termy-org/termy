@@ -1088,6 +1088,13 @@ impl TerminalView {
         }
 
         if !self.selection_dragging || !event.dragging() {
+            if !Self::is_link_modifier(event.modifiers) {
+                if self.clear_hovered_link() {
+                    cx.notify();
+                }
+                return;
+            }
+
             let hover_cell = self.position_to_cell(event.position, false);
             if let (Some(cell), Some(current)) = (hover_cell, self.hovered_link.as_ref())
                 && current.row == cell.row

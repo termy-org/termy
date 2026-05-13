@@ -1,0 +1,31 @@
+---
+title: Tasks
+description: Named commands you can launch in new tabs.
+icon: ListChecks
+---
+
+Tasks are configured with repeatable keys using the pattern `task.<name>.<field>`.
+
+## Fields
+
+| Field | Required | Description |
+| ----- | -------- | ----------- |
+| `command` | yes | Shell command to run in a new tab. |
+| `layout` | no | Only show the task when that saved layout is active. |
+| `working_dir` | no | Working directory for the launched tab. |
+
+## Example
+
+```txt
+task.build.command     = cargo build
+task.build.working_dir = crates/cli
+
+task.dev_server.layout      = dashboard
+task.dev_server.command     = cargo run
+```
+
+Tasks appear in the command palette under **Run Task**. Bind one to a shortcut with:
+
+```txt
+keybind = cmd-shift-b=run_task
+```

@@ -1,0 +1,46 @@
+---
+title: Defaults
+description: Default keybindings on each supported platform.
+icon: List
+---
+
+`secondary` is `cmd` on macOS and `ctrl` on Linux/Windows. Copy/paste differs per platform.
+
+## macOS
+
+```txt
+secondary-q              quit
+secondary-,              open_settings
+secondary-p              toggle_command_palette
+secondary-t              new_tab
+secondary-w              close_pane_or_tab
+secondary-1..9           switch_to_tab_1..9
+secondary-d              split_pane_vertical
+secondary-shift-d        split_pane_horizontal
+secondary-o              focus_pane_next
+secondary-alt-<arrow>    focus_pane_<dir>
+secondary-alt-shift-<arrow>  resize_pane_<dir>
+secondary-enter          toggle_pane_zoom
+secondary-=  /  -        zoom_in / zoom_out
+secondary-0              zoom_reset
+secondary-f              open_search
+secondary-g              search_next
+secondary-shift-g        search_previous
+secondary-b              toggle_vertical_tab_sidebar
+secondary-m              minimize_window
+secondary-c              copy
+secondary-v              paste
+```
+
+## Linux
+
+Identical to macOS except clipboard uses `ctrl-shift-c` / `ctrl-shift-v`. No `minimize_window` binding.
+
+## Windows
+
+Identical to Linux. `secondary-c` and `secondary-v` map to copy/paste through the `secondary` modifier (`ctrl`).
+
+## Notes
+
+- `toggle_agent_sidebar` is currently unavailable on Windows.
+- `toggle_vertical_tab_sidebar` only works when `vertical_tabs = true`.

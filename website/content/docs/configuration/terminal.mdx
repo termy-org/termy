@@ -1,0 +1,61 @@
+---
+title: Terminal
+description: Shell, cursor, scrolling, clipboard, and tmux.
+icon: TerminalSquare
+---
+
+## Shell
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `shell` | login shell | Executable used for new sessions. |
+| `term` | `xterm-256color` | `TERM` value exposed to child apps. |
+| `colorterm` | `truecolor` | `COLORTERM` value exposed to child apps. |
+| `shell_integration_enabled` | `true` | OSC 133 prompt and command tracking. |
+
+## Cursor
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `cursor_style` | `block` | `block` or `line`. |
+| `cursor_blink` | `true` | Enable blinking cursor animation. |
+
+## Scrolling
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `mouse_scroll_multiplier` | `3` | Mouse wheel scroll speed multiplier. |
+| `scrollbar_visibility` | `on_scroll` | `off` \| `always` \| `on_scroll`. |
+| `scrollbar_style` | `neutral` | `neutral` \| `muted_theme` \| `theme`. |
+| `scrollback_history` | `2000` | Lines retained in scrollback (alias: `scrollback`). |
+| `inactive_tab_scrollback` | unset | Scrollback limit for inactive tabs. |
+
+## Panes
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `pane_focus_effect` | `soft_spotlight` | `off` \| `soft_spotlight` \| `cinematic` \| `minimal`. |
+| `pane_focus_strength` | `0.6` | Strength of active pane emphasis (0.0 – 2.0). |
+
+## Clipboard
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `copy_on_select` | `false` | Auto-copy selected text. |
+| `copy_on_select_toast` | `true` | Show toast when text is copied on select. |
+
+## UI
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `command_palette_show_keybinds` | `true` | Show shortcut badges in command palette rows. |
+| `progress_indicator_enabled` | `true` | Show OSC 9;4 progress in tab badges. |
+
+## Tmux
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `tmux_enabled` | `false` | Enable tmux runtime integration. |
+| `tmux_persistence` | `true` | Reuse tmux tabs and panes across restarts. |
+| `tmux_binary` | `tmux` | tmux executable path or binary name. |
+| `tmux_show_active_pane_border` | `false` | Show active tmux pane border highlight. |

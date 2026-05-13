@@ -1,0 +1,36 @@
+---
+title: Overview
+description: Ghostty-style keybind directives for Termy.
+icon: Keyboard
+---
+
+Termy uses repeated `keybind` lines in `~/.config/termy/config.txt` to override the built-in defaults.
+
+## Syntax
+
+Supported forms:
+
+- `keybind = clear`
+- `keybind = <trigger>=<action>`
+- `keybind = <trigger>=unbind`
+
+## Behavior
+
+- Directives apply in file order.
+- Later lines win for the same trigger.
+- `clear` removes all defaults before later lines are applied.
+- `unbind` removes the current mapping for a trigger.
+- Invalid lines are ignored with a warning.
+
+## The `secondary` modifier
+
+`secondary` resolves to `cmd` on macOS and `ctrl` on non-macOS platforms. Use it for cross-platform configs.
+
+```txt
+keybind = secondary-p=toggle_command_palette
+keybind = secondary-t=new_tab
+```
+
+<Callout>
+  Set `command_palette_show_keybinds = false` if you'd rather not see shortcut badges in palette rows.
+</Callout>

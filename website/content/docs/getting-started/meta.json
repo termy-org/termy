@@ -1,0 +1,6 @@
+{
+  "title": "Getting Started",
+  "icon": "Rocket",
+  "pages": ["installation", "first-run", "config-file"],
+  "defaultOpen": true
+}

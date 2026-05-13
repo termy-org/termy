@@ -1,0 +1,47 @@
+---
+title: Plugins
+description: Out-of-process executables that extend Termy.
+icon: Plug
+---
+
+Plugins are isolated executables discovered from the Termy config directory.
+
+## Layout
+
+- Plugins live under `<config-dir>/plugins/<plugin-id>/`
+- Each plugin directory must contain `termy-plugin.json`
+- `entrypoint` may be relative to the plugin directory or absolute
+- Plugins run out-of-process over stdio with newline-delimited JSON
+- Unresponsive or invalid plugins are rejected during the startup handshake
+- Rust authors can use `termy_plugin_sdk` for the handshake and message loop
+
+## Manifest
+
+```json
+{
+  "schema_version": 1,
+  "id": "example.hello",
+  "name": "Hello Plugin",
+  "version": "0.1.0",
+  "description": "Minimal example plugin",
+  "runtime": "executable",
+  "entrypoint": "./plugin.sh",
+  "autostart": true,
+  "permissions": ["network"],
+  "contributes": {
+    "commands": [
+      { "id": "example.hello.run", "title": "Run Hello" }
+    ]
+  }
+}
+```
+
+## Handshake
+
+Host to plugin:
+
+```json
+{"type":"hello","payload":{"protocol_version":1,"host_name":"termy","host_version":"0.1.84","plugin_id":"example.hello"}}
+```
+
+See [`docs/architecture/plugins.md`](https://github.com/lassejlv/termy/blob/main/docs/architecture/plugins.md) in the repo for the full protocol.

@@ -1,0 +1,101 @@
+---
+title: Tmux
+description: Built-in tmux runtime integration — persistent sessions, multi-tab attachment, native UI on top.
+icon: Layers
+---
+
+Termy treats tmux as an opt-in runtime, not a hard requirement. When enabled, every tab and split is backed by a tmux pane, so your sessions survive crashes, restarts, and reboots.
+
+## Why use it
+
+- **Persistence** — close the app, reopen, pick up exactly where you left off.
+- **Detach / reattach** — share a long-running session between Termy windows or with the CLI.
+- **Remote work** — `ssh` into a server and open the same tmux session inside a Termy tab.
+- **Battle-tested** — Termy delegates the hard parts (PTY multiplexing, session state) to tmux 3.3+.
+
+## Requirements
+
+- `tmux` ≥ 3.3 on `PATH`
+- macOS or Linux (Windows is not supported by upstream tmux)
+
+Check your version:
+
+```bash
+tmux -V
+```
+
+## Enable
+
+Add to `~/.config/termy/config.txt`:
+
+```txt
+tmux_enabled                  = true
+tmux_persistence              = true
+tmux_binary                   = tmux
+tmux_show_active_pane_border  = false
+```
+
+| Key | Effect |
+| --- | ------ |
+| `tmux_enabled` | Boot new tabs into a tmux session instead of a raw PTY. |
+| `tmux_persistence` | Reuse the same tmux session across restarts; tabs survive quit/relaunch. |
+| `tmux_binary` | Absolute path or name of the tmux executable. Useful for `/opt/homebrew/bin/tmux`. |
+| `tmux_show_active_pane_border` | Draw tmux's own active pane border in addition to Termy's pane focus effect. |
+
+<Callout>
+  Termy creates one session per window by default, named `termy-<window-id>`. Multiple windows do not collide.
+</Callout>
+
+## Manage sessions at runtime
+
+Open the command palette (`secondary-p`) and search for **Manage tmux Sessions**, or bind it directly:
+
+```txt
+keybind = secondary-shift-s=manage_tmux_sessions
+```
+
+From the session manager you can:
+
+- **Attach** an existing session to the current tab
+- **Switch** the current tab to another session
+- **Create** a new named session
+- **Rename** an existing session
+- **Detach** without killing the session
+- **Kill** a session and all its panes
+
+## Splits and panes
+
+When `tmux_enabled = true`, Termy's split actions (`split_pane_vertical`, `split_pane_horizontal`) create real tmux panes. Anything you do inside Termy is reflected in tmux state:
+
+```bash
+# from another terminal
+tmux list-sessions
+tmux list-panes -t termy-1
+```
+
+## Layouts
+
+Use [tasks](/docs/configuration/tasks) with the `layout` field to scope a task to a saved layout. The tmux session is restored as part of that layout, so a task like:
+
+```txt
+task.dev.command     = cargo run
+task.dev.layout      = dashboard
+task.dev.working_dir = .
+```
+
+…only appears in the palette when the `dashboard` layout is active, and the launched tab joins the layout's tmux session.
+
+## Tips
+
+- **Don't disable persistence on a remote box.** SSH plus `tmux_persistence = true` means a flaky network never costs you a session.
+- **Pick a stable tmux.** If you upgrade tmux, restart Termy. The control-mode protocol differs between major versions.
+- **One config, two modes.** Toggling `tmux_enabled = false` falls back to raw PTYs without losing any other settings.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| ------- | ------------ | --- |
+| Tabs blank on launch | `tmux_binary` not on `PATH` | Set an absolute path. |
+| `protocol version mismatch` | Multiple tmux versions installed | Point `tmux_binary` at the one you want. |
+| Sessions vanish on quit | `tmux_persistence = false` | Set it to `true`. |
+| Active pane border looks doubled | Both Termy and tmux drawing it | Set `tmux_show_active_pane_border = false`. |

@@ -1,0 +1,35 @@
+---
+title: Examples
+description: Common keybind customization patterns.
+icon: BookOpen
+---
+
+## Override one default
+
+```txt
+keybind = cmd-p=toggle_command_palette
+```
+
+## Remove one default
+
+```txt
+keybind = cmd-w=unbind
+```
+
+## Start from scratch
+
+```txt
+keybind = clear
+keybind = cmd-p=toggle_command_palette
+keybind = cmd-t=new_tab
+keybind = cmd-w=close_pane_or_tab
+keybind = cmd-c=copy
+keybind = cmd-v=paste
+```
+
+## Cross-platform with `secondary`
+
+```txt
+keybind = secondary-p=toggle_command_palette
+keybind = secondary-t=new_tab
+```

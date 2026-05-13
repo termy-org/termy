@@ -1,0 +1,114 @@
+---
+title: Custom Themes
+description: Install community themes or build your own from a JSON file.
+icon: Palette
+---
+
+Termy ships several built-in themes. You can install additional ones by dropping a JSON file into your themes directory, or by importing colors from the command palette.
+
+## Where themes live
+
+Termy reads custom themes from the `themes/` directory next to your config file.
+
+| Platform | Path |
+| -------- | ---- |
+| macOS    | `~/.config/termy/themes/` |
+| Linux    | `~/.config/termy/themes/` |
+| Windows  | `%APPDATA%\termy\themes\` |
+
+Each `.json` file is one theme. The filename (without `.json`) is the **slug** — that's what you set in `theme = <slug>`.
+
+## Theme file format
+
+```json
+{
+  "$schema": "../../../schemas/theme.schema.json",
+  "background":      "#0b1020",
+  "foreground":      "#e7ebf5",
+  "cursor":          "#a7e9a3",
+
+  "black":           "#0b1020",
+  "red":             "#f1b8c5",
+  "green":           "#a7e9a3",
+  "yellow":          "#d8d49a",
+  "blue":            "#3a4568",
+  "magenta":         "#9fa9d6",
+  "cyan":            "#84bbf3",
+  "white":           "#d0d8eb",
+
+  "bright_black":    "#30385a",
+  "bright_red":      "#f1b8c5",
+  "bright_green":    "#a7e9a3",
+  "bright_yellow":   "#e7ebf5",
+  "bright_blue":     "#5f6f99",
+  "bright_magenta":  "#b3bdd6",
+  "bright_cyan":     "#c9e0fa",
+  "bright_white":    "#f4f7ff"
+}
+```
+
+All values are 6-digit hex (`#RRGGBB`). See [Colors](/docs/configuration/colors) for the full key list and aliases.
+
+<Callout>
+  The `$schema` field is optional but enables IntelliSense in editors that understand JSON Schema. The schema file lives in the Termy repo at [`theme.schema.json`](https://github.com/lassejlv/termy/blob/main/theme.schema.json).
+</Callout>
+
+## Install a theme
+
+### Option 1 — drop the file in
+
+```bash
+mkdir -p ~/.config/termy/themes
+cp ~/Downloads/my-theme.json ~/.config/termy/themes/
+```
+
+Then activate it in `config.txt`:
+
+```txt
+theme = my-theme
+```
+
+Or use **Switch Theme** from the command palette (`secondary-p`) to pick it from the live list.
+
+### Option 2 — Import Colors command
+
+The fastest way to try out a theme without committing to it:
+
+1. Open the command palette (`secondary-p`)
+2. Run **Import Colors**
+3. Pick a `.json` file from the file dialog
+
+This writes the colors into the `[colors]` block of your `config.txt` directly. Your active `theme` is preserved — the import just **overrides** specific entries.
+
+Useful for:
+
+- Trying a theme without renaming files
+- Mixing one theme's `cursor` with another's `background`
+- Importing partial palettes (missing keys are left untouched)
+
+```txt
+# before
+theme = termy
+
+# after Import Colors with a tweaked palette
+theme = termy
+
+[colors]
+background = #0b1020
+cursor     = #a7e9a3
+```
+
+## Removing overrides
+
+Delete the `[colors]` block from `config.txt` to fall back to the pure theme. Or use **Prettify Config** from the command palette and remove individual lines.
+
+## Authoring tips
+
+- Start from a built-in theme JSON and edit incrementally.
+- Keep contrast in mind: `foreground` vs `background` should hit at least 4.5:1 for body text.
+- ANSI 8–15 ("bright" variants) are commonly used by shells for status colors — make them distinguishable from 0–7.
+- Hot-reload: editing a file in `themes/` while Termy is running picks up automatically.
+
+## Sharing a theme
+
+Just share the `.json` file. Recipients drop it into their `themes/` directory and run `theme = <slug>`. No packaging, no install step.

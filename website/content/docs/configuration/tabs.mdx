@@ -1,0 +1,35 @@
+---
+title: Tabs
+description: Tab titles, tab strip behavior, and title bar.
+icon: PanelTop
+---
+
+## Tab Titles
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `tab_title_mode` | `smart` | `smart` \| `shell` \| `explicit` \| `static`. |
+| `tab_title_priority` | `manual, explicit, shell, fallback` | Exact source priority. |
+| `tab_title_fallback` | `Terminal` | Title when no source available. |
+| `tab_title_explicit_prefix` | `termy:tab:` | Prefix for explicit OSC title payloads. |
+| `tab_title_shell_integration` | `true` | Export `TERMY_*` env vars for shell hooks. |
+| `tab_title_prompt_format` | `{cwd}` | Template for prompt-derived titles. |
+| `tab_title_command_format` | `{command}` | Template for command-derived titles. |
+
+## Tab Strip
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `tab_close_visibility` | `active_hover` | `active_hover` \| `hover` \| `always`. |
+| `tab_width_mode` | `active_grow_sticky` | `stable` \| `active_grow` \| `active_grow_sticky`. |
+| `tab_switch_modifier_hints` | `true` | Show secondary+1..9 badges on first nine tabs. |
+| `vertical_tabs` | `false` | Move tab strip into a left sidebar. |
+| `vertical_tabs_width` | `220` | Width for the vertical sidebar in pixels. |
+| `vertical_tabs_minimized` | `false` | Start vertical tabs collapsed. |
+| `auto_hide_tabbar` | `true` | Hide tab bar when only one tab is open. |
+
+## Title Bar
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `show_termy_in_titlebar` | `true` | Show or hide Termy branding in the titlebar. |

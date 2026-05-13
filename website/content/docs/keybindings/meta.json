@@ -1,0 +1,6 @@
+{
+  "title": "Keybindings",
+  "icon": "Keyboard",
+  "pages": ["index", "defaults", "actions", "examples"],
+  "defaultOpen": false
+}
