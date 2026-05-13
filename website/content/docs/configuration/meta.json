@@ -1,6 +1,5 @@
 {
   "title": "Configuration",
-  "icon": "Settings",
   "pages": [
     "index",
     "appearance",

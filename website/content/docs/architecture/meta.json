@@ -1,6 +1,5 @@
 {
   "title": "Architecture",
-  "icon": "Boxes",
   "pages": ["command-boundary", "render-metrics"],
   "defaultOpen": false
 }

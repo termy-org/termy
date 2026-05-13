@@ -1,6 +1,5 @@
 {
   "title": "Features",
-  "icon": "Sparkles",
   "pages": ["tmux", "splits", "command-palette", "plugins"],
   "defaultOpen": false
 }
