@@ -399,6 +399,10 @@ impl TerminalView {
 
         let previous = self.last_terminal_modifiers;
         self.last_terminal_modifiers = event.modifiers;
+        if !Self::is_link_modifier(event.modifiers) && self.clear_hovered_link() {
+            cx.notify();
+        }
+
         let overlay_owns_terminal_input = self.overlay_owns_terminal_input();
         if overlay_owns_terminal_input {
             // Match key-down/up ownership rules: overlays consume modifier

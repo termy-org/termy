@@ -728,6 +728,24 @@ mod tests {
     }
 
     #[test]
+    fn link_modifier_requires_secondary_key() {
+        assert!(!TerminalView::is_link_modifier(gpui::Modifiers::default()));
+        assert!(TerminalView::is_link_modifier(gpui::Modifiers::secondary_key()));
+    }
+
+    #[test]
+    fn link_modifier_ignores_alt_and_function_chords() {
+        assert!(!TerminalView::is_link_modifier(gpui::Modifiers {
+            alt: true,
+            ..gpui::Modifiers::secondary_key()
+        }));
+        assert!(!TerminalView::is_link_modifier(gpui::Modifiers {
+            function: true,
+            ..gpui::Modifiers::secondary_key()
+        }));
+    }
+
+    #[test]
     fn selection_pos_for_cell_with_display_offset_keeps_col_and_maps_line() {
         assert_eq!(
             TerminalView::selection_pos_for_cell_with_display_offset(CellPos { col: 7, row: 2 }, 4,),
