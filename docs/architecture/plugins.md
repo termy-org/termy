@@ -88,12 +88,6 @@ session.run_until_shutdown(|message, session| {
 })?;
 ```
 
-Plugins can request host toasts by declaring `"notifications"` in their manifest permissions and calling:
-
-```rust
-session.send_toast(PluginToastLevel::Info, "hello from plugin", Some(2500))?;
-```
-
 Plugins can publish a lightweight settings panel by declaring the `ui_panels` permission, advertising the `ui_panel` capability, and calling:
 
 ```rust

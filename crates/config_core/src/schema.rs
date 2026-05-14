@@ -298,7 +298,7 @@ pub const PANE_FOCUS_EFFECT_ENUM_CHOICES: &[EnumChoice] = &[
 define_root_settings! {
     (Theme, "theme", [], Appearance, "THEME", "Theme", "Current color scheme name", ["color", "scheme", "appearance"], RootSettingValueKind::Special, false),
     (ChromeContrast, "chrome_contrast", [], Appearance, "CHROME", "Increase Chrome Contrast", "Increase contrast of non-terminal UI surfaces", ["chrome", "contrast", "sidebar", "titlebar", "panel", "overlay", "tab strip"], RootSettingValueKind::Boolean, false),
-    (AutoUpdate, "auto_update", [], Advanced, "UPDATES", "Auto Update", "Enable automatic update checks and notifications", ["update", "check", "upgrade", "version"], RootSettingValueKind::Boolean, false),
+    (AutoUpdate, "auto_update", [], Advanced, "UPDATES", "Auto Update", "Enable automatic update checks", ["update", "check", "upgrade", "version"], RootSettingValueKind::Boolean, false),
     (TmuxEnabled, "tmux_enabled", [], Terminal, "TMUX", "Tmux Enabled", "Enable tmux runtime integration", ["tmux", "runtime", "integration", "enabled"], RootSettingValueKind::Boolean, false),
     (TmuxPersistence, "tmux_persistence", [], Terminal, "TMUX", "Tmux Persistence", "Reuse tmux tabs and panes across app restarts", ["tmux", "session", "persistence", "restart"], RootSettingValueKind::Boolean, false),
     (NativeTabPersistence, "native_tab_persistence", [], Advanced, "STARTUP", "Native Tab Persistence", "Restore native tabs and pane splits across app restarts", ["native", "tabs", "panes", "split", "restore", "startup"], RootSettingValueKind::Boolean, false),
@@ -351,11 +351,8 @@ define_root_settings! {
     (PaneFocusEffect, "pane_focus_effect", [], Terminal, "UI", "Pane Focus Effect", "How inactive panes are visually dimmed when a pane is active", ["pane", "focus", "dimming", "effect"], RootSettingValueKind::Enum, false),
     (PaneFocusStrength, "pane_focus_strength", [], Terminal, "UI", "Pane Focus Strength", "Strength of active pane emphasis (0.0 to 2.0)", ["pane", "focus", "strength", "dimming"], RootSettingValueKind::Numeric, false),
     (CopyOnSelect, "copy_on_select", [], Terminal, "CLIPBOARD", "Copy On Select", "Automatically copy selected text to clipboard", ["copy", "select", "clipboard", "selection"], RootSettingValueKind::Boolean, false),
-    (CopyOnSelectToast, "copy_on_select_toast", [], Terminal, "CLIPBOARD", "Copy On Select Toast", "Show a toast notification when text is copied on select", ["copy", "select", "toast", "notification"], RootSettingValueKind::Boolean, false),
+    (CopyOnSelectToast, "copy_on_select_toast", [], Terminal, "CLIPBOARD", "Copy On Select Toast", "Show a toast when text is copied on select", ["copy", "select", "toast"], RootSettingValueKind::Boolean, false),
     (CommandPaletteShowKeybinds, "command_palette_show_keybinds", [], Terminal, "UI", "Show Keybindings In Palette", "Show shortcut badges in command palette rows", ["palette", "keybinds", "shortcuts"], RootSettingValueKind::Boolean, false),
-    (NotificationsEnabled, "notifications_enabled", [], Advanced, "NOTIFICATIONS", "Enable Notifications", "Allow terminal commands to trigger desktop notifications via OSC 9/777", ["notifications", "alert", "desktop", "osc"], RootSettingValueKind::Boolean, false),
-    (NotificationMinDuration, "notification_min_duration", [], Advanced, "NOTIFICATIONS", "Minimum Command Duration", "Only notify for commands running longer than this (seconds)", ["notifications", "duration", "threshold", "long-running"], RootSettingValueKind::Numeric, false),
-    (NotifyOnlyUnfocused, "notify_only_unfocused", [], Advanced, "NOTIFICATIONS", "Notify Only When Unfocused", "Only show notifications when window is not focused", ["notifications", "focus", "background", "unfocused"], RootSettingValueKind::Boolean, false),
     (ShellIntegrationEnabled, "shell_integration_enabled", [], Terminal, "SHELL", "Shell Integration", "Enable OSC 133 shell integration for command lifecycle tracking", ["shell", "integration", "osc", "133", "prompt", "command"], RootSettingValueKind::Boolean, false),
     (ProgressIndicatorEnabled, "progress_indicator_enabled", [], Terminal, "UI", "Progress Indicators", "Show progress from OSC 9;4 sequences in tab badges", ["progress", "indicator", "tab", "badge", "osc"], RootSettingValueKind::Boolean, false),
     (Keybind, "keybind", [], Keybindings, "KEYBINDS", "Keybind Directive", "Keybinding override directive", ["keybind", "shortcut", "command"], RootSettingValueKind::Special, true),
@@ -526,11 +523,6 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::CommandPaletteShowKeybinds => {
             Some(config.command_palette_show_keybinds.to_string())
         }
-        RootSettingId::NotificationsEnabled => Some(config.notifications_enabled.to_string()),
-        RootSettingId::NotificationMinDuration => {
-            Some(config.notification_min_duration.to_string())
-        }
-        RootSettingId::NotifyOnlyUnfocused => Some(config.notify_only_unfocused.to_string()),
         RootSettingId::ShellIntegrationEnabled => {
             Some(config.shell_integration_enabled.to_string())
         }

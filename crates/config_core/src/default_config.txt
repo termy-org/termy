@@ -1,9 +1,9 @@
 # Main settings
 # Current color scheme name
-theme = shell-decide
+theme = termy
 # Increase contrast of non-terminal UI surfaces
 chrome_contrast = false
-# Enable automatic update checks and notifications
+# Enable automatic update checks
 auto_update = true
 # Enable tmux runtime integration
 tmux_enabled = false
@@ -19,6 +19,8 @@ native_buffer_persistence = false
 show_debug_overlay = false
 # Open the config file instead of the Settings window and disable the command palette
 simple_mode = false
+# Whether the first-run welcome flow has been completed; set to false to see it again
+onboarding_complete = true
 # tmux executable path or binary name
 tmux_binary = tmux
 # Show active tmux pane border highlight in managed sessions
@@ -107,10 +109,14 @@ pane_focus_effect = soft_spotlight
 pane_focus_strength = 0.6
 # Automatically copy selected text to clipboard
 copy_on_select = false
-# Show a toast notification when text is copied on select
+# Show a toast when text is copied on select
 copy_on_select_toast = true
 # Show shortcut badges in command palette rows
 command_palette_show_keybinds = true
+# Enable OSC 133 shell integration for command lifecycle tracking
+shell_integration_enabled = true
+# Show progress from OSC 9;4 sequences in tab badges
+progress_indicator_enabled = true
 
 # Keybindings (repeatable)
 # keybind = cmd-p=toggle_command_palette

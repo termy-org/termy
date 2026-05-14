@@ -1250,7 +1250,9 @@ impl TerminalView {
         };
 
         let icon_path = match model.tone {
-            termy_auto_update_ui::UpdateBannerTone::Info => "icons/command_palette/check-update.svg",
+            termy_auto_update_ui::UpdateBannerTone::Info => {
+                "icons/command_palette/check-update.svg"
+            }
             termy_auto_update_ui::UpdateBannerTone::Success => "icons/command_palette/info.svg",
             termy_auto_update_ui::UpdateBannerTone::Error => "icons/command_palette/info.svg",
         };
@@ -1259,8 +1261,10 @@ impl TerminalView {
         for button in model.buttons {
             let action = button.action;
             let updater_weak = updater_weak.clone();
-            let is_primary =
-                matches!(button.style, termy_auto_update_ui::UpdateButtonStyle::Primary);
+            let is_primary = matches!(
+                button.style,
+                termy_auto_update_ui::UpdateButtonStyle::Primary
+            );
             let primary_bg = colors.cursor;
             let primary_label_color = colors.background;
             let mut secondary_bg = colors.foreground;
@@ -1279,9 +1283,10 @@ impl TerminalView {
 
             actions = actions.child(
                 div()
-                    .id(gpui::ElementId::from(
-                        gpui::SharedString::from(format!("update-banner-btn-{:?}", action)),
-                    ))
+                    .id(gpui::ElementId::from(gpui::SharedString::from(format!(
+                        "update-banner-btn-{:?}",
+                        action
+                    ))))
                     .h(px(26.0))
                     .px(px(12.0))
                     .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
@@ -1303,15 +1308,6 @@ impl TerminalView {
                                 {
                                     AutoUpdater::install(entity.downgrade(), cx);
                                     termy_toast::info("Downloading update...");
-                                    this.notify_overlay(cx);
-                                }
-                            }
-                            termy_auto_update_ui::UpdateBannerAction::CompleteInstall => {
-                                if let Some(ref weak) = updater_weak
-                                    && let Some(entity) = weak.upgrade()
-                                {
-                                    AutoUpdater::complete_install(entity.downgrade(), cx);
-                                    termy_toast::info("Starting installation...");
                                     this.notify_overlay(cx);
                                 }
                             }

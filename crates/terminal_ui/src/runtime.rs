@@ -369,10 +369,10 @@ fn pty_env_overrides(
         env_overrides.insert("COLORTERM".to_string(), colorterm.to_string());
     }
 
-    // Claude Code and similar CLIs gate terminal progress/notification escape
-    // sequences on known terminal identities. Termy supports Ghostty's OSC
-    // progress protocol, so advertise that compatibility to child processes
-    // while keeping TERM conservative for terminfo.
+    // Claude Code and similar CLIs gate terminal progress escape sequences on
+    // known terminal identities. Termy supports Ghostty's OSC progress
+    // protocol, so advertise that compatibility to child processes while
+    // keeping TERM conservative for terminfo.
     env_overrides.insert(
         "TERM_PROGRAM".to_string(),
         GHOSTTY_COMPAT_TERM_PROGRAM.to_string(),
@@ -523,12 +523,6 @@ pub enum TerminalEvent {
     ShellCommandExecuting,
     /// OSC 133;D - Command finished with optional exit code
     ShellCommandFinished(Option<i32>),
-
-    // Notification events
-    /// OSC 777 - Desktop notification with title and body
-    Notification { title: String, body: String },
-    /// OSC 9 - Simple notification message
-    Notify(String),
 
     // Progress indicator (OSC 9;4)
     /// Progress state change from OSC 9;4
@@ -1442,13 +1436,11 @@ fn terminal_event_from_alacritty(event: AlacEvent) -> Option<TerminalEvent> {
 fn terminal_event_from_osc(event: OscEvent) -> TerminalEvent {
     match event {
         OscEvent::WorkingDirectory(path) => TerminalEvent::WorkingDirectory(path),
-        OscEvent::Notify(message) => TerminalEvent::Notify(message),
         OscEvent::Progress(state) => TerminalEvent::Progress(state),
         OscEvent::ShellPromptStart => TerminalEvent::ShellPromptStart,
         OscEvent::ShellCommandStart => TerminalEvent::ShellCommandStart,
         OscEvent::ShellCommandExecuting => TerminalEvent::ShellCommandExecuting,
         OscEvent::ShellCommandFinished(code) => TerminalEvent::ShellCommandFinished(code),
-        OscEvent::Notification { title, body } => TerminalEvent::Notification { title, body },
     }
 }
 
@@ -1721,19 +1713,13 @@ mod tests {
     }
 
     #[test]
-    fn drain_runtime_events_includes_custom_osc_events() {
+    fn drain_runtime_events_includes_custom_osc_progress_events() {
         let (events_tx, events_rx) = unbounded();
         events_tx
             .send(RuntimeEvent::Terminal(terminal_event_from_osc(
-                crate::osc_intercept::OscEvent::Notification {
-                    title: "Build Complete".to_string(),
-                    body: "Project built successfully.".to_string(),
-                },
-            )))
-            .unwrap();
-        events_tx
-            .send(RuntimeEvent::Terminal(terminal_event_from_osc(
-                crate::osc_intercept::OscEvent::Notify("Heads up".to_string()),
+                crate::osc_intercept::OscEvent::Progress(
+                    crate::shell_integration::ProgressState::Indeterminate,
+                ),
             )))
             .unwrap();
         drop(events_tx);
@@ -1751,13 +1737,11 @@ mod tests {
         );
 
         assert!(!has_more);
-        assert_eq!(events.len(), 2);
+        assert_eq!(events.len(), 1);
         assert!(matches!(
             &events[0],
-            TerminalEvent::Notification { title, body }
-                if title == "Build Complete" && body == "Project built successfully."
+            TerminalEvent::Progress(crate::shell_integration::ProgressState::Indeterminate)
         ));
-        assert!(matches!(&events[1], TerminalEvent::Notify(message) if message == "Heads up"));
     }
 
     #[test]

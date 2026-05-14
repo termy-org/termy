@@ -143,37 +143,6 @@ impl ProgressState {
     }
 }
 
-/// Notification request from OSC 777 or OSC 9
-#[derive(Debug, Clone)]
-pub struct TerminalNotification {
-    /// Notification title (from OSC 777)
-    pub title: Option<String>,
-    /// Notification body/message
-    pub body: String,
-    /// When the notification was received
-    pub timestamp: Instant,
-}
-
-impl TerminalNotification {
-    /// Create a new notification with title and body (OSC 777)
-    pub fn with_title(title: String, body: String) -> Self {
-        Self {
-            title: Some(title),
-            body,
-            timestamp: Instant::now(),
-        }
-    }
-
-    /// Create a new notification with just a body (OSC 9)
-    pub fn message(body: String) -> Self {
-        Self {
-            title: None,
-            body,
-            timestamp: Instant::now(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,16 +206,5 @@ mod tests {
         assert!(ProgressState::Error(50).is_error());
         assert!(ProgressState::Warning(50).is_warning());
         assert!(ProgressState::Indeterminate.is_indeterminate());
-    }
-
-    #[test]
-    fn notification_creation() {
-        let notif = TerminalNotification::with_title("Title".into(), "Body".into());
-        assert_eq!(notif.title, Some("Title".into()));
-        assert_eq!(notif.body, "Body");
-
-        let notif = TerminalNotification::message("Message".into());
-        assert_eq!(notif.title, None);
-        assert_eq!(notif.body, "Message");
     }
 }

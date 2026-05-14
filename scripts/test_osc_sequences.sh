@@ -1,6 +1,6 @@
 #!/bin/bash
 # Test script for OSC escape sequences
-# Run this in Termy to verify notification and progress support
+# Run this in Termy to verify shell integration and progress support
 
 set -e
 
@@ -19,22 +19,6 @@ echo "  [Command running for 1 second...]"
 sleep 1
 printf '\e]133;D;0\a'  # Command finished (exit code 0)
 echo "  OSC 133 sequence complete (exit code 0)"
-echo ""
-
-# OSC 9: Simple Notification
-echo "--- OSC 9: Simple Notification ---"
-echo "Sending notification..."
-printf '\e]9;This is a test notification from Termy!\a'
-echo "  Sent: 'This is a test notification from Termy!'"
-sleep 1
-echo ""
-
-# OSC 777: Notification with Title
-echo "--- OSC 777: Notification with Title ---"
-echo "Sending notification with title..."
-printf '\e]777;notify;Build Complete;Your project has been built successfully.\a'
-echo "  Sent: title='Build Complete', body='Your project has been built successfully.'"
-sleep 1
 echo ""
 
 # OSC 9;4: Progress Indicator
@@ -89,6 +73,5 @@ echo "=== All OSC tests complete! ==="
 echo ""
 echo "Expected behaviors:"
 echo "  - OSC 133: Terminal tracks command lifecycle (visible in debug mode)"
-echo "  - OSC 9/777: Desktop notification appears (if window unfocused)"
 echo "  - OSC 9;4: Tab shows progress indicator"
 echo "  - OSC 7: Working directory updates in terminal state"

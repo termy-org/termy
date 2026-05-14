@@ -39,7 +39,7 @@ pub use runtime::{
     WorkingDirFallback, normalize_working_directory_candidate, resolve_launch_working_directory,
     resolve_working_directory_path,
 };
-pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState, TerminalNotification};
+pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState};
 pub use tmux::{
     TmuxClient, TmuxLaunchTarget, TmuxNotification, TmuxPaneState, TmuxRuntimeConfig,
     TmuxSessionSummary, TmuxShutdownMode, TmuxSnapshot, TmuxSocketTarget, TmuxWindowState,

@@ -135,4 +135,4 @@ These areas are production-ready and do not need significant work:
 - In-terminal search with scrollbar markers
 - Settings UI
 - CLI companion tool
-- Toast notification system
+- Toast feedback system

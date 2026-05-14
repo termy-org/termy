@@ -11,7 +11,7 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 ## Appearance
 
 `theme`
-- Default: `shell-decide`
+- Default: `termy`
 - Current color scheme name
 - Group: `THEME`
 
@@ -150,12 +150,22 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 
 `copy_on_select_toast`
 - Default: `true`
-- Show a toast notification when text is copied on select
+- Show a toast when text is copied on select
 - Group: `CLIPBOARD`
 
 `command_palette_show_keybinds`
 - Default: `true`
 - Show shortcut badges in command palette rows
+- Group: `UI`
+
+`shell_integration_enabled`
+- Default: `true`
+- Enable OSC 133 shell integration for command lifecycle tracking
+- Group: `SHELL`
+
+`progress_indicator_enabled`
+- Default: `true`
+- Show progress from OSC 9;4 sequences in tab badges
 - Group: `UI`
 
 ## Tabs
@@ -225,21 +235,6 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 - Start vertical tabs in the collapsed state
 - Group: `TAB STRIP`
 
-`ai_features_enabled`
-- Default: `false`
-- Enable or disable all AI and agent UI features
-- Group: `AGENTS`
-
-`agent_sidebar_enabled`
-- Default: `false`
-- Enable the persisted agent projects and threads sidebar (currently unavailable on Windows)
-- Group: `AGENTS`
-
-`agent_sidebar_width`
-- Default: `252`
-- Width for the agent sidebar in pixels (currently unavailable on Windows)
-- Group: `AGENTS`
-
 `auto_hide_tabbar`
 - Default: `true`
 - Hide the tab bar when only one tab is open
@@ -254,7 +249,7 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 
 `auto_update`
 - Default: `true`
-- Enable automatic update checks and notifications
+- Enable automatic update checks
 - Group: `UPDATES`
 
 `native_tab_persistence`
@@ -276,6 +271,16 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 - Default: `false`
 - Show FPS, CPU, and memory in the terminal corner
 - Group: `UI`
+
+`simple_mode`
+- Default: `false`
+- Open the config file instead of the Settings window and disable the command palette
+- Group: `UI`
+
+`onboarding_complete`
+- Default: `true`
+- Whether the first-run welcome flow has been completed; set to false to see it again
+- Group: `ONBOARDING`
 
 `working_dir`
 - Default: unset
@@ -412,3 +417,4 @@ Use `[colors]` to override theme colors with `#RRGGBB` values.
 `bright_white`
 - Aliases: `brightwhite`, `color15`
 - ANSI bright white
+

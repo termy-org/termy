@@ -95,6 +95,17 @@ fn from_contents_with_report_captures_diagnostics() {
 }
 
 #[test]
+fn removed_notification_settings_are_ignored_without_diagnostics() {
+    let report = parse_report(
+        "notifications_enabled = true\n\
+         notification_min_duration = 10\n\
+         notify_only_unfocused = false\n",
+    );
+
+    assert!(report.diagnostics.is_empty());
+}
+
+#[test]
 fn non_color_sections_do_not_mutate_root_keys() {
     let defaults = AppConfig::default();
     let report = parse_report(
@@ -334,8 +345,6 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         RootSettingId::CopyOnSelect => Some(config.copy_on_select),
         RootSettingId::CopyOnSelectToast => Some(config.copy_on_select_toast),
         RootSettingId::CommandPaletteShowKeybinds => Some(config.command_palette_show_keybinds),
-        RootSettingId::NotificationsEnabled => Some(config.notifications_enabled),
-        RootSettingId::NotifyOnlyUnfocused => Some(config.notify_only_unfocused),
         RootSettingId::ShellIntegrationEnabled => Some(config.shell_integration_enabled),
         RootSettingId::ProgressIndicatorEnabled => Some(config.progress_indicator_enabled),
         _ => None,

@@ -3,10 +3,8 @@
 //! This module pre-parses the PTY output stream to extract OSC sequences that
 //! alacritty_terminal does not expose as events:
 //! - OSC 7: Working directory (file:// URL)
-//! - OSC 9: iTerm2-style notification
 //! - OSC 9;4: Progress indicator (ConEmu/Windows Terminal)
 //! - OSC 133: Shell integration (prompt/command lifecycle)
-//! - OSC 777: Desktop notification with title
 
 use crate::shell_integration::ProgressState;
 
@@ -16,10 +14,6 @@ pub enum OscEvent {
     /// OSC 7 - Working directory change
     /// Format: ESC ] 7 ; file://hostname/path ST
     WorkingDirectory(String),
-
-    /// OSC 9 - Simple notification (iTerm2 style)
-    /// Format: ESC ] 9 ; message ST
-    Notify(String),
 
     /// OSC 9;4 - Progress indicator (ConEmu/Windows Terminal)
     /// Format: ESC ] 9 ; 4 ; state ; progress ST
@@ -36,10 +30,6 @@ pub enum OscEvent {
 
     /// OSC 133;D - Command finished with optional exit code
     ShellCommandFinished(Option<i32>),
-
-    /// OSC 777 - Desktop notification with title
-    /// Format: ESC ] 777 ; notify ; title ; body ST
-    Notification { title: String, body: String },
 }
 
 /// State machine for parsing OSC sequences from a byte stream.
@@ -121,6 +111,8 @@ impl OscInterceptor {
                         // BEL = OSC terminator
                         if let Some(event) = self.parse_osc_payload() {
                             events.push(event);
+                        } else if self.should_consume_osc_payload() {
+                            // Removed notification OSCs are handled by dropping them.
                         } else {
                             // Not a custom OSC, pass it through
                             self.emit_osc_to_output(&mut output);
@@ -145,6 +137,8 @@ impl OscInterceptor {
                         // ESC \ = ST (String Terminator)
                         if let Some(event) = self.parse_osc_payload() {
                             events.push(event);
+                        } else if self.should_consume_osc_payload() {
+                            // Removed notification OSCs are handled by dropping them.
                         } else {
                             // Not a custom OSC, pass it through
                             self.emit_osc_to_output(&mut output);
@@ -177,6 +171,14 @@ impl OscInterceptor {
         output.push(0x07);
     }
 
+    fn should_consume_osc_payload(&self) -> bool {
+        let Ok(payload) = std::str::from_utf8(&self.buffer) else {
+            return false;
+        };
+
+        payload.starts_with("9;") || payload.starts_with("777;")
+    }
+
     /// Try to parse the OSC payload as a custom sequence we handle
     fn parse_osc_payload(&self) -> Option<OscEvent> {
         let payload = std::str::from_utf8(&self.buffer).ok()?;
@@ -188,24 +190,17 @@ impl OscInterceptor {
             ));
         }
 
-        // OSC 9 - Notification or progress
+        // OSC 9;4;state;progress - Progress indicator
         if let Some(rest) = payload.strip_prefix("9;") {
-            // OSC 9;4;state;progress - Progress indicator
             if let Some(progress_part) = rest.strip_prefix("4;") {
                 return parse_progress(progress_part);
             }
-            // OSC 9;message - Simple notification
-            return Some(OscEvent::Notify(rest.to_string()));
+            return None;
         }
 
         // OSC 133 - Shell integration
         if let Some(rest) = payload.strip_prefix("133;") {
             return parse_shell_integration(rest);
-        }
-
-        // OSC 777 - Desktop notification
-        if let Some(rest) = payload.strip_prefix("777;") {
-            return parse_notification_777(rest);
         }
 
         None
@@ -251,18 +246,6 @@ fn parse_shell_integration(payload: &str) -> Option<OscEvent> {
     }
 }
 
-/// Parse OSC 777 notification
-fn parse_notification_777(payload: &str) -> Option<OscEvent> {
-    // Format: notify;title;body
-    if let Some(rest) = payload.strip_prefix("notify;") {
-        let mut parts = rest.splitn(2, ';');
-        let title = parts.next()?.to_string();
-        let body = parts.next().unwrap_or("").to_string();
-        return Some(OscEvent::Notification { title, body });
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,17 +281,6 @@ mod tests {
         assert_eq!(
             events,
             vec![OscEvent::WorkingDirectory("/home/user".to_string())]
-        );
-    }
-
-    #[test]
-    fn parse_osc_9_notification() {
-        let mut interceptor = OscInterceptor::new();
-        let (output, events) = process_str(&mut interceptor, "\x1b]9;Build complete!\x07");
-        assert!(output.is_empty());
-        assert_eq!(
-            events,
-            vec![OscEvent::Notify("Build complete!".to_string())]
         );
     }
 
@@ -364,29 +336,31 @@ mod tests {
     }
 
     #[test]
-    fn parse_osc_777_notification() {
+    fn parse_osc_with_st_terminator() {
         let mut interceptor = OscInterceptor::new();
+        // ST = ESC \ instead of BEL
+        let (output, events) = process_str(&mut interceptor, "\x1b]9;4;1;50\x1b\\");
+        assert!(output.is_empty());
+        assert_eq!(
+            events,
+            vec![OscEvent::Progress(ProgressState::InProgress(50))]
+        );
+    }
+
+    #[test]
+    fn notification_sequences_are_ignored() {
+        let mut interceptor = OscInterceptor::new();
+
+        let (output, events) = process_str(&mut interceptor, "\x1b]9;Build complete!\x07");
+        assert!(output.is_empty());
+        assert!(events.is_empty());
+
         let (output, events) = process_str(
             &mut interceptor,
             "\x1b]777;notify;Build;Completed successfully\x07",
         );
         assert!(output.is_empty());
-        assert_eq!(
-            events,
-            vec![OscEvent::Notification {
-                title: "Build".to_string(),
-                body: "Completed successfully".to_string()
-            }]
-        );
-    }
-
-    #[test]
-    fn parse_osc_with_st_terminator() {
-        let mut interceptor = OscInterceptor::new();
-        // ST = ESC \ instead of BEL
-        let (output, events) = process_str(&mut interceptor, "\x1b]9;Test message\x1b\\");
-        assert!(output.is_empty());
-        assert_eq!(events, vec![OscEvent::Notify("Test message".to_string())]);
+        assert!(events.is_empty());
     }
 
     #[test]

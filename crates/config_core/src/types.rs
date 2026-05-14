@@ -302,10 +302,6 @@ pub struct AppConfig {
     pub command_palette_show_keybinds: bool,
     pub simple_mode: bool,
     pub onboarding_complete: bool,
-    // Notification settings
-    pub notifications_enabled: bool,
-    pub notification_min_duration: f32,
-    pub notify_only_unfocused: bool,
     pub shell_integration_enabled: bool,
     pub progress_indicator_enabled: bool,
     pub keybind_lines: Vec<KeybindConfigLine>,
@@ -381,10 +377,6 @@ impl Default for AppConfig {
             command_palette_show_keybinds: true,
             simple_mode: false,
             onboarding_complete: true,
-            // Notification defaults
-            notifications_enabled: true,
-            notification_min_duration: 5.0,
-            notify_only_unfocused: true,
             shell_integration_enabled: true,
             progress_indicator_enabled: true,
             keybind_lines: Vec::new(),

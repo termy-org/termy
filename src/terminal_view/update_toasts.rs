@@ -23,9 +23,8 @@ fn update_toast_effect(state: Option<&UpdateState>) -> UpdateToastEffect {
             kind: termy_toast::ToastKind::Info,
             message: format!("Update v{version} available"),
         },
-        Some(UpdateState::Downloaded { version, .. }) => UpdateToastEffect::Enqueue {
-            kind: termy_toast::ToastKind::Success,
-            message: format!("v{version} ready to install"),
+        Some(UpdateState::Downloaded { version, .. }) => UpdateToastEffect::StartOrUpdateProgress {
+            message: format!("Installing v{version}"),
         },
         Some(UpdateState::Installing { version }) => UpdateToastEffect::StartOrUpdateProgress {
             message: format!("Installing v{version}"),
@@ -111,7 +110,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn completed_update_states_enqueue_independent_stack_entries() {
+    fn available_update_state_enqueues_independent_stack_entry() {
         assert_eq!(
             update_toast_effect(Some(&UpdateState::Available {
                 version: "0.1.79".to_string(),
@@ -123,14 +122,17 @@ mod tests {
                 message: "Update v0.1.79 available".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn downloaded_update_state_starts_install_progress() {
         assert_eq!(
             update_toast_effect(Some(&UpdateState::Downloaded {
                 version: "0.1.79".to_string(),
                 installer_path: PathBuf::from("/tmp/termy"),
             })),
-            UpdateToastEffect::Enqueue {
-                kind: termy_toast::ToastKind::Success,
-                message: "v0.1.79 ready to install".to_string(),
+            UpdateToastEffect::StartOrUpdateProgress {
+                message: "Installing v0.1.79".to_string(),
             }
         );
     }

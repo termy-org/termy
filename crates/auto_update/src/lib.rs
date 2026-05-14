@@ -128,8 +128,14 @@ impl AutoUpdater {
                 let ver = progress_version.clone();
                 cx.update(|cx| {
                     this.update(cx, |this, cx| {
+                        if !matches!(
+                            &this.state,
+                            UpdateState::Downloading { version, .. } if version == &ver
+                        ) {
+                            return;
+                        }
                         this.state = UpdateState::Downloading {
-                            version: ver,
+                            version: ver.clone(),
                             downloaded,
                             total,
                         };
@@ -148,38 +154,29 @@ impl AutoUpdater {
                 let Some(this) = weak_done.upgrade() else {
                     return;
                 };
-                this.update(cx, |this, cx| {
-                    match result {
-                        Ok(path) => {
-                            this.state = UpdateState::Downloaded {
-                                version: dl_version,
-                                installer_path: path,
-                            };
-                        }
-                        Err(e) => {
-                            this.state = UpdateState::Error(format!("Download failed: {e}"));
-                        }
+                match result {
+                    Ok(path) => {
+                        Self::start_install(this.downgrade(), dl_version, path, cx);
                     }
-                    cx.notify();
-                });
+                    Err(e) => {
+                        this.update(cx, |this, cx| {
+                            this.state = UpdateState::Error(format!("Download failed: {e}"));
+                            cx.notify();
+                        });
+                    }
+                }
             });
         })
         .detach();
     }
 
-    pub fn complete_install(entity: WeakEntity<Self>, cx: &mut App) {
+    fn start_install(
+        entity: WeakEntity<Self>,
+        version: String,
+        installer_path: PathBuf,
+        cx: &mut App,
+    ) {
         let Some(this) = entity.upgrade() else { return };
-
-        let (version, installer_path) = {
-            let read = this.read(cx);
-            match &read.state {
-                UpdateState::Downloaded {
-                    version,
-                    installer_path,
-                } => (version.clone(), installer_path.clone()),
-                _ => return,
-            }
-        };
 
         this.update(cx, |this, cx| {
             this.state = UpdateState::Installing {

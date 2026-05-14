@@ -10,7 +10,6 @@ pub enum UpdateBannerTone {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UpdateBannerAction {
     Install,
-    CompleteInstall,
     Restart,
     Dismiss,
 }
@@ -87,16 +86,12 @@ impl UpdateBannerModel {
                 })
             }
             UpdateState::Downloaded { version, .. } => Some(Self {
-                badge: "Ready",
+                badge: "Downloaded",
                 message: format!("Version {version} is downloaded"),
-                detail: Some("Install now to finish the update.".to_string()),
+                detail: Some("Installing update automatically...".to_string()),
                 progress_percent: Some(100),
                 tone: UpdateBannerTone::Success,
-                buttons: vec![UpdateBannerButton {
-                    label: "Install Now",
-                    action: UpdateBannerAction::CompleteInstall,
-                    style: UpdateButtonStyle::Primary,
-                }],
+                buttons: vec![],
             }),
             UpdateState::Installing { version } => Some(Self {
                 badge: "Installing",
@@ -139,5 +134,37 @@ impl UpdateBannerModel {
             }),
             UpdateState::Idle | UpdateState::Checking | UpdateState::UpToDate => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn downloaded_state_has_no_manual_install_action() {
+        let model = UpdateBannerModel::from_state(&UpdateState::Downloaded {
+            version: "1.2.3".to_string(),
+            installer_path: PathBuf::from("/tmp/termy-installer.dmg"),
+        })
+        .expect("downloaded state should render an update banner");
+
+        assert_eq!(model.badge, "Downloaded");
+        assert_eq!(model.progress_percent, Some(100));
+        assert!(model.buttons.is_empty());
+    }
+
+    #[test]
+    fn installed_state_exposes_restart_action() {
+        let model = UpdateBannerModel::from_state(&UpdateState::Installed {
+            version: "1.2.3".to_string(),
+        })
+        .expect("installed state should render an update banner");
+
+        assert_eq!(
+            model.buttons.first().map(|button| button.action),
+            Some(UpdateBannerAction::Restart)
+        );
     }
 }

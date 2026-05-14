@@ -161,6 +161,10 @@ impl AppConfig {
                 Ok(None) => {}
             }
 
+            if is_removed_notification_key(key) {
+                continue;
+            }
+
             let Some(root_key) = root_setting_from_key(key) else {
                 diagnostics.push(ConfigDiagnostic {
                     line_number,
@@ -724,31 +728,6 @@ impl AppConfig {
                         config.command_palette_show_keybinds = parsed;
                     }
                 }
-                RootSettingId::NotificationsEnabled => {
-                    if let Some(parsed) =
-                        parse_bool_field(&mut diagnostics, line_number, key, value)
-                    {
-                        config.notifications_enabled = parsed;
-                    }
-                }
-                RootSettingId::NotificationMinDuration => {
-                    if let Some(parsed) = parse_finite_f32_field(
-                        &mut diagnostics,
-                        line_number,
-                        key,
-                        value,
-                        "a non-negative number of seconds",
-                    ) {
-                        config.notification_min_duration = parsed.max(0.0);
-                    }
-                }
-                RootSettingId::NotifyOnlyUnfocused => {
-                    if let Some(parsed) =
-                        parse_bool_field(&mut diagnostics, line_number, key, value)
-                    {
-                        config.notify_only_unfocused = parsed;
-                    }
-                }
                 RootSettingId::ShellIntegrationEnabled => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)
@@ -825,6 +804,13 @@ pub fn parse_theme_id(value: &str) -> Option<ThemeId> {
     } else {
         Some(normalized)
     }
+}
+
+fn is_removed_notification_key(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "notifications_enabled" | "notification_min_duration" | "notify_only_unfocused"
+    )
 }
 
 fn parse_task_key(key: &str) -> Result<Option<(&str, &str)>, TaskKeyParseError> {

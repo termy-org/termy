@@ -194,7 +194,7 @@ const SEARCH_OVERLAY_GEOMETRY: TerminalOverlayGeometry = TerminalOverlayGeometry
     control_radius: 6.0,
 };
 
-// Toast notifications use rounded corners for a softer, modern look.
+// Toast feedback uses rounded corners for a softer, modern look.
 const TOAST_GEOMETRY: TerminalOverlayGeometry = TerminalOverlayGeometry {
     panel_radius: 10.0,
     input_radius: 6.0,
@@ -1623,9 +1623,6 @@ pub struct TerminalView {
     new_tab_animation_scheduled: bool,
     show_termy_in_titlebar: bool,
     tab_shell_integration: TabTitleShellIntegration,
-    notifications_enabled: bool,
-    notification_min_duration: f32,
-    notify_only_unfocused: bool,
     shell_integration_enabled: bool,
     progress_indicator_enabled: bool,
     progress_indicator_animation_scheduled: bool,
@@ -2453,25 +2450,6 @@ impl TerminalView {
         {
             false
         }
-    }
-
-    fn dispatch_terminal_notification(&mut self, title: &str, body: &str, cx: &mut Context<Self>) {
-        if !self.notifications_enabled {
-            return;
-        }
-
-        let app_active = termy_native_sdk::is_app_active();
-        if !self.notify_only_unfocused || !app_active {
-            termy_native_sdk::show_notification(title, body);
-        }
-
-        let message = if title.trim().is_empty() || title == "Terminal" {
-            body.to_string()
-        } else {
-            format!("{title}: {body}")
-        };
-        termy_toast::info_long(message);
-        self.notify_overlay(cx);
     }
 
     #[cfg(target_os = "macos")]
@@ -3867,7 +3845,7 @@ impl TerminalView {
         }
 
         // Toggle cursor visibility for blink in both terminal and inline inputs.
-        // Skip the notification when the blink has no visible effect (blink disabled
+        // Skip the redraw request when the blink has no visible effect (blink disabled
         // or command palette is covering the terminal cursor).
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             loop {
@@ -3981,9 +3959,6 @@ impl TerminalView {
             new_tab_animation_scheduled: false,
             show_termy_in_titlebar: config.show_termy_in_titlebar,
             tab_shell_integration,
-            notifications_enabled: config.notifications_enabled,
-            notification_min_duration: config.notification_min_duration,
-            notify_only_unfocused: config.notify_only_unfocused,
             shell_integration_enabled: config.shell_integration_enabled,
             progress_indicator_enabled: config.progress_indicator_enabled,
             progress_indicator_animation_scheduled: false,
@@ -4292,9 +4267,6 @@ impl TerminalView {
             enabled: self.tab_title.shell_integration,
             explicit_prefix: self.tab_title.explicit_prefix.clone(),
         };
-        self.notifications_enabled = config.notifications_enabled;
-        self.notification_min_duration = config.notification_min_duration;
-        self.notify_only_unfocused = config.notify_only_unfocused;
         self.shell_integration_enabled = config.shell_integration_enabled;
         self.progress_indicator_enabled = config.progress_indicator_enabled;
         #[cfg(target_os = "windows")]
@@ -4671,20 +4643,6 @@ impl TerminalView {
                         // Shell integration events (OSC 133)
                         TerminalEvent::ShellPromptStart => {
                             if self.shell_integration_enabled {
-                                // Notify for long-running commands when prompt returns
-                                if let Some(duration) =
-                                    self.tabs[tab_index].command_lifecycle.elapsed()
-                                    && duration.as_secs_f32() >= self.notification_min_duration
-                                    && self.notifications_enabled
-                                    && (!self.notify_only_unfocused
-                                        || !termy_native_sdk::is_app_active())
-                                {
-                                    self.dispatch_terminal_notification(
-                                        "Command Complete",
-                                        "Long-running command finished",
-                                        cx,
-                                    );
-                                }
                                 self.tabs[tab_index].command_lifecycle.prompt_start();
                             }
                         }
@@ -4704,13 +4662,6 @@ impl TerminalView {
                                     .command_lifecycle
                                     .command_finished(code);
                             }
-                        }
-                        // Notification events (OSC 9, OSC 777)
-                        TerminalEvent::Notification { title, body } => {
-                            self.dispatch_terminal_notification(&title, &body, cx);
-                        }
-                        TerminalEvent::Notify(msg) => {
-                            self.dispatch_terminal_notification("Terminal", &msg, cx);
                         }
                         // Progress indicator (OSC 9;4)
                         TerminalEvent::Progress(state) => {
