@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { baseOptions } from '@/lib/layout.shared';
 import { fetchReleaseBySlug } from '@/lib/notra';
 import { Markdown } from '@/components/markdown';
+import { PoweredByNotra } from '@/components/powered-by-notra';
 
 const loadRelease = createServerFn({ method: 'GET' })
   .inputValidator((slug: string) => slug)
@@ -38,7 +39,7 @@ function ReleaseDetail() {
   return (
     <HomeLayout {...baseOptions()}>
       <main className="flex flex-1 flex-col">
-        <article className="mx-auto w-full max-w-3xl px-6 pt-20 pb-24">
+        <article className="mx-auto w-full max-w-3xl px-6 pt-20 pb-12">
           <Link
             to="/releases"
             className="inline-flex items-center gap-1.5 text-sm text-fd-muted-foreground hover:text-fd-foreground"
@@ -63,6 +64,8 @@ function ReleaseDetail() {
             <Markdown text={post.markdown || post.content} />
           </div>
         </article>
+
+        <PoweredByNotra />
       </main>
     </HomeLayout>
   );

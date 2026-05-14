@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { HomeLayout } from 'fumadocs-ui/layouts/home';
+import { ArrowUpRight } from 'lucide-react';
 import { baseOptions } from '@/lib/layout.shared';
 import { fetchReleases, releaseSlug, type NotraPost } from '@/lib/notra';
-import { Markdown } from '@/components/markdown';
+import { PoweredByNotra } from '@/components/powered-by-notra';
 
 const loadReleases = createServerFn({ method: 'GET' }).handler(async () => {
   try {
@@ -36,58 +37,71 @@ function ReleasesPage() {
   return (
     <HomeLayout {...baseOptions()}>
       <main className="flex flex-1 flex-col">
-        <section className="mx-auto w-full max-w-3xl px-6 pt-20 pb-12">
-          <h1 className="font-medium text-4xl tracking-tight md:text-5xl">
-            Releases
+        <section className="mx-auto w-full max-w-4xl px-6 pt-24 pb-16 text-center md:pt-32">
+          <span className="inline-flex items-center rounded-full border border-fd-border bg-fd-card px-3 py-1 text-xs uppercase tracking-wider text-fd-muted-foreground">
+            Changelog
+          </span>
+          <h1 className="mt-6 font-medium text-5xl tracking-tight md:text-6xl">
+            <span className="bg-gradient-to-b from-fd-foreground to-fd-muted-foreground bg-clip-text text-transparent">
+              Releases
+            </span>
           </h1>
-          <p className="mt-4 text-fd-muted-foreground">
-            What's new in Termy.
+          <p className="mx-auto mt-5 max-w-xl text-balance text-fd-muted-foreground md:text-lg">
+            New features, fixes, and improvements shipping in Termy.
           </p>
         </section>
 
-        <section className="mx-auto w-full max-w-3xl px-6 pb-24">
+        <section className="mx-auto w-full max-w-3xl px-6 pb-12">
           {error && (
-            <div className="rounded-md border border-fd-border bg-fd-card p-4 text-sm text-fd-muted-foreground">
+            <div className="rounded-lg border border-fd-border bg-fd-card p-4 text-sm text-fd-muted-foreground">
               Unable to load releases right now.
             </div>
           )}
 
           {!error && posts.length === 0 && (
-            <div className="rounded-md border border-fd-border bg-fd-card p-4 text-sm text-fd-muted-foreground">
+            <div className="rounded-lg border border-fd-border bg-fd-card p-4 text-sm text-fd-muted-foreground">
               No releases yet.
             </div>
           )}
 
-          <ul className="flex flex-col gap-12">
+          <ul className="flex flex-col gap-3">
             {posts.map((post) => (
-              <li
-                key={post.id}
-                className="flex flex-col gap-4 border-b border-fd-border pb-12 last:border-b-0"
-              >
-                <div className="flex flex-col gap-1">
-                  <time
-                    dateTime={post.createdAt}
-                    className="text-xs uppercase tracking-wide text-fd-muted-foreground"
-                  >
-                    {formatDate(post.createdAt)}
-                  </time>
-                  <h2 className="font-medium text-2xl tracking-tight">
-                    <Link
-                      to="/releases/$slug"
-                      params={{ slug: releaseSlug(post) }}
-                      className="hover:underline"
+              <li key={post.id}>
+                <Link
+                  to="/releases/$slug"
+                  params={{ slug: releaseSlug(post) }}
+                  className="group relative flex items-center justify-between gap-6 overflow-hidden rounded-xl border border-fd-border bg-fd-card px-6 py-5 transition-all hover:border-fd-primary/40 hover:bg-fd-accent"
+                >
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                    style={{
+                      background:
+                        'radial-gradient(600px circle at var(--mx, 50%) var(--my, 50%), color-mix(in oklch, var(--color-fd-primary) 8%, transparent), transparent 40%)',
+                    }}
+                  />
+                  <div className="flex flex-col gap-1">
+                    <time
+                      dateTime={post.createdAt}
+                      className="text-[11px] font-medium uppercase tracking-wider text-fd-muted-foreground"
                     >
+                      {formatDate(post.createdAt)}
+                    </time>
+                    <h2 className="font-medium text-xl tracking-tight text-fd-foreground md:text-2xl">
                       {post.title}
-                    </Link>
-                  </h2>
-                </div>
-                <div className="prose prose-sm max-w-none text-fd-foreground">
-                  <Markdown text={post.markdown || post.content} />
-                </div>
+                    </h2>
+                  </div>
+                  <ArrowUpRight
+                    className="size-5 shrink-0 text-fd-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-fd-foreground"
+                    strokeWidth={1.75}
+                  />
+                </Link>
               </li>
             ))}
           </ul>
         </section>
+
+        <PoweredByNotra />
       </main>
     </HomeLayout>
   );
