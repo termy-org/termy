@@ -19,7 +19,7 @@ export default defineConfig({
     }),
     react(),
     nitro({
-      preset: 'bun',
+      preset: process.env.VERCEL ? 'vercel' : 'bun',
       traceDeps: ['tslib*'],
     }),
   ],
