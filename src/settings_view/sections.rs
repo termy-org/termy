@@ -55,28 +55,65 @@ impl SettingsWindow {
         let background_blur = self.config.background_blur;
         let background_opacity_cells = self.config.background_opacity_cells;
         let theme = self.config.theme.clone();
+        let theme_mode_value = self.editable_field_value(EditableField::ThemeMode);
+        let theme_light = self.config.theme_light.clone();
+        let theme_dark = self.config.theme_dark.clone();
+        let theme_mode_is_system =
+            matches!(self.config.theme_mode, termy_config_core::AppearanceMode::System);
         let chrome_contrast = self.config.chrome_contrast;
         let font_family = self.config.font_family.clone();
+        let ui_font_family = self.config.ui_font_family.clone();
         let font_size = self.config.font_size;
         let line_height = self.config.line_height;
         let padding_x = self.config.padding_x;
         let padding_y = self.config.padding_y;
         let theme_meta = Self::setting_metadata_or_fallback("theme");
+        let theme_mode_meta = Self::setting_metadata_or_fallback("theme_mode");
+        let theme_light_meta = Self::setting_metadata_or_fallback("theme_light");
+        let theme_dark_meta = Self::setting_metadata_or_fallback("theme_dark");
         let opacity_meta = Self::setting_metadata_or_fallback("background_opacity");
         let font_family_meta = Self::setting_metadata_or_fallback("font_family");
+        let ui_font_family_meta = Self::setting_metadata_or_fallback("ui_font_family");
         let font_size_meta = Self::setting_metadata_or_fallback("font_size");
         let line_height_meta = Self::setting_metadata_or_fallback("line_height");
         let padding_x_meta = Self::setting_metadata_or_fallback("padding_x");
         let padding_y_meta = Self::setting_metadata_or_fallback("padding_y");
 
-        let theme_rows = vec![self.render_editable_row(
-            "theme",
-            EditableField::Theme,
-            theme_meta.title,
-            theme_meta.description,
-            theme,
+        let mut theme_rows = vec![self.render_editable_row(
+            "theme_mode",
+            EditableField::ThemeMode,
+            theme_mode_meta.title,
+            theme_mode_meta.description,
+            theme_mode_value,
             cx,
         )];
+        if theme_mode_is_system {
+            theme_rows.push(self.render_editable_row(
+                "theme_light",
+                EditableField::ThemeLight,
+                theme_light_meta.title,
+                theme_light_meta.description,
+                theme_light,
+                cx,
+            ));
+            theme_rows.push(self.render_editable_row(
+                "theme_dark",
+                EditableField::ThemeDark,
+                theme_dark_meta.title,
+                theme_dark_meta.description,
+                theme_dark,
+                cx,
+            ));
+        } else {
+            theme_rows.push(self.render_editable_row(
+                "theme",
+                EditableField::Theme,
+                theme_meta.title,
+                theme_meta.description,
+                theme,
+                cx,
+            ));
+        }
         let theme_group = self.render_settings_group("THEME", theme_rows);
 
         let chrome_rows = vec![self.render_root_bool_setting_row(
@@ -122,6 +159,14 @@ impl SettingsWindow {
                 font_family_meta.title,
                 font_family_meta.description,
                 font_family,
+                cx,
+            ),
+            self.render_editable_row(
+                "ui_font_family",
+                EditableField::UiFontFamily,
+                ui_font_family_meta.title,
+                ui_font_family_meta.description,
+                ui_font_family,
                 cx,
             ),
             self.render_editable_row(
@@ -695,7 +740,7 @@ impl SettingsWindow {
 
         let search_content = if is_search_active {
             let font = Font {
-                family: self.config.font_family.clone().into(),
+                family: self.config.ui_font_family.clone().into(),
                 ..Font::default()
             };
             TextInputElement::new(

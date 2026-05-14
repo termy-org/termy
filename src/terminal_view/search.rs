@@ -360,7 +360,7 @@ impl TerminalView {
                     .items_center()
                     .child(self.render_inline_input_layer(
                         Font {
-                            family: self.font_family.clone(),
+                            family: self.ui_font_family.clone(),
                             ..Font::default()
                         },
                         px(13.0),

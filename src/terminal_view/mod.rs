@@ -2,9 +2,10 @@ use crate::chrome_style::ChromeContrastProfile;
 use crate::colors::TerminalColors;
 use crate::commands::{self, CommandAction};
 use crate::config::{
-    self, AppConfig, CursorStyle as AppCursorStyle, PaneFocusEffect, TabCloseVisibility,
-    TabTitleConfig, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
-    TerminalScrollbarVisibility,
+    self, AppConfig, CursorStyle as AppCursorStyle, PaneFocusEffect, SystemAppearance,
+    TabCloseVisibility, TabTitleConfig, TabTitleSource, TabWidthMode, TaskConfig,
+    TerminalScrollbarStyle, TerminalScrollbarVisibility, resolve_active_theme,
+    system_appearance_from_window,
 };
 use crate::keybindings;
 use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
@@ -1604,6 +1605,13 @@ pub struct TerminalView {
     event_wakeup_tx: Sender<()>,
     focus_handle: FocusHandle,
     theme_id: String,
+    theme_mode: config::AppearanceMode,
+    manual_theme: String,
+    light_theme: String,
+    dark_theme: String,
+    custom_colors: config::CustomColors,
+    system_appearance: SystemAppearance,
+    appearance_subscription: Option<gpui::Subscription>,
     colors: TerminalColors,
     inactive_tab_scrollback: Option<usize>,
     tasks: Vec<TaskConfig>,
@@ -1643,6 +1651,7 @@ pub struct TerminalView {
     last_config_error_message: Option<String>,
     cached_tmux_binary: Option<String>,
     font_family: SharedString,
+    ui_font_family: SharedString,
     base_font_size: f32,
     font_size: Pixels,
     cursor_style: AppCursorStyle,
@@ -3880,8 +3889,9 @@ impl TerminalView {
             }
         };
         let config_fingerprint = config_path.as_deref().and_then(config::config_fingerprint);
-        let theme_id = config.theme.clone();
-        let colors = TerminalColors::from_theme(&config.theme, &config.colors);
+        let system_appearance = system_appearance_from_window(window.appearance());
+        let theme_id = resolve_active_theme(&config, system_appearance).to_string();
+        let colors = TerminalColors::from_theme(&theme_id, &config.colors);
         let base_font_size = config.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         let padding_x = config.padding_x.max(0.0);
         let padding_y = config.padding_y.max(0.0);
@@ -3938,6 +3948,13 @@ impl TerminalView {
             event_wakeup_tx,
             focus_handle,
             theme_id,
+            theme_mode: config.theme_mode,
+            manual_theme: config.theme.clone(),
+            light_theme: config.theme_light.clone(),
+            dark_theme: config.theme_dark.clone(),
+            custom_colors: config.colors.clone(),
+            system_appearance,
+            appearance_subscription: None,
             colors,
             inactive_tab_scrollback: config.inactive_tab_scrollback,
             tasks: config.tasks.clone(),
@@ -3982,6 +3999,7 @@ impl TerminalView {
                 (!binary.is_empty()).then_some(binary)
             },
             font_family: config.font_family.into(),
+            ui_font_family: config.ui_font_family.into(),
             base_font_size,
             font_size: px(base_font_size),
             cursor_style: config.cursor_style,
@@ -4212,7 +4230,42 @@ impl TerminalView {
         }
 
         view.sync_native_terminal_wakeup_interest();
+        view.appearance_subscription =
+            Some(cx.observe_window_appearance(window, |view, window, cx| {
+                view.handle_window_appearance_change(window.appearance(), cx);
+            }));
         view
+    }
+
+    fn handle_window_appearance_change(
+        &mut self,
+        appearance: gpui::WindowAppearance,
+        cx: &mut Context<Self>,
+    ) {
+        let next = system_appearance_from_window(appearance);
+        if self.system_appearance == next {
+            return;
+        }
+        self.system_appearance = next;
+        if self.theme_mode != config::AppearanceMode::Manual {
+            self.reapply_theme(cx);
+        }
+    }
+
+    fn reapply_theme(&mut self, cx: &mut Context<Self>) {
+        let resolved = match self.theme_mode {
+            config::AppearanceMode::Manual => self.manual_theme.clone(),
+            config::AppearanceMode::System => match self.system_appearance {
+                SystemAppearance::Light => self.light_theme.clone(),
+                SystemAppearance::Dark => self.dark_theme.clone(),
+            },
+        };
+        if resolved == self.theme_id {
+            return;
+        }
+        self.theme_id = resolved;
+        self.colors = TerminalColors::from_theme(&self.theme_id, &self.custom_colors);
+        cx.notify();
     }
 
     fn apply_runtime_config(&mut self, config: AppConfig, cx: &mut Context<Self>) -> bool {
@@ -4223,8 +4276,13 @@ impl TerminalView {
         };
         let previous_font_family = self.font_family.clone();
         let previous_font_size = self.font_size;
-        self.theme_id = config.theme.clone();
-        self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
+        self.theme_mode = config.theme_mode;
+        self.manual_theme = config.theme.clone();
+        self.light_theme = config.theme_light.clone();
+        self.dark_theme = config.theme_dark.clone();
+        self.custom_colors = config.colors.clone();
+        self.theme_id = resolve_active_theme(&config, self.system_appearance).to_string();
+        self.colors = TerminalColors::from_theme(&self.theme_id, &config.colors);
         self.inactive_tab_scrollback = config.inactive_tab_scrollback;
         self.tasks = config.tasks.clone();
         self.warn_on_quit = config.warn_on_quit;
@@ -4340,6 +4398,7 @@ impl TerminalView {
             self.tmux_runtime_mut().config.binary = config.tmux_binary.trim().to_string();
         }
         self.font_family = config.font_family.into();
+        self.ui_font_family = config.ui_font_family.into();
         self.base_font_size = config.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
         self.font_size = px(self.base_font_size);
         self.line_height = config.line_height.clamp(MIN_LINE_HEIGHT, MAX_LINE_HEIGHT);

@@ -289,7 +289,7 @@ impl TerminalView {
         }
 
         match tab_width_mode {
-            TabWidthMode::Stable => true,
+            TabWidthMode::Stable | TabWidthMode::Uniform => true,
             TabWidthMode::ActiveGrow | TabWidthMode::ActiveGrowSticky => match tab_close_visibility
             {
                 TabCloseVisibility::Always
@@ -330,6 +330,7 @@ impl TerminalView {
                 };
                 (next_width, next_sticky_width)
             }
+            TabWidthMode::Uniform => (capped_max, capped_max),
         }
     }
 

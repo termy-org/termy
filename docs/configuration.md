@@ -15,6 +15,21 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 - Current color scheme name
 - Group: `THEME`
 
+`theme_mode`
+- Default: `manual`
+- Use a single theme or switch with system appearance
+- Group: `THEME`
+
+`theme_light`
+- Default: `termy`
+- Theme applied when system appearance is light
+- Group: `THEME`
+
+`theme_dark`
+- Default: `termy`
+- Theme applied when system appearance is dark
+- Group: `THEME`
+
 `chrome_contrast`
 - Default: `false`
 - Increase contrast of non-terminal UI surfaces
@@ -23,6 +38,11 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 `font_family`
 - Default: `JetBrains Mono`
 - Font family used in terminal UI
+- Group: `FONT`
+
+`ui_font_family`
+- Default: `JetBrains Mono`
+- Font family used for tabs, command palette, and settings UI (not the terminal cells)
 - Group: `FONT`
 
 `font_size`
@@ -206,12 +226,12 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 - Group: `TAB TITLES`
 
 `tab_close_visibility`
-- Default: `active_hover`
+- Default: `hover`
 - When tab close buttons are visible
 - Group: `TAB STRIP`
 
 `tab_width_mode`
-- Default: `active_grow_sticky`
+- Default: `uniform`
 - How tab widths react to active state
 - Group: `TAB STRIP`
 

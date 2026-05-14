@@ -1,5 +1,7 @@
 use crate::colors::TerminalColors;
-use crate::config::{self, AppConfig};
+use crate::config::{
+    self, AppConfig, SystemAppearance, resolve_active_theme, system_appearance_from_window,
+};
 use crate::text_input::{TextInputAlignment, TextInputElement, TextInputProvider, TextInputState};
 use crate::theme_store::{self, ThemeStoreAuthSession, ThemeStoreAuthUser, ThemeStoreTheme};
 use crate::ui::scrollbar::{self as ui_scrollbar, ScrollbarPaintStyle, ScrollbarRange};
@@ -135,6 +137,8 @@ pub struct SettingsWindow {
     hovered_reset_section: Option<SettingsSection>,
     scroll_animation_token: u64,
     colors: TerminalColors,
+    system_appearance: SystemAppearance,
+    appearance_subscription: Option<gpui::Subscription>,
     last_window_background_appearance: Option<WindowBackgroundAppearance>,
     theme_store_themes: Vec<ThemeStoreTheme>,
     theme_store_loaded: bool,
@@ -166,13 +170,15 @@ impl SettingsWindow {
         let mut available_font_families = window.text_system().all_font_names();
         available_font_families.sort_unstable_by_key(|font| font.to_ascii_lowercase());
         available_font_families.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
-        let colors = TerminalColors::from_theme(&config.theme, &config.colors);
+        let system_appearance = system_appearance_from_window(window.appearance());
+        let resolved_theme = resolve_active_theme(&config, system_appearance);
+        let colors = TerminalColors::from_theme(resolved_theme, &config.colors);
         let searchable_settings = Self::build_searchable_settings();
         let searchable_setting_indices =
             Self::build_searchable_setting_indices(&searchable_settings);
         let content_scroll_handle = ScrollHandle::new();
         let setting_scroll_anchors = Self::build_setting_scroll_anchors(&content_scroll_handle);
-        let view = Self {
+        let mut view = Self {
             active_section: SettingsSection::Appearance,
             config,
             config_path,
@@ -207,6 +213,8 @@ impl SettingsWindow {
             hovered_reset_section: None,
             scroll_animation_token: 0,
             colors,
+            system_appearance,
+            appearance_subscription: None,
             last_window_background_appearance: None,
             theme_store_themes: Vec::new(),
             theme_store_loaded: false,
@@ -288,7 +296,29 @@ impl SettingsWindow {
         })
         .detach();
 
+        view.appearance_subscription =
+            Some(cx.observe_window_appearance(window, |view, window, cx| {
+                view.handle_window_appearance_change(window.appearance(), cx);
+            }));
+
         view
+    }
+
+    fn handle_window_appearance_change(
+        &mut self,
+        appearance: gpui::WindowAppearance,
+        cx: &mut Context<Self>,
+    ) {
+        let next = system_appearance_from_window(appearance);
+        if self.system_appearance == next {
+            return;
+        }
+        self.system_appearance = next;
+        if self.config.theme_mode != config::AppearanceMode::Manual {
+            let resolved = resolve_active_theme(&self.config, self.system_appearance);
+            self.colors = TerminalColors::from_theme(resolved, &self.config.colors);
+            cx.notify();
+        }
     }
 
     fn theme_store_api_base_url() -> String {
@@ -552,7 +582,8 @@ impl SettingsWindow {
     }
 
     fn apply_runtime_config(&mut self, config: AppConfig) -> bool {
-        self.colors = TerminalColors::from_theme(&config.theme, &config.colors);
+        let resolved_theme = resolve_active_theme(&config, self.system_appearance);
+        self.colors = TerminalColors::from_theme(resolved_theme, &config.colors);
         self.config = config;
         let previous_preview = self.preview_background_opacity;
         let synced_preview = config::synced_background_opacity_preview(
@@ -1194,7 +1225,7 @@ impl Render for SettingsWindow {
             .flex()
             .size_full()
             .bg(bg)
-            .font_family(self.config.font_family.clone())
+            .font_family(self.config.ui_font_family.clone())
             .child(self.render_sidebar(cx))
             .child(
                 // Keep the shared content pane shrink-safe so wide rows cannot

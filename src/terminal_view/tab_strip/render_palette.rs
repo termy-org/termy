@@ -10,7 +10,6 @@ pub(super) struct TabStripPalette {
     pub(super) active_tab_text: gpui::Rgba,
     pub(super) inactive_tab_text: gpui::Rgba,
     pub(super) close_button_bg: gpui::Rgba,
-    pub(super) close_button_hover_bg: gpui::Rgba,
     pub(super) close_button_hover_text: gpui::Rgba,
     pub(super) switch_hint_bg: gpui::Rgba,
     pub(super) switch_hint_border: gpui::Rgba,
@@ -47,8 +46,6 @@ impl TerminalView {
         inactive_tab_text.a = 0.55;
         let mut close_button_bg = colors.foreground;
         close_button_bg.a = 0.0;
-        let mut close_button_hover_bg = colors.foreground;
-        close_button_hover_bg.a = self.scaled_chrome_surface_alpha(0.12);
         let mut close_button_hover_text = colors.foreground;
         close_button_hover_text.a = 1.0;
         let now = Instant::now();
@@ -82,7 +79,6 @@ impl TerminalView {
             active_tab_text,
             inactive_tab_text,
             close_button_bg,
-            close_button_hover_bg,
             close_button_hover_text,
             switch_hint_bg,
             switch_hint_border,

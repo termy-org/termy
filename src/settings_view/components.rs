@@ -580,7 +580,7 @@ impl SettingsWindow {
                     );
 
                 let font = Font {
-                    family: self.config.font_family.clone().into(),
+                    family: self.config.ui_font_family.clone().into(),
                     ..Font::default()
                 };
 
@@ -611,7 +611,7 @@ impl SettingsWindow {
                     .into_any_element();
             }
             let font = Font {
-                family: self.config.font_family.clone().into(),
+                family: self.config.ui_font_family.clone().into(),
                 ..Font::default()
             };
             return TextInputElement::new(
@@ -655,6 +655,14 @@ impl SettingsWindow {
                     .text_xs()
                     .text_color(self.text_muted())
                     .font_family(self.config.font_family.clone())
+                    .child("Ag"),
+            );
+        } else if field == EditableField::UiFontFamily {
+            readonly = readonly.child(
+                div()
+                    .text_xs()
+                    .text_color(self.text_muted())
+                    .font_family(self.config.ui_font_family.clone())
                     .child("Ag"),
             );
         }

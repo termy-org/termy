@@ -2476,6 +2476,7 @@ impl Render for TerminalView {
         let layout_cell_size = self.calculate_cell_size(window, cx);
         let colors = self.colors.clone();
         let font_family = self.font_family.clone();
+        let ui_font_family = self.ui_font_family.clone();
         let font_size = self.font_size;
         self.sync_window_background_appearance(window);
         let effective_background_opacity = self.background_opacity_factor();
@@ -2856,17 +2857,19 @@ impl Render for TerminalView {
             Self::window_titlebar_height_for(self.vertical_tabs, show_tab_strip_chrome);
         let show_horizontal_tabbar = !self.vertical_tabs && show_tab_strip_chrome;
         let tabs_row = show_horizontal_tabbar
-            .then(|| self.render_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
+            .then(|| self.render_tab_strip(window, &colors, &ui_font_family, tabbar_bg, cx));
         let hidden_titlebar_branding = Self::should_render_hidden_titlebar_branding(
             self.auto_hide_tabbar,
             self.tabs.len(),
             self.effective_tab_bar_visibility(),
             self.show_termy_in_titlebar,
         )
-        .then(|| self.render_titlebar_branding(window, &colors, &font_family, tabbar_bg, false, cx))
+        .then(|| {
+            self.render_titlebar_branding(window, &colors, &ui_font_family, tabbar_bg, false, cx)
+        })
         .flatten();
         let vertical_tab_strip = (self.vertical_tabs && show_tab_strip_chrome)
-            .then(|| self.render_vertical_tab_strip(window, &colors, &font_family, tabbar_bg, cx));
+            .then(|| self.render_vertical_tab_strip(window, &colors, &ui_font_family, tabbar_bg, cx));
         #[cfg(target_os = "macos")]
         let update_banner_layout = self.update_banner_layout();
 
@@ -3021,7 +3024,7 @@ impl Render for TerminalView {
             .flex_col()
             .size_full()
             .bg(root_bg)
-            .font_family(font_family.clone())
+            .font_family(ui_font_family.clone())
             .capture_any_mouse_up(cx.listener(|this, event: &MouseUpEvent, _window, cx| {
                 if matches!(
                     event.button,

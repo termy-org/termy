@@ -8,9 +8,9 @@ use crate::constants::{
 use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
 use crate::types::{
-    AppConfig, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility, TabTitleMode,
-    TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility,
-    ThemeId, WorkingDirFallback,
+    AppConfig, AppearanceMode, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility,
+    TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
+    TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
 };
 
 #[derive(Default)]
@@ -192,6 +192,45 @@ impl AppConfig {
                 RootSettingId::Theme => {
                     if let Some(theme) = parse_theme_id(value) {
                         config.theme = theme;
+                    } else {
+                        push_invalid_value(
+                            &mut diagnostics,
+                            line_number,
+                            key,
+                            value,
+                            "a non-empty theme id",
+                        );
+                    }
+                }
+                RootSettingId::ThemeMode => {
+                    if let Some(parsed) = AppearanceMode::from_str(value) {
+                        config.theme_mode = parsed;
+                    } else {
+                        push_invalid_value(
+                            &mut diagnostics,
+                            line_number,
+                            key,
+                            value,
+                            "one of: manual, system",
+                        );
+                    }
+                }
+                RootSettingId::ThemeLight => {
+                    if let Some(theme) = parse_theme_id(value) {
+                        config.theme_light = theme;
+                    } else {
+                        push_invalid_value(
+                            &mut diagnostics,
+                            line_number,
+                            key,
+                            value,
+                            "a non-empty theme id",
+                        );
+                    }
+                }
+                RootSettingId::ThemeDark => {
+                    if let Some(theme) = parse_theme_id(value) {
+                        config.theme_dark = theme;
                     } else {
                         push_invalid_value(
                             &mut diagnostics,
@@ -432,7 +471,7 @@ impl AppConfig {
                             line_number,
                             key,
                             value,
-                            "one of: stable, active_grow, active_grow_sticky",
+                            "one of: uniform, stable, active_grow, active_grow_sticky",
                         );
                     }
                 }
@@ -518,6 +557,17 @@ impl AppConfig {
                         "a non-empty string",
                     ) {
                         config.font_family = parsed;
+                    }
+                }
+                RootSettingId::UiFontFamily => {
+                    if let Some(parsed) = parse_string_field(
+                        &mut diagnostics,
+                        line_number,
+                        key,
+                        value,
+                        "a non-empty string",
+                    ) {
+                        config.ui_font_family = parsed;
                     }
                 }
                 RootSettingId::FontSize => {

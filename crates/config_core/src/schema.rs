@@ -1,6 +1,6 @@
 use crate::types::{
-    AppConfig, CursorStyle, PaneFocusEffect, TabCloseVisibility, TabTitleMode, TabWidthMode,
-    TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
+    AppConfig, AppearanceMode, CursorStyle, PaneFocusEffect, TabCloseVisibility, TabTitleMode,
+    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -250,7 +250,22 @@ pub const TAB_CLOSE_VISIBILITY_ENUM_CHOICES: &[EnumChoice] = &[
     },
 ];
 
+pub const THEME_MODE_ENUM_CHOICES: &[EnumChoice] = &[
+    EnumChoice {
+        value: "manual",
+        label: "Manual",
+    },
+    EnumChoice {
+        value: "system",
+        label: "Sync with system",
+    },
+];
+
 pub const TAB_WIDTH_MODE_ENUM_CHOICES: &[EnumChoice] = &[
+    EnumChoice {
+        value: "uniform",
+        label: "Uniform",
+    },
     EnumChoice {
         value: "stable",
         label: "Stable",
@@ -297,6 +312,9 @@ pub const PANE_FOCUS_EFFECT_ENUM_CHOICES: &[EnumChoice] = &[
 
 define_root_settings! {
     (Theme, "theme", [], Appearance, "THEME", "Theme", "Current color scheme name", ["color", "scheme", "appearance"], RootSettingValueKind::Special, false),
+    (ThemeMode, "theme_mode", [], Appearance, "THEME", "Theme Mode", "Use a single theme or switch with system appearance", ["theme", "mode", "system", "auto", "dark", "light"], RootSettingValueKind::Enum, false),
+    (ThemeLight, "theme_light", [], Appearance, "THEME", "Light Theme", "Theme applied when system appearance is light", ["theme", "light", "system", "appearance"], RootSettingValueKind::Special, false),
+    (ThemeDark, "theme_dark", [], Appearance, "THEME", "Dark Theme", "Theme applied when system appearance is dark", ["theme", "dark", "system", "appearance"], RootSettingValueKind::Special, false),
     (ChromeContrast, "chrome_contrast", [], Appearance, "CHROME", "Increase Chrome Contrast", "Increase contrast of non-terminal UI surfaces", ["chrome", "contrast", "sidebar", "titlebar", "panel", "overlay", "tab strip"], RootSettingValueKind::Boolean, false),
     (AutoUpdate, "auto_update", [], Advanced, "UPDATES", "Auto Update", "Enable automatic update checks", ["update", "check", "upgrade", "version"], RootSettingValueKind::Boolean, false),
     (TmuxEnabled, "tmux_enabled", [], Terminal, "TMUX", "Tmux Enabled", "Enable tmux runtime integration", ["tmux", "runtime", "integration", "enabled"], RootSettingValueKind::Boolean, false),
@@ -334,6 +352,7 @@ define_root_settings! {
     (WindowWidth, "window_width", [], Advanced, "WINDOW", "Window Width", "Default startup window width in pixels", ["window", "width", "startup", "size"], RootSettingValueKind::Numeric, false),
     (WindowHeight, "window_height", [], Advanced, "WINDOW", "Window Height", "Default startup window height in pixels", ["window", "height", "startup", "size"], RootSettingValueKind::Numeric, false),
     (FontFamily, "font_family", [], Appearance, "FONT", "Font Family", "Font family used in terminal UI", ["font", "typeface", "text"], RootSettingValueKind::Special, false),
+    (UiFontFamily, "ui_font_family", [], Appearance, "FONT", "UI Font Family", "Font family used for tabs, command palette, and settings UI (not the terminal cells)", ["font", "typeface", "ui", "chrome", "tabs", "settings"], RootSettingValueKind::Special, false),
     (FontSize, "font_size", [], Appearance, "FONT", "Font Size", "Terminal font size in pixels", ["font", "size", "text"], RootSettingValueKind::Numeric, false),
     (LineHeight, "line_height", [], Appearance, "FONT", "Line Height", "Terminal line height multiplier (0.8 to 2.5)", ["font", "line", "height", "spacing", "rows"], RootSettingValueKind::Numeric, false),
     (CursorStyle, "cursor_style", [], Terminal, "CURSOR", "Cursor Style", "Shape of the terminal cursor", ["cursor", "shape", "block", "line"], RootSettingValueKind::Enum, false),
@@ -398,6 +417,7 @@ pub fn root_setting_enum_choices(id: RootSettingId) -> Option<&'static [EnumChoi
         RootSettingId::TabTitleMode => Some(TAB_TITLE_MODE_ENUM_CHOICES),
         RootSettingId::TabCloseVisibility => Some(TAB_CLOSE_VISIBILITY_ENUM_CHOICES),
         RootSettingId::TabWidthMode => Some(TAB_WIDTH_MODE_ENUM_CHOICES),
+        RootSettingId::ThemeMode => Some(THEME_MODE_ENUM_CHOICES),
         RootSettingId::CursorStyle => Some(CURSOR_STYLE_ENUM_CHOICES),
         RootSettingId::ScrollbarVisibility => Some(SCROLLBAR_VISIBILITY_ENUM_CHOICES),
         RootSettingId::ScrollbarStyle => Some(SCROLLBAR_STYLE_ENUM_CHOICES),
@@ -410,6 +430,12 @@ pub fn root_setting_enum_choices(id: RootSettingId) -> Option<&'static [EnumChoi
 pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Option<String> {
     match id {
         RootSettingId::Theme => Some(config.theme.clone()),
+        RootSettingId::ThemeMode => Some(match config.theme_mode {
+            AppearanceMode::Manual => "manual".to_string(),
+            AppearanceMode::System => "system".to_string(),
+        }),
+        RootSettingId::ThemeLight => Some(config.theme_light.clone()),
+        RootSettingId::ThemeDark => Some(config.theme_dark.clone()),
         RootSettingId::ChromeContrast => Some(config.chrome_contrast.to_string()),
         RootSettingId::AutoUpdate => Some(config.auto_update.to_string()),
         RootSettingId::TmuxEnabled => Some(config.tmux_enabled.to_string()),
@@ -471,6 +497,7 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
             TabWidthMode::Stable => "stable".to_string(),
             TabWidthMode::ActiveGrow => "active_grow".to_string(),
             TabWidthMode::ActiveGrowSticky => "active_grow_sticky".to_string(),
+            TabWidthMode::Uniform => "uniform".to_string(),
         }),
         RootSettingId::TabSwitchModifierHints => Some(config.tab_switch_modifier_hints.to_string()),
         RootSettingId::VerticalTabs => Some(config.vertical_tabs.to_string()),
@@ -484,6 +511,7 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::WindowWidth => Some(config.window_width.to_string()),
         RootSettingId::WindowHeight => Some(config.window_height.to_string()),
         RootSettingId::FontFamily => Some(config.font_family.clone()),
+        RootSettingId::UiFontFamily => Some(config.ui_font_family.clone()),
         RootSettingId::FontSize => Some(config.font_size.to_string()),
         RootSettingId::LineHeight => Some(crate::format_line_height(config.line_height)),
         RootSettingId::CursorStyle => Some(match config.cursor_style {
@@ -598,7 +626,7 @@ mod tests {
         );
         assert_eq!(
             enum_choice_values(RootSettingId::TabWidthMode),
-            vec!["stable", "active_grow", "active_grow_sticky"]
+            vec!["uniform", "stable", "active_grow", "active_grow_sticky"]
         );
 
         assert_eq!(

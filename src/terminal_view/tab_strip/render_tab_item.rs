@@ -111,11 +111,7 @@ impl TerminalView {
                                 cx.stop_propagation();
                             },
                         ))
-                        .hover(move |style| {
-                            style
-                                .bg(palette.close_button_hover_bg)
-                                .text_color(palette.close_button_hover_text)
-                        })
+                        .hover(move |style| style.text_color(palette.close_button_hover_text))
                         .cursor_pointer()
                         .child(
                             gpui::svg()
@@ -174,11 +170,7 @@ impl TerminalView {
                             cx.stop_propagation();
                         },
                     ))
-                    .hover(move |style| {
-                        style
-                            .bg(palette.close_button_hover_bg)
-                            .text_color(palette.close_button_hover_text)
-                    })
+                    .hover(move |style| style.text_color(palette.close_button_hover_text))
                     .cursor_pointer()
                     .child(div().mt(px(-1.0)).child("×")),
             )
@@ -359,8 +351,17 @@ impl TerminalView {
             }
         });
 
-        let title_leading_padding = if orientation == TabStripOrientation::Horizontal {
+        let centered_horizontal =
+            input.label_centered && orientation == TabStripOrientation::Horizontal;
+        let title_leading_padding = if centered_horizontal {
+            TAB_CLOSE_SLOT_WIDTH
+        } else if orientation == TabStripOrientation::Horizontal {
             input.close_slot_width
+        } else {
+            0.0
+        };
+        let title_trailing_padding = if centered_horizontal {
+            TAB_CLOSE_SLOT_WIDTH
         } else {
             0.0
         };
@@ -392,6 +393,7 @@ impl TerminalView {
                     .h_full()
                     .relative()
                     .pl(px(title_leading_padding))
+                    .pr(px(title_trailing_padding))
                     .child(if input.is_renaming {
                         self.render_inline_input_layer(
                             Font {

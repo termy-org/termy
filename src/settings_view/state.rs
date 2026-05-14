@@ -8,8 +8,12 @@ const PANE_FOCUS_MAX: f32 = 2.0;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum EditableField {
     Theme,
+    ThemeMode,
+    ThemeLight,
+    ThemeDark,
     BackgroundOpacity,
     FontFamily,
+    UiFontFamily,
     FontSize,
     LineHeight,
     PaddingX,
@@ -401,8 +405,12 @@ impl SettingsWindow {
     pub(super) fn field_spec(field: EditableField) -> FieldSpec {
         match field {
             EditableField::Theme
+            | EditableField::ThemeMode
+            | EditableField::ThemeLight
+            | EditableField::ThemeDark
             | EditableField::BackgroundOpacity
             | EditableField::FontFamily
+            | EditableField::UiFontFamily
             | EditableField::FontSize
             | EditableField::LineHeight
             | EditableField::PaddingX
@@ -449,6 +457,19 @@ impl SettingsWindow {
                 dropdown_click_only: false,
                 numeric_step: None,
             },
+            EditableField::ThemeMode => Self::enum_field_spec(RootSettingId::ThemeMode),
+            EditableField::ThemeLight => FieldSpec {
+                root_setting: Some(RootSettingId::ThemeLight),
+                codec: FieldCodec::Theme,
+                dropdown_click_only: false,
+                numeric_step: None,
+            },
+            EditableField::ThemeDark => FieldSpec {
+                root_setting: Some(RootSettingId::ThemeDark),
+                codec: FieldCodec::Theme,
+                dropdown_click_only: false,
+                numeric_step: None,
+            },
             EditableField::BackgroundOpacity => FieldSpec {
                 root_setting: Some(RootSettingId::BackgroundOpacity),
                 codec: FieldCodec::Numeric,
@@ -461,6 +482,12 @@ impl SettingsWindow {
             },
             EditableField::FontFamily => FieldSpec {
                 root_setting: Some(RootSettingId::FontFamily),
+                codec: FieldCodec::FontFamily,
+                dropdown_click_only: false,
+                numeric_step: None,
+            },
+            EditableField::UiFontFamily => FieldSpec {
+                root_setting: Some(RootSettingId::UiFontFamily),
                 codec: FieldCodec::FontFamily,
                 dropdown_click_only: false,
                 numeric_step: None,
@@ -748,14 +775,20 @@ impl SettingsWindow {
         field: EditableField,
         query: &str,
     ) -> Vec<DropdownOption> {
-        if field == EditableField::Theme {
+        if matches!(
+            field,
+            EditableField::Theme | EditableField::ThemeLight | EditableField::ThemeDark
+        ) {
             return self
                 .filtered_theme_suggestions(query)
                 .into_iter()
                 .map(DropdownOption::raw)
                 .collect();
         }
-        if field == EditableField::FontFamily {
+        if matches!(
+            field,
+            EditableField::FontFamily | EditableField::UiFontFamily
+        ) {
             return self
                 .filtered_font_suggestions(query)
                 .into_iter()
@@ -827,11 +860,19 @@ impl SettingsWindow {
     pub(super) fn editable_field_value(&self, field: EditableField) -> String {
         match field {
             EditableField::Theme => self.config.theme.clone(),
+            EditableField::ThemeMode => match self.config.theme_mode {
+                termy_config_core::AppearanceMode::Manual => "manual",
+                termy_config_core::AppearanceMode::System => "system",
+            }
+            .to_string(),
+            EditableField::ThemeLight => self.config.theme_light.clone(),
+            EditableField::ThemeDark => self.config.theme_dark.clone(),
             EditableField::BackgroundOpacity => format!(
                 "{}",
                 (self.effective_background_opacity() * 100.0).round() as i32
             ),
             EditableField::FontFamily => self.config.font_family.clone(),
+            EditableField::UiFontFamily => self.config.ui_font_family.clone(),
             EditableField::FontSize => format!("{}", self.config.font_size.round() as i32),
             EditableField::LineHeight => format_line_height(self.config.line_height),
             EditableField::PaddingX => format!("{}", self.config.padding_x.round() as i32),
@@ -910,6 +951,7 @@ impl SettingsWindow {
                 termy_config_core::TabWidthMode::Stable => "stable",
                 termy_config_core::TabWidthMode::ActiveGrow => "active_grow",
                 termy_config_core::TabWidthMode::ActiveGrowSticky => "active_grow_sticky",
+                termy_config_core::TabWidthMode::Uniform => "uniform",
             }
             .to_string(),
             EditableField::VerticalTabsWidth => {
@@ -1103,8 +1145,14 @@ impl SettingsWindow {
             .collect();
         theme_ids.push("shell-decide".to_string());
 
-        if !theme_ids.iter().any(|theme| theme == &self.config.theme) {
-            theme_ids.push(self.config.theme.clone());
+        for current in [
+            &self.config.theme,
+            &self.config.theme_light,
+            &self.config.theme_dark,
+        ] {
+            if !theme_ids.iter().any(|theme| theme == current) {
+                theme_ids.push(current.clone());
+            }
         }
 
         theme_ids.sort_unstable();
@@ -1114,11 +1162,10 @@ impl SettingsWindow {
 
     pub(super) fn ordered_font_families_for_settings(&self) -> Vec<String> {
         let mut fonts = self.available_font_families.clone();
-        if !fonts
-            .iter()
-            .any(|font| font.eq_ignore_ascii_case(&self.config.font_family))
-        {
-            fonts.push(self.config.font_family.clone());
+        for current in [&self.config.font_family, &self.config.ui_font_family] {
+            if !fonts.iter().any(|font| font.eq_ignore_ascii_case(current)) {
+                fonts.push(current.clone());
+            }
         }
         fonts.sort_unstable_by_key(|font| font.to_ascii_lowercase());
         fonts.dedup_by(|left, right| left.eq_ignore_ascii_case(right));

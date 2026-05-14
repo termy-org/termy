@@ -25,10 +25,22 @@ pub use preview::{
     synced_background_opacity_preview,
 };
 pub use termy_config_core::{
-    AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors, PaneFocusEffect,
-    SHELL_DECIDE_THEME_ID, TabCloseVisibility, TabTitleConfig, TabTitleSource, TabWidthMode,
-    TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
+    AppConfig, AppearanceMode, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors,
+    PaneFocusEffect, SHELL_DECIDE_THEME_ID, SystemAppearance, TabCloseVisibility, TabTitleConfig,
+    TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility,
+    WorkingDirFallback, resolve_active_theme,
 };
+
+pub fn system_appearance_from_window(appearance: gpui::WindowAppearance) -> SystemAppearance {
+    match appearance {
+        gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight => {
+            SystemAppearance::Light
+        }
+        gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark => {
+            SystemAppearance::Dark
+        }
+    }
+}
 
 pub struct LoadedConfig {
     pub path: PathBuf,

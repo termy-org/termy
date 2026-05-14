@@ -363,7 +363,7 @@ impl TerminalView {
         };
         let style = CommandPaletteStyle::resolve(self);
         let input_font = Font {
-            family: self.font_family.clone(),
+            family: self.ui_font_family.clone(),
             ..Font::default()
         };
         let empty_state_message = match self.command_palette.mode() {

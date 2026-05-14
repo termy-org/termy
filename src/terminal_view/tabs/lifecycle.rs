@@ -456,7 +456,10 @@ impl TerminalView {
             RuntimeKind::Native => {
                 let old_active = self.active_tab;
                 self.active_tab = index;
-                if self.tab_width_mode != TabWidthMode::Stable {
+                if !matches!(
+                    self.tab_width_mode,
+                    TabWidthMode::Stable | TabWidthMode::Uniform
+                ) {
                     self.mark_tab_strip_layout_dirty();
                 }
 

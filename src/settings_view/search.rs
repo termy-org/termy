@@ -746,7 +746,7 @@ impl SettingsWindow {
         let text_muted = self.text_muted();
         if is_active {
             let font = Font {
-                family: self.config.font_family.clone().into(),
+                family: self.config.ui_font_family.clone().into(),
                 ..Font::default()
             };
             return TextInputElement::new(

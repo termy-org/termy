@@ -1,6 +1,12 @@
 # Main settings
 # Current color scheme name
 theme = termy
+# Use a single theme or switch with system appearance
+theme_mode = manual
+# Theme applied when system appearance is light
+theme_light = termy
+# Theme applied when system appearance is dark
+theme_dark = termy
 # Increase contrast of non-terminal UI surfaces
 chrome_contrast = false
 # Enable automatic update checks
@@ -48,9 +54,9 @@ tab_title_prompt_format = {cwd}
 # Template for command-derived tab titles
 tab_title_command_format = {command}
 # When tab close buttons are visible
-tab_close_visibility = active_hover
+tab_close_visibility = hover
 # How tab widths react to active state
-tab_width_mode = active_grow_sticky
+tab_width_mode = uniform
 # Show secondary+1..9 number badges on the first nine tabs while the secondary modifier is held
 tab_switch_modifier_hints = true
 # Move the tab strip into a left sidebar like cmux
@@ -75,6 +81,8 @@ window_width = 1280
 window_height = 820
 # Font family used in terminal UI
 font_family = JetBrains Mono
+# Font family used for tabs, command palette, and settings UI (not the terminal cells)
+ui_font_family = JetBrains Mono
 # Terminal font size in pixels
 font_size = 14
 # Terminal line height multiplier (0.8 to 2.5)

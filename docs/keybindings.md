@@ -167,7 +167,6 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 
 Notes:
 
-- `toggle_agent_sidebar` is currently unavailable on Windows. On macOS/Linux it only works when `ai_features_enabled = true` and `agent_sidebar_enabled = true`; enable them in Settings > Tabs or in `~/.config/termy/config.txt`.
 - `toggle_vertical_tab_sidebar` only works when `vertical_tabs = true`; enable it in Settings > Tabs or in `~/.config/termy/config.txt`.
 
 ## Config Syntax
@@ -251,7 +250,6 @@ Related UI option:
 - `install_cli`
 - `toggle_tab_bar_visibility`
 - `toggle_vertical_tab_sidebar`
-- `toggle_agent_sidebar`
 
 ## Customization Examples
 

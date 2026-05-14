@@ -209,13 +209,14 @@ fn enum_keys_parse_table_driven() {
     }
     assert_eq!(
         parse("tab_close_visibility = invalid\n").tab_close_visibility,
-        TabCloseVisibility::ActiveHover
+        TabCloseVisibility::Hover
     );
 
     let tab_width_cases = [
         ("stable", TabWidthMode::Stable),
         ("activegrow", TabWidthMode::ActiveGrow),
         ("active_grow_sticky", TabWidthMode::ActiveGrowSticky),
+        ("uniform", TabWidthMode::Uniform),
     ];
     for (input, expected) in tab_width_cases {
         let config = parse(&format!("tab_width_mode = {input}\n"));
@@ -223,7 +224,7 @@ fn enum_keys_parse_table_driven() {
     }
     assert_eq!(
         parse("tab_width_mode = invalid\n").tab_width_mode,
-        TabWidthMode::ActiveGrowSticky
+        TabWidthMode::Uniform
     );
 
     let cursor_style_cases = [("line", CursorStyle::Line), ("bar", CursorStyle::Line)];

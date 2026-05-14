@@ -9,8 +9,12 @@ impl SettingsWindow {
         let value = raw.trim();
         match field {
             EditableField::Theme
+            | EditableField::ThemeMode
+            | EditableField::ThemeLight
+            | EditableField::ThemeDark
             | EditableField::BackgroundOpacity
             | EditableField::FontFamily
+            | EditableField::UiFontFamily
             | EditableField::FontSize
             | EditableField::LineHeight
             | EditableField::PaddingX
@@ -62,6 +66,35 @@ impl SettingsWindow {
                 self.config.theme = canonical_theme;
                 Ok(())
             }
+            EditableField::ThemeMode => {
+                let parsed = match value.to_ascii_lowercase().as_str() {
+                    "manual" | "off" | "fixed" => termy_config_core::AppearanceMode::Manual,
+                    "system" | "auto" | "sync" => termy_config_core::AppearanceMode::System,
+                    _ => return Err("Theme mode must be manual or system".to_string()),
+                };
+                self.config.theme_mode = parsed;
+                let canonical = match parsed {
+                    termy_config_core::AppearanceMode::Manual => "manual",
+                    termy_config_core::AppearanceMode::System => "system",
+                };
+                config::set_root_setting(termy_config_core::RootSettingId::ThemeMode, canonical)
+            }
+            EditableField::ThemeLight => {
+                if value.is_empty() {
+                    return Err("Light theme cannot be empty".to_string());
+                }
+                config::set_root_setting(termy_config_core::RootSettingId::ThemeLight, value)?;
+                self.config.theme_light = value.to_string();
+                Ok(())
+            }
+            EditableField::ThemeDark => {
+                if value.is_empty() {
+                    return Err("Dark theme cannot be empty".to_string());
+                }
+                config::set_root_setting(termy_config_core::RootSettingId::ThemeDark, value)?;
+                self.config.theme_dark = value.to_string();
+                Ok(())
+            }
             EditableField::BackgroundOpacity => {
                 let parsed = value
                     .trim_end_matches('%')
@@ -78,6 +111,14 @@ impl SettingsWindow {
                 }
                 config::set_root_setting(termy_config_core::RootSettingId::FontFamily, value)?;
                 self.config.font_family = value.to_string();
+                Ok(())
+            }
+            EditableField::UiFontFamily => {
+                if value.is_empty() {
+                    return Err("UI font family cannot be empty".to_string());
+                }
+                config::set_root_setting(termy_config_core::RootSettingId::UiFontFamily, value)?;
+                self.config.ui_font_family = value.to_string();
                 Ok(())
             }
             EditableField::FontSize => {
@@ -451,9 +492,10 @@ impl SettingsWindow {
                     "active_grow_sticky" | "activegrowsticky" | "active-grow-sticky" => {
                         termy_config_core::TabWidthMode::ActiveGrowSticky
                     }
+                    "uniform" | "fixed" | "equal" => termy_config_core::TabWidthMode::Uniform,
                     _ => {
                         return Err(
-                            "Tab width mode must be stable, active_grow, or active_grow_sticky"
+                            "Tab width mode must be uniform, stable, active_grow, or active_grow_sticky"
                                 .to_string(),
                         );
                     }
@@ -463,6 +505,7 @@ impl SettingsWindow {
                     termy_config_core::TabWidthMode::Stable => "stable",
                     termy_config_core::TabWidthMode::ActiveGrow => "active_grow",
                     termy_config_core::TabWidthMode::ActiveGrowSticky => "active_grow_sticky",
+                    termy_config_core::TabWidthMode::Uniform => "uniform",
                 };
                 config::set_root_setting(termy_config_core::RootSettingId::TabWidthMode, canonical)
             }
@@ -571,7 +614,9 @@ impl SettingsWindow {
             config::set_color_setting(id, Some(&canonical))?;
             self.set_custom_color_for_id(id, Some(parsed));
         }
-        self.colors = TerminalColors::from_theme(&self.config.theme, &self.config.colors);
+        let resolved =
+            termy_config_core::resolve_active_theme(&self.config, self.system_appearance);
+        self.colors = TerminalColors::from_theme(resolved, &self.config.colors);
         Ok(())
     }
 }

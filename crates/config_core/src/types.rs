@@ -98,9 +98,45 @@ impl TabTitleMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TabCloseVisibility {
+pub enum AppearanceMode {
     #[default]
+    Manual,
+    System,
+}
+
+impl AppearanceMode {
+    pub(crate) fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "manual" | "off" | "fixed" => Some(Self::Manual),
+            "system" | "auto" | "sync" => Some(Self::System),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemAppearance {
+    Light,
+    Dark,
+}
+
+pub fn resolve_active_theme<'a>(
+    config: &'a AppConfig,
+    system_appearance: SystemAppearance,
+) -> &'a str {
+    match config.theme_mode {
+        AppearanceMode::Manual => &config.theme,
+        AppearanceMode::System => match system_appearance {
+            SystemAppearance::Light => &config.theme_light,
+            SystemAppearance::Dark => &config.theme_dark,
+        },
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TabCloseVisibility {
     ActiveHover,
+    #[default]
     Hover,
     Always,
 }
@@ -120,8 +156,9 @@ impl TabCloseVisibility {
 pub enum TabWidthMode {
     Stable,
     ActiveGrow,
-    #[default]
     ActiveGrowSticky,
+    #[default]
+    Uniform,
 }
 
 impl TabWidthMode {
@@ -129,6 +166,7 @@ impl TabWidthMode {
         match value.trim().to_ascii_lowercase().as_str() {
             "stable" => Some(Self::Stable),
             "active_grow" | "activegrow" | "active-grow" => Some(Self::ActiveGrow),
+            "uniform" | "fixed" | "equal" => Some(Self::Uniform),
             "active_grow_sticky" | "activegrowsticky" | "active-grow-sticky" => {
                 Some(Self::ActiveGrowSticky)
             }
@@ -249,6 +287,9 @@ pub struct CustomColors {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppConfig {
     pub theme: ThemeId,
+    pub theme_mode: AppearanceMode,
+    pub theme_light: ThemeId,
+    pub theme_dark: ThemeId,
     pub chrome_contrast: bool,
     pub auto_update: bool,
     pub tmux_enabled: bool,
@@ -278,6 +319,7 @@ pub struct AppConfig {
     pub window_width: f32,
     pub window_height: f32,
     pub font_family: String,
+    pub ui_font_family: String,
     pub font_size: f32,
     /// Unitless multiplier on the font cell height that controls vertical row
     /// spacing. Clamped to [`MIN_LINE_HEIGHT`]..=[`MAX_LINE_HEIGHT`] at the
@@ -327,6 +369,9 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             theme: "termy".to_string(),
+            theme_mode: AppearanceMode::default(),
+            theme_light: "termy".to_string(),
+            theme_dark: "termy".to_string(),
             chrome_contrast: false,
             auto_update: true,
             tmux_enabled: DEFAULT_TMUX_ENABLED,
@@ -356,6 +401,7 @@ impl Default for AppConfig {
             window_width: 1280.0,
             window_height: 820.0,
             font_family: "JetBrains Mono".to_string(),
+            ui_font_family: "JetBrains Mono".to_string(),
             font_size: 14.0,
             line_height: crate::constants::DEFAULT_LINE_HEIGHT,
             cursor_style: CursorStyle::default(),
