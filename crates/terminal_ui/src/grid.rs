@@ -110,6 +110,10 @@ impl IntoElement for TerminalGrid {
 // - Drawing exact geometry with snapped bounds gives deterministic, hard edges
 //   and eliminates the artifact.
 //
+// NOTE: We also render Symbols for Legacy Computing sextant mosaics (U+1FB00..U+1FB3B)
+// as quads. Terminal QR renderers (e.g. Expo SDK 55 `toqr`) use this range; most
+// monospace fonts omit these codepoints and text shaping shows placeholders instead.
+//
 // NOTE: We also render Unicode box-drawing characters (U+2500..U+257F) as
 // pixel-snapped quads instead of shaped font glyphs.
 //
@@ -127,6 +131,11 @@ const BOX_DRAWING_START: u32 = 0x2500;
 const BOX_DRAWING_END: u32 = 0x257F;
 const BLOCK_ELEMENTS_START: u32 = 0x2580;
 const BLOCK_ELEMENTS_END: u32 = 0x259F;
+
+/// Symbols for Legacy Computing mosaic (sextant) characters used by terminal QR
+/// renderers such as `toqr` (Expo SDK 55+).
+const SEXTANT_MOSAIC_START: u32 = 0x1FB00;
+const SEXTANT_MOSAIC_END: u32 = 0x1FB3B;
 const BRAILLE_PATTERNS_START: u32 = 0x2800;
 const BRAILLE_PATTERNS_END: u32 = 0x28FF;
 const QUAD_UPPER_LEFT: u8 = 0b0001;
@@ -339,6 +348,15 @@ struct BlockDraw {
     fg: Hsla,
 }
 
+#[derive(Clone, Copy)]
+struct SextantDraw {
+    #[cfg_attr(not(test), allow(dead_code))]
+    row: usize,
+    col: usize,
+    packed: u8,
+    fg: Hsla,
+}
+
 /// Deferred paint operation for a rounded-corner box-drawing glyph (U+256D-U+2570).
 ///
 /// Unlike `BlockDraw`, these are painted as stroked cubic Bézier paths rather
@@ -370,6 +388,7 @@ struct DiagonalDraw {
 enum TextDrawOp {
     Batch(TextBatch),
     Block(BlockDraw),
+    Sextant(SextantDraw),
     RoundedCorner(RoundedCornerDraw),
     Diagonal(DiagonalDraw),
 }
@@ -612,6 +631,26 @@ fn block_element_geometry(c: char) -> Option<BlockElementGeometry> {
         '\u{259F}' => quadrants(QUAD_UPPER_RIGHT | QUAD_LOWER_LEFT | QUAD_LOWER_RIGHT),
         _ => return None,
     })
+}
+
+fn reverse_lower_six_bits(value: u8) -> u8 {
+    ((value & 0b00_0001) << 5)
+        | ((value & 0b00_0010) << 3)
+        | ((value & 0b00_0100) << 1)
+        | ((value & 0b00_1000) >> 1)
+        | ((value & 0b01_0000) >> 3)
+        | ((value & 0b10_0000) >> 5)
+}
+
+fn sextant_char_to_packed(ch: char) -> Option<u8> {
+    let codepoint = ch as u32;
+    if !(SEXTANT_MOSAIC_START..=SEXTANT_MOSAIC_END).contains(&codepoint) {
+        return None;
+    }
+
+    let offset = codepoint - SEXTANT_MOSAIC_START;
+    let sextant = (offset + 1 + u32::from(offset >= 20) + u32::from(offset >= 40)) as u8;
+    Some(reverse_lower_six_bits(sextant) ^ 0b11_1111)
 }
 
 fn braille_geometry(c: char) -> Option<BlockElementGeometry> {
@@ -1254,6 +1293,56 @@ fn paint_block_element_quad(
     }
 }
 
+fn paint_sextant_mosaic(
+    window: &mut Window,
+    cell_bounds: Bounds<Pixels>,
+    packed: u8,
+    color: Hsla,
+) {
+    let cell_origin_x: f32 = cell_bounds.origin.x.into();
+    let cell_origin_y: f32 = cell_bounds.origin.y.into();
+    let cell_w: f32 = cell_bounds.size.width.into();
+    let cell_h: f32 = cell_bounds.size.height.into();
+
+    for row in 0..3usize {
+        for col in 0..2usize {
+            let bit = 5usize - (row * 2 + col);
+            if (packed & (1 << bit)) != 0 {
+                continue;
+            }
+
+            let left = (cell_origin_x + cell_w * (col as f32 / 2.0)).floor();
+            let right = (cell_origin_x + cell_w * ((col + 1) as f32 / 2.0)).ceil();
+            let top = (cell_origin_y + cell_h * (row as f32 / 3.0)).floor();
+            let bottom = (cell_origin_y + cell_h * ((row + 1) as f32 / 3.0)).ceil();
+
+            let width = right - left;
+            let height = bottom - top;
+            if width <= 0.0 || height <= 0.0 {
+                continue;
+            }
+
+            let bounds = Bounds {
+                origin: point(px(left), px(top)),
+                size: Size {
+                    width: px(width),
+                    height: px(height),
+                },
+            };
+            if let Some(bounds) = snapped_quad_bounds(bounds) {
+                window.paint_quad(quad(
+                    bounds,
+                    px(0.0),
+                    color,
+                    gpui::Edges::default(),
+                    Hsla::transparent_black(),
+                    gpui::BorderStyle::default(),
+                ));
+            }
+        }
+    }
+}
+
 fn rounded_corner_char(c: char) -> bool {
     matches!(c, '\u{256D}' | '\u{256E}' | '\u{256F}' | '\u{2570}')
 }
@@ -1499,6 +1588,10 @@ fn diagonal_draws_match_without_row(lhs: &DiagonalDraw, rhs: &DiagonalDraw) -> b
     lhs.col == rhs.col && lhs.glyph == rhs.glyph && lhs.fg == rhs.fg
 }
 
+fn sextant_draws_match_without_row(lhs: &SextantDraw, rhs: &SextantDraw) -> bool {
+    lhs.col == rhs.col && lhs.packed == rhs.packed && lhs.fg == rhs.fg
+}
+
 /// Returns the inclusive column range `(start, end)` covered by a draw op.
 fn draw_op_col_range(op: &TextDrawOp) -> (usize, usize) {
     match op {
@@ -1511,6 +1604,7 @@ fn draw_op_col_range(op: &TextDrawOp) -> (usize, usize) {
             (batch.start_col, end)
         }
         TextDrawOp::Block(block) => (block.col, block.col),
+        TextDrawOp::Sextant(sextant) => (sextant.col, sextant.col),
         TextDrawOp::RoundedCorner(corner) => (corner.col, corner.col),
         TextDrawOp::Diagonal(diagonal) => (diagonal.col, diagonal.col),
     }
@@ -1532,6 +1626,9 @@ fn text_draw_ops_match_without_row(lhs: &TextDrawOp, rhs: &TextDrawOp) -> bool {
             text_batches_match_without_row(lhs, rhs)
         }
         (TextDrawOp::Block(lhs), TextDrawOp::Block(rhs)) => block_draws_match_without_row(lhs, rhs),
+        (TextDrawOp::Sextant(lhs), TextDrawOp::Sextant(rhs)) => {
+            sextant_draws_match_without_row(lhs, rhs)
+        }
         (TextDrawOp::RoundedCorner(lhs), TextDrawOp::RoundedCorner(rhs)) => {
             rounded_corner_draws_match_without_row(lhs, rhs)
         }
@@ -1811,6 +1908,17 @@ impl TerminalGrid {
                 continue;
             }
 
+            if let Some(packed) = sextant_char_to_packed(cell.char) {
+                Self::push_pending_text_batch(&mut current, ops);
+                ops.push(TextDrawOp::Sextant(SextantDraw {
+                    row: cell.row,
+                    col: cell.col,
+                    packed,
+                    fg,
+                }));
+                continue;
+            }
+
             if let Some(geometry) = block_element_geometry(cell.char)
                 .or_else(|| {
                     should_render_braille_as_geometry(row_cells, index)
@@ -2033,6 +2141,14 @@ impl TerminalGrid {
                         diagonal.fg,
                         self.font_size,
                     );
+                }
+                TextDrawOp::Sextant(sextant) => {
+                    let x = origin.x + self.cell_size.width * sextant.col as f32;
+                    let cell_bounds = Bounds {
+                        origin: point(x, origin.y),
+                        size: self.cell_size,
+                    };
+                    paint_sextant_mosaic(window, cell_bounds, sextant.packed, sextant.fg);
                 }
             }
         }
@@ -2499,7 +2615,7 @@ mod tests {
             .into_iter()
             .filter_map(|op| match op {
                 TextDrawOp::Batch(batch) => Some(batch),
-                TextDrawOp::Block(_) => None,
+                TextDrawOp::Block(_) | TextDrawOp::Sextant(_) => None,
                 TextDrawOp::RoundedCorner(_) => None,
                 TextDrawOp::Diagonal(_) => None,
             })
@@ -3161,13 +3277,19 @@ mod tests {
         assert_eq!(ops.len(), 2);
         let text_fg = match &ops[0] {
             TextDrawOp::Batch(batch) => batch.fg,
-            TextDrawOp::Block(_) | TextDrawOp::RoundedCorner(_) | TextDrawOp::Diagonal(_) => {
+            TextDrawOp::Block(_)
+            | TextDrawOp::Sextant(_)
+            | TextDrawOp::RoundedCorner(_)
+            | TextDrawOp::Diagonal(_) => {
                 panic!("expected text batch")
             }
         };
         let block_fg = match &ops[1] {
             TextDrawOp::Block(block) => block.fg,
-            TextDrawOp::Batch(_) | TextDrawOp::RoundedCorner(_) | TextDrawOp::Diagonal(_) => {
+            TextDrawOp::Batch(_)
+            | TextDrawOp::Sextant(_)
+            | TextDrawOp::RoundedCorner(_)
+            | TextDrawOp::Diagonal(_) => {
                 panic!("expected block draw")
             }
         };
@@ -3183,7 +3305,10 @@ mod tests {
         let ops = collect_draw_ops(&grid);
         let block_fg = match &ops[0] {
             TextDrawOp::Block(block) => block.fg,
-            TextDrawOp::Batch(_) | TextDrawOp::RoundedCorner(_) | TextDrawOp::Diagonal(_) => {
+            TextDrawOp::Batch(_)
+            | TextDrawOp::Sextant(_)
+            | TextDrawOp::RoundedCorner(_)
+            | TextDrawOp::Diagonal(_) => {
                 panic!("expected block draw")
             }
         };
@@ -3637,6 +3762,46 @@ mod tests {
             fg: Hsla::transparent_black(),
         });
         assert_eq!(draw_op_col_range(&block), (7, 7));
+    }
+
+    #[test]
+    fn draw_op_col_range_returns_correct_range_for_sextant() {
+        let sextant = TextDrawOp::Sextant(SextantDraw {
+            row: 0,
+            col: 4,
+            packed: 0b01_1111,
+            fg: Hsla::transparent_black(),
+        });
+        assert_eq!(draw_op_col_range(&sextant), (4, 4));
+    }
+
+    #[test]
+    fn sextant_char_to_packed_matches_terminal_qr_decoding() {
+        assert_eq!(
+            sextant_char_to_packed('\u{1FB00}'),
+            Some(0b01_1111)
+        );
+        assert_eq!(
+            sextant_char_to_packed('\u{1FB3B}'),
+            Some(0b10_0000)
+        );
+        assert_eq!(sextant_char_to_packed('█'), None);
+        assert_eq!(sextant_char_to_packed('\u{1FAFF}'), None);
+        assert_eq!(sextant_char_to_packed('\u{1FB3C}'), None);
+    }
+
+    #[test]
+    fn draw_ops_emit_sextant_for_legacy_mosaic() {
+        let grid = test_grid(
+            vec![test_cell(0, 0, 'a'), test_cell(1, 0, '\u{1FB00}')],
+            None,
+        );
+        let ops = collect_draw_ops(&grid);
+        assert_eq!(ops.len(), 2);
+        assert!(matches!(&ops[0], TextDrawOp::Batch(batch) if batch.text == "a"));
+        assert!(
+            matches!(&ops[1], TextDrawOp::Sextant(s) if s.packed == 0b01_1111 && s.col == 1)
+        );
     }
 
     #[test]
