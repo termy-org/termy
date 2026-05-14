@@ -361,6 +361,8 @@ impl TerminalView {
                 reserve_close_slot,
                 tab.sticky_title_width,
             );
+            let next_width = next_width.max(TAB_MIN_WIDTH);
+            let next_sticky_width = next_sticky_width.max(TAB_MIN_WIDTH);
             tab.sticky_title_width = next_sticky_width;
             if (tab.display_width - next_width).abs() <= f32::EPSILON {
                 continue;
@@ -514,6 +516,12 @@ mod tests {
         let expected = (1600.0 - (TAB_HORIZONTAL_PADDING * 2.0) - (TAB_ITEM_GAP * 7.0)) / 8.0;
         assert_float_eq(effective, expected);
         assert!(effective < TAB_MAX_WIDTH);
+    }
+
+    #[test]
+    fn effective_tab_max_width_never_drops_below_min_for_crowded_tabs() {
+        let effective = TerminalView::effective_tab_max_width_for_viewport(120.0, 12);
+        assert_eq!(effective, TAB_MIN_WIDTH);
     }
 
     #[test]
@@ -712,6 +720,28 @@ mod tests {
 
         assert_eq!(next_sticky, effective_max);
         assert_eq!(next_width, effective_max);
+    }
+
+    #[test]
+    fn tab_width_modes_never_resolve_below_min_when_cap_is_tight() {
+        for tab_width_mode in [
+            TabWidthMode::Stable,
+            TabWidthMode::ActiveGrow,
+            TabWidthMode::ActiveGrowSticky,
+            TabWidthMode::Uniform,
+        ] {
+            let (next_width, next_sticky) =
+                TerminalView::resolve_tab_width_for_mode(tab_width_mode, 8.0, 12.0, true, 0.0);
+
+            assert!(
+                next_width >= TAB_MIN_WIDTH,
+                "{tab_width_mode:?} width resolved below min: {next_width}"
+            );
+            assert!(
+                next_sticky >= TAB_MIN_WIDTH,
+                "{tab_width_mode:?} sticky width resolved below min: {next_sticky}"
+            );
+        }
     }
 
     #[test]

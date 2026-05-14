@@ -906,7 +906,25 @@ impl IntoElement for InlineInputElement {
                                 let text_width: f32 = shaped.as_ref().map_or(0.0, |l| -> f32 {
                                     l.x_for_index(line_str.len()).into()
                                 });
-                                px(((available_width - text_width).max(0.0) * 0.5).round())
+                                if text_width <= available_width {
+                                    px(((available_width - text_width) * 0.5).round())
+                                } else {
+                                    let prev_offset: f32 =
+                                        prev_line_offset_xs.get(row_idx).copied().unwrap_or(0.0);
+                                    let cursor_x: f32 = shaped.as_ref().map_or(0.0, |l| -> f32 {
+                                        l.x_for_index(cursor_col_in_row).into()
+                                    });
+                                    let visible_cursor_x = cursor_x + prev_offset;
+                                    let padding = 4.0_f32;
+                                    let new_offset = if visible_cursor_x < 0.0 {
+                                        -(cursor_x - padding).max(0.0)
+                                    } else if visible_cursor_x > available_width - padding {
+                                        -(cursor_x - available_width + padding)
+                                    } else {
+                                        prev_offset
+                                    };
+                                    px(new_offset.round())
+                                }
                             }
                         }
                     } else {

@@ -913,7 +913,7 @@ impl TerminalView {
             {
                 let _ = self.focus_pane_target(pane_id.as_str(), cx);
             }
-            self.open_terminal_context_menu(event.position, cx);
+            self.open_terminal_context_menu_for_window(event.position, window, cx);
             cx.stop_propagation();
             return;
         }

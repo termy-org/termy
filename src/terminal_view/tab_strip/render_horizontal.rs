@@ -127,6 +127,18 @@ impl TerminalView {
         overflow.left && !boundary_at_viewport_left
     }
 
+    fn horizontal_tab_render_width(display_width: f32, anim_progress: Option<f32>) -> f32 {
+        let stable_width = if display_width.is_finite() {
+            display_width.max(TAB_MIN_WIDTH)
+        } else {
+            TAB_MIN_WIDTH
+        };
+
+        anim_progress.map_or(stable_width, |progress| {
+            (stable_width * progress.clamp(0.0, 1.0)).max(TAB_MIN_WIDTH)
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn build_tabs_scroll_content(
         &mut self,
@@ -175,11 +187,7 @@ impl TerminalView {
             let anim_progress = new_tab_anim
                 .filter(|(anim_index, _)| *anim_index == index)
                 .map(|(_, p)| p);
-            let tab_width = if let Some(p) = anim_progress {
-                display_width * p
-            } else {
-                display_width
-            };
+            let tab_width = Self::horizontal_tab_render_width(display_width, anim_progress);
             let is_active = index == self.active_tab;
             let is_drag_source = self
                 .tab_strip
@@ -202,9 +210,10 @@ impl TerminalView {
             let switch_hint_label = show_switch_hint
                 .then(|| TabSwitchHintState::label_for_index(index))
                 .flatten();
-            let show_tab_close = show_close_button && switch_hint_label.is_none();
-            let show_tab_pin = pinned && switch_hint_label.is_none();
-            let close_slot_width = if show_tab_close || show_tab_pin || switch_hint_label.is_some()
+            let show_tab_close = !is_renaming && show_close_button && switch_hint_label.is_none();
+            let show_tab_pin = !is_renaming && pinned && switch_hint_label.is_none();
+            let close_slot_width = if !is_renaming
+                && (show_tab_close || show_tab_pin || switch_hint_label.is_some())
             {
                 TAB_CLOSE_SLOT_WIDTH
             } else {
@@ -506,6 +515,30 @@ mod tests {
             },
             true,
         ));
+    }
+
+    #[test]
+    fn horizontal_tab_render_width_never_drops_below_minimum() {
+        assert_eq!(
+            TerminalView::horizontal_tab_render_width(TAB_MAX_WIDTH, Some(0.0)),
+            TAB_MIN_WIDTH
+        );
+        assert_eq!(
+            TerminalView::horizontal_tab_render_width(TAB_MAX_WIDTH, Some(0.1)),
+            TAB_MIN_WIDTH
+        );
+        assert_eq!(
+            TerminalView::horizontal_tab_render_width(12.0, None),
+            TAB_MIN_WIDTH
+        );
+    }
+
+    #[test]
+    fn horizontal_tab_render_width_keeps_full_width_without_animation() {
+        assert_eq!(
+            TerminalView::horizontal_tab_render_width(TAB_MAX_WIDTH, None),
+            TAB_MAX_WIDTH
+        );
     }
 
     #[test]

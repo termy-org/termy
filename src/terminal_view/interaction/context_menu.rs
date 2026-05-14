@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(target_os = "macos")]
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 impl TerminalView {
     pub(in super::super) fn format_terminal_buffer_position(position: SelectionPos) -> String {
@@ -39,6 +41,27 @@ impl TerminalView {
             termy_native_sdk::ContextMenuAction::OpenSearch => Some(CommandAction::OpenSearch),
             termy_native_sdk::ContextMenuAction::CopyBufferPosition => None,
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn native_context_menu_anchor(
+        window: &Window,
+        position: gpui::Point<Pixels>,
+    ) -> Option<termy_native_sdk::NativeContextMenuAnchor> {
+        let raw_handle = HasWindowHandle::window_handle(window).ok()?.as_raw();
+        let native_view = match raw_handle {
+            RawWindowHandle::AppKit(handle) => handle.ns_view.as_ptr() as usize,
+            _ => return None,
+        };
+
+        let x: f32 = position.x.into();
+        let y: f32 = position.y.into();
+
+        Some(termy_native_sdk::NativeContextMenuAnchor {
+            native_view,
+            x: x as f64,
+            y: y as f64,
+        })
     }
 
     pub(in super::super) fn close_terminal_context_menu(&mut self, cx: &mut Context<Self>) -> bool {
@@ -149,6 +172,7 @@ impl TerminalView {
         buffer_position_label: Option<String>,
         can_copy: bool,
         can_paste: bool,
+        anchor: Option<termy_native_sdk::NativeContextMenuAnchor>,
         cx: &mut Context<Self>,
     ) {
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
@@ -157,6 +181,7 @@ impl TerminalView {
                     buffer_position_label,
                     can_copy,
                     can_paste,
+                    anchor,
                 )
             })
             .await;
@@ -175,10 +200,16 @@ impl TerminalView {
     }
 
     #[cfg(target_os = "macos")]
-    fn schedule_native_tab_context_menu(&mut self, pinned: bool, cx: &mut Context<Self>) {
+    fn schedule_native_tab_context_menu(
+        &mut self,
+        pinned: bool,
+        anchor: Option<termy_native_sdk::NativeContextMenuAnchor>,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let action =
-                smol::unblock(move || termy_native_sdk::show_tab_context_menu(pinned)).await;
+                smol::unblock(move || termy_native_sdk::show_tab_context_menu(pinned, anchor))
+                    .await;
 
             let _ = cx.update(|cx| {
                 this.update(cx, |view, cx| {
@@ -193,9 +224,36 @@ impl TerminalView {
         .detach();
     }
 
+    #[cfg(not(target_os = "macos"))]
     pub(in super::super) fn open_terminal_context_menu(
         &mut self,
         position: gpui::Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_terminal_context_menu_with_native_anchor(position, None, cx);
+    }
+
+    pub(in super::super) fn open_terminal_context_menu_for_window(
+        &mut self,
+        position: gpui::Point<Pixels>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        #[cfg(target_os = "macos")]
+        let native_anchor = Self::native_context_menu_anchor(window, position);
+        #[cfg(not(target_os = "macos"))]
+        let native_anchor = {
+            let _ = window;
+            None
+        };
+
+        self.open_terminal_context_menu_with_native_anchor(position, native_anchor, cx);
+    }
+
+    fn open_terminal_context_menu_with_native_anchor(
+        &mut self,
+        position: gpui::Point<Pixels>,
+        native_anchor: Option<termy_native_sdk::NativeContextMenuAnchor>,
         cx: &mut Context<Self>,
     ) {
         let _ = self.close_tab_context_menu(cx);
@@ -226,15 +284,45 @@ impl TerminalView {
                 buffer_position_label,
                 can_copy,
                 can_paste,
+                native_anchor,
                 cx,
             );
         }
     }
 
+    #[cfg(not(target_os = "macos"))]
     pub(in super::super) fn open_tab_context_menu(
         &mut self,
         tab_index: usize,
         position: gpui::Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_tab_context_menu_with_native_anchor(tab_index, position, None, cx);
+    }
+
+    pub(in super::super) fn open_tab_context_menu_for_window(
+        &mut self,
+        tab_index: usize,
+        position: gpui::Point<Pixels>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        #[cfg(target_os = "macos")]
+        let native_anchor = Self::native_context_menu_anchor(window, position);
+        #[cfg(not(target_os = "macos"))]
+        let native_anchor = {
+            let _ = window;
+            None
+        };
+
+        self.open_tab_context_menu_with_native_anchor(tab_index, position, native_anchor, cx);
+    }
+
+    fn open_tab_context_menu_with_native_anchor(
+        &mut self,
+        tab_index: usize,
+        position: gpui::Point<Pixels>,
+        native_anchor: Option<termy_native_sdk::NativeContextMenuAnchor>,
         cx: &mut Context<Self>,
     ) {
         let Some((tab_id, pinned)) = self.tabs.get(tab_index).map(|tab| (tab.id, tab.pinned))
@@ -261,7 +349,7 @@ impl TerminalView {
 
         #[cfg(target_os = "macos")]
         {
-            self.schedule_native_tab_context_menu(pinned, cx);
+            self.schedule_native_tab_context_menu(pinned, native_anchor, cx);
         }
     }
 }

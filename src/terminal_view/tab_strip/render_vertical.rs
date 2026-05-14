@@ -646,14 +646,17 @@ impl TerminalView {
                 self.tab_strip.hovered_tab_close,
                 index,
             );
-            let show_tab_close = !compact && show_close_button && switch_hint_label.is_none();
-            let show_tab_pin = !compact && pinned && switch_hint_label.is_none();
-            let close_slot_width =
-                if !compact && (show_tab_close || show_tab_pin || switch_hint_label.is_some()) {
-                    TAB_CLOSE_SLOT_WIDTH
-                } else {
-                    0.0
-                };
+            let show_tab_close =
+                !compact && !is_renaming && show_close_button && switch_hint_label.is_none();
+            let show_tab_pin = !compact && !is_renaming && pinned && switch_hint_label.is_none();
+            let close_slot_width = if !compact
+                && !is_renaming
+                && (show_tab_close || show_tab_pin || switch_hint_label.is_some())
+            {
+                TAB_CLOSE_SLOT_WIDTH
+            } else {
+                0.0
+            };
             let label = if compact {
                 Self::compact_vertical_tab_label(index, &tab_title)
             } else {

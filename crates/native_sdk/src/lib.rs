@@ -6,7 +6,7 @@ use objc2::{
 };
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
-    NSAlert, NSAlertSecondButtonReturn, NSApplication, NSEvent, NSImage, NSMenu, NSMenuItem,
+    NSAlert, NSAlertSecondButtonReturn, NSApplication, NSEvent, NSImage, NSMenu, NSMenuItem, NSView,
 };
 #[cfg(target_os = "macos")]
 use objc2_foundation::{MainThreadMarker, NSData, NSPoint, NSString};
@@ -46,6 +46,13 @@ pub enum TabContextMenuAction {
     Pin,
     Unpin,
     Close,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeContextMenuAnchor {
+    pub native_view: usize,
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,6 +150,27 @@ impl TermyContextMenuItem {
         item.setEnabled(enabled);
         item
     }
+}
+
+#[cfg(target_os = "macos")]
+fn pop_up_menu_at_anchor(menu: &NSMenu, anchor: Option<NativeContextMenuAnchor>) -> bool {
+    if let Some(anchor) = anchor {
+        let view_ptr = anchor.native_view as *mut NSView;
+        if let Some(view_ptr) = std::ptr::NonNull::new(view_ptr) {
+            let view = unsafe { view_ptr.as_ref() };
+            let bounds = view.bounds();
+            let x = anchor.x.clamp(0.0, bounds.size.width);
+            let y = (bounds.size.height - anchor.y).clamp(0.0, bounds.size.height);
+            return menu.popUpMenuPositioningItem_atLocation_inView(
+                None,
+                NSPoint::new(x, y),
+                Some(view),
+            );
+        }
+    }
+
+    let location: NSPoint = NSEvent::mouseLocation();
+    menu.popUpMenuPositioningItem_atLocation_inView(None, location, None)
 }
 
 #[cfg(target_os = "linux")]
@@ -267,6 +295,7 @@ pub fn show_copy_paste_context_menu(
     buffer_position_label: Option<String>,
     can_copy: bool,
     can_paste: bool,
+    anchor: Option<NativeContextMenuAnchor>,
 ) -> Option<ContextMenuAction> {
     #[cfg(target_os = "macos")]
     {
@@ -275,6 +304,7 @@ pub fn show_copy_paste_context_menu(
             buffer_position_label: Option<String>,
             can_copy: bool,
             can_paste: bool,
+            anchor: Option<NativeContextMenuAnchor>,
         ) -> Option<ContextMenuAction> {
             let app = NSApplication::sharedApplication(mtm);
             let _current_event = app.currentEvent()?;
@@ -319,8 +349,7 @@ pub fn show_copy_paste_context_menu(
             menu.addItem(&copy_buffer_position_item);
 
             CONTEXT_MENU_SELECTION.store(0, Ordering::Relaxed);
-            let location: NSPoint = NSEvent::mouseLocation();
-            let _ = menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
+            let _ = pop_up_menu_at_anchor(&menu, anchor);
 
             match CONTEXT_MENU_SELECTION.swap(0, Ordering::Relaxed) {
                 CONTEXT_MENU_COPY_ID => Some(ContextMenuAction::Copy),
@@ -332,7 +361,13 @@ pub fn show_copy_paste_context_menu(
         }
 
         if let Some(mtm) = MainThreadMarker::new() {
-            show_copy_paste_context_menu_on_main(mtm, buffer_position_label, can_copy, can_paste)
+            show_copy_paste_context_menu_on_main(
+                mtm,
+                buffer_position_label,
+                can_copy,
+                can_paste,
+                anchor,
+            )
         } else {
             run_on_main(|mtm| {
                 show_copy_paste_context_menu_on_main(
@@ -340,6 +375,7 @@ pub fn show_copy_paste_context_menu(
                     buffer_position_label,
                     can_copy,
                     can_paste,
+                    anchor,
                 )
             })
         }
@@ -347,6 +383,7 @@ pub fn show_copy_paste_context_menu(
 
     #[cfg(target_os = "windows")]
     {
+        let _ = anchor;
         let menu = unsafe { CreatePopupMenu().ok()? };
         struct MenuGuard(windows::Win32::UI::WindowsAndMessaging::HMENU);
         impl Drop for MenuGuard {
@@ -453,17 +490,21 @@ pub fn show_copy_paste_context_menu(
         not(any(target_os = "macos", target_os = "windows"))
     ))]
     {
-        let _ = (buffer_position_label, can_copy, can_paste);
+        let _ = (buffer_position_label, can_copy, can_paste, anchor);
         None
     }
 }
 
-pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
+pub fn show_tab_context_menu(
+    pinned: bool,
+    anchor: Option<NativeContextMenuAnchor>,
+) -> Option<TabContextMenuAction> {
     #[cfg(target_os = "macos")]
     {
         fn show_tab_context_menu_on_main(
             mtm: MainThreadMarker,
             pinned: bool,
+            anchor: Option<NativeContextMenuAnchor>,
         ) -> Option<TabContextMenuAction> {
             let app = NSApplication::sharedApplication(mtm);
             let _current_event = app.currentEvent()?;
@@ -503,8 +544,7 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
             menu.addItem(&close_item);
 
             CONTEXT_MENU_SELECTION.store(0, Ordering::Relaxed);
-            let location: NSPoint = NSEvent::mouseLocation();
-            let _ = menu.popUpMenuPositioningItem_atLocation_inView(None, location, None);
+            let _ = pop_up_menu_at_anchor(&menu, anchor);
 
             match CONTEXT_MENU_SELECTION.swap(0, Ordering::Relaxed) {
                 TAB_CONTEXT_MENU_RENAME_ID => Some(TabContextMenuAction::Rename),
@@ -516,14 +556,15 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
         }
 
         if let Some(mtm) = MainThreadMarker::new() {
-            show_tab_context_menu_on_main(mtm, pinned)
+            show_tab_context_menu_on_main(mtm, pinned, anchor)
         } else {
-            run_on_main(|mtm| show_tab_context_menu_on_main(mtm, pinned))
+            run_on_main(|mtm| show_tab_context_menu_on_main(mtm, pinned, anchor))
         }
     }
 
     #[cfg(target_os = "windows")]
     {
+        let _ = anchor;
         let menu = unsafe { CreatePopupMenu().ok()? };
         struct MenuGuard(windows::Win32::UI::WindowsAndMessaging::HMENU);
         impl Drop for MenuGuard {
@@ -610,7 +651,7 @@ pub fn show_tab_context_menu(pinned: bool) -> Option<TabContextMenuAction> {
         not(any(target_os = "macos", target_os = "windows"))
     ))]
     {
-        let _ = pinned;
+        let _ = (pinned, anchor);
         None
     }
 }

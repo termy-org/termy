@@ -43,6 +43,10 @@ const _: () = {
 };
 
 impl TerminalView {
+    fn tab_accessory_visible(input: &TabItemRenderInput) -> bool {
+        !input.is_renaming && input.close_slot_width > 0.0
+    }
+
     fn render_tab_accessory(
         &self,
         input: &TabItemRenderInput,
@@ -227,18 +231,9 @@ impl TerminalView {
             palette.inactive_tab_text
         };
         close_text_color.a *= anim;
-        if !input.show_tab_close && !input.show_tab_pin {
+        if input.is_renaming || (!input.show_tab_close && !input.show_tab_pin) {
             close_text_color.a = 0.0;
         }
-
-        let accessory_slot = self.render_tab_accessory(
-            &input,
-            palette,
-            close_text_color,
-            hover_tab_index,
-            close_tab_index,
-            cx,
-        );
 
         let justify_label_center = input.label_centered;
         let trailing_divider_cover = input.trailing_divider_cover;
@@ -284,8 +279,13 @@ impl TerminalView {
             )
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
-                    this.open_tab_context_menu(switch_tab_index, event.position, cx);
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                    this.open_tab_context_menu_for_window(
+                        switch_tab_index,
+                        event.position,
+                        window,
+                        cx,
+                    );
                     cx.stop_propagation();
                 }),
             )
@@ -353,37 +353,47 @@ impl TerminalView {
 
         let centered_horizontal =
             input.label_centered && orientation == TabStripOrientation::Horizontal;
-        let title_leading_padding = if centered_horizontal {
+        let title_leading_padding = if input.is_renaming {
+            0.0
+        } else if centered_horizontal {
             TAB_CLOSE_SLOT_WIDTH
         } else if orientation == TabStripOrientation::Horizontal {
             input.close_slot_width
         } else {
             0.0
         };
-        let title_trailing_padding = if centered_horizontal {
+        let title_trailing_padding = if !input.is_renaming && centered_horizontal {
             TAB_CLOSE_SLOT_WIDTH
         } else {
             0.0
         };
-        let leading_accessory = (input.close_slot_width > 0.0)
-            .then_some(accessory_slot)
-            .map(|accessory| {
-                if orientation == TabStripOrientation::Horizontal {
-                    div()
-                        .absolute()
-                        .left(px(input.text_padding_x))
-                        .top_0()
-                        .bottom_0()
-                        .w(px(input.close_slot_width))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(accessory)
-                        .into_any_element()
-                } else {
-                    accessory
-                }
-            });
+        let leading_accessory = if Self::tab_accessory_visible(&input) {
+            let accessory = self.render_tab_accessory(
+                &input,
+                palette,
+                close_text_color,
+                hover_tab_index,
+                close_tab_index,
+                cx,
+            );
+            Some(if orientation == TabStripOrientation::Horizontal {
+                div()
+                    .absolute()
+                    .left(px(input.text_padding_x))
+                    .top_0()
+                    .bottom_0()
+                    .w(px(input.close_slot_width))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(accessory)
+                    .into_any_element()
+            } else {
+                accessory
+            })
+        } else {
+            None
+        };
 
         let tab_shell = tab_shell
             .child(
@@ -395,6 +405,11 @@ impl TerminalView {
                     .pl(px(title_leading_padding))
                     .pr(px(title_trailing_padding))
                     .child(if input.is_renaming {
+                        let rename_alignment = if justify_label_center {
+                            InlineInputAlignment::Center
+                        } else {
+                            InlineInputAlignment::Left
+                        };
                         self.render_inline_input_layer(
                             Font {
                                 family: font_family.clone(),
@@ -404,7 +419,7 @@ impl TerminalView {
                             px(title_font_size),
                             rename_text_color.into(),
                             rename_selection_color.into(),
-                            InlineInputAlignment::Left,
+                            rename_alignment,
                             cx,
                         )
                     } else {
@@ -460,8 +475,13 @@ impl TerminalView {
                 )
                 .on_mouse_down(
                     MouseButton::Right,
-                    cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
-                        this.open_tab_context_menu(switch_tab_index, event.position, cx);
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        this.open_tab_context_menu_for_window(
+                            switch_tab_index,
+                            event.position,
+                            window,
+                            cx,
+                        );
                         cx.stop_propagation();
                     }),
                 )
@@ -501,5 +521,57 @@ impl TerminalView {
                 .rounded_full()
                 .bg(bg_color),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tab_item_input(is_renaming: bool, close_slot_width: f32) -> TabItemRenderInput {
+        TabItemRenderInput {
+            orientation: TabStripOrientation::Horizontal,
+            index: 0,
+            tab_primary_extent: TAB_MIN_WIDTH,
+            tab_cross_extent: TAB_ITEM_HEIGHT,
+            tab_strokes: TabItemStrokeRects {
+                top: None,
+                bottom: None,
+                left: None,
+                right: None,
+            },
+            label: String::new(),
+            switch_hint_label: None,
+            is_active: true,
+            is_drag_source: false,
+            is_renaming,
+            show_tab_close: true,
+            show_tab_pin: false,
+            close_slot_width,
+            text_padding_x: TAB_TEXT_PADDING_X,
+            label_centered: true,
+            trailing_divider_cover: None,
+            drop_marker_side: None,
+            open_anim_progress: None,
+            hover_progress: 0.0,
+            press_progress: 0.0,
+            progress_state: ProgressState::default(),
+        }
+    }
+
+    #[test]
+    fn tab_accessory_hides_while_renaming() {
+        assert!(!TerminalView::tab_accessory_visible(&tab_item_input(
+            true,
+            TAB_CLOSE_SLOT_WIDTH,
+        )));
+    }
+
+    #[test]
+    fn tab_accessory_shows_with_slot_when_not_renaming() {
+        assert!(TerminalView::tab_accessory_visible(&tab_item_input(
+            false,
+            TAB_CLOSE_SLOT_WIDTH,
+        )));
     }
 }
