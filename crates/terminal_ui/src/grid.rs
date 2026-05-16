@@ -437,6 +437,9 @@ struct TerminalGridPaintCache {
     last_cursor_cell: Option<(usize, usize)>,
     last_cursor_visible: bool,
     last_hovered_link_range: Option<(usize, usize, usize)>,
+    /// Per-pass scratch for dirty row indices. Reused to avoid allocating a new
+    /// Vec/Arc for every paint pass.
+    dirty_rows: Vec<usize>,
     /// Per-pass scratch: `Some((left, right))` if only that column range is dirty for the row.
     /// `None` means full-row damage (cursor/hover transitions, or no damage info available).
     /// Cleared and repopulated at the start of every paint pass.
@@ -457,6 +460,7 @@ impl TerminalGridPaintCache {
         self.last_cursor_cell = None;
         self.last_cursor_visible = false;
         self.last_hovered_link_range = None;
+        self.dirty_rows.clear();
         self.dirty_col_ranges.clear();
         self.color_cache.clear();
         self.cached_font_normal = None;
@@ -1553,10 +1557,9 @@ fn push_row_if_in_bounds(rows: &mut Vec<usize>, maybe_row: Option<usize>, row_co
     }
 }
 
-fn sorted_dedup_rows(mut rows: Vec<usize>) -> Arc<[usize]> {
+fn sorted_dedup_rows(rows: &mut Vec<usize>) {
     rows.sort_unstable();
     rows.dedup();
-    rows.into()
 }
 
 fn text_batches_match_without_row(lhs: &TextBatch, rhs: &TextBatch) -> bool {
@@ -2153,10 +2156,7 @@ impl TerminalGrid {
         }
     }
 
-    fn dirty_rows_for_pass(
-        &self,
-        cache: &mut TerminalGridPaintCache,
-    ) -> (bool, bool, Arc<[usize]>) {
+    fn dirty_rows_for_pass(&self, cache: &mut TerminalGridPaintCache) -> (bool, bool, Vec<usize>) {
         let style_key = self.paint_style_key();
         let style_changed = cache.style_key.as_ref() != Some(&style_key);
         if style_changed {
@@ -2166,7 +2166,8 @@ impl TerminalGrid {
 
         let mut full_repaint =
             style_changed || matches!(self.paint_damage, TerminalGridPaintDamage::Full);
-        let mut rows = Vec::new();
+        let mut rows = std::mem::take(&mut cache.dirty_rows);
+        rows.clear();
         if let TerminalGridPaintDamage::Rows(damaged_rows) = &self.paint_damage {
             rows.extend(damaged_rows.iter().copied().filter(|row| *row < self.rows));
         }
@@ -2222,8 +2223,9 @@ impl TerminalGrid {
         cache.last_cursor_cell = self.cursor_cell;
         cache.last_cursor_visible = self.cursor_visible;
         cache.last_hovered_link_range = self.hovered_link_range;
+        sorted_dedup_rows(&mut rows);
 
-        (full_repaint, style_changed, sorted_dedup_rows(rows))
+        (full_repaint, style_changed, rows)
     }
 
     fn paint_cursor_for_row(&self, row: usize, origin: gpui::Point<Pixels>, window: &mut Window) {
@@ -2429,6 +2431,7 @@ impl TerminalGrid {
             cursor_fg,
             highlight_fg,
         );
+        cache.dirty_rows = dirty_rows;
 
         // GPUI paint passes do not preserve previous pixels across frames. Always clear and draw
         // all rows; damage only controls which cached row ops are recomputed.

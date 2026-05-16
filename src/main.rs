@@ -10,6 +10,8 @@ mod deeplink;
 mod keybindings;
 #[cfg(target_os = "macos")]
 mod macos_thermal_observer;
+#[cfg(target_os = "macos")]
+mod macos_titlebar_drag;
 mod menus;
 mod onboarding;
 mod settings_view;
@@ -157,6 +159,12 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
 
             #[cfg(target_os = "macos")]
             {
+                if let Err(error) =
+                    macos_titlebar_drag::disable_automatic_content_view_window_drag(window)
+                {
+                    log::error!("Failed to disable automatic macOS titlebar dragging: {error}");
+                }
+
                 let (native_drop_tx, native_drop_rx) = flume::unbounded();
                 match terminal_view::install_native_file_drop(window, native_drop_tx) {
                     Ok(()) => {

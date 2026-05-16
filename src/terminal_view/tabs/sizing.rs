@@ -452,7 +452,7 @@ mod tests {
 
         assert_eq!(
             layout.scroll_target_for_active_row(1, 0.0),
-            Some(16.0 + TAB_ITEM_GAP + 48.0 - 40.0)
+            Some(16.0 + VERTICAL_TAB_ITEM_GAP + 48.0 - 40.0)
         );
     }
 

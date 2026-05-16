@@ -22,7 +22,9 @@ pub(crate) const VERTICAL_TAB_STRIP_MACOS_TRAILING_PADDING: f32 = 0.0;
 pub(crate) const TAB_HORIZONTAL_PADDING: f32 = 0.0;
 pub(crate) const TAB_ITEM_HEIGHT: f32 = 28.0;
 pub(crate) const TAB_ITEM_GAP: f32 = 4.0;
+pub(crate) const VERTICAL_TAB_ITEM_GAP: f32 = 6.0;
 pub(crate) const TAB_ITEM_RADIUS: f32 = 7.0;
+pub(crate) const VERTICAL_TAB_LIST_INSET_X: f32 = 6.0;
 pub(crate) const TAB_TEXT_PADDING_X: f32 = 12.0;
 pub(crate) const TAB_HORIZONTAL_TITLE_FONT_SIZE: f32 = 13.0;
 pub(crate) const TAB_TITLE_FONT_SIZE: f32 = 13.0;
@@ -38,7 +40,7 @@ pub(crate) const TAB_CLOSE_CHIP_WIDTH: f32 = 16.0;
 pub(crate) const TAB_CLOSE_CHIP_HEIGHT: f32 = 16.0;
 pub(crate) const TAB_CLOSE_CHIP_RADIUS: f32 = 8.0;
 pub(crate) const TAB_SWITCH_HINT_TEXT_SIZE: f32 = 10.0;
-pub(crate) const TAB_STROKE_FOREGROUND_MIX: f32 = 0.12;
+pub(crate) const TAB_STROKE_FOREGROUND_MIX: f32 = 0.16;
 pub(crate) const TAB_STROKE_THICKNESS: f32 = 1.0;
 pub(crate) const TAB_DROP_MARKER_WIDTH: f32 = 3.0;
 pub(crate) const TAB_DROP_MARKER_INSET_Y: f32 = 3.0;
@@ -50,15 +52,23 @@ pub(crate) const TABBAR_NEW_TAB_BUTTON_SIZE: f32 = 24.0;
 pub(crate) const TABBAR_NEW_TAB_BUTTON_RADIUS: f32 = 12.0;
 pub(crate) const TABBAR_NEW_TAB_ICON_SIZE: f32 = 14.0;
 pub(crate) const TABBAR_NEW_TAB_ICON_BASELINE_NUDGE_Y: f32 = -1.0;
-pub(crate) const VERTICAL_NEW_TAB_SHELF_HEIGHT: f32 =
-    VERTICAL_TITLEBAR_CONTROL_BUTTON_SIZE + (VERTICAL_TAB_STRIP_PADDING * 2.0);
-pub(crate) const VERTICAL_NEW_TAB_SHELF_BUTTON_HEIGHT: f32 = TABBAR_NEW_TAB_BUTTON_SIZE;
-pub(crate) const VERTICAL_NEW_TAB_SHELF_LABEL_GAP: f32 = 6.0;
 pub(crate) const VERTICAL_TITLEBAR_CONTROL_BUTTON_SIZE: f32 = TABBAR_NEW_TAB_BUTTON_SIZE;
 pub(crate) const VERTICAL_TITLEBAR_CONTROL_ICON_SIZE: f32 = TABBAR_NEW_TAB_ICON_SIZE;
-pub(crate) const VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT: f32 =
+// Single source of truth for the vertical shelf height; the old constant names
+// are preserved as aliases below to keep call sites and tests compiling.
+pub(crate) const VERTICAL_SHELF_HEIGHT: f32 =
     VERTICAL_TITLEBAR_CONTROL_BUTTON_SIZE + (VERTICAL_TAB_STRIP_PADDING * 2.0);
+pub(crate) const VERTICAL_NEW_TAB_SHELF_HEIGHT: f32 = VERTICAL_SHELF_HEIGHT;
+pub(crate) const VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT: f32 = VERTICAL_SHELF_HEIGHT;
+pub(crate) const VERTICAL_NEW_TAB_SHELF_BUTTON_HEIGHT: f32 = TABBAR_NEW_TAB_BUTTON_SIZE;
+pub(crate) const VERTICAL_NEW_TAB_SHELF_LABEL_GAP: f32 = 6.0;
 pub(crate) const TAB_STRIP_SCROLL_EPSILON: f32 = 0.5;
 pub(crate) const TAB_STRIP_WHEEL_DELTA_LINE_REFERENCE_PX: f32 = 16.0;
 pub(crate) const TAB_PROGRESS_BADGE_SIZE: f32 = 8.0;
 pub(crate) const TAB_PROGRESS_BADGE_MARGIN: f32 = 6.0;
+pub(crate) const VERTICAL_RESIZE_HANDLE_WIDTH: f32 = 8.0;
+pub(crate) const VERTICAL_RESIZE_HANDLE_INSET: f32 = VERTICAL_RESIZE_HANDLE_WIDTH * 0.5;
+pub(crate) const VERTICAL_RESIZE_HANDLE_HOVER_THICKNESS: f32 = 1.0;
+pub(crate) const VERTICAL_COMPACT_DOT_SIZE: f32 = 4.0;
+pub(crate) const VERTICAL_COMPACT_DOT_INSET: f32 = 4.0;
+pub(crate) const TAB_STRIP_BRANDING_TEXT_ALPHA_FLOOR: f32 = 0.82;

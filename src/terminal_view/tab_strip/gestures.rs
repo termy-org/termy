@@ -128,6 +128,9 @@ impl TerminalView {
     ) {
         let hovered_changed = self.clear_tab_hover_state();
         let drag_changed = if event.dragging() {
+            if self.tab_strip.drag.is_some() {
+                self.disarm_titlebar_window_move();
+            }
             let preview = self.tab_strip_drag_preview(orientation, window, event.position);
             self.update_tab_drag_preview(
                 orientation,
@@ -161,6 +164,9 @@ impl TerminalView {
             return;
         }
 
+        if self.tab_strip.drag.is_some() {
+            self.disarm_titlebar_window_move();
+        }
         let preview =
             self.tab_strip_drag_preview(TabStripOrientation::Horizontal, window, event.position);
         if !self.update_tab_drag_preview(

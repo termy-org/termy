@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cmp::Ordering, collections::HashMap};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchMatch {
@@ -57,12 +57,15 @@ impl SearchResults {
     }
 
     fn build_match_ranges_by_line(matches: &[SearchMatch]) -> HashMap<i32, Vec<(usize, usize)>> {
-        let mut ranges_by_line = HashMap::new();
+        let mut ranges_by_line: HashMap<i32, Vec<(usize, usize)>> = HashMap::new();
         for m in matches {
             ranges_by_line
                 .entry(m.line)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((m.start_col, m.end_col));
+        }
+        for ranges in ranges_by_line.values_mut() {
+            sort_and_merge_ranges(ranges);
         }
         ranges_by_line
     }
@@ -155,11 +158,9 @@ impl SearchResults {
     }
 
     pub fn is_any_match(&self, line: i32, col: usize) -> bool {
-        self.match_ranges_by_line.get(&line).is_some_and(|ranges| {
-            ranges
-                .iter()
-                .any(|(start_col, end_col)| col >= *start_col && col < *end_col)
-        })
+        self.match_ranges_by_line
+            .get(&line)
+            .is_some_and(|ranges| ranges_contain_col(ranges, col))
     }
 
     pub fn matches_in_range(&self, min_line: i32, max_line: i32) -> Vec<&SearchMatch> {
@@ -168,6 +169,38 @@ impl SearchResults {
             .filter(|m| m.line >= min_line && m.line <= max_line)
             .collect()
     }
+}
+
+fn sort_and_merge_ranges(ranges: &mut Vec<(usize, usize)>) {
+    ranges.sort_unstable_by_key(|&(start, end)| (start, end));
+    let mut write = 0usize;
+    for read in 0..ranges.len() {
+        let (start, end) = ranges[read];
+        if start >= end {
+            continue;
+        }
+        if write == 0 || start > ranges[write - 1].1 {
+            ranges[write] = (start, end);
+            write += 1;
+        } else if end > ranges[write - 1].1 {
+            ranges[write - 1].1 = end;
+        }
+    }
+    ranges.truncate(write);
+}
+
+fn ranges_contain_col(ranges: &[(usize, usize)], col: usize) -> bool {
+    ranges
+        .binary_search_by(|(start_col, end_col)| {
+            if *end_col <= col {
+                Ordering::Less
+            } else if *start_col > col {
+                Ordering::Greater
+            } else {
+                Ordering::Equal
+            }
+        })
+        .is_ok()
 }
 
 #[cfg(test)]
@@ -217,6 +250,23 @@ mod tests {
 
         results.previous();
         assert_eq!(results.position(), Some((3, 3)));
+    }
+
+    #[test]
+    fn match_ranges_merge_and_support_binary_lookup() {
+        let results = SearchResults::from_matches(vec![
+            SearchMatch::new(2, 8, 10),
+            SearchMatch::new(2, 0, 3),
+            SearchMatch::new(2, 2, 6),
+            SearchMatch::new(2, 14, 16),
+        ]);
+
+        assert!(results.is_any_match(2, 0));
+        assert!(results.is_any_match(2, 5));
+        assert!(results.is_any_match(2, 9));
+        assert!(!results.is_any_match(2, 6));
+        assert!(!results.is_any_match(2, 13));
+        assert!(results.is_any_match(2, 15));
     }
 
     #[test]

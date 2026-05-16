@@ -679,6 +679,10 @@ impl SettingsWindow {
         modifiers.secondary() && !modifiers.alt && !modifiers.function
     }
 
+    fn is_plain_escape(event: &KeyDownEvent) -> bool {
+        event.keystroke.key.eq_ignore_ascii_case("escape") && !event.keystroke.modifiers.modified()
+    }
+
     fn handle_global_shortcuts(
         &mut self,
         event: &KeyDownEvent,
@@ -935,6 +939,11 @@ impl SettingsWindow {
     ) {
         if self.key_input_mode() == KeyInputMode::CaptureAction {
             self.handle_keybind_capture(event, cx);
+            return;
+        }
+
+        if Self::is_plain_escape(event) {
+            window.remove_window();
             return;
         }
 
@@ -1271,7 +1280,14 @@ impl Drop for SettingsWindow {
 mod tests {
     use super::test_utils::open_settings_window_handle;
     use super::*;
-    use gpui::TestAppContext;
+    use gpui::{AnyWindowHandle, Keystroke, TestAppContext};
+
+    fn settings_window_count(cx: &TestAppContext) -> usize {
+        cx.windows()
+            .into_iter()
+            .filter(|handle| handle.downcast::<SettingsWindow>().is_some())
+            .count()
+    }
 
     #[test]
     fn settings_effective_background_opacity_prefers_preview() {
@@ -1332,5 +1348,16 @@ mod tests {
                 assert_eq!(view.config.vertical_tabs_width, 12.0);
             })
             .expect("settings window update should succeed");
+    }
+
+    #[gpui::test]
+    fn escape_closes_settings_window_with_sidebar_search_active(cx: &mut TestAppContext) {
+        let settings = open_settings_window_handle(cx);
+        assert_eq!(settings_window_count(cx), 1);
+
+        let settings_window: AnyWindowHandle = settings.into();
+        cx.dispatch_keystroke(settings_window, Keystroke::parse("escape").unwrap());
+
+        assert_eq!(settings_window_count(cx), 0);
     }
 }

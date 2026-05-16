@@ -3,9 +3,15 @@ use super::chrome;
 use super::hints::TabSwitchHintState;
 use super::layout::{VerticalBottomShelfLayout, VerticalNewTabShelfLayout};
 use super::render_controls::TabStripControlAction;
-use super::render_palette::TabStripPalette;
-use super::render_tab_item::{TabItemRenderInput, TabItemStrokeRects};
+use super::render_palette::{TabStripPalette, resolve_branding_text_color};
+use super::render_tab_item::{TabItemRenderInput, TabItemStrokeRects, select_compact_indicator};
 use super::state::TabStripOrientation;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShelfSeam {
+    Top,
+    Bottom,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct VerticalTitlebarChromeLayout {
@@ -130,14 +136,11 @@ mod tests {
     }
 
     #[test]
-    fn vertical_bottom_shelf_button_origin_is_right_aligned() {
+    fn vertical_bottom_shelf_button_origin_is_centered() {
         let strip_width = 220.0;
         let layout = TerminalView::vertical_bottom_shelf_layout(strip_width);
         let divider_x = strip_width - TAB_STROKE_THICKNESS;
-        assert_eq!(
-            layout.button_x + layout.button_size + VERTICAL_TAB_STRIP_PADDING,
-            divider_x
-        );
+        assert_eq!(layout.button_x, (divider_x - layout.button_size) * 0.5);
         assert_eq!(
             layout.button_y,
             (layout.shelf_height - layout.button_size) * 0.5
@@ -195,6 +198,15 @@ mod tests {
         assert_eq!(
             TerminalView::vertical_titlebar_right_divider_stroke(160.0, TABBAR_HEIGHT, false, 64.0),
             None
+        );
+    }
+
+    #[test]
+    fn shelf_height_constants_alias_single_source() {
+        assert_eq!(VERTICAL_SHELF_HEIGHT, VERTICAL_NEW_TAB_SHELF_HEIGHT);
+        assert_eq!(
+            VERTICAL_NEW_TAB_SHELF_HEIGHT,
+            VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT
         );
     }
 }
@@ -272,6 +284,41 @@ impl TerminalView {
         TABBAR_NEW_TAB_BUTTON_SIZE + (VERTICAL_TAB_STRIP_PADDING * 2.0)
     }
 
+    /// Returns the three frame strokes (left edge, right divider, horizontal
+    /// seam) used to outline a vertical tab-strip shelf. Sharing this between
+    /// the top and bottom shelves keeps their visual chrome in lockstep.
+    fn shelf_stroke_frame(
+        divider_x: f32,
+        horizontal_seam: ShelfSeam,
+        tab_stroke_color: gpui::Rgba,
+    ) -> [gpui::Div; 3] {
+        let left_edge = div()
+            .absolute()
+            .left_0()
+            .top_0()
+            .bottom_0()
+            .w(px(TAB_STROKE_THICKNESS))
+            .bg(tab_stroke_color);
+        let right_divider = div()
+            .absolute()
+            .left(px(divider_x))
+            .top_0()
+            .bottom_0()
+            .w(px(TAB_STROKE_THICKNESS))
+            .bg(tab_stroke_color);
+        let mut seam = div()
+            .absolute()
+            .left_0()
+            .right_0()
+            .h(px(TAB_STROKE_THICKNESS))
+            .bg(tab_stroke_color);
+        seam = match horizontal_seam {
+            ShelfSeam::Top => seam.top_0(),
+            ShelfSeam::Bottom => seam.bottom_0(),
+        };
+        [left_edge, right_divider, seam]
+    }
+
     pub(crate) fn render_titlebar_branding(
         &mut self,
         window: &Window,
@@ -281,9 +328,9 @@ impl TerminalView {
         show_sidebar_chrome: bool,
         _cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let font_family_key = font_family.to_string();
+        let font_family_key = font_family.as_ref();
         let reserved_width =
-            self.termy_branding_reserved_width(window, font_family, font_family_key.as_str());
+            self.termy_branding_reserved_width(window, font_family, font_family_key);
         let branding_width = Self::titlebar_branding_width(
             show_sidebar_chrome,
             self.vertical_tabs_minimized,
@@ -297,8 +344,7 @@ impl TerminalView {
         let leading_inset_width = Self::titlebar_left_padding_for_platform();
         let lane_width = leading_inset_width + branding_width + gap_width;
         let palette = self.resolve_tab_strip_palette(colors, tabbar_bg);
-        let mut branding_text_color = palette.inactive_tab_text;
-        branding_text_color.a = branding_text_color.a.max(0.82);
+        let branding_text_color = resolve_branding_text_color(&palette);
         let visible_block_width = self.effective_vertical_tab_strip_width();
 
         if let Some(layout) = show_sidebar_chrome
@@ -478,33 +524,11 @@ impl TerminalView {
             .relative()
             .w_full()
             .h(px(layout.shelf_height))
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top_0()
-                    .bottom_0()
-                    .w(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .left(px(divider_x))
-                    .top_0()
-                    .bottom_0()
-                    .w(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .bottom_0()
-                    .h(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            )
+            .children(Self::shelf_stroke_frame(
+                divider_x,
+                ShelfSeam::Bottom,
+                tab_stroke_color,
+            ))
             .child(
                 div()
                     .absolute()
@@ -530,52 +554,86 @@ impl TerminalView {
             .relative()
             .w_full()
             .h(px(layout.shelf_height))
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .top_0()
-                    .h(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .top_0()
-                    .bottom_0()
-                    .w(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .left(px(divider_x))
-                    .top_0()
-                    .bottom_0()
-                    .w(px(TAB_STROKE_THICKNESS))
-                    .bg(tab_stroke_color),
-            )
+            .children(Self::shelf_stroke_frame(
+                divider_x,
+                ShelfSeam::Top,
+                tab_stroke_color,
+            ))
             .child(
                 div()
                     .absolute()
                     .left(px(layout.button_x))
                     .top(px(layout.button_y))
-                    .child(self.render_tab_strip_control_button(
-                        "vertical-bottom-shelf-toggle",
-                        if compact { "›" } else { "‹" },
-                        TabStripControlAction::ToggleVerticalSidebar,
-                        palette.tabbar_new_tab_bg,
-                        palette.tabbar_new_tab_hover_bg,
-                        palette.tabbar_new_tab_border,
-                        palette.tabbar_new_tab_hover_border,
-                        palette.tabbar_new_tab_text,
-                        palette.tabbar_new_tab_hover_text,
+                    .child(self.render_vertical_sidebar_toggle_button(
                         layout.button_size,
                         layout.icon_size,
+                        compact,
+                        palette,
                         cx,
                     )),
+            )
+            .into_any_element()
+    }
+
+    fn render_vertical_sidebar_toggle_button(
+        &self,
+        button_size: f32,
+        icon_size: f32,
+        compact: bool,
+        palette: &TabStripPalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        if button_size <= 0.0 {
+            return div()
+                .id("vertical-bottom-shelf-toggle")
+                .w(px(0.0))
+                .h(px(0.0))
+                .into_any_element();
+        }
+
+        let corner_radius = TABBAR_NEW_TAB_BUTTON_RADIUS.min(button_size * 0.5);
+        let icon_size = icon_size.min(button_size);
+        let icon_path: SharedString = if compact {
+            "icons/sidebar/expand.svg".into()
+        } else {
+            "icons/sidebar/collapse.svg".into()
+        };
+        let bg = palette.tabbar_new_tab_bg;
+        let hover_bg = palette.tabbar_new_tab_hover_bg;
+        let text = palette.tabbar_new_tab_text;
+        let hover_text = palette.tabbar_new_tab_hover_text;
+
+        div()
+            .id("vertical-bottom-shelf-toggle")
+            .w(px(button_size))
+            .h(px(button_size))
+            .rounded(px(corner_radius))
+            .bg(bg)
+            .text_color(text)
+            .cursor_pointer()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                    this.perform_tab_strip_control_action(
+                        TabStripControlAction::ToggleVerticalSidebar,
+                        cx,
+                    );
+                    cx.stop_propagation();
+                }),
+            )
+            .hover(move |style| style.bg(hover_bg).text_color(hover_text))
+            .child(
+                div()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        gpui::svg()
+                            .path(icon_path)
+                            .size(px(icon_size))
+                            .text_color(text),
+                    ),
             )
             .into_any_element()
     }
@@ -588,9 +646,9 @@ impl TerminalView {
         tabbar_bg: gpui::Rgba,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let font_family_key = font_family.to_string();
+        let font_family_key = font_family.as_ref();
         let measured_title_widths =
-            self.measure_tab_title_widths(window, font_family, font_family_key.as_str());
+            self.measure_tab_title_widths(window, font_family, font_family_key);
         self.sync_tab_title_text_widths(&measured_title_widths);
 
         let palette = self.resolve_tab_strip_palette(colors, tabbar_bg);
@@ -602,16 +660,24 @@ impl TerminalView {
         let chrome_layout = chrome::compute_vertical_tab_chrome_layout(
             vertical_layout.rows.iter().map(|row| row.height),
             chrome::VerticalTabChromeInput {
-                active_index: active_tab_index,
+                active_index: None,
                 strip_width,
                 control_rail_height: vertical_layout.header_height,
-                tab_item_gap: TAB_ITEM_GAP,
+                tab_item_gap: VERTICAL_TAB_ITEM_GAP,
                 external_top_seam: true,
             },
         );
+        let _ = active_tab_index;
         debug_assert_eq!(chrome_layout.tab_strokes.len(), self.tabs.len());
         let titlebar_block =
             self.render_titlebar_branding(window, colors, font_family, tabbar_bg, true, cx);
+
+        let tab_inset_x = if compact {
+            0.0
+        } else {
+            VERTICAL_TAB_LIST_INSET_X
+        };
+        let tab_extent = (strip_width - 2.0 * tab_inset_x).max(0.0);
 
         let mut list = div()
             .id("vertical-tabs-list")
@@ -619,7 +685,9 @@ impl TerminalView {
             .w_full()
             .flex()
             .flex_col()
-            .gap(px(TAB_ITEM_GAP));
+            .gap(px(VERTICAL_TAB_ITEM_GAP))
+            .pl(px(tab_inset_x))
+            .pr(px(tab_inset_x));
 
         for index in 0..self.tabs.len() {
             let tab_title = self.tabs[index].title.clone();
@@ -661,7 +729,7 @@ impl TerminalView {
                 Self::compact_vertical_tab_label(index, &tab_title)
             } else {
                 let available_text_px =
-                    Self::tab_title_text_area_width(strip_width, close_slot_width);
+                    Self::tab_title_text_area_width(tab_extent, close_slot_width);
                 Self::format_tab_label_for_render_measured(
                     &tab_title,
                     available_text_px,
@@ -669,7 +737,7 @@ impl TerminalView {
                         self.measure_tab_title_width(
                             window,
                             font_family,
-                            font_family_key.as_str(),
+                            font_family_key,
                             candidate,
                         )
                     },
@@ -680,7 +748,7 @@ impl TerminalView {
                     TabItemRenderInput {
                         orientation: TabStripOrientation::Vertical,
                         index,
-                        tab_primary_extent: strip_width,
+                        tab_primary_extent: tab_extent,
                         tab_cross_extent: tab_height,
                         tab_strokes: TabItemStrokeRects {
                             top: None,
@@ -707,6 +775,11 @@ impl TerminalView {
                         hover_progress: self.tab_strip.hover_progress(index, now),
                         press_progress: self.tab_strip.press_progress(index, now),
                         progress_state,
+                        compact_indicator: select_compact_indicator(
+                            compact,
+                            pinned,
+                            progress_state,
+                        ),
                     },
                     font_family,
                     colors,
@@ -745,13 +818,16 @@ impl TerminalView {
             )
             .on_mouse_move(cx.listener(Self::handle_vertical_tab_strip_mouse_move))
             .children((!compact).then(|| {
+                let mut hover_overlay_color = palette.tab_stroke_color;
+                hover_overlay_color.a = 1.0;
                 div()
                     .id("vertical-tabs-resize-handle")
+                    .group("vertical-tabs-resize-handle-group")
                     .absolute()
-                    .right(px(-4.0))
+                    .right(px(-VERTICAL_RESIZE_HANDLE_INSET))
                     .top_0()
                     .bottom_0()
-                    .w(px(8.0))
+                    .w(px(VERTICAL_RESIZE_HANDLE_WIDTH))
                     .cursor_col_resize()
                     .on_mouse_down(
                         MouseButton::Left,
@@ -760,6 +836,18 @@ impl TerminalView {
                                 Some(VerticalTabStripResizeDragState);
                             cx.stop_propagation();
                         }),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .bottom_0()
+                            .right(px(VERTICAL_RESIZE_HANDLE_INSET))
+                            .w(px(VERTICAL_RESIZE_HANDLE_HOVER_THICKNESS))
+                            .bg(gpui::transparent_black())
+                            .group_hover("vertical-tabs-resize-handle-group", move |style| {
+                                style.bg(hover_overlay_color)
+                            }),
                     )
             }))
             .child(

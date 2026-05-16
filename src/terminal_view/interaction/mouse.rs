@@ -3,7 +3,28 @@ use super::*;
 const SELECTION_DRAG_AUTOSCROLL_MAX_LINES: i32 = 3;
 const CURSOR_MOVE_PREVIEW_MS: u64 = 75;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GlobalTabDragPointerAction {
+    None,
+    UpdatePreview,
+    Commit,
+}
+
 impl TerminalView {
+    fn global_tab_drag_pointer_action(
+        tab_drag_active: bool,
+        pointer_dragging: bool,
+    ) -> GlobalTabDragPointerAction {
+        if !tab_drag_active {
+            return GlobalTabDragPointerAction::None;
+        }
+        if pointer_dragging {
+            GlobalTabDragPointerAction::UpdatePreview
+        } else {
+            GlobalTabDragPointerAction::Commit
+        }
+    }
+
     fn is_plain_click_cursor_move_gesture(modifiers: gpui::Modifiers, click_count: usize) -> bool {
         click_count == 1
             && !modifiers.control
@@ -810,6 +831,7 @@ impl TerminalView {
     pub(in super::super) fn handle_global_mouse_move_event(
         &mut self,
         event: &MouseMoveEvent,
+        window: &Window,
         cx: &mut Context<Self>,
     ) {
         if self.vertical_tab_strip_resize_drag.is_some() && event.dragging() {
@@ -817,6 +839,28 @@ impl TerminalView {
                 cx.notify();
             }
             return;
+        }
+
+        match Self::global_tab_drag_pointer_action(self.tab_strip.drag.is_some(), event.dragging())
+        {
+            GlobalTabDragPointerAction::None => {}
+            GlobalTabDragPointerAction::UpdatePreview => {
+                let Some(orientation) = self.tab_strip.drag.map(|drag| drag.orientation) else {
+                    return;
+                };
+                let preview = self.tab_strip_drag_preview(orientation, window, event.position);
+                self.update_tab_drag_preview(
+                    orientation,
+                    preview.pointer_primary_axis,
+                    preview.viewport_extent,
+                    cx,
+                );
+                return;
+            }
+            GlobalTabDragPointerAction::Commit => {
+                self.commit_tab_drag(cx);
+                return;
+            }
         }
 
         if self.try_forward_mouse_move(event, cx) {
@@ -843,6 +887,11 @@ impl TerminalView {
         event: &MouseUpEvent,
         cx: &mut Context<Self>,
     ) -> bool {
+        if event.button == MouseButton::Left && self.tab_strip.drag.is_some() {
+            self.commit_tab_drag(cx);
+            return true;
+        }
+
         if event.button == MouseButton::Right
             && Self::is_terminal_context_menu_passthrough(event.modifiers)
         {
@@ -1171,6 +1220,22 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn global_tab_drag_pointer_action_tracks_drag_until_release() {
+        assert_eq!(
+            TerminalView::global_tab_drag_pointer_action(true, true),
+            GlobalTabDragPointerAction::UpdatePreview
+        );
+        assert_eq!(
+            TerminalView::global_tab_drag_pointer_action(true, false),
+            GlobalTabDragPointerAction::Commit
+        );
+        assert_eq!(
+            TerminalView::global_tab_drag_pointer_action(false, true),
+            GlobalTabDragPointerAction::None
+        );
+    }
 
     #[test]
     fn selection_drag_autoscroll_lines_scrolls_up_when_pointer_above_top() {

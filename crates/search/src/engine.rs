@@ -10,7 +10,7 @@ pub enum SearchMode {
     Regex,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SearchConfig {
     pub case_sensitive: bool,
     pub mode: SearchMode,
@@ -73,7 +73,7 @@ impl SearchEngine {
     }
 
     pub fn set_config(&mut self, config: SearchConfig) {
-        if self.config.case_sensitive != config.case_sensitive || self.config.mode != config.mode {
+        if self.config != config {
             self.config = config;
             let pattern = std::mem::take(&mut self.pattern);
             let _ = self.set_pattern(&pattern);
@@ -81,7 +81,7 @@ impl SearchEngine {
     }
 
     pub fn config(&self) -> SearchConfig {
-        self.config.clone()
+        self.config
     }
 
     pub fn pattern(&self) -> &str {
@@ -97,10 +97,14 @@ impl SearchEngine {
             return Vec::new();
         };
 
+        let mut byte_matches = regex.find_iter(text).peekable();
+        if byte_matches.peek().is_none() {
+            return Vec::new();
+        }
+
         let (utf8_char_boundaries, cell_columns) = compute_cell_columns(text);
 
-        regex
-            .find_iter(text)
+        byte_matches
             .map(|m| {
                 SearchMatch::new(
                     line_idx,
@@ -136,8 +140,9 @@ impl SearchEngine {
 }
 
 fn compute_cell_columns(text: &str) -> (Vec<usize>, Vec<usize>) {
-    let mut utf8_char_boundaries = Vec::with_capacity(text.chars().count() + 1);
-    let mut cell_columns = Vec::with_capacity(text.chars().count() + 1);
+    let char_count = text.chars().count() + 1;
+    let mut utf8_char_boundaries = Vec::with_capacity(char_count);
+    let mut cell_columns = Vec::with_capacity(char_count);
     let mut cell_col = 0usize;
 
     for (idx, ch) in text.char_indices() {

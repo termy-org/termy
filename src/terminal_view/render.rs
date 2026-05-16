@@ -191,8 +191,37 @@ fn finalized_cache_update_strategy(
 thread_local! {
     static DIRTY_SPAN_RANGES: std::cell::RefCell<Vec<(usize, usize, usize)>> =
         std::cell::RefCell::new(Vec::with_capacity(128));
-    static PATCH_UPDATES: std::cell::RefCell<Vec<(usize, usize, CellRenderInfo)>> =
-        std::cell::RefCell::new(Vec::with_capacity(64));
+}
+
+fn dirty_span_cell_upper_bound(spans: &[TerminalDirtySpan], rows: usize, cols: usize) -> usize {
+    if rows == 0 || cols == 0 {
+        return 0;
+    }
+
+    spans.iter().fold(0usize, |acc, span| {
+        if span.row >= rows {
+            return acc;
+        }
+        let left = span.left_col.min(cols.saturating_sub(1));
+        let right = span.right_col.min(cols.saturating_sub(1));
+        if left > right {
+            return acc;
+        }
+        acc.saturating_add(right.saturating_sub(left).saturating_add(1))
+    })
+}
+
+fn partial_damage_should_rebuild_full(
+    spans: &[TerminalDirtySpan],
+    rows: usize,
+    cols: usize,
+) -> bool {
+    let total_cells = rows.saturating_mul(cols);
+    if total_cells == 0 {
+        return false;
+    }
+
+    dirty_span_cell_upper_bound(spans, rows, cols) >= total_cells / 2
 }
 
 fn paint_damage_from_dirty_spans(
@@ -408,34 +437,26 @@ fn pane_render_cells_match_dimensions(cells: &PaneRenderCells, cols: usize, rows
     cells.len() == rows && cells.iter().all(|row_cells| row_cells.len() == cols)
 }
 
-fn merge_pane_render_rows(
-    mut existing: PaneRenderCells,
+fn patch_pane_render_cell(
+    cells: &mut PaneRenderCells,
     rows: usize,
     cols: usize,
-    updates: Vec<(usize, usize, CellRenderInfo)>,
-) -> PaneRenderCells {
-    if updates.is_empty() {
-        return existing;
+    row: usize,
+    col: usize,
+    cell: CellRenderInfo,
+) -> bool {
+    if row >= rows || col >= cols {
+        return false;
     }
-
-    // Use Arc::make_mut on the outer Arc to avoid cloning the outer Vec when
-    // the caller is the sole owner (typical case during partial updates).
-    let merged_rows = Arc::make_mut(&mut existing);
-    let mut any_touched = false;
-
-    for (row, col, cell) in updates {
-        if row >= rows || col >= cols {
-            continue;
-        }
-        any_touched = true;
-        Arc::make_mut(&mut merged_rows[row])[col] = cell;
-    }
-
-    if !any_touched {
-        return existing;
-    }
-
-    existing
+    let Some(row_cells) = Arc::make_mut(cells).get_mut(row) else {
+        return false;
+    };
+    let row_cells = Arc::make_mut(row_cells);
+    let Some(slot) = row_cells.get_mut(col) else {
+        return false;
+    };
+    *slot = cell;
+    true
 }
 
 fn command_palette_backdrop_transform() -> CellColorTransform {
@@ -556,7 +577,7 @@ impl TerminalView {
             self.update_banner_visible(),
             self.vertical_tabs,
             self.should_render_tab_strip_chrome(),
-            0.0,
+            self.effective_vertical_tab_strip_width(),
         )
     }
     fn pane_render_cache_key(
@@ -763,72 +784,49 @@ impl TerminalView {
             return (0, true);
         }
 
-        // Reuse a thread-local scratch buffer to avoid per-call heap allocations.
-        let result = PATCH_UPDATES.with(|buf| {
-            let mut updates = buf.borrow_mut();
-            updates.clear();
-            let _ = terminal.with_grid(|grid| {
-                let Some(screen_lines) = i32::try_from(grid.screen_lines()).ok() else {
-                    return;
+        let mut patched_cell_count = 0usize;
+        let _ = terminal.with_grid(|grid| {
+            let Some(screen_lines) = i32::try_from(grid.screen_lines()).ok() else {
+                return;
+            };
+            let Some(total_lines) = i32::try_from(grid.total_lines()).ok() else {
+                return;
+            };
+            let min_line = -(total_lines - screen_lines);
+            let max_line = screen_lines - 1;
+
+            for span in spans {
+                if span.row >= rows || cols == 0 {
+                    continue;
+                }
+
+                let Some(term_line) = term_line_from_viewport_row(span.row, display_offset) else {
+                    continue;
                 };
-                let Some(total_lines) = i32::try_from(grid.total_lines()).ok() else {
-                    return;
-                };
-                let min_line = -(total_lines - screen_lines);
-                let max_line = screen_lines - 1;
+                if term_line < min_line || term_line > max_line {
+                    continue;
+                }
 
-                for span in spans {
-                    if span.row >= rows || cols == 0 {
-                        continue;
-                    }
+                let row = span.row;
+                let line_ref = &grid[Line(term_line)];
+                let left_col = span.left_col.min(cols.saturating_sub(1));
+                let right_col = span.right_col.min(cols.saturating_sub(1));
+                if left_col > right_col {
+                    continue;
+                }
 
-                    let Some(term_line) = term_line_from_viewport_row(span.row, display_offset)
-                    else {
-                        continue;
-                    };
-                    if term_line < min_line || term_line > max_line {
-                        continue;
-                    }
-
-                    let row = span.row;
-                    let line_ref = &grid[Line(term_line)];
-                    let left_col = span.left_col.min(cols.saturating_sub(1));
-                    let right_col = span.right_col.min(cols.saturating_sub(1));
-                    if left_col > right_col {
-                        continue;
-                    }
-
-                    for col in left_col..=right_col {
-                        let cell_content = &line_ref[Column(col)];
-                        updates.push((
-                            row,
-                            col,
-                            self.build_cell_render_info(col, row, term_line, cell_content, context),
-                        ));
+                for col in left_col..=right_col {
+                    let cell_content = &line_ref[Column(col)];
+                    let cell =
+                        self.build_cell_render_info(col, row, term_line, cell_content, context);
+                    if patch_pane_render_cell(cells, rows, cols, row, col, cell) {
+                        patched_cell_count = patched_cell_count.saturating_add(1);
                     }
                 }
-            });
-
-            if updates.is_empty() {
-                return None;
             }
-
-            let patched_cell_count = updates.len();
-            // Swap the Vec out of the thread-local to release the borrow.
-            // Preserves the thread-local's capacity so subsequent calls
-            // don't re-grow from zero.
-            let cap = updates.capacity();
-            let owned_updates = std::mem::replace(&mut *updates, Vec::with_capacity(cap));
-            Some((patched_cell_count, owned_updates))
         });
 
-        match result {
-            Some((patched_cell_count, updates)) => {
-                *cells = merge_pane_render_rows(std::mem::take(cells), rows, cols, updates);
-                (patched_cell_count, false)
-            }
-            None => (0, false),
-        }
+        (patched_cell_count, false)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -855,6 +853,12 @@ impl TerminalView {
             cache.key.as_ref() == Some(&cache_key),
             &damage,
         );
+        if strategy == PaneCacheUpdateStrategy::Partial
+            && let TerminalDamageSnapshot::Partial(spans) = &damage
+            && partial_damage_should_rebuild_full(spans, rows, cols)
+        {
+            strategy = PaneCacheUpdateStrategy::Full;
+        }
         let mut paint_damage = match strategy {
             PaneCacheUpdateStrategy::Reuse => TerminalGridPaintDamage::None,
             PaneCacheUpdateStrategy::Full => TerminalGridPaintDamage::Full,
@@ -1284,8 +1288,7 @@ impl TerminalView {
             actions = actions.child(
                 div()
                     .id(gpui::ElementId::from(gpui::SharedString::from(format!(
-                        "update-banner-btn-{:?}",
-                        action
+                        "update-banner-btn-{action:?}"
                     ))))
                     .h(px(26.0))
                     .px(px(12.0))
@@ -2868,8 +2871,9 @@ impl Render for TerminalView {
             self.render_titlebar_branding(window, &colors, &ui_font_family, tabbar_bg, false, cx)
         })
         .flatten();
-        let vertical_tab_strip = (self.vertical_tabs && show_tab_strip_chrome)
-            .then(|| self.render_vertical_tab_strip(window, &colors, &ui_font_family, tabbar_bg, cx));
+        let vertical_tab_strip = (self.vertical_tabs && show_tab_strip_chrome).then(|| {
+            self.render_vertical_tab_strip(window, &colors, &ui_font_family, tabbar_bg, cx)
+        });
         #[cfg(target_os = "macos")]
         let update_banner_layout = self.update_banner_layout();
 
@@ -3024,7 +3028,7 @@ impl Render for TerminalView {
             .flex_col()
             .size_full()
             .bg(root_bg)
-            .font_family(ui_font_family.clone())
+            .font_family(ui_font_family)
             .capture_any_mouse_up(cx.listener(|this, event: &MouseUpEvent, _window, cx| {
                 if matches!(
                     event.button,
@@ -3037,8 +3041,8 @@ impl Render for TerminalView {
                     this.commit_tab_drag(cx);
                 }
             }))
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
-                this.handle_global_mouse_move_event(event, cx);
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
+                this.handle_global_mouse_move_event(event, window, cx);
             }))
             .on_mouse_up_out(
                 MouseButton::Left,
@@ -3513,54 +3517,75 @@ mod tests {
     }
 
     #[test]
-    fn merge_pane_render_rows_reuses_existing_arc_when_updates_empty() {
-        let existing = test_render_rows(vec![vec![
-            test_render_cell(0, 0, 'a'),
-            test_render_cell(1, 0, 'b'),
-            test_render_cell(2, 0, 'c'),
-        ]]);
-        let existing_ptr = Arc::as_ptr(&existing);
+    fn partial_damage_rebuild_threshold_uses_dirty_cell_coverage() {
+        let spans = vec![TerminalDirtySpan {
+            row: 0,
+            left_col: 0,
+            right_col: 49,
+        }];
+        assert!(partial_damage_should_rebuild_full(&spans, 2, 50));
 
-        let merged = merge_pane_render_rows(existing, 1, 3, Vec::new());
-        assert_eq!(Arc::as_ptr(&merged), existing_ptr);
+        let spans = vec![TerminalDirtySpan {
+            row: 0,
+            left_col: 0,
+            right_col: 2,
+        }];
+        assert!(!partial_damage_should_rebuild_full(&spans, 2, 50));
     }
 
     #[test]
-    fn merge_pane_render_rows_updates_only_touched_row_cells() {
-        let existing = test_render_rows(vec![
+    fn patch_pane_render_cell_updates_only_touched_row_cells() {
+        let mut cells = test_render_rows(vec![
             vec![test_render_cell(0, 0, 'a'), test_render_cell(1, 0, 'b')],
             vec![test_render_cell(0, 1, 'c'), test_render_cell(1, 1, 'd')],
             vec![test_render_cell(0, 2, 'e'), test_render_cell(1, 2, 'f')],
         ]);
-        let updates = vec![(1, 1, test_render_cell(1, 1, 'x'))];
+        let original = cells.clone();
 
-        let merged = merge_pane_render_rows(existing.clone(), 3, 2, updates);
+        assert!(patch_pane_render_cell(
+            &mut cells,
+            3,
+            2,
+            1,
+            1,
+            test_render_cell(1, 1, 'x'),
+        ));
 
-        assert!(Arc::ptr_eq(&existing[0], &merged[0]));
-        assert!(!Arc::ptr_eq(&existing[1], &merged[1]));
-        assert!(Arc::ptr_eq(&existing[2], &merged[2]));
-        assert_eq!(merged[0][0].char, 'a');
-        assert_eq!(merged[1][1].char, 'x');
-        assert_eq!(merged[2][1].char, 'f');
+        assert!(Arc::ptr_eq(&original[0], &cells[0]));
+        assert!(!Arc::ptr_eq(&original[1], &cells[1]));
+        assert!(Arc::ptr_eq(&original[2], &cells[2]));
+        assert_eq!(cells[0][0].char, 'a');
+        assert_eq!(cells[1][1].char, 'x');
+        assert_eq!(cells[2][1].char, 'f');
     }
 
     #[test]
-    fn merge_pane_render_rows_uses_last_write_for_duplicate_cell() {
-        let existing = test_render_rows(vec![
-            vec![test_render_cell(0, 0, 'a'), test_render_cell(1, 0, 'b')],
-            vec![test_render_cell(0, 1, 'c'), test_render_cell(1, 1, 'd')],
-        ]);
-        let updates = vec![
-            (1, 1, test_render_cell(1, 1, 'x')),
-            (1, 1, test_render_cell(1, 1, 'y')),
-            (0, 0, test_render_cell(0, 0, 'z')),
-        ];
+    fn patch_pane_render_cell_rejects_out_of_bounds_updates() {
+        let mut cells = test_render_rows(vec![vec![
+            test_render_cell(0, 0, 'a'),
+            test_render_cell(1, 0, 'b'),
+        ]]);
+        let original_ptr = Arc::as_ptr(&cells);
 
-        let merged = merge_pane_render_rows(existing, 2, 2, updates);
-
-        assert_eq!(merged[0][0].char, 'z');
-        assert_eq!(merged[1][1].char, 'y');
-        assert_eq!(merged[1][0].char, 'c');
+        assert!(!patch_pane_render_cell(
+            &mut cells,
+            1,
+            2,
+            7,
+            0,
+            test_render_cell(0, 7, 'x'),
+        ));
+        assert!(!patch_pane_render_cell(
+            &mut cells,
+            1,
+            2,
+            0,
+            7,
+            test_render_cell(7, 0, 'x'),
+        ));
+        assert_eq!(Arc::as_ptr(&cells), original_ptr);
+        assert_eq!(cells[0][0].char, 'a');
+        assert_eq!(cells[0][1].char, 'b');
     }
 
     #[test]

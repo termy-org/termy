@@ -23,6 +23,12 @@ pub(super) struct TabStripPalette {
     pub(super) tabbar_new_tab_hover_text: gpui::Rgba,
 }
 
+pub(super) fn resolve_branding_text_color(palette: &TabStripPalette) -> gpui::Rgba {
+    let mut color = palette.inactive_tab_text;
+    color.a = color.a.max(TAB_STRIP_BRANDING_TEXT_ALPHA_FLOOR);
+    color
+}
+
 impl TerminalView {
     pub(super) fn resolve_tab_strip_palette(
         &self,
@@ -43,7 +49,7 @@ impl TerminalView {
         let mut active_tab_text = colors.foreground;
         active_tab_text.a = 0.95;
         let mut inactive_tab_text = colors.foreground;
-        inactive_tab_text.a = 0.55;
+        inactive_tab_text.a = 0.62;
         let mut close_button_bg = colors.foreground;
         close_button_bg.a = 0.0;
         let mut close_button_hover_text = colors.foreground;

@@ -120,10 +120,7 @@ pub enum SystemAppearance {
     Dark,
 }
 
-pub fn resolve_active_theme<'a>(
-    config: &'a AppConfig,
-    system_appearance: SystemAppearance,
-) -> &'a str {
+pub fn resolve_active_theme(config: &AppConfig, system_appearance: SystemAppearance) -> &str {
     match config.theme_mode {
         AppearanceMode::Manual => &config.theme,
         AppearanceMode::System => match system_appearance {

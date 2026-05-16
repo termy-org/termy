@@ -593,7 +593,7 @@ pub(crate) fn take_term_damage_snapshot<T: EventListener>(
                     TerminalDamageSnapshot::Partial(Vec::new())
                 }
             } else {
-                let mut spans = Vec::new();
+                let mut spans = Vec::with_capacity(rows.min(64));
                 for damage in damage_iter {
                     if let Some(span) = normalized_dirty_span(damage, rows, cols, display_offset) {
                         spans.push(span);

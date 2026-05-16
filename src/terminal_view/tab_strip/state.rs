@@ -171,6 +171,11 @@ impl TabStripTitlebarState {
         dragging: bool,
         tab_drag_active: bool,
     ) -> bool {
+        if tab_drag_active {
+            self.disarm();
+            return false;
+        }
+
         if !self.should_start_window_move(dragging, tab_drag_active) {
             return false;
         }
@@ -382,6 +387,15 @@ mod tests {
 
         state.disarm();
 
+        assert!(!state.take_window_move_request(true, false));
+    }
+
+    #[test]
+    fn titlebar_state_tab_drag_cancels_pending_window_move() {
+        let mut state = TabStripTitlebarState::default();
+        assert!(state.on_mouse_down(false, 1).arm_move);
+
+        assert!(!state.take_window_move_request(true, true));
         assert!(!state.take_window_move_request(true, false));
     }
 }

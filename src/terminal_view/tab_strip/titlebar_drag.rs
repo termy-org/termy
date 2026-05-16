@@ -112,11 +112,20 @@ impl TerminalView {
             window.titlebar_double_click();
             #[cfg(not(target_os = "macos"))]
             window.zoom_window();
+            window.prevent_default();
+            cx.stop_propagation();
+            return;
+        }
+
+        if interactive_hit {
+            self.disarm_titlebar_window_move();
+            window.prevent_default();
             cx.stop_propagation();
             return;
         }
 
         if outcome.arm_move {
+            window.prevent_default();
             cx.stop_propagation();
         }
     }
@@ -167,6 +176,7 @@ impl TerminalView {
         }
 
         self.tab_strip.titlebar.on_mouse_up();
+        window.prevent_default();
         cx.stop_propagation();
     }
 
@@ -194,6 +204,32 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.tab_strip.drag.is_some() {
+            self.disarm_titlebar_window_move();
+
+            let changed = self.clear_tab_hover_state();
+            if event.dragging() {
+                let preview = self.tab_strip_drag_preview(orientation, window, event.position);
+                if !self.update_tab_drag_preview(
+                    orientation,
+                    preview.pointer_primary_axis,
+                    preview.viewport_extent,
+                    cx,
+                ) && changed
+                {
+                    cx.notify();
+                }
+            } else {
+                self.commit_tab_drag(cx);
+                if changed {
+                    cx.notify();
+                }
+            }
+
+            cx.stop_propagation();
+            return;
+        }
+
         if self.maybe_start_titlebar_window_move(event.dragging(), window) {
             cx.stop_propagation();
             return;

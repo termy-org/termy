@@ -256,6 +256,7 @@ impl TerminalView {
                     hover_progress: self.tab_strip.hover_progress(index, now),
                     press_progress: self.tab_strip.press_progress(index, now),
                     progress_state,
+                    compact_indicator: None,
                 },
                 font_family,
                 colors,
@@ -296,14 +297,14 @@ impl TerminalView {
         tabbar_bg: gpui::Rgba,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let font_family_key = font_family.to_string();
+        let font_family_key = font_family.as_ref();
         let measured_title_widths =
-            self.measure_tab_title_widths(window, font_family, font_family_key.as_str());
+            self.measure_tab_title_widths(window, font_family, font_family_key);
         self.sync_tab_title_text_widths(&measured_title_widths);
 
         let base_left_inset_width = Self::titlebar_left_padding_for_platform();
         let termy_branding_reserved_width =
-            self.termy_branding_reserved_width(window, font_family, font_family_key.as_str());
+            self.termy_branding_reserved_width(window, font_family, font_family_key);
         let termy_branding_tab_gap = if termy_branding_reserved_width > f32::EPSILON {
             TOP_STRIP_TERMY_BRANDING_TAB_GAP
         } else {
@@ -320,14 +321,14 @@ impl TerminalView {
             - termy_branding_slot_start_x)
             .max(0.0)
             .min(termy_branding_reserved_width.max(0.0));
-        let mut termy_branding_text_color = palette.inactive_tab_text;
-        termy_branding_text_color.a = termy_branding_text_color.a.max(0.82);
+        let termy_branding_text_color =
+            super::render_palette::resolve_branding_text_color(&palette);
         let tabs_scroll_content = self.build_tabs_scroll_content(
             window,
             &state,
             &palette,
             font_family,
-            font_family_key.as_str(),
+            font_family_key,
             colors,
             cx,
         );

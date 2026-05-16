@@ -89,7 +89,7 @@ impl TerminalView {
         let x: f32 = position.x.into();
         let y: f32 = position.y.into();
         (
-            x,
+            x - self.effective_vertical_tab_strip_width(),
             Self::window_y_to_terminal_content_y(y, self.terminal_content_top_inset()),
         )
     }

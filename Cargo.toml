@@ -53,9 +53,12 @@ dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
 
+[profile.release]
+strip = "symbols"
+
 [package]
 name = "termy"
-version = "0.1.89"
+version = "0.1.90"
 edition = "2024"
 
 [package.metadata.bundle]

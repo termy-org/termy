@@ -22,6 +22,15 @@ macro_rules! palette_icon {
     };
 }
 
+macro_rules! sidebar_icon {
+    ($name:literal) => {
+        (
+            concat!("icons/sidebar/", $name, ".svg"),
+            include_bytes!(concat!("../assets/icons/sidebar/", $name, ".svg")) as &[u8],
+        )
+    };
+}
+
 const SETTINGS_ICONS: &[(&str, &[u8])] = &[
     settings_icon!("appearance"),
     settings_icon!("terminal"),
@@ -66,7 +75,9 @@ const COMMAND_PALETTE_ICONS: &[(&str, &[u8])] = &[
     palette_icon!("folder"),
 ];
 
-const ICON_BUNDLES: &[&[(&str, &[u8])]] = &[SETTINGS_ICONS, COMMAND_PALETTE_ICONS];
+const SIDEBAR_ICONS: &[(&str, &[u8])] = &[sidebar_icon!("collapse"), sidebar_icon!("expand")];
+
+const ICON_BUNDLES: &[&[(&str, &[u8])]] = &[SETTINGS_ICONS, COMMAND_PALETTE_ICONS, SIDEBAR_ICONS];
 
 impl AssetSource for EmbeddedAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {

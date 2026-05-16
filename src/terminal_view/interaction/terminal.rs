@@ -278,7 +278,7 @@ impl TerminalView {
             return;
         }
 
-        let sidebar_width = 0.0_f32;
+        let sidebar_width = self.effective_vertical_tab_strip_width();
         let content_top_inset = self.terminal_content_top_inset();
         let backend_mode = self.runtime_kind();
         let runtime_uses_tmux = matches!(backend_mode, RuntimeKind::Tmux);
@@ -493,5 +493,45 @@ mod tests {
             &mut tab
         ));
         assert_eq!(tab.active_pane_id, "%native-1");
+    }
+
+    #[test]
+    fn sidebar_width_reduces_terminal_columns() {
+        let viewport_width = 1280.0;
+        let viewport_height = 800.0;
+        let cell_width = 8.0;
+        let cell_height = 16.0;
+        let padding = 8.0;
+        let content_top_inset = 32.0;
+        let pane_count = 1;
+
+        let (cols_no_sidebar, _) = TerminalView::terminal_grid_size_for_pane_count(
+            pane_count,
+            viewport_width,
+            viewport_height,
+            0.0,
+            content_top_inset,
+            padding,
+            padding,
+            cell_width,
+            cell_height,
+        );
+        let (cols_with_sidebar, _) = TerminalView::terminal_grid_size_for_pane_count(
+            pane_count,
+            viewport_width,
+            viewport_height,
+            240.0,
+            content_top_inset,
+            padding,
+            padding,
+            cell_width,
+            cell_height,
+        );
+
+        assert!(
+            cols_with_sidebar < cols_no_sidebar,
+            "non-zero sidebar must reduce column count (no_sidebar={cols_no_sidebar}, with_sidebar={cols_with_sidebar})"
+        );
+        assert_eq!(cols_no_sidebar - cols_with_sidebar, 30);
     }
 }

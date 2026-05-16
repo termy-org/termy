@@ -188,8 +188,6 @@ impl TerminalView {
             let icon_path = palette_item_icon_path(&item);
             let icon_tint = if is_selected {
                 style.primary_text
-            } else if is_enabled {
-                style.muted_text
             } else {
                 style.muted_text
             };
@@ -436,7 +434,7 @@ impl TerminalView {
                     marker_color: None,
                     current_marker_color: None,
                 };
-                let bounds_entity = cx.entity().clone();
+                let bounds_entity = cx.entity();
                 list_container = list_container.child(
                     div()
                         .id("command-palette-scrollbar-lane")
@@ -494,29 +492,27 @@ impl TerminalView {
         let mut divider = style.muted_text;
         divider.a = COMMAND_PALETTE_DIVIDER_ALPHA;
 
-        let mode_chip: Option<AnyElement> = if matches!(
-            self.command_palette.mode(),
-            CommandPaletteMode::Commands
-        ) {
-            None
-        } else {
-            Some(
-                div()
-                    .flex_none()
-                    .h(px(22.0))
-                    .px(px(8.0))
-                    .rounded(px(COMMAND_PALETTE_SHORTCUT_RADIUS))
-                    .bg(style.shortcut_bg)
-                    .border_1()
-                    .border_color(style.shortcut_border)
-                    .text_size(px(10.0))
-                    .text_color(style.muted_text)
-                    .flex()
-                    .items_center()
-                    .child(mode_title.clone())
-                    .into_any_element(),
-            )
-        };
+        let mode_chip: Option<AnyElement> =
+            if matches!(self.command_palette.mode(), CommandPaletteMode::Commands) {
+                None
+            } else {
+                Some(
+                    div()
+                        .flex_none()
+                        .h(px(22.0))
+                        .px(px(8.0))
+                        .rounded(px(COMMAND_PALETTE_SHORTCUT_RADIUS))
+                        .bg(style.shortcut_bg)
+                        .border_1()
+                        .border_color(style.shortcut_border)
+                        .text_size(px(10.0))
+                        .text_color(style.muted_text)
+                        .flex()
+                        .items_center()
+                        .child(mode_title)
+                        .into_any_element(),
+                )
+            };
 
         let input_head = div()
             .id("command-palette-input")
@@ -532,21 +528,16 @@ impl TerminalView {
                     .size(px(18.0))
                     .text_color(style.muted_text),
             )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .h(px(22.0))
-                    .relative()
-                    .child(self.render_inline_input_layer(
-                        input_font,
-                        px(COMMAND_PALETTE_INPUT_TEXT_SIZE),
-                        style.primary_text.into(),
-                        style.input_selection.into(),
-                        InlineInputAlignment::Left,
-                        cx,
-                    )),
-            )
+            .child(div().flex_1().min_w(px(0.0)).h(px(22.0)).relative().child(
+                self.render_inline_input_layer(
+                    input_font,
+                    px(COMMAND_PALETTE_INPUT_TEXT_SIZE),
+                    style.primary_text.into(),
+                    style.input_selection.into(),
+                    InlineInputAlignment::Left,
+                    cx,
+                ),
+            ))
             .children(mode_chip);
 
         let panel = div()
@@ -592,13 +583,15 @@ impl TerminalView {
                 }),
             )
             .when(scrollbar_drag_active, |s| {
-                s.on_mouse_move(cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
-                    if !event.dragging() {
-                        return;
-                    }
-                    let y: f32 = event.position.y.into();
-                    this.handle_command_palette_scrollbar_drag(y, list_height, item_count, cx);
-                }))
+                s.on_mouse_move(
+                    cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
+                        if !event.dragging() {
+                            return;
+                        }
+                        let y: f32 = event.position.y.into();
+                        this.handle_command_palette_scrollbar_drag(y, list_height, item_count, cx);
+                    }),
+                )
                 .on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _event: &MouseUpEvent, _window, cx| {

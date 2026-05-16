@@ -29,10 +29,8 @@ fn command_icon_path(id: termy_command_core::CommandId) -> &'static str {
         CloseTab | ClosePane | ClosePaneOrTab => "icons/command_palette/close-tab.svg",
         MoveTabLeft | SwitchTabLeft => "icons/command_palette/tab-left.svg",
         MoveTabRight | SwitchTabRight => "icons/command_palette/tab-right.svg",
-        SwitchToTab1 | SwitchToTab2 | SwitchToTab3 | SwitchToTab4 | SwitchToTab5
-        | SwitchToTab6 | SwitchToTab7 | SwitchToTab8 | SwitchToTab9 => {
-            "icons/command_palette/tab-right.svg"
-        }
+        SwitchToTab1 | SwitchToTab2 | SwitchToTab3 | SwitchToTab4 | SwitchToTab5 | SwitchToTab6
+        | SwitchToTab7 | SwitchToTab8 | SwitchToTab9 => "icons/command_palette/tab-right.svg",
         RenameTab => "icons/command_palette/rename.svg",
         SplitPaneVertical => "icons/command_palette/split-right.svg",
         SplitPaneHorizontal => "icons/command_palette/split-down.svg",
@@ -54,8 +52,12 @@ fn command_icon_path(id: termy_command_core::CommandId) -> &'static str {
         ZoomIn => "icons/command_palette/zoom-in.svg",
         ZoomOut => "icons/command_palette/zoom-out.svg",
         ZoomReset => "icons/command_palette/zoom-reset.svg",
-        OpenSearch | CloseSearch | SearchNext | SearchPrevious
-        | ToggleSearchCaseSensitive | ToggleSearchRegex => "icons/settings/search.svg",
+        OpenSearch
+        | CloseSearch
+        | SearchNext
+        | SearchPrevious
+        | ToggleSearchCaseSensitive
+        | ToggleSearchRegex => "icons/settings/search.svg",
         CheckForUpdates => "icons/command_palette/check-update.svg",
         Quit => "icons/command_palette/power.svg",
         ToggleCommandPalette => "icons/command_palette/command.svg",
@@ -331,8 +333,8 @@ impl TerminalView {
             .unwrap_or_else(|| "unknown".to_string());
         let cpu_count = system.cpus().len();
         let host_name = sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string());
-        let os_version = sysinfo::System::long_os_version()
-            .unwrap_or_else(|| std::env::consts::OS.to_string());
+        let os_version =
+            sysinfo::System::long_os_version().unwrap_or_else(|| std::env::consts::OS.to_string());
 
         vec![
             ("Version", crate::APP_VERSION.to_string()),
@@ -1151,12 +1153,12 @@ impl TerminalView {
                 cx,
             ),
             CommandPaletteItemKind::AppInfoEntry { label, value } => {
-                cx.write_to_clipboard(gpui::ClipboardItem::new_string(value.clone()));
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(value));
                 termy_toast::success(format!("Copied {label}"));
                 self.notify_overlay(cx);
             }
             CommandPaletteItemKind::AppInfoCopyAll { payload } => {
-                cx.write_to_clipboard(gpui::ClipboardItem::new_string(payload.clone()));
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(payload));
                 termy_toast::success("Copied app info to clipboard");
                 self.close_command_palette(cx);
                 self.notify_overlay(cx);

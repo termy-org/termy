@@ -58,8 +58,10 @@ impl SettingsWindow {
         let theme_mode_value = self.editable_field_value(EditableField::ThemeMode);
         let theme_light = self.config.theme_light.clone();
         let theme_dark = self.config.theme_dark.clone();
-        let theme_mode_is_system =
-            matches!(self.config.theme_mode, termy_config_core::AppearanceMode::System);
+        let theme_mode_is_system = matches!(
+            self.config.theme_mode,
+            termy_config_core::AppearanceMode::System
+        );
         let chrome_contrast = self.config.chrome_contrast;
         let font_family = self.config.font_family.clone();
         let ui_font_family = self.config.ui_font_family.clone();

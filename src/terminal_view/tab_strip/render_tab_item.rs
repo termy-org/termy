@@ -26,6 +26,33 @@ pub(super) struct TabItemRenderInput {
     #[allow(dead_code)]
     pub(super) press_progress: f32,
     pub(super) progress_state: ProgressState,
+    pub(super) compact_indicator: Option<CompactIndicator>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum CompactIndicator {
+    Pinned,
+    Progress(ProgressState),
+}
+
+/// Pick the indicator dot to draw on a compact-mode vertical tab. Pinned takes
+/// precedence over progress; in expanded mode both are surfaced via the pin /
+/// progress chip slot so we return `None`.
+pub(super) fn select_compact_indicator(
+    compact: bool,
+    pinned: bool,
+    progress_state: ProgressState,
+) -> Option<CompactIndicator> {
+    if !compact {
+        return None;
+    }
+    if pinned {
+        return Some(CompactIndicator::Pinned);
+    }
+    if progress_state.is_active() {
+        return Some(CompactIndicator::Progress(progress_state));
+    }
+    None
 }
 
 #[derive(Clone, Copy)]
@@ -272,7 +299,8 @@ impl TerminalView {
             .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                    window.prevent_default();
                     this.on_tab_mouse_down(orientation, switch_tab_index, event.click_count, cx);
                     cx.stop_propagation();
                 }),
@@ -280,6 +308,7 @@ impl TerminalView {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                    window.prevent_default();
                     this.open_tab_context_menu_for_window(
                         switch_tab_index,
                         event.position,
@@ -450,7 +479,12 @@ impl TerminalView {
                     .bg(cover_color)
             }))
             .children(drop_marker)
-            .children(Self::render_progress_badge(&input.progress_state, anim));
+            .children(Self::render_progress_badge(&input.progress_state, anim))
+            .children(
+                input
+                    .compact_indicator
+                    .map(|indicator| Self::render_compact_indicator(indicator, palette, anim)),
+            );
 
         if orientation == TabStripOrientation::Horizontal {
             return div()
@@ -463,7 +497,8 @@ impl TerminalView {
                 .cursor_pointer()
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        window.prevent_default();
                         this.on_tab_mouse_down(
                             orientation,
                             switch_tab_index,
@@ -476,6 +511,7 @@ impl TerminalView {
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        window.prevent_default();
                         this.open_tab_context_menu_for_window(
                             switch_tab_index,
                             event.position,
@@ -496,6 +532,40 @@ impl TerminalView {
         }
 
         tab_shell.into_any_element()
+    }
+
+    fn render_compact_indicator(
+        indicator: CompactIndicator,
+        palette: &TabStripPalette,
+        anim: f32,
+    ) -> impl IntoElement {
+        let mut color: gpui::Rgba = match indicator {
+            CompactIndicator::Pinned => {
+                let mut c = palette.inactive_tab_text;
+                c.a = 0.6;
+                c
+            }
+            CompactIndicator::Progress(state) => match state {
+                ProgressState::InProgress(_) => gpui::rgb(0x22c55e),
+                ProgressState::Error(_) => gpui::rgb(0xef4444),
+                ProgressState::Warning(_) => gpui::rgb(0xf59e0b),
+                ProgressState::Indeterminate => gpui::rgb(0x3b82f6),
+                ProgressState::Clear => {
+                    let mut c = palette.inactive_tab_text;
+                    c.a = 0.0;
+                    c
+                }
+            },
+        };
+        color.a *= anim;
+        div()
+            .absolute()
+            .top(px(VERTICAL_COMPACT_DOT_INSET))
+            .right(px(VERTICAL_COMPACT_DOT_INSET))
+            .w(px(VERTICAL_COMPACT_DOT_SIZE))
+            .h(px(VERTICAL_COMPACT_DOT_SIZE))
+            .rounded_full()
+            .bg(color)
     }
 
     fn render_progress_badge(state: &ProgressState, anim: f32) -> Option<impl IntoElement> {
@@ -556,7 +626,35 @@ mod tests {
             hover_progress: 0.0,
             press_progress: 0.0,
             progress_state: ProgressState::default(),
+            compact_indicator: None,
         }
+    }
+
+    #[test]
+    fn compact_tab_pinned_yields_pinned_indicator() {
+        let indicator = select_compact_indicator(true, true, ProgressState::default());
+        assert!(matches!(indicator, Some(CompactIndicator::Pinned)));
+    }
+
+    #[test]
+    fn compact_tab_with_progress_yields_progress_indicator() {
+        let indicator = select_compact_indicator(true, false, ProgressState::Indeterminate);
+        assert!(matches!(
+            indicator,
+            Some(CompactIndicator::Progress(ProgressState::Indeterminate))
+        ));
+    }
+
+    #[test]
+    fn compact_tab_idle_yields_no_indicator() {
+        let indicator = select_compact_indicator(true, false, ProgressState::default());
+        assert!(indicator.is_none());
+    }
+
+    #[test]
+    fn expanded_tab_never_yields_indicator() {
+        let indicator = select_compact_indicator(false, true, ProgressState::Indeterminate);
+        assert!(indicator.is_none());
     }
 
     #[test]

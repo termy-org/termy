@@ -62,6 +62,7 @@ pub(crate) struct VerticalTabStripLayoutSnapshot {
     pub(crate) rows: Vec<VerticalTabRowLayout>,
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct VerticalTabStripLayoutInput {
     pub(crate) strip_width: f32,
@@ -539,7 +540,7 @@ impl TerminalView {
         let shelf_height = VERTICAL_COMPACT_CONTROL_SHELF_HEIGHT;
         let button_size = VERTICAL_TITLEBAR_CONTROL_BUTTON_SIZE;
         let divider_x = (strip_width - TAB_STROKE_THICKNESS).max(0.0);
-        let button_x = (divider_x - VERTICAL_TAB_STRIP_PADDING - button_size).max(0.0);
+        let button_x = ((divider_x - button_size) * 0.5).max(0.0);
         let button_y = ((shelf_height - button_size) * 0.5).max(0.0);
 
         VerticalBottomShelfLayout {
@@ -551,21 +552,37 @@ impl TerminalView {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn vertical_tab_strip_layout_for_input(
         input: VerticalTabStripLayoutInput,
     ) -> VerticalTabStripLayoutSnapshot {
-        let strip_width = input.strip_width.max(0.0);
-        let clamped_list_height = input.list_height.max(0.0);
+        Self::vertical_tab_strip_layout_for_parts(
+            input.strip_width,
+            input.compact,
+            input.header_height,
+            input.list_height,
+            input.tab_heights,
+        )
+    }
+
+    fn vertical_tab_strip_layout_for_parts(
+        strip_width: f32,
+        compact: bool,
+        header_height: f32,
+        list_height: f32,
+        tab_heights: impl IntoIterator<Item = f32>,
+    ) -> VerticalTabStripLayoutSnapshot {
+        let strip_width = strip_width.max(0.0);
+        let clamped_list_height = list_height.max(0.0);
         let top_shelf_layout =
-            Self::vertical_new_tab_shelf_layout(strip_width - TAB_STROKE_THICKNESS, input.compact);
+            Self::vertical_new_tab_shelf_layout(strip_width - TAB_STROKE_THICKNESS, compact);
         let bottom_shelf_layout = Self::vertical_bottom_shelf_layout(strip_width);
-        let list_top = input.header_height + top_shelf_layout.shelf_height;
+        let list_top = header_height + top_shelf_layout.shelf_height;
         let bottom_shelf_top = list_top + clamped_list_height;
         let divider_x = (strip_width - TAB_STROKE_THICKNESS).max(0.0);
         let resize_handle_left = (strip_width - 4.0).max(0.0);
         let mut cursor_y = 0.0;
-        let rows = input
-            .tab_heights
+        let rows = tab_heights
             .into_iter()
             .enumerate()
             .map(|(index, height)| {
@@ -574,7 +591,7 @@ impl TerminalView {
                     top: cursor_y,
                     height,
                 };
-                cursor_y = row.bottom() + TAB_ITEM_GAP;
+                cursor_y = row.bottom() + VERTICAL_TAB_ITEM_GAP;
                 row
             })
             .collect::<Vec<_>>();
@@ -582,8 +599,8 @@ impl TerminalView {
 
         VerticalTabStripLayoutSnapshot {
             strip_width,
-            compact: input.compact,
-            header_height: input.header_height,
+            compact,
+            header_height,
             top_shelf_layout,
             bottom_shelf_layout,
             list_top,
@@ -601,21 +618,18 @@ impl TerminalView {
         now: Instant,
     ) -> VerticalTabStripLayoutSnapshot {
         let active_animation = self.new_tab_animation_progress(now);
-        let tab_heights = (0..self.tabs.len())
-            .map(|index| {
+        Self::vertical_tab_strip_layout_for_parts(
+            self.effective_vertical_tab_strip_width(),
+            self.vertical_tabs_minimized,
+            self.vertical_tab_strip_header_height(),
+            self.effective_vertical_tabs_list_height(),
+            (0..self.tabs.len()).map(|index| {
                 let anim_progress = active_animation
                     .filter(|(anim_index, _)| *anim_index == index)
                     .map_or(1.0, |(_, progress)| progress);
                 TAB_ITEM_HEIGHT * anim_progress
-            })
-            .collect();
-        Self::vertical_tab_strip_layout_for_input(VerticalTabStripLayoutInput {
-            strip_width: self.effective_vertical_tab_strip_width(),
-            compact: self.vertical_tabs_minimized,
-            header_height: self.vertical_tab_strip_header_height(),
-            list_height: self.effective_vertical_tabs_list_height(),
-            tab_heights,
-        })
+            }),
+        )
     }
 
     pub(crate) fn vertical_tab_strip_layout_snapshot(&self) -> VerticalTabStripLayoutSnapshot {
@@ -905,10 +919,10 @@ mod tests {
                 tab_heights: vec![16.0, 48.0],
             });
 
-        // Row 1 bottom (16 + gap + 48) minus list_height (40) = 28
+        // Row 1 bottom (16 + gap + 48) minus list_height (40) = 28 + extra gap
         assert_eq!(
             snapshot.scroll_target_for_active_row(1, 0.0),
-            Some(16.0 + TAB_ITEM_GAP + 48.0 - 40.0)
+            Some(16.0 + VERTICAL_TAB_ITEM_GAP + 48.0 - 40.0)
         );
     }
 }
