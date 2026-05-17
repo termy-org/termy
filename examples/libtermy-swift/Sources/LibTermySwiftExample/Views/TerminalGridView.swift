@@ -1,60 +1,105 @@
 import SwiftUI
 
-enum TerminalGridMetrics {
-    static let cellWidth: CGFloat = 8.2
-    static let cellHeight: CGFloat = 17.0
-    static let fontSize: CGFloat = 13.0
-}
-
 struct TerminalGridView: View {
     let frame: TerminalFrame
+    let selection: TerminalSelection?
+    let renderConfig: TerminalRenderConfig
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(0..<frame.rows, id: \.self) { row in
-                HStack(spacing: 0) {
-                    ForEach(0..<frame.cols, id: \.self) { col in
-                        if let cell = frame.cell(row: row, col: col) {
-                            TerminalCellView(
-                                cell: cell,
-                                isCursor: frame.cursor?.row == row && frame.cursor?.col == col
-                            )
-                            .frame(
-                                width: TerminalGridMetrics.cellWidth,
-                                height: TerminalGridMetrics.cellHeight
-                            )
-                        }
-                    }
+        ZStack(alignment: .topLeading) {
+            selectionOverlay
+            cursorOverlay
+
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(0..<frame.rows, id: \.self) { row in
+                    rowText(row)
+                        .font(terminalFont(weight: .regular))
+                        .lineLimit(1)
+                        .frame(
+                            width: CGFloat(frame.cols) * renderConfig.cellWidth,
+                            height: renderConfig.cellHeight,
+                            alignment: .leading
+                        )
                 }
             }
+            .offset(x: renderConfig.paddingX, y: renderConfig.paddingY)
+            .allowsHitTesting(false)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
     }
-}
 
-private struct TerminalCellView: View {
-    let cell: TerminalCell
-    let isCursor: Bool
-
-    var body: some View {
-        ZStack {
-            cellBackground
-
-            if cell.renderText {
-                Text(String(cell.character))
-                    .font(.system(
-                        size: TerminalGridMetrics.fontSize,
-                        weight: cell.bold ? .semibold : .regular,
-                        design: .monospaced
-                    ))
-                    .foregroundStyle(isCursor ? Color.black : cell.foreground.swiftUIColor)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    private var selectionOverlay: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(selection?.rowRanges(cols: frame.cols, rows: frame.rows) ?? []) { range in
+                Rectangle()
+                    .fill(Color.accentColor.opacity(0.35))
+                    .frame(
+                        width: CGFloat(range.endCol - range.startCol + 1)
+                            * renderConfig.cellWidth,
+                        height: renderConfig.cellHeight
+                    )
+                    .offset(
+                        x: renderConfig.paddingX + CGFloat(range.startCol) * renderConfig.cellWidth,
+                        y: renderConfig.paddingY + CGFloat(range.row) * renderConfig.cellHeight
+                    )
             }
         }
+        .allowsHitTesting(false)
     }
 
-    private var cellBackground: some View {
-        Rectangle()
-            .fill(isCursor ? Color.primary : cell.background.swiftUIColor)
+    private var cursorOverlay: some View {
+        Group {
+            if let cursor = frame.cursor {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.85))
+                    .frame(width: renderConfig.cellWidth, height: renderConfig.cellHeight)
+                    .offset(
+                        x: renderConfig.paddingX + CGFloat(cursor.col) * renderConfig.cellWidth,
+                        y: renderConfig.paddingY + CGFloat(cursor.row) * renderConfig.cellHeight
+                    )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func rowText(_ row: Int) -> Text {
+        var result = Text(verbatim: "")
+        var segment = ""
+        var segmentForeground: TerminalRGBA?
+        var segmentBold = false
+
+        func flush() {
+            guard let foreground = segmentForeground, !segment.isEmpty else {
+                return
+            }
+
+            result = result + Text(verbatim: segment)
+                .foregroundColor(foreground.swiftUIColor)
+                .font(terminalFont(weight: segmentBold ? .semibold : .regular))
+            segment = ""
+        }
+
+        for cell in frame.cells(inRow: row) {
+            let foreground = cell.foreground
+            let bold = cell.bold
+            if segmentForeground != foreground || segmentBold != bold {
+                flush()
+                segmentForeground = foreground
+                segmentBold = bold
+            }
+            segment.append(cell.renderText ? cell.character : " ")
+        }
+
+        flush()
+        return result
+    }
+
+    private func terminalFont(weight: Font.Weight) -> Font {
+        let fontFamily = renderConfig.fontFamily.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fontFamily.isEmpty else {
+            return .system(size: renderConfig.fontSize, weight: weight, design: .monospaced)
+        }
+        return .custom(fontFamily, size: renderConfig.fontSize).weight(weight)
     }
 }

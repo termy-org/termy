@@ -76,6 +76,12 @@ released with `termy_config_diagnostics_free`. Diagnostic kind values:
 - `5`: invalid value
 - `6`: duplicate root key
 
+Renderer-facing config values are available through `termy_config_render_config`
+and must be released with `termy_render_config_free`. This returns the parsed
+font family, font size, line height, padding, background opacity, cursor blink,
+and cursor style so non-Rust embedders can render the terminal with the same
+user config that was passed into `termy_terminal_new_with_config`.
+
 Event kind values:
 
 - `1`: wakeup

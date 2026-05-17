@@ -23,6 +23,7 @@ final class LibTermyTerminal {
     private var configHandle: OpaquePointer?
 
     let configSummary: String
+    let renderConfig: TerminalRenderConfig
 
     init(cols: UInt16 = 96, rows: UInt16 = 28, loadUserConfig: Bool = true) throws {
         var size = termy_size_default()
@@ -32,6 +33,7 @@ final class LibTermyTerminal {
         let config = try loadUserConfig ? Self.loadDefaultConfig() : nil
         configHandle = config
         configSummary = Self.configSummary(for: config)
+        renderConfig = try Self.renderConfig(for: config)
 
         var terminal: OpaquePointer?
         let status: TermyFfiStatus
@@ -111,7 +113,7 @@ final class LibTermyTerminal {
         try Self.requireOK("termy_terminal_resize", termy_terminal_resize(handle, size))
     }
 
-    func drainEvents() throws {
+    func drainEvents() throws -> Bool {
         guard let handle else {
             throw LibTermyError.missingTerminal
         }
@@ -120,7 +122,24 @@ final class LibTermyTerminal {
             "termy_terminal_drain_events",
             termy_terminal_drain_events(handle, &batch)
         )
+        let hasEvents = batch.events_len > 0 || batch.has_more
         _ = termy_event_batch_free(&batch)
+        return hasEvents
+    }
+
+    func takeDamage() throws -> Bool {
+        guard let handle else {
+            throw LibTermyError.missingTerminal
+        }
+
+        var damage = TermyFfiDamage()
+        try Self.requireOK(
+            "termy_terminal_take_damage",
+            termy_terminal_take_damage(handle, &damage)
+        )
+        let hasDamage = damage.kind != 0 || damage.spans_len > 0
+        _ = termy_damage_free(&damage)
+        return hasDamage
     }
 
     func snapshot() throws -> TerminalFrame {
@@ -186,6 +205,22 @@ final class LibTermyTerminal {
             return "config: loaded\(suffix)"
         }
         return "config: defaults\(suffix)"
+    }
+
+    private static func renderConfig(for config: OpaquePointer?) throws -> TerminalRenderConfig {
+        guard let config else {
+            return .default
+        }
+
+        var renderConfig = TermyFfiRenderConfig()
+        try requireOK(
+            "termy_config_render_config",
+            termy_config_render_config(config, &renderConfig)
+        )
+        defer {
+            _ = termy_render_config_free(&renderConfig)
+        }
+        return TerminalRenderConfig(renderConfig)
     }
 
     private static func cell(from ffiCell: TermyFfiCell) -> TerminalCell {

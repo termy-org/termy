@@ -106,6 +106,18 @@ typedef struct {
   size_t diagnostics_capacity;
 } TermyFfiConfigDiagnosticBatch;
 
+typedef struct {
+  TermyFfiBytes font_family;
+  float font_size;
+  float line_height;
+  float padding_x;
+  float padding_y;
+  float background_opacity;
+  bool background_opacity_cells;
+  bool cursor_blink;
+  uint32_t cursor_style;
+} TermyFfiRenderConfig;
+
 typedef struct TermyFfiTerminal TermyFfiTerminal;
 typedef struct TermyFfiConfig TermyFfiConfig;
 
@@ -141,6 +153,10 @@ TermyFfiStatus termy_config_diagnostics(
     const TermyFfiConfig *config,
     TermyFfiConfigDiagnosticBatch *out_batch);
 TermyFfiStatus termy_config_diagnostics_free(TermyFfiConfigDiagnosticBatch *batch);
+TermyFfiStatus termy_config_render_config(
+    const TermyFfiConfig *config,
+    TermyFfiRenderConfig *out_render_config);
+TermyFfiStatus termy_render_config_free(TermyFfiRenderConfig *render_config);
 TermyFfiStatus termy_terminal_free(TermyFfiTerminal *terminal);
 TermyFfiStatus termy_terminal_write(
     TermyFfiTerminal *terminal,

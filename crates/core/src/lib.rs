@@ -44,5 +44,6 @@ pub use runtime::{
 };
 pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState};
 pub use termy_config_core::{
-    AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport, config_path,
+    AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport,
+    CursorStyle as AppConfigCursorStyle, config_path,
 };

@@ -6,6 +6,8 @@ final class TerminalViewModel: ObservableObject {
     @Published private(set) var frame: TerminalFrame = .empty
     @Published private(set) var errorMessage: String?
     @Published private(set) var configSummary = "config: loading"
+    @Published private(set) var renderConfig = TerminalRenderConfig.default
+    @Published var selection: TerminalSelection?
 
     private var terminal: LibTermyTerminal?
     private var timer: Timer?
@@ -23,7 +25,8 @@ final class TerminalViewModel: ObservableObject {
             let terminal = try LibTermyTerminal()
             self.terminal = terminal
             configSummary = terminal.configSummary
-            refresh()
+            renderConfig = terminal.renderConfig
+            refresh(force: true)
             timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) {
                 [weak self] _ in
                 Task { @MainActor in
@@ -50,12 +53,27 @@ final class TerminalViewModel: ObservableObject {
             return
         }
 
+        selection = nil
         do {
             try terminal?.write(bytes)
-            refresh()
+            refresh(force: true)
         } catch {
             errorMessage = String(describing: error)
         }
+    }
+
+    func updateSelection(_ selection: TerminalSelection?) {
+        self.selection = selection
+    }
+
+    func copySelection() -> Bool {
+        guard let text = frame.selectedText(for: selection), !text.isEmpty else {
+            return false
+        }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        return true
     }
 
     func resize(cols: Int, rows: Int, cellWidth: CGFloat, cellHeight: CGFloat) {
@@ -79,15 +97,20 @@ final class TerminalViewModel: ObservableObject {
                 cellWidth: resize.cellWidth,
                 cellHeight: resize.cellHeight
             )
-            refresh()
+            refresh(force: true)
         } catch {
             errorMessage = String(describing: error)
         }
     }
 
-    private func refresh() {
+    private func refresh(force: Bool = false) {
         do {
-            try terminal?.drainEvents()
+            let hasEvents = try terminal?.drainEvents() ?? false
+            let hasDamage = try terminal?.takeDamage() ?? false
+            guard force || hasEvents || hasDamage else {
+                return
+            }
+
             if let nextFrame = try terminal?.snapshot() {
                 frame = nextFrame
                 errorMessage = nil

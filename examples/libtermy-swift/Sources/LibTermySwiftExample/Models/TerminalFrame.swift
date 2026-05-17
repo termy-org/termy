@@ -19,6 +19,132 @@ struct TerminalRGBA: Equatable {
     }
 }
 
+struct TerminalRenderConfig: Equatable {
+    var fontFamily: String
+    var fontSize: CGFloat
+    var lineHeight: CGFloat
+    var paddingX: CGFloat
+    var paddingY: CGFloat
+    var backgroundOpacity: Double
+    var backgroundOpacityCells: Bool
+    var cursorBlink: Bool
+    var cursorStyle: UInt32
+
+    static let `default` = TerminalRenderConfig(
+        fontFamily: "JetBrains Mono",
+        fontSize: 14.0,
+        lineHeight: 1.4,
+        paddingX: 12.0,
+        paddingY: 8.0,
+        backgroundOpacity: 1.0,
+        backgroundOpacityCells: false,
+        cursorBlink: true,
+        cursorStyle: 2
+    )
+
+    init(
+        fontFamily: String,
+        fontSize: CGFloat,
+        lineHeight: CGFloat,
+        paddingX: CGFloat,
+        paddingY: CGFloat,
+        backgroundOpacity: Double,
+        backgroundOpacityCells: Bool,
+        cursorBlink: Bool,
+        cursorStyle: UInt32
+    ) {
+        self.fontFamily = fontFamily
+        self.fontSize = max(1.0, fontSize)
+        self.lineHeight = max(0.8, lineHeight)
+        self.paddingX = max(0.0, paddingX)
+        self.paddingY = max(0.0, paddingY)
+        self.backgroundOpacity = min(1.0, max(0.0, backgroundOpacity))
+        self.backgroundOpacityCells = backgroundOpacityCells
+        self.cursorBlink = cursorBlink
+        self.cursorStyle = cursorStyle
+    }
+
+    init(_ ffiConfig: TermyFfiRenderConfig) {
+        self.init(
+            fontFamily: Self.string(from: ffiConfig.font_family) ?? Self.default.fontFamily,
+            fontSize: CGFloat(ffiConfig.font_size),
+            lineHeight: CGFloat(ffiConfig.line_height),
+            paddingX: CGFloat(ffiConfig.padding_x),
+            paddingY: CGFloat(ffiConfig.padding_y),
+            backgroundOpacity: Double(ffiConfig.background_opacity),
+            backgroundOpacityCells: ffiConfig.background_opacity_cells,
+            cursorBlink: ffiConfig.cursor_blink,
+            cursorStyle: ffiConfig.cursor_style
+        )
+    }
+
+    var cellWidth: CGFloat {
+        max(1.0, fontSize * 0.62)
+    }
+
+    var cellHeight: CGFloat {
+        max(1.0, fontSize * lineHeight)
+    }
+
+    private static func string(from bytes: TermyFfiBytes) -> String? {
+        guard let ptr = bytes.ptr, bytes.len > 0 else {
+            return nil
+        }
+        let buffer = UnsafeBufferPointer(start: ptr, count: Int(bytes.len))
+        return String(decoding: buffer, as: UTF8.self)
+    }
+}
+
+struct TerminalGridPosition: Equatable {
+    var col: Int
+    var row: Int
+}
+
+struct TerminalSelection: Equatable {
+    var anchor: TerminalGridPosition
+    var active: TerminalGridPosition
+
+    var normalized: (start: TerminalGridPosition, end: TerminalGridPosition) {
+        if (anchor.row, anchor.col) <= (active.row, active.col) {
+            return (anchor, active)
+        }
+        return (active, anchor)
+    }
+
+    func rowRanges(cols: Int, rows: Int) -> [TerminalSelectionRowRange] {
+        guard cols > 0, rows > 0 else {
+            return []
+        }
+
+        let range = normalized
+        let startRow = max(0, min(range.start.row, rows - 1))
+        let endRow = max(0, min(range.end.row, rows - 1))
+        guard startRow <= endRow else {
+            return []
+        }
+
+        return (startRow...endRow).map { row in
+            let startCol = row == startRow ? range.start.col : 0
+            let endCol = row == endRow ? range.end.col : cols - 1
+            return TerminalSelectionRowRange(
+                row: row,
+                startCol: max(0, min(startCol, cols - 1)),
+                endCol: max(0, min(endCol, cols - 1))
+            )
+        }
+    }
+}
+
+struct TerminalSelectionRowRange: Identifiable, Equatable {
+    var id: Int {
+        row
+    }
+
+    var row: Int
+    var startCol: Int
+    var endCol: Int
+}
+
 struct TerminalCell: Identifiable, Equatable {
     var id: Int {
         (row * 10_000) + col
@@ -47,11 +173,50 @@ struct TerminalFrame: Equatable {
 
     static let empty = TerminalFrame(cols: 0, rows: 0, cells: [], cursor: nil)
 
+    func cells(inRow row: Int) -> ArraySlice<TerminalCell> {
+        let start = row * cols
+        let end = start + cols
+        guard row >= 0, cols > 0, start >= 0, end <= cells.count else {
+            return []
+        }
+        return cells[start..<end]
+    }
+
     func cell(row: Int, col: Int) -> TerminalCell? {
         let index = (row * cols) + col
         guard index >= 0, index < cells.count else {
             return nil
         }
         return cells[index]
+    }
+
+    func selectedText(for selection: TerminalSelection?) -> String? {
+        guard let selection else {
+            return nil
+        }
+
+        let lines = selection.rowRanges(cols: cols, rows: rows).map { range in
+            let characters = (range.startCol...range.endCol).map { col -> Character in
+                guard let cell = cell(row: range.row, col: col), cell.renderText else {
+                    return " "
+                }
+                return cell.character
+            }
+            return String(characters).trimmingTrailingSpaces()
+        }
+        guard !lines.isEmpty else {
+            return nil
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
+private extension String {
+    func trimmingTrailingSpaces() -> String {
+        var result = self
+        while result.last == " " {
+            result.removeLast()
+        }
+        return result
     }
 }

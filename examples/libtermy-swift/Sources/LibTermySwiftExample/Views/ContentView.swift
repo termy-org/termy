@@ -6,12 +6,27 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                TerminalGridView(frame: terminal.frame)
+                TerminalGridView(
+                    frame: terminal.frame,
+                    selection: terminal.selection,
+                    renderConfig: terminal.renderConfig
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-                TerminalKeyboardInputView { bytes in
-                    terminal.send(bytes: bytes)
-                }
+                TerminalKeyboardInputView(
+                    cols: terminal.frame.cols,
+                    rows: terminal.frame.rows,
+                    renderConfig: terminal.renderConfig,
+                    onBytes: { bytes in
+                        terminal.send(bytes: bytes)
+                    },
+                    onSelectionChanged: { selection in
+                        terminal.updateSelection(selection)
+                    },
+                    onCopy: {
+                        terminal.copySelection()
+                    }
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if let errorMessage = terminal.errorMessage {
@@ -23,7 +38,10 @@ struct ContentView: View {
                         .padding(8)
                 }
             }
-            .background(Color(red: 0.05, green: 0.055, blue: 0.06))
+            .background(
+                Color(red: 0.05, green: 0.055, blue: 0.06)
+                    .opacity(terminal.renderConfig.backgroundOpacity)
+            )
             .onAppear {
                 terminal.start()
                 resizeTerminal(to: proxy.size)
@@ -39,10 +57,12 @@ struct ContentView: View {
 
     private func resizeTerminal(to size: CGSize) {
         terminal.resize(
-            cols: Int(size.width / TerminalGridMetrics.cellWidth),
-            rows: Int(size.height / TerminalGridMetrics.cellHeight),
-            cellWidth: TerminalGridMetrics.cellWidth,
-            cellHeight: TerminalGridMetrics.cellHeight
+            cols: Int((size.width - (terminal.renderConfig.paddingX * 2))
+                / terminal.renderConfig.cellWidth),
+            rows: Int((size.height - (terminal.renderConfig.paddingY * 2))
+                / terminal.renderConfig.cellHeight),
+            cellWidth: terminal.renderConfig.cellWidth,
+            cellHeight: terminal.renderConfig.cellHeight
         )
     }
 }

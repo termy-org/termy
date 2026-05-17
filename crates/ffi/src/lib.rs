@@ -133,6 +133,20 @@ pub struct TermyFfiConfigDiagnosticBatch {
     pub diagnostics_capacity: usize,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TermyFfiRenderConfig {
+    pub font_family: TermyFfiBytes,
+    pub font_size: f32,
+    pub line_height: f32,
+    pub padding_x: f32,
+    pub padding_y: f32,
+    pub background_opacity: f32,
+    pub background_opacity_cells: bool,
+    pub cursor_blink: bool,
+    pub cursor_style: u32,
+}
+
 pub struct TermyFfiTerminal {
     terminal: Terminal,
 }
@@ -592,6 +606,49 @@ pub unsafe extern "C" fn termy_config_diagnostics_free(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_render_config(
+    config: *const TermyFfiConfig,
+    out_render_config: *mut TermyFfiRenderConfig,
+) -> TermyFfiStatus {
+    if config.is_null() || out_render_config.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let app_config = unsafe { &(*config).loaded.app_config };
+    unsafe {
+        *out_render_config = TermyFfiRenderConfig {
+            font_family: ffi_bytes_from_string(app_config.font_family.clone()),
+            font_size: app_config.font_size,
+            line_height: app_config.line_height,
+            padding_x: app_config.padding_x,
+            padding_y: app_config.padding_y,
+            background_opacity: app_config.background_opacity,
+            background_opacity_cells: app_config.background_opacity_cells,
+            cursor_blink: app_config.cursor_blink,
+            cursor_style: match app_config.cursor_style {
+                termy_core::AppConfigCursorStyle::Line => 1,
+                termy_core::AppConfigCursorStyle::Block => 2,
+            },
+        };
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_render_config_free(
+    render_config: *mut TermyFfiRenderConfig,
+) -> TermyFfiStatus {
+    if render_config.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let render_config = unsafe { &mut *render_config };
+    free_bytes(render_config.font_family);
+    *render_config = TermyFfiRenderConfig::default();
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn termy_terminal_free(terminal: *mut TermyFfiTerminal) -> TermyFfiStatus {
     if terminal.is_null() {
         return TermyFfiStatus::Null;
@@ -927,6 +984,46 @@ mod tests {
 
         assert_eq!(
             unsafe { termy_config_diagnostics_free(&mut diagnostics) },
+            TermyFfiStatus::Ok
+        );
+        assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
+    fn config_from_contents_exposes_render_config() {
+        let contents = b"font_family = Example Mono\nfont_size = 18\nline_height = 1.25\npadding_x = 3\npadding_y = 5\nbackground_opacity = 0.5\nbackground_opacity_cells = true\ncursor_blink = false\ncursor_style = line\n";
+        let mut config = ptr::null_mut();
+
+        let status =
+            unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) };
+        assert_eq!(status, TermyFfiStatus::Ok);
+        assert!(!config.is_null());
+
+        let mut render_config = TermyFfiRenderConfig::default();
+        assert_eq!(
+            unsafe { termy_config_render_config(config, &mut render_config) },
+            TermyFfiStatus::Ok
+        );
+        let font_family = unsafe {
+            str::from_utf8(slice::from_raw_parts(
+                render_config.font_family.ptr,
+                render_config.font_family.len,
+            ))
+            .expect("font family utf8")
+        };
+
+        assert_eq!(font_family, "Example Mono");
+        assert_eq!(render_config.font_size, 18.0);
+        assert_eq!(render_config.line_height, 1.25);
+        assert_eq!(render_config.padding_x, 3.0);
+        assert_eq!(render_config.padding_y, 5.0);
+        assert_eq!(render_config.background_opacity, 0.5);
+        assert!(render_config.background_opacity_cells);
+        assert!(!render_config.cursor_blink);
+        assert_eq!(render_config.cursor_style, 1);
+
+        assert_eq!(
+            unsafe { termy_render_config_free(&mut render_config) },
             TermyFfiStatus::Ok
         );
         assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);

@@ -2,27 +2,66 @@ import AppKit
 import SwiftUI
 
 struct TerminalKeyboardInputView: NSViewRepresentable {
+    var cols: Int
+    var rows: Int
+    var renderConfig: TerminalRenderConfig
     var onBytes: ([UInt8]) -> Void
+    var onSelectionChanged: (TerminalSelection?) -> Void
+    var onCopy: () -> Bool
 
     func makeNSView(context: Context) -> KeyboardCaptureView {
         let view = KeyboardCaptureView()
+        view.cols = cols
+        view.rows = rows
+        view.renderConfig = renderConfig
         view.onBytes = onBytes
+        view.onSelectionChanged = onSelectionChanged
+        view.onCopy = onCopy
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
         return view
     }
 
     func updateNSView(_ view: KeyboardCaptureView, context: Context) {
+        view.cols = cols
+        view.rows = rows
+        view.renderConfig = renderConfig
         view.onBytes = onBytes
+        view.onSelectionChanged = onSelectionChanged
+        view.onCopy = onCopy
         view.focus()
     }
 }
 
 final class KeyboardCaptureView: NSView {
+    var cols = 0
+    var rows = 0
+    var renderConfig = TerminalRenderConfig.default
     var onBytes: ([UInt8]) -> Void = { _ in }
+    var onSelectionChanged: (TerminalSelection?) -> Void = { _ in }
+    var onCopy: () -> Bool = { false }
+
+    private var selectionAnchor: TerminalGridPosition?
+    private var didDragSelection = false
 
     override var acceptsFirstResponder: Bool {
         true
+    }
+
+    override var canBecomeKeyView: Bool {
+        true
+    }
+
+    override var isOpaque: Bool {
+        false
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(point) ? self : nil
     }
 
     override func viewDidMoveToWindow() {
@@ -32,10 +71,39 @@ final class KeyboardCaptureView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         focus()
+        didDragSelection = false
+        selectionAnchor = gridPosition(for: event)
+        onSelectionChanged(nil)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let anchor = selectionAnchor else {
+            return
+        }
+        didDragSelection = true
+        onSelectionChanged(TerminalSelection(anchor: anchor, active: gridPosition(for: event)))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let anchor = selectionAnchor else {
+            return
+        }
+
+        defer {
+            selectionAnchor = nil
+            didDragSelection = false
+        }
+
+        guard didDragSelection else {
+            onSelectionChanged(nil)
+            return
+        }
+
+        onSelectionChanged(TerminalSelection(anchor: anchor, active: gridPosition(for: event)))
     }
 
     override func keyDown(with event: NSEvent) {
-        if handlePaste(event) {
+        if handleCopy(event) || handlePaste(event) {
             return
         }
 
@@ -53,15 +121,19 @@ final class KeyboardCaptureView: NSView {
     }
 
     func focus() {
-        guard window?.firstResponder !== self else {
+        guard let window, window.firstResponder !== self else {
             return
         }
-        DispatchQueue.main.async { [weak self] in
-            guard let self else {
-                return
-            }
-            self.window?.makeFirstResponder(self)
+        window.makeFirstResponder(self)
+    }
+
+    private func handleCopy(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.contains(.command),
+              event.charactersIgnoringModifiers?.lowercased() == "c"
+        else {
+            return false
         }
+        return onCopy()
     }
 
     private func handlePaste(_ event: NSEvent) -> Bool {
@@ -145,6 +217,17 @@ final class KeyboardCaptureView: NSView {
         default:
             return nil
         }
+    }
+
+    private func gridPosition(for event: NSEvent) -> TerminalGridPosition {
+        let point = convert(event.locationInWindow, from: nil)
+        let maxCol = max(0, cols - 1)
+        let maxRow = max(0, rows - 1)
+        let col = max(0, min(Int((point.x - renderConfig.paddingX) / renderConfig.cellWidth), maxCol))
+        let topY = bounds.height - point.y - renderConfig.paddingY
+        let rowFromTop = Int(topY / renderConfig.cellHeight)
+        let row = max(0, min(rowFromTop, maxRow))
+        return TerminalGridPosition(col: col, row: row)
     }
 
     private func escape(_ suffix: String) -> [UInt8] {
