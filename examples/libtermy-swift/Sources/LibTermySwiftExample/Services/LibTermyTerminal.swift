@@ -113,7 +113,7 @@ final class LibTermyTerminal {
         try Self.requireOK("termy_terminal_resize", termy_terminal_resize(handle, size))
     }
 
-    func drainEvents() throws -> Bool {
+    func drainEvents() throws -> [TerminalRuntimeEvent] {
         guard let handle else {
             throw LibTermyError.missingTerminal
         }
@@ -122,9 +122,15 @@ final class LibTermyTerminal {
             "termy_terminal_drain_events",
             termy_terminal_drain_events(handle, &batch)
         )
-        let hasEvents = batch.events_len > 0 || batch.has_more
-        _ = termy_event_batch_free(&batch)
-        return hasEvents
+        defer {
+            _ = termy_event_batch_free(&batch)
+        }
+
+        guard let eventsPtr = batch.events_ptr else {
+            return []
+        }
+        return UnsafeBufferPointer(start: eventsPtr, count: Int(batch.events_len))
+            .compactMap(Self.event(from:))
     }
 
     func takeDamage() throws -> Bool {
@@ -175,6 +181,34 @@ final class LibTermyTerminal {
         )
     }
 
+    func search(_ query: String) throws -> [TerminalSearchMatch] {
+        guard let handle else {
+            throw LibTermyError.missingTerminal
+        }
+
+        var batch = TermyFfiSearchBatch()
+        let status = Array(query.utf8).withUnsafeBufferPointer { buffer in
+            termy_terminal_search(handle, buffer.baseAddress, buffer.count, &batch)
+        }
+        try Self.requireOK("termy_terminal_search", status)
+        defer {
+            _ = termy_search_batch_free(&batch)
+        }
+
+        guard let matchesPtr = batch.matches_ptr else {
+            return []
+        }
+        return UnsafeBufferPointer(start: matchesPtr, count: Int(batch.matches_len))
+            .map { match in
+                TerminalSearchMatch(
+                    row: Int(match.row),
+                    startCol: Int(match.start_col),
+                    endCol: Int(match.end_col),
+                    line: Self.string(from: match.line) ?? ""
+                )
+            }
+    }
+
     private static func requireOK(_ operation: String, _ status: TermyFfiStatus) throws {
         guard status == TERMY_FFI_OK else {
             throw LibTermyError.ffi(operation, status)
@@ -223,6 +257,40 @@ final class LibTermyTerminal {
         return TerminalRenderConfig(renderConfig)
     }
 
+    private static func event(from event: TermyFfiEvent) -> TerminalRuntimeEvent? {
+        switch event.kind {
+        case UInt32(TERMY_FFI_EVENT_WAKEUP.rawValue):
+            return .wakeup
+        case UInt32(TERMY_FFI_EVENT_TITLE.rawValue):
+            return .title(string(from: event.payload) ?? "")
+        case UInt32(TERMY_FFI_EVENT_RESET_TITLE.rawValue):
+            return .resetTitle
+        case UInt32(TERMY_FFI_EVENT_BELL.rawValue):
+            return .bell
+        case UInt32(TERMY_FFI_EVENT_EXIT.rawValue):
+            return .exit
+        case UInt32(TERMY_FFI_EVENT_CLIPBOARD_STORE.rawValue):
+            return .clipboardStore(string(from: event.payload) ?? "")
+        case UInt32(TERMY_FFI_EVENT_SHELL_PROMPT_START.rawValue):
+            return .shellPromptStart
+        case UInt32(TERMY_FFI_EVENT_SHELL_COMMAND_START.rawValue):
+            return .shellCommandStart
+        case UInt32(TERMY_FFI_EVENT_SHELL_COMMAND_EXECUTING.rawValue):
+            return .shellCommandExecuting
+        case UInt32(TERMY_FFI_EVENT_SHELL_COMMAND_FINISHED.rawValue):
+            return .shellCommandFinished(event.exit_code >= 0 ? event.exit_code : nil)
+        case UInt32(TERMY_FFI_EVENT_PROGRESS.rawValue):
+            return .progress(TerminalProgress(
+                state: event.progress_state,
+                value: event.progress_value
+            ))
+        case UInt32(TERMY_FFI_EVENT_WORKING_DIRECTORY.rawValue):
+            return .workingDirectory(string(from: event.payload) ?? "")
+        default:
+            return nil
+        }
+    }
+
     private static func cell(from ffiCell: TermyFfiCell) -> TerminalCell {
         TerminalCell(
             col: Int(ffiCell.col),
@@ -237,5 +305,13 @@ final class LibTermyTerminal {
 
     private static func character(from codepoint: UInt32) -> Character {
         UnicodeScalar(codepoint).map(Character.init) ?? " "
+    }
+
+    private static func string(from bytes: TermyFfiBytes) -> String? {
+        guard let ptr = bytes.ptr, bytes.len > 0 else {
+            return nil
+        }
+        let buffer = UnsafeBufferPointer(start: ptr, count: Int(bytes.len))
+        return String(decoding: buffer, as: UTF8.self)
     }
 }

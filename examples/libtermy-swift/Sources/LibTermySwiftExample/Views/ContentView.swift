@@ -29,6 +29,9 @@ struct ContentView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+                TerminalTopLoader(progress: terminal.progress)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+
                 if let errorMessage = terminal.errorMessage {
                     Text(errorMessage)
                         .font(.system(size: 12, design: .monospaced))
@@ -39,7 +42,7 @@ struct ContentView: View {
                 }
             }
             .background(
-                Color(red: 0.05, green: 0.055, blue: 0.06)
+                terminal.renderConfig.background.swiftUIColor
                     .opacity(terminal.renderConfig.backgroundOpacity)
             )
             .onAppear {
@@ -48,9 +51,6 @@ struct ContentView: View {
             }
             .onChange(of: proxy.size) { _, size in
                 resizeTerminal(to: size)
-            }
-            .onDisappear {
-                terminal.stop()
             }
         }
     }

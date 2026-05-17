@@ -8,6 +8,7 @@ use crate::osc_intercept::{OscEvent, OscInterceptor};
 use crate::path_env::normalized_path_env;
 use crate::protocol::{TerminalQueryColors, TerminalReplyHost, reply_bytes_for_event};
 use crate::render_metrics::increment_runtime_wakeup_count;
+use crate::search::{TermySearchMatch, search_frame};
 use crate::shell_integration::ProgressState;
 use alacritty_terminal::{
     event::{Event as AlacEvent, EventListener, OnResize, WindowSize},
@@ -1249,6 +1250,11 @@ impl Terminal {
     /// Capture a renderer-neutral snapshot of the visible terminal frame.
     pub fn snapshot(&self) -> TermyFrame {
         self.with_term(|term| snapshot_from_term(term, self.size, self.query_colors))
+    }
+
+    /// Search the visible terminal frame and return match ranges in cell coordinates.
+    pub fn search(&self, query: &str) -> Vec<TermySearchMatch> {
+        search_frame(&self.snapshot(), query)
     }
 
     /// Access the terminal for reading cell content

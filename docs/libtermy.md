@@ -59,10 +59,14 @@ Use `termy_ffi` as an opaque-handle API:
 - `termy_damage_free`
 - `termy_terminal_drain_events`
 - `termy_event_batch_free`
+- `termy_terminal_search`
+- `termy_search_batch_free`
 
-Any returned frame, damage, event batch, or standalone byte payload must be
+Any returned frame, damage, event batch, search batch, or standalone byte payload must be
 released by the matching `termy_*_free` function. Event payloads owned by an
 event batch are freed by `termy_event_batch_free`; do not free them separately.
+Search match line payloads owned by a search batch are freed by
+`termy_search_batch_free`.
 Embedders should synchronize access to a terminal handle if they call into it
 from multiple threads.
 
@@ -78,9 +82,10 @@ released with `termy_config_diagnostics_free`. Diagnostic kind values:
 
 Renderer-facing config values are available through `termy_config_render_config`
 and must be released with `termy_render_config_free`. This returns the parsed
-font family, font size, line height, padding, background opacity, cursor blink,
-and cursor style so non-Rust embedders can render the terminal with the same
-user config that was passed into `termy_terminal_new_with_config`.
+font family, active theme id, foreground/background/cursor colors, font size,
+line height, padding, background opacity, cursor blink, and cursor style so
+non-Rust embedders can render the terminal with the same user config that was
+passed into `termy_terminal_new_with_config`.
 
 Event kind values:
 
@@ -97,10 +102,21 @@ Event kind values:
 - `11`: progress
 - `12`: working directory
 
+Progress state values:
+
+- `0`: clear
+- `1`: in progress
+- `2`: error
+- `3`: indeterminate
+- `4`: warning
+
 Cursor style values:
 
 - `1`: line
 - `2`: block
+
+Search returns visible-frame matches only. Each `TermyFfiSearchMatch` reports the
+row, inclusive start and end columns, and the visible line text that matched.
 
 See `examples/libtermy-c/` and `examples/libtermy-swift/` for C and Swift
 embedding examples.

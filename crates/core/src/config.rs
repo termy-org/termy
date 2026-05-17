@@ -4,11 +4,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::TermyColor;
 use crate::protocol::TerminalQueryColors;
 use crate::runtime::{
     TerminalCursorStyle, TerminalRuntimeConfig, WorkingDirFallback as RuntimeWorkingDirFallback,
 };
-use termy_config_core::{AppConfig, ConfigDiagnostic, CursorStyle, WorkingDirFallback};
+use alacritty_terminal::vte::ansi::Rgb as AnsiRgb;
+use termy_config_core::{
+    AppConfig, ConfigDiagnostic, CursorStyle, SHELL_DECIDE_THEME_ID, SystemAppearance,
+    WorkingDirFallback, resolve_active_theme,
+};
+use termy_themes::{ThemeColors, normalize_theme_id, parse_theme_colors_json};
 
 #[derive(Debug, Clone)]
 pub struct LoadedTermyConfig {
@@ -17,6 +23,15 @@ pub struct LoadedTermyConfig {
     pub runtime_config: TerminalRuntimeConfig,
     pub diagnostics: Vec<ConfigDiagnostic>,
     pub loaded_from_disk: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedThemeColors {
+    pub active_theme: String,
+    pub ansi: [TermyColor; 16],
+    pub foreground: TermyColor,
+    pub background: TermyColor,
+    pub cursor: TermyColor,
 }
 
 #[derive(Debug)]
@@ -76,7 +91,22 @@ pub fn load_config_from_contents(contents: &str) -> LoadedTermyConfig {
 }
 
 pub fn runtime_config_from_app_config(config: &AppConfig) -> TerminalRuntimeConfig {
-    runtime_config_from_app_config_with_query_colors(config, TerminalQueryColors::default())
+    runtime_config_from_app_config_with_theme(config, None, SystemAppearance::Dark)
+}
+
+pub fn runtime_config_from_app_config_with_theme(
+    config: &AppConfig,
+    config_path: Option<&Path>,
+    system_appearance: SystemAppearance,
+) -> TerminalRuntimeConfig {
+    runtime_config_from_app_config_with_query_colors(
+        config,
+        terminal_query_colors_from_resolved_theme(&resolve_theme_colors_from_app_config(
+            config,
+            config_path,
+            system_appearance,
+        )),
+    )
 }
 
 pub fn runtime_config_from_app_config_with_query_colors(
@@ -108,9 +138,14 @@ fn load_config_from_contents_with_path(
     loaded_from_disk: bool,
 ) -> LoadedTermyConfig {
     let report = AppConfig::from_contents_with_report(contents);
+    let runtime_config = runtime_config_from_app_config_with_theme(
+        &report.config,
+        path.as_deref(),
+        SystemAppearance::Dark,
+    );
     LoadedTermyConfig {
         path,
-        runtime_config: runtime_config_from_app_config(&report.config),
+        runtime_config,
         app_config: report.config,
         diagnostics: report.diagnostics,
         loaded_from_disk,
@@ -119,12 +154,146 @@ fn load_config_from_contents_with_path(
 
 fn default_loaded_config(path: Option<PathBuf>) -> LoadedTermyConfig {
     let app_config = AppConfig::default();
+    let runtime_config = runtime_config_from_app_config_with_theme(
+        &app_config,
+        path.as_deref(),
+        SystemAppearance::Dark,
+    );
     LoadedTermyConfig {
         path,
-        runtime_config: runtime_config_from_app_config(&app_config),
+        runtime_config,
         app_config,
         diagnostics: Vec::new(),
         loaded_from_disk: false,
+    }
+}
+
+pub fn resolve_theme_colors_from_app_config(
+    config: &AppConfig,
+    config_path: Option<&Path>,
+    system_appearance: SystemAppearance,
+) -> ResolvedThemeColors {
+    let active_theme = resolve_active_theme(config, system_appearance).to_string();
+    let mut colors = if active_theme.eq_ignore_ascii_case(SHELL_DECIDE_THEME_ID) {
+        terminal_default_theme_colors()
+    } else {
+        load_installed_theme_colors(&active_theme, config_path)
+            .or_else(|| builtin_theme_colors(&active_theme))
+            .unwrap_or_else(termy_themes::termy)
+    };
+    apply_custom_colors(&mut colors, &config.colors);
+
+    ResolvedThemeColors {
+        active_theme,
+        ansi: colors.ansi.map(term_color_from_rgb),
+        foreground: term_color_from_rgb(colors.foreground),
+        background: term_color_from_rgb(colors.background),
+        cursor: term_color_from_rgb(colors.cursor),
+    }
+}
+
+pub fn terminal_query_colors_from_resolved_theme(
+    colors: &ResolvedThemeColors,
+) -> TerminalQueryColors {
+    TerminalQueryColors {
+        ansi: colors.ansi.map(ansi_rgb_from_term_color),
+        foreground: ansi_rgb_from_term_color(colors.foreground),
+        background: ansi_rgb_from_term_color(colors.background),
+        cursor: None,
+    }
+}
+
+fn load_installed_theme_colors(theme_id: &str, config_path: Option<&Path>) -> Option<ThemeColors> {
+    let normalized = normalize_theme_id(theme_id);
+    if normalized.is_empty() {
+        return None;
+    }
+
+    let owned_config_path;
+    let config_path = if let Some(path) = config_path {
+        path
+    } else {
+        owned_config_path = termy_config_core::config_path()?;
+        owned_config_path.as_path()
+    };
+    let theme_path = config_path
+        .parent()?
+        .join("themes")
+        .join(format!("{normalized}.json"));
+    let contents = std::fs::read_to_string(theme_path).ok()?;
+    parse_theme_colors_json(&contents).ok()
+}
+
+fn builtin_theme_colors(theme_id: &str) -> Option<ThemeColors> {
+    match normalize_theme_id(theme_id).as_str() {
+        "termy" => Some(termy_themes::termy()),
+        "tokyo-night" | "tokyonight" => Some(termy_themes::tokyo_night()),
+        "catppuccin-mocha" | "catppuccin" | "catppuccinmocha" => {
+            Some(termy_themes::catppuccin_mocha())
+        }
+        "dracula" => Some(termy_themes::dracula()),
+        "gruvbox-dark" | "gruvbox" | "gruvboxdark" => Some(termy_themes::gruvbox_dark()),
+        "nord" => Some(termy_themes::nord()),
+        "solarized-dark" | "solarized" | "solarizeddark" => Some(termy_themes::solarized_dark()),
+        "one-dark" | "one" | "onedark" => Some(termy_themes::one_dark()),
+        "monokai" => Some(termy_themes::monokai()),
+        "material-dark" | "material" | "materialdark" => Some(termy_themes::material_dark()),
+        "palenight" => Some(termy_themes::palenight()),
+        "tomorrow-night" | "tomorrow" | "tomorrownight" => Some(termy_themes::tomorrow_night()),
+        "oceanic-next" | "oceanic" | "oceanicnext" => Some(termy_themes::oceanic_next()),
+        _ => termy_themes::resolve_theme(theme_id),
+    }
+}
+
+fn apply_custom_colors(colors: &mut ThemeColors, custom: &termy_config_core::CustomColors) {
+    if let Some(color) = custom.foreground {
+        colors.foreground = theme_rgb_from_config_rgb(color);
+    }
+    if let Some(color) = custom.background {
+        colors.background = theme_rgb_from_config_rgb(color);
+    }
+    if let Some(color) = custom.cursor {
+        colors.cursor = theme_rgb_from_config_rgb(color);
+    }
+    for (index, color) in custom.ansi.iter().enumerate() {
+        if let Some(color) = color {
+            colors.ansi[index] = theme_rgb_from_config_rgb(*color);
+        }
+    }
+}
+
+fn terminal_default_theme_colors() -> ThemeColors {
+    let defaults = TerminalQueryColors::default();
+    ThemeColors {
+        ansi: defaults.ansi.map(theme_rgb_from_ansi_rgb),
+        foreground: theme_rgb_from_ansi_rgb(defaults.foreground),
+        background: theme_rgb_from_ansi_rgb(defaults.background),
+        cursor: theme_rgb_from_ansi_rgb(defaults.foreground),
+    }
+}
+
+fn theme_rgb_from_ansi_rgb(color: AnsiRgb) -> termy_themes::Rgb8 {
+    termy_themes::Rgb8::new(color.r, color.g, color.b)
+}
+
+fn theme_rgb_from_config_rgb(color: termy_config_core::Rgb8) -> termy_themes::Rgb8 {
+    termy_themes::Rgb8::new(color.r, color.g, color.b)
+}
+
+fn term_color_from_rgb(color: termy_themes::Rgb8) -> TermyColor {
+    TermyColor {
+        r: color.r,
+        g: color.g,
+        b: color.b,
+        a: 255,
+    }
+}
+
+fn ansi_rgb_from_term_color(color: TermyColor) -> AnsiRgb {
+    AnsiRgb {
+        r: color.r,
+        g: color.g,
+        b: color.b,
     }
 }
 
@@ -136,18 +305,59 @@ mod tests {
     #[test]
     fn parses_runtime_fields_from_contents() {
         let loaded = load_config_from_contents(
-            "shell = /bin/zsh\nterm = screen-256color\ncolorterm = none\nscrollback = 42\ncursor_style = line\n",
+            "theme = nord\nshell = /bin/zsh\nterm = screen-256color\ncolorterm = none\nscrollback = 42\ncursor_style = line\n",
         );
 
         assert_eq!(loaded.runtime_config.shell.as_deref(), Some("/bin/zsh"));
         assert_eq!(loaded.runtime_config.term, "screen-256color");
         assert_eq!(loaded.runtime_config.colorterm, None);
         assert_eq!(loaded.runtime_config.scrollback_history, 42);
+        assert_eq!(loaded.runtime_config.query_colors.background.r, 0x2e);
+        assert_eq!(loaded.runtime_config.query_colors.background.g, 0x34);
+        assert_eq!(loaded.runtime_config.query_colors.background.b, 0x40);
         assert_eq!(
             loaded.runtime_config.default_cursor_style,
             TerminalCursorStyle::Line
         );
         assert!(!loaded.loaded_from_disk);
+    }
+
+    #[test]
+    fn resolves_custom_theme_colors_from_contents() {
+        let loaded = load_config_from_contents(
+            "theme = nord\n[colors]\nforeground = #ffffff\nbackground = #010203\ngreen = #040506\n",
+        );
+        let colors =
+            resolve_theme_colors_from_app_config(&loaded.app_config, None, SystemAppearance::Dark);
+
+        assert_eq!(colors.active_theme, "nord");
+        assert_eq!(
+            colors.foreground,
+            TermyColor {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            colors.background,
+            TermyColor {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            colors.ansi[2],
+            TermyColor {
+                r: 4,
+                g: 5,
+                b: 6,
+                a: 255,
+            }
+        );
     }
 
     #[test]

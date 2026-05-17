@@ -7,6 +7,11 @@ final class TerminalViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var configSummary = "config: loading"
     @Published private(set) var renderConfig = TerminalRenderConfig.default
+    @Published private(set) var title = "Shell"
+    @Published private(set) var progress = TerminalProgress.clear
+    @Published private(set) var workingDirectory: String?
+    @Published private(set) var isExited = false
+    @Published private(set) var lastEvents: [TerminalRuntimeEvent] = []
     @Published var selection: TerminalSelection?
 
     private var terminal: LibTermyTerminal?
@@ -26,6 +31,7 @@ final class TerminalViewModel: ObservableObject {
             self.terminal = terminal
             configSummary = terminal.configSummary
             renderConfig = terminal.renderConfig
+            isExited = false
             refresh(force: true)
             timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) {
                 [weak self] _ in
@@ -42,6 +48,8 @@ final class TerminalViewModel: ObservableObject {
         timer?.invalidate()
         timer = nil
         terminal = nil
+        isExited = true
+        progress = .clear
     }
 
     func sendControlC() {
@@ -76,6 +84,15 @@ final class TerminalViewModel: ObservableObject {
         return true
     }
 
+    func search(_ query: String) -> [TerminalSearchMatch] {
+        do {
+            return try terminal?.search(query) ?? []
+        } catch {
+            errorMessage = String(describing: error)
+            return []
+        }
+    }
+
     func resize(cols: Int, rows: Int, cellWidth: CGFloat, cellHeight: CGFloat) {
         let cols = max(2, min(cols, Int(UInt16.max)))
         let rows = max(2, min(rows, Int(UInt16.max)))
@@ -105,7 +122,9 @@ final class TerminalViewModel: ObservableObject {
 
     private func refresh(force: Bool = false) {
         do {
-            let hasEvents = try terminal?.drainEvents() ?? false
+            let events = try terminal?.drainEvents() ?? []
+            handle(events)
+            let hasEvents = !events.isEmpty
             let hasDamage = try terminal?.takeDamage() ?? false
             guard force || hasEvents || hasDamage else {
                 return
@@ -118,6 +137,39 @@ final class TerminalViewModel: ObservableObject {
             }
         } catch {
             errorMessage = String(describing: error)
+        }
+    }
+
+    private func handle(_ events: [TerminalRuntimeEvent]) {
+        guard !events.isEmpty else {
+            return
+        }
+
+        lastEvents = events
+        for event in events {
+            switch event {
+            case .title(let title):
+                if !title.isEmpty {
+                    self.title = title
+                }
+            case .resetTitle:
+                title = "Shell"
+            case .exit:
+                isExited = true
+                progress = .clear
+            case .progress(let progress):
+                self.progress = progress
+            case .workingDirectory(let path):
+                workingDirectory = path.isEmpty ? nil : path
+            case .wakeup,
+                 .bell,
+                 .clipboardStore(_),
+                 .shellPromptStart,
+                 .shellCommandStart,
+                 .shellCommandExecuting,
+                 .shellCommandFinished(_):
+                break
+            }
         }
     }
 

@@ -52,7 +52,7 @@ struct TerminalGridView: View {
         Group {
             if let cursor = frame.cursor {
                 Rectangle()
-                    .fill(Color.primary.opacity(0.85))
+                    .fill(renderConfig.cursor.swiftUIColor)
                     .frame(width: renderConfig.cellWidth, height: renderConfig.cellHeight)
                     .offset(
                         x: renderConfig.paddingX + CGFloat(cursor.col) * renderConfig.cellWidth,

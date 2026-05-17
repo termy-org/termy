@@ -10,12 +10,14 @@ mod path_env;
 mod protocol;
 mod render_metrics;
 mod runtime;
+mod search;
 mod shell_integration;
 
 pub use config::{
-    LoadedTermyConfig, TermyConfigError, load_config_from_contents, load_config_from_default_path,
-    load_config_from_path, runtime_config_from_app_config,
-    runtime_config_from_app_config_with_query_colors,
+    LoadedTermyConfig, ResolvedThemeColors, TermyConfigError, load_config_from_contents,
+    load_config_from_default_path, load_config_from_path, resolve_theme_colors_from_app_config,
+    runtime_config_from_app_config, runtime_config_from_app_config_with_query_colors,
+    runtime_config_from_app_config_with_theme, terminal_query_colors_from_resolved_theme,
 };
 pub use frame::{TermyCell, TermyColor, TermyFrame};
 pub use keyboard::{
@@ -42,8 +44,9 @@ pub use runtime::{
     TerminalRuntimeConfig, TerminalSize, WorkingDirFallback, normalize_working_directory_candidate,
     resolve_launch_working_directory, resolve_working_directory_path,
 };
+pub use search::{TermySearchMatch, search_frame};
 pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState};
 pub use termy_config_core::{
     AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport,
-    CursorStyle as AppConfigCursorStyle, config_path,
+    CursorStyle as AppConfigCursorStyle, SystemAppearance, config_path,
 };

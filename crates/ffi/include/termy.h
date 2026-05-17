@@ -17,6 +17,29 @@ typedef enum {
   TERMY_FFI_CONFIG_LOAD_FAILED = 4,
 } TermyFfiStatus;
 
+typedef enum {
+  TERMY_FFI_EVENT_WAKEUP = 1,
+  TERMY_FFI_EVENT_TITLE = 2,
+  TERMY_FFI_EVENT_RESET_TITLE = 3,
+  TERMY_FFI_EVENT_BELL = 4,
+  TERMY_FFI_EVENT_EXIT = 5,
+  TERMY_FFI_EVENT_CLIPBOARD_STORE = 6,
+  TERMY_FFI_EVENT_SHELL_PROMPT_START = 7,
+  TERMY_FFI_EVENT_SHELL_COMMAND_START = 8,
+  TERMY_FFI_EVENT_SHELL_COMMAND_EXECUTING = 9,
+  TERMY_FFI_EVENT_SHELL_COMMAND_FINISHED = 10,
+  TERMY_FFI_EVENT_PROGRESS = 11,
+  TERMY_FFI_EVENT_WORKING_DIRECTORY = 12,
+} TermyFfiEventKind;
+
+typedef enum {
+  TERMY_FFI_PROGRESS_CLEAR = 0,
+  TERMY_FFI_PROGRESS_IN_PROGRESS = 1,
+  TERMY_FFI_PROGRESS_ERROR = 2,
+  TERMY_FFI_PROGRESS_INDETERMINATE = 3,
+  TERMY_FFI_PROGRESS_WARNING = 4,
+} TermyFfiProgressState;
+
 typedef struct {
   uint16_t cols;
   uint16_t rows;
@@ -95,6 +118,19 @@ typedef struct {
 } TermyFfiDamage;
 
 typedef struct {
+  size_t row;
+  size_t start_col;
+  size_t end_col;
+  TermyFfiBytes line;
+} TermyFfiSearchMatch;
+
+typedef struct {
+  TermyFfiSearchMatch *matches_ptr;
+  size_t matches_len;
+  size_t matches_capacity;
+} TermyFfiSearchBatch;
+
+typedef struct {
   size_t line_number;
   uint32_t kind;
   TermyFfiBytes message;
@@ -108,6 +144,10 @@ typedef struct {
 
 typedef struct {
   TermyFfiBytes font_family;
+  TermyFfiBytes active_theme;
+  TermyFfiColor foreground;
+  TermyFfiColor background;
+  TermyFfiColor cursor;
   float font_size;
   float line_height;
   float padding_x;
@@ -178,6 +218,12 @@ TermyFfiStatus termy_terminal_drain_events(
     TermyFfiTerminal *terminal,
     TermyFfiEventBatch *out_batch);
 TermyFfiStatus termy_event_batch_free(TermyFfiEventBatch *batch);
+TermyFfiStatus termy_terminal_search(
+    TermyFfiTerminal *terminal,
+    const uint8_t *query_ptr,
+    size_t query_len,
+    TermyFfiSearchBatch *out_batch);
+TermyFfiStatus termy_search_batch_free(TermyFfiSearchBatch *batch);
 TermyFfiStatus termy_buffer_free(TermyFfiBytes bytes);
 TermyFfiBytes termy_null_buffer(void);
 size_t termy_runtime_config_default_scrollback(void);

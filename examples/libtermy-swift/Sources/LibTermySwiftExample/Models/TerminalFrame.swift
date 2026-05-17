@@ -7,6 +7,13 @@ struct TerminalRGBA: Equatable {
     var blue: Double
     var alpha: Double
 
+    init(red: Double, green: Double, blue: Double, alpha: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
     init(_ color: TermyFfiColor) {
         red = Double(color.r) / 255.0
         green = Double(color.g) / 255.0
@@ -17,10 +24,18 @@ struct TerminalRGBA: Equatable {
     var swiftUIColor: Color {
         Color(red: red, green: green, blue: blue, opacity: alpha)
     }
+
+    static let termyForeground = TerminalRGBA(red: 0.91, green: 0.92, blue: 0.96, alpha: 1.0)
+    static let termyBackground = TerminalRGBA(red: 0.04, green: 0.06, blue: 0.13, alpha: 1.0)
+    static let termyCursor = TerminalRGBA(red: 0.65, green: 0.91, blue: 0.64, alpha: 1.0)
 }
 
 struct TerminalRenderConfig: Equatable {
     var fontFamily: String
+    var activeTheme: String
+    var foreground: TerminalRGBA
+    var background: TerminalRGBA
+    var cursor: TerminalRGBA
     var fontSize: CGFloat
     var lineHeight: CGFloat
     var paddingX: CGFloat
@@ -32,6 +47,10 @@ struct TerminalRenderConfig: Equatable {
 
     static let `default` = TerminalRenderConfig(
         fontFamily: "JetBrains Mono",
+        activeTheme: "termy",
+        foreground: .termyForeground,
+        background: .termyBackground,
+        cursor: .termyCursor,
         fontSize: 14.0,
         lineHeight: 1.4,
         paddingX: 12.0,
@@ -44,6 +63,10 @@ struct TerminalRenderConfig: Equatable {
 
     init(
         fontFamily: String,
+        activeTheme: String,
+        foreground: TerminalRGBA,
+        background: TerminalRGBA,
+        cursor: TerminalRGBA,
         fontSize: CGFloat,
         lineHeight: CGFloat,
         paddingX: CGFloat,
@@ -54,6 +77,10 @@ struct TerminalRenderConfig: Equatable {
         cursorStyle: UInt32
     ) {
         self.fontFamily = fontFamily
+        self.activeTheme = activeTheme
+        self.foreground = foreground
+        self.background = background
+        self.cursor = cursor
         self.fontSize = max(1.0, fontSize)
         self.lineHeight = max(0.8, lineHeight)
         self.paddingX = max(0.0, paddingX)
@@ -67,6 +94,10 @@ struct TerminalRenderConfig: Equatable {
     init(_ ffiConfig: TermyFfiRenderConfig) {
         self.init(
             fontFamily: Self.string(from: ffiConfig.font_family) ?? Self.default.fontFamily,
+            activeTheme: Self.string(from: ffiConfig.active_theme) ?? Self.default.activeTheme,
+            foreground: TerminalRGBA(ffiConfig.foreground),
+            background: TerminalRGBA(ffiConfig.background),
+            cursor: TerminalRGBA(ffiConfig.cursor),
             fontSize: CGFloat(ffiConfig.font_size),
             lineHeight: CGFloat(ffiConfig.line_height),
             paddingX: CGFloat(ffiConfig.padding_x),

@@ -6,8 +6,8 @@ use termy_core::{
     ConfigDiagnostic, ConfigDiagnosticKind, LoadedTermyConfig, ProgressState, Terminal,
     TerminalClipboardTarget, TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent,
     TerminalOptions, TerminalQueryColors, TerminalReplyHost, TerminalRuntimeConfig, TerminalSize,
-    TermyCell, TermyColor, load_config_from_contents, load_config_from_default_path,
-    load_config_from_path,
+    TermyCell, TermyColor, TermySearchMatch, load_config_from_contents,
+    load_config_from_default_path, load_config_from_path,
 };
 
 #[repr(C)]
@@ -119,6 +119,23 @@ pub struct TermyFfiDamage {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiSearchMatch {
+    pub row: usize,
+    pub start_col: usize,
+    pub end_col: usize,
+    pub line: TermyFfiBytes,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiSearchBatch {
+    pub matches_ptr: *mut TermyFfiSearchMatch,
+    pub matches_len: usize,
+    pub matches_capacity: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TermyFfiConfigDiagnostic {
     pub line_number: usize,
     pub kind: u32,
@@ -137,6 +154,10 @@ pub struct TermyFfiConfigDiagnosticBatch {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TermyFfiRenderConfig {
     pub font_family: TermyFfiBytes,
+    pub active_theme: TermyFfiBytes,
+    pub foreground: TermyFfiColor,
+    pub background: TermyFfiColor,
+    pub cursor: TermyFfiColor,
     pub font_size: f32,
     pub line_height: f32,
     pub padding_x: f32,
@@ -283,6 +304,15 @@ fn ffi_event_from_event(event: TerminalEvent) -> TermyFfiEvent {
             payload: ffi_bytes_from_string(path),
             ..TermyFfiEvent::default()
         },
+    }
+}
+
+fn ffi_search_match_from_match(search_match: TermySearchMatch) -> TermyFfiSearchMatch {
+    TermyFfiSearchMatch {
+        row: search_match.row,
+        start_col: search_match.start_col,
+        end_col: search_match.end_col,
+        line: ffi_bytes_from_string(search_match.line),
     }
 }
 
@@ -614,10 +644,20 @@ pub unsafe extern "C" fn termy_config_render_config(
         return TermyFfiStatus::Null;
     }
 
-    let app_config = unsafe { &(*config).loaded.app_config };
+    let loaded = unsafe { &(*config).loaded };
+    let app_config = &loaded.app_config;
+    let theme_colors = termy_core::resolve_theme_colors_from_app_config(
+        app_config,
+        loaded.path.as_deref(),
+        termy_core::SystemAppearance::Dark,
+    );
     unsafe {
         *out_render_config = TermyFfiRenderConfig {
             font_family: ffi_bytes_from_string(app_config.font_family.clone()),
+            active_theme: ffi_bytes_from_string(theme_colors.active_theme),
+            foreground: theme_colors.foreground.into(),
+            background: theme_colors.background.into(),
+            cursor: theme_colors.cursor.into(),
             font_size: app_config.font_size,
             line_height: app_config.line_height,
             padding_x: app_config.padding_x,
@@ -644,6 +684,7 @@ pub unsafe extern "C" fn termy_render_config_free(
 
     let render_config = unsafe { &mut *render_config };
     free_bytes(render_config.font_family);
+    free_bytes(render_config.active_theme);
     *render_config = TermyFfiRenderConfig::default();
     TermyFfiStatus::Ok
 }
@@ -883,6 +924,59 @@ pub unsafe extern "C" fn termy_event_batch_free(batch: *mut TermyFfiEventBatch) 
     TermyFfiStatus::Ok
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_search(
+    terminal: *mut TermyFfiTerminal,
+    query_ptr: *const u8,
+    query_len: usize,
+    out_batch: *mut TermyFfiSearchBatch,
+) -> TermyFfiStatus {
+    if terminal.is_null() || out_batch.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let query = match unsafe { contents_utf8(query_ptr, query_len) } {
+        Ok(query) => query,
+        Err(status) => return status,
+    };
+
+    let matches = unsafe { (*terminal).terminal.search(query) }
+        .into_iter()
+        .map(ffi_search_match_from_match)
+        .collect::<Vec<_>>();
+    let (matches_ptr, matches_len, matches_capacity) = leak_vec(matches);
+
+    unsafe {
+        *out_batch = TermyFfiSearchBatch {
+            matches_ptr,
+            matches_len,
+            matches_capacity,
+        };
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_search_batch_free(
+    batch: *mut TermyFfiSearchBatch,
+) -> TermyFfiStatus {
+    if batch.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let batch = unsafe { &mut *batch };
+    if !batch.matches_ptr.is_null() {
+        let matches = unsafe {
+            Vec::from_raw_parts(batch.matches_ptr, batch.matches_len, batch.matches_capacity)
+        };
+        for search_match in matches {
+            free_bytes(search_match.line);
+        }
+    }
+    *batch = TermyFfiSearchBatch::default();
+    TermyFfiStatus::Ok
+}
+
 fn free_bytes(bytes: TermyFfiBytes) {
     if bytes.ptr.is_null() {
         return;
@@ -991,7 +1085,7 @@ mod tests {
 
     #[test]
     fn config_from_contents_exposes_render_config() {
-        let contents = b"font_family = Example Mono\nfont_size = 18\nline_height = 1.25\npadding_x = 3\npadding_y = 5\nbackground_opacity = 0.5\nbackground_opacity_cells = true\ncursor_blink = false\ncursor_style = line\n";
+        let contents = b"theme = nord\nfont_family = Example Mono\nfont_size = 18\nline_height = 1.25\npadding_x = 3\npadding_y = 5\nbackground_opacity = 0.5\nbackground_opacity_cells = true\ncursor_blink = false\ncursor_style = line\n[colors]\nbackground = #010203\ncursor = #040506\n";
         let mut config = ptr::null_mut();
 
         let status =
@@ -1011,8 +1105,34 @@ mod tests {
             ))
             .expect("font family utf8")
         };
+        let active_theme = unsafe {
+            str::from_utf8(slice::from_raw_parts(
+                render_config.active_theme.ptr,
+                render_config.active_theme.len,
+            ))
+            .expect("active theme utf8")
+        };
 
         assert_eq!(font_family, "Example Mono");
+        assert_eq!(active_theme, "nord");
+        assert_eq!(
+            render_config.background,
+            TermyFfiColor {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            render_config.cursor,
+            TermyFfiColor {
+                r: 4,
+                g: 5,
+                b: 6,
+                a: 255,
+            }
+        );
         assert_eq!(render_config.font_size, 18.0);
         assert_eq!(render_config.line_height, 1.25);
         assert_eq!(render_config.padding_x, 3.0);
@@ -1027,5 +1147,44 @@ mod tests {
             TermyFfiStatus::Ok
         );
         assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
+    fn terminal_search_returns_visible_matches() {
+        let size = TermyFfiSize {
+            cols: 16,
+            rows: 4,
+            cell_width: 9.0,
+            cell_height: 18.0,
+        };
+        let command = b"printf 'alpha beta\nbeta gamma'";
+        let mut terminal = ptr::null_mut();
+
+        assert_eq!(
+            unsafe { termy_terminal_new(size, command.as_ptr(), command.len(), &mut terminal,) },
+            TermyFfiStatus::Ok
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let query = b"beta";
+        let mut batch = TermyFfiSearchBatch::default();
+        assert_eq!(
+            unsafe { termy_terminal_search(terminal, query.as_ptr(), query.len(), &mut batch) },
+            TermyFfiStatus::Ok
+        );
+        assert!(batch.matches_len >= 1);
+
+        let matches = unsafe { slice::from_raw_parts(batch.matches_ptr, batch.matches_len) };
+        assert!(
+            matches
+                .iter()
+                .any(|search_match| search_match.start_col == 6)
+        );
+
+        assert_eq!(
+            unsafe { termy_search_batch_free(&mut batch) },
+            TermyFfiStatus::Ok
+        );
+        assert_eq!(unsafe { termy_terminal_free(terminal) }, TermyFfiStatus::Ok);
     }
 }

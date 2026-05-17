@@ -5790,6 +5790,7 @@ dependencies = [
  "rustix-openpty",
  "tempfile",
  "termy_config_core",
+ "termy_themes",
 ]
 
 [[package]]
