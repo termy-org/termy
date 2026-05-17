@@ -302,15 +302,18 @@ impl TerminalView {
                 );
 
                 let tab_id = self.allocate_tab_id();
-                self.tabs.push(Self::create_native_tab(
-                    tab_id,
-                    terminal,
-                    size.cols,
-                    size.rows,
-                    predicted_title,
-                ));
-                self.active_tab = self.tabs.len() - 1;
-                self.refresh_tab_title(self.active_tab);
+                let new_tab_index = self.active_tab.saturating_add(1).min(self.tabs.len());
+                self.tabs.insert(
+                    new_tab_index,
+                    Self::create_native_tab(
+                        tab_id,
+                        terminal,
+                        size.cols,
+                        size.rows,
+                        predicted_title,
+                    ),
+                );
+                self.refresh_tab_title(new_tab_index);
                 self.mark_tab_strip_layout_dirty();
                 self.reset_tab_interaction_state();
                 self.sync_tab_strip_for_active_tab();
