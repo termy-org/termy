@@ -1,0 +1,47 @@
+{
+  "": {
+    "swift-dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/master.swiftdeps"
+  },
+  "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/Sources/LibTermySwiftExample/App/LibTermySwiftExampleApp.swift": {
+    "dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermySwiftExampleApp.d",
+    "object": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermySwiftExampleApp.swift.o",
+    "swiftmodule": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermySwiftExampleApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermySwiftExampleApp.swiftdeps",
+    "diagnostics": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermySwiftExampleApp.dia"
+  },
+  "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/Sources/LibTermySwiftExample/Models/TerminalFrame.swift": {
+    "dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalFrame.d",
+    "object": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalFrame.swift.o",
+    "swiftmodule": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalFrame~partial.swiftmodule",
+    "swift-dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalFrame.swiftdeps",
+    "diagnostics": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalFrame.dia"
+  },
+  "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/Sources/LibTermySwiftExample/Services/LibTermyTerminal.swift": {
+    "dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermyTerminal.d",
+    "object": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermyTerminal.swift.o",
+    "swiftmodule": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermyTerminal~partial.swiftmodule",
+    "swift-dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermyTerminal.swiftdeps",
+    "diagnostics": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/LibTermyTerminal.dia"
+  },
+  "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/Sources/LibTermySwiftExample/Services/TerminalViewModel.swift": {
+    "dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalViewModel.d",
+    "object": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalViewModel.swift.o",
+    "swiftmodule": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalViewModel~partial.swiftmodule",
+    "swift-dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalViewModel.swiftdeps",
+    "diagnostics": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalViewModel.dia"
+  },
+  "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/Sources/LibTermySwiftExample/Views/ContentView.swift": {
+    "dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/ContentView.d",
+    "object": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/ContentView.swift.o",
+    "swiftmodule": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/ContentView.dia"
+  },
+  "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/Sources/LibTermySwiftExample/Views/TerminalGridView.swift": {
+    "dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalGridView.d",
+    "object": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalGridView.swift.o",
+    "swiftmodule": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalGridView~partial.swiftmodule",
+    "swift-dependencies": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalGridView.swiftdeps",
+    "diagnostics": "/Users/lassevestergaard/Documents/dev/termy/examples/libtermy-swift/.build/arm64-apple-macosx/debug/LibTermySwiftExample.build/TerminalGridView.dia"
+  }
+}

@@ -5779,6 +5779,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "termy_core"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "anyhow",
+ "dirs 6.0.0",
+ "flume",
+ "polling",
+ "rustix-openpty",
+]
+
+[[package]]
+name = "termy_ffi"
+version = "0.1.0"
+dependencies = [
+ "termy_core",
+]
+
+[[package]]
 name = "termy_native_sdk"
 version = "0.1.0"
 dependencies = [
