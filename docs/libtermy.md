@@ -10,17 +10,24 @@ draining, damage snapshots, and renderer-neutral frame snapshots. It does not
 depend on GPUI and does not expose Termy's app chrome, tabs, panes, or tmux
 session model as part of the public v1 surface.
 
+`termy_core` can also load Termy's normal config format through the existing
+headless `termy_config_core` parser. Config loading returns the full parsed
+`AppConfig`, parse diagnostics, and a `TerminalRuntimeConfig` ready to pass into
+terminal creation. Missing default config files fall back to defaults without
+creating files; explicit missing paths are reported as load errors.
+
 ## Rust Embedding
 
 Use `termy_core::Terminal` directly:
 
 ```rust
+let loaded_config = termy_core::load_config_from_default_path()?;
 let terminal = termy_core::Terminal::new(
     termy_core::TerminalSize::default(),
     None,
     None,
     None,
-    Some(&termy_core::TerminalRuntimeConfig::default()),
+    Some(&loaded_config.runtime_config),
     None,
 )?;
 terminal.write(b"echo hello\r");
@@ -37,6 +44,11 @@ See `examples/libtermy-rust/` for a minimal Rust embedding.
 Use `termy_ffi` as an opaque-handle API:
 
 - `crates/ffi/include/termy.h`
+- `termy_config_load_default`
+- `termy_config_load_path`
+- `termy_config_from_contents`
+- `termy_config_free`
+- `termy_terminal_new_with_config`
 - `termy_terminal_new`
 - `termy_terminal_free`
 - `termy_terminal_write`
@@ -53,6 +65,16 @@ released by the matching `termy_*_free` function. Event payloads owned by an
 event batch are freed by `termy_event_batch_free`; do not free them separately.
 Embedders should synchronize access to a terminal handle if they call into it
 from multiple threads.
+
+Config diagnostics are available through `termy_config_diagnostics` and must be
+released with `termy_config_diagnostics_free`. Diagnostic kind values:
+
+- `1`: unknown section
+- `2`: unknown root key
+- `3`: unknown color key
+- `4`: invalid syntax
+- `5`: invalid value
+- `6`: duplicate root key
 
 Event kind values:
 

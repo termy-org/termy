@@ -13,6 +13,10 @@ alacritty_terminal = "0.26"
 flume = "0.11"
 dirs = "6.0"
 polling = "3.11"
+termy_config_core = { path = "../config_core" }
 
 [target.'cfg(unix)'.dependencies]
 rustix-openpty = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

@@ -5,10 +5,11 @@ import Foundation
 final class TerminalViewModel: ObservableObject {
     @Published private(set) var frame: TerminalFrame = .empty
     @Published private(set) var errorMessage: String?
-    @Published var commandText = ""
+    @Published private(set) var configSummary = "config: loading"
 
     private var terminal: LibTermyTerminal?
     private var timer: Timer?
+    private var lastResize: TerminalResize?
     private var shouldExitAfterFirstRender: Bool {
         ProcessInfo.processInfo.environment["TERMY_SWIFT_EXAMPLE_EXIT_AFTER_RENDER"] == "1"
     }
@@ -19,7 +20,9 @@ final class TerminalViewModel: ObservableObject {
         }
 
         do {
-            terminal = try LibTermyTerminal()
+            let terminal = try LibTermyTerminal()
+            self.terminal = terminal
+            configSummary = terminal.configSummary
             refresh()
             timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) {
                 [weak self] _ in
@@ -38,22 +41,44 @@ final class TerminalViewModel: ObservableObject {
         terminal = nil
     }
 
-    func sendCommand() {
-        let command = commandText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !command.isEmpty else {
-            return
-        }
-        send(bytes: Array("\(command)\r".utf8))
-        commandText = ""
-    }
-
     func sendControlC() {
         send(bytes: [3])
     }
 
-    private func send(bytes: [UInt8]) {
+    func send(bytes: [UInt8]) {
+        guard !bytes.isEmpty else {
+            return
+        }
+
         do {
             try terminal?.write(bytes)
+            refresh()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func resize(cols: Int, rows: Int, cellWidth: CGFloat, cellHeight: CGFloat) {
+        let cols = max(2, min(cols, Int(UInt16.max)))
+        let rows = max(2, min(rows, Int(UInt16.max)))
+        let resize = TerminalResize(
+            cols: UInt16(cols),
+            rows: UInt16(rows),
+            cellWidth: Float(cellWidth),
+            cellHeight: Float(cellHeight)
+        )
+        guard resize != lastResize else {
+            return
+        }
+        lastResize = resize
+
+        do {
+            try terminal?.resize(
+                cols: resize.cols,
+                rows: resize.rows,
+                cellWidth: resize.cellWidth,
+                cellHeight: resize.cellHeight
+            )
             refresh()
         } catch {
             errorMessage = String(describing: error)
@@ -86,4 +111,11 @@ final class TerminalViewModel: ObservableObject {
             NSApp.terminate(nil)
         }
     }
+}
+
+private struct TerminalResize: Equatable {
+    var cols: UInt16
+    var rows: UInt16
+    var cellWidth: Float
+    var cellHeight: Float
 }

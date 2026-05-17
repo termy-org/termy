@@ -1,7 +1,8 @@
 use std::{thread, time::Duration};
 
 use termy_core::{
-    Terminal, TerminalClipboardTarget, TerminalReplyHost, TerminalRuntimeConfig, TerminalSize,
+    Terminal, TerminalClipboardTarget, TerminalReplyHost, TerminalSize,
+    load_config_from_default_path,
 };
 
 struct EmptyClipboard;
@@ -13,6 +14,7 @@ impl TerminalReplyHost for EmptyClipboard {
 }
 
 fn main() -> anyhow::Result<()> {
+    let loaded_config = load_config_from_default_path()?;
     let terminal = Terminal::new(
         TerminalSize {
             cols: 24,
@@ -23,7 +25,7 @@ fn main() -> anyhow::Result<()> {
         None,
         None,
         None,
-        Some(&TerminalRuntimeConfig::default()),
+        Some(&loaded_config.runtime_config),
         Some("printf 'hello from libtermy'"),
     )?;
 

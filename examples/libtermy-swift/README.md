@@ -2,7 +2,9 @@
 
 This SwiftPM example imports `crates/ffi/include/termy.h` through a small Clang
 module, links against the local debug `termy_ffi` dynamic library, and renders a
-live libtermy terminal snapshot in SwiftUI.
+live libtermy terminal snapshot in SwiftUI. It calls `termy_config_load_default`
+before terminal creation, so it uses the normal Termy config file when one
+exists and falls back to defaults otherwise.
 
 Run it from the repo root:
 

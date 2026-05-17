@@ -5788,6 +5788,8 @@ dependencies = [
  "flume",
  "polling",
  "rustix-openpty",
+ "tempfile",
+ "termy_config_core",
 ]
 
 [[package]]

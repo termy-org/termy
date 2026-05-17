@@ -1,30 +1,34 @@
 import SwiftUI
 
+enum TerminalGridMetrics {
+    static let cellWidth: CGFloat = 8.2
+    static let cellHeight: CGFloat = 17.0
+    static let fontSize: CGFloat = 13.0
+}
+
 struct TerminalGridView: View {
     let frame: TerminalFrame
 
-    private let cellWidth: CGFloat = 8.2
-    private let cellHeight: CGFloat = 17.0
-
     var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(0..<frame.rows, id: \.self) { row in
-                    HStack(spacing: 0) {
-                        ForEach(0..<frame.cols, id: \.self) { col in
-                            if let cell = frame.cell(row: row, col: col) {
-                                TerminalCellView(
-                                    cell: cell,
-                                    isCursor: frame.cursor?.row == row && frame.cursor?.col == col
-                                )
-                                .frame(width: cellWidth, height: cellHeight)
-                            }
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(0..<frame.rows, id: \.self) { row in
+                HStack(spacing: 0) {
+                    ForEach(0..<frame.cols, id: \.self) { col in
+                        if let cell = frame.cell(row: row, col: col) {
+                            TerminalCellView(
+                                cell: cell,
+                                isCursor: frame.cursor?.row == row && frame.cursor?.col == col
+                            )
+                            .frame(
+                                width: TerminalGridMetrics.cellWidth,
+                                height: TerminalGridMetrics.cellHeight
+                            )
                         }
                     }
                 }
             }
-            .padding(12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -38,7 +42,11 @@ private struct TerminalCellView: View {
 
             if cell.renderText {
                 Text(String(cell.character))
-                    .font(.system(size: 13, weight: cell.bold ? .semibold : .regular, design: .monospaced))
+                    .font(.system(
+                        size: TerminalGridMetrics.fontSize,
+                        weight: cell.bold ? .semibold : .regular,
+                        design: .monospaced
+                    ))
                     .foregroundStyle(isCursor ? Color.black : cell.foreground.swiftUIColor)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }

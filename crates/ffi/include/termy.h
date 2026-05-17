@@ -14,6 +14,7 @@ typedef enum {
   TERMY_FFI_NULL = 1,
   TERMY_FFI_INVALID_UTF8 = 2,
   TERMY_FFI_SPAWN_FAILED = 3,
+  TERMY_FFI_CONFIG_LOAD_FAILED = 4,
 } TermyFfiStatus;
 
 typedef struct {
@@ -93,7 +94,20 @@ typedef struct {
   size_t spans_capacity;
 } TermyFfiDamage;
 
+typedef struct {
+  size_t line_number;
+  uint32_t kind;
+  TermyFfiBytes message;
+} TermyFfiConfigDiagnostic;
+
+typedef struct {
+  TermyFfiConfigDiagnostic *diagnostics_ptr;
+  size_t diagnostics_len;
+  size_t diagnostics_capacity;
+} TermyFfiConfigDiagnosticBatch;
+
 typedef struct TermyFfiTerminal TermyFfiTerminal;
+typedef struct TermyFfiConfig TermyFfiConfig;
 
 TermyFfiSize termy_size_default(void);
 TermyFfiStatus termy_terminal_new(
@@ -101,6 +115,32 @@ TermyFfiStatus termy_terminal_new(
     const uint8_t *startup_command_ptr,
     size_t startup_command_len,
     TermyFfiTerminal **out_terminal);
+TermyFfiStatus termy_terminal_new_with_config(
+    TermyFfiSize size,
+    const TermyFfiConfig *config,
+    const uint8_t *startup_command_ptr,
+    size_t startup_command_len,
+    TermyFfiTerminal **out_terminal);
+TermyFfiStatus termy_config_load_default(TermyFfiConfig **out_config);
+TermyFfiStatus termy_config_load_path(
+    const uint8_t *path_ptr,
+    size_t path_len,
+    TermyFfiConfig **out_config);
+TermyFfiStatus termy_config_from_contents(
+    const uint8_t *contents_ptr,
+    size_t contents_len,
+    TermyFfiConfig **out_config);
+TermyFfiStatus termy_config_free(TermyFfiConfig *config);
+bool termy_config_loaded_from_disk(const TermyFfiConfig *config);
+size_t termy_config_runtime_scrollback_history(const TermyFfiConfig *config);
+size_t termy_config_diagnostic_count(const TermyFfiConfig *config);
+TermyFfiStatus termy_config_path(
+    const TermyFfiConfig *config,
+    TermyFfiBytes *out_path);
+TermyFfiStatus termy_config_diagnostics(
+    const TermyFfiConfig *config,
+    TermyFfiConfigDiagnosticBatch *out_batch);
+TermyFfiStatus termy_config_diagnostics_free(TermyFfiConfigDiagnosticBatch *batch);
 TermyFfiStatus termy_terminal_free(TermyFfiTerminal *terminal);
 TermyFfiStatus termy_terminal_write(
     TermyFfiTerminal *terminal,

@@ -1,3 +1,4 @@
+mod config;
 mod frame;
 mod keyboard;
 mod links;
@@ -11,6 +12,11 @@ mod render_metrics;
 mod runtime;
 mod shell_integration;
 
+pub use config::{
+    LoadedTermyConfig, TermyConfigError, load_config_from_contents, load_config_from_default_path,
+    load_config_from_path, runtime_config_from_app_config,
+    runtime_config_from_app_config_with_query_colors,
+};
 pub use frame::{TermyCell, TermyColor, TermyFrame};
 pub use keyboard::{
     Keystroke, Modifiers, TerminalKeyEventKind, TerminalKeyboardMode, TermyKeystroke,
@@ -37,3 +43,6 @@ pub use runtime::{
     resolve_launch_working_directory, resolve_working_directory_path,
 };
 pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState};
+pub use termy_config_core::{
+    AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport, config_path,
+};

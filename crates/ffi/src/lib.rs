@@ -1,11 +1,13 @@
 #![allow(clippy::missing_safety_doc)]
 
-use std::{ptr, slice, str};
+use std::{path::Path, ptr, slice, str};
 
 use termy_core::{
-    ProgressState, Terminal, TerminalClipboardTarget, TerminalDamageSnapshot, TerminalDirtySpan,
-    TerminalEvent, TerminalOptions, TerminalQueryColors, TerminalReplyHost, TerminalRuntimeConfig,
-    TerminalSize, TermyCell, TermyColor,
+    ConfigDiagnostic, ConfigDiagnosticKind, LoadedTermyConfig, ProgressState, Terminal,
+    TerminalClipboardTarget, TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent,
+    TerminalOptions, TerminalQueryColors, TerminalReplyHost, TerminalRuntimeConfig, TerminalSize,
+    TermyCell, TermyColor, load_config_from_contents, load_config_from_default_path,
+    load_config_from_path,
 };
 
 #[repr(C)]
@@ -15,6 +17,7 @@ pub enum TermyFfiStatus {
     Null = 1,
     InvalidUtf8 = 2,
     SpawnFailed = 3,
+    ConfigLoadFailed = 4,
 }
 
 #[repr(C)]
@@ -114,8 +117,28 @@ pub struct TermyFfiDamage {
     pub spans_capacity: usize,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiConfigDiagnostic {
+    pub line_number: usize,
+    pub kind: u32,
+    pub message: TermyFfiBytes,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiConfigDiagnosticBatch {
+    pub diagnostics_ptr: *mut TermyFfiConfigDiagnostic,
+    pub diagnostics_len: usize,
+    pub diagnostics_capacity: usize,
+}
+
 pub struct TermyFfiTerminal {
     terminal: Terminal,
+}
+
+pub struct TermyFfiConfig {
+    loaded: LoadedTermyConfig,
 }
 
 struct EmptyReplyHost;
@@ -268,20 +291,66 @@ unsafe fn optional_utf8<'a>(ptr: *const u8, len: usize) -> Result<Option<&'a str
         .map_err(|_| TermyFfiStatus::InvalidUtf8)
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn termy_size_default() -> TermyFfiSize {
-    let size = TerminalSize::default();
-    TermyFfiSize {
-        cols: size.cols,
-        rows: size.rows,
-        cell_width: size.cell_width,
-        cell_height: size.cell_height,
+unsafe fn required_utf8<'a>(ptr: *const u8, len: usize) -> Result<&'a str, TermyFfiStatus> {
+    if ptr.is_null() {
+        return Err(TermyFfiStatus::Null);
+    }
+
+    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
+    str::from_utf8(bytes).map_err(|_| TermyFfiStatus::InvalidUtf8)
+}
+
+unsafe fn contents_utf8<'a>(ptr: *const u8, len: usize) -> Result<&'a str, TermyFfiStatus> {
+    if ptr.is_null() {
+        if len == 0 {
+            return Ok("");
+        }
+        return Err(TermyFfiStatus::Null);
+    }
+
+    unsafe { required_utf8(ptr, len) }
+}
+
+fn config_diagnostic_kind(kind: ConfigDiagnosticKind) -> u32 {
+    match kind {
+        ConfigDiagnosticKind::UnknownSection => 1,
+        ConfigDiagnosticKind::UnknownRootKey => 2,
+        ConfigDiagnosticKind::UnknownColorKey => 3,
+        ConfigDiagnosticKind::InvalidSyntax => 4,
+        ConfigDiagnosticKind::InvalidValue => 5,
+        ConfigDiagnosticKind::DuplicateRootKey => 6,
     }
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn termy_terminal_new(
+fn ffi_config_diagnostic_from_diagnostic(diagnostic: ConfigDiagnostic) -> TermyFfiConfigDiagnostic {
+    TermyFfiConfigDiagnostic {
+        line_number: diagnostic.line_number,
+        kind: config_diagnostic_kind(diagnostic.kind),
+        message: ffi_bytes_from_string(diagnostic.message),
+    }
+}
+
+fn leak_loaded_config(
+    loaded: Result<LoadedTermyConfig, termy_core::TermyConfigError>,
+    out_config: *mut *mut TermyFfiConfig,
+) -> TermyFfiStatus {
+    if out_config.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let Ok(loaded) = loaded else {
+        return TermyFfiStatus::ConfigLoadFailed;
+    };
+
+    unsafe {
+        *out_config = Box::into_raw(Box::new(TermyFfiConfig { loaded }));
+    }
+    TermyFfiStatus::Ok
+}
+
+unsafe fn terminal_new_with_runtime_config(
     size: TermyFfiSize,
+    runtime_config: &TerminalRuntimeConfig,
     startup_command_ptr: *const u8,
     startup_command_len: usize,
     out_terminal: *mut *mut TermyFfiTerminal,
@@ -300,7 +369,7 @@ pub unsafe extern "C" fn termy_terminal_new(
         None,
         None,
         None,
-        Some(&TerminalRuntimeConfig::default()),
+        Some(runtime_config),
         startup_command,
     ) else {
         return TermyFfiStatus::SpawnFailed;
@@ -309,6 +378,216 @@ pub unsafe extern "C" fn termy_terminal_new(
     unsafe {
         *out_terminal = Box::into_raw(Box::new(TermyFfiTerminal { terminal }));
     }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn termy_size_default() -> TermyFfiSize {
+    let size = TerminalSize::default();
+    TermyFfiSize {
+        cols: size.cols,
+        rows: size.rows,
+        cell_width: size.cell_width,
+        cell_height: size.cell_height,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_new(
+    size: TermyFfiSize,
+    startup_command_ptr: *const u8,
+    startup_command_len: usize,
+    out_terminal: *mut *mut TermyFfiTerminal,
+) -> TermyFfiStatus {
+    unsafe {
+        terminal_new_with_runtime_config(
+            size,
+            &TerminalRuntimeConfig::default(),
+            startup_command_ptr,
+            startup_command_len,
+            out_terminal,
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_new_with_config(
+    size: TermyFfiSize,
+    config: *const TermyFfiConfig,
+    startup_command_ptr: *const u8,
+    startup_command_len: usize,
+    out_terminal: *mut *mut TermyFfiTerminal,
+) -> TermyFfiStatus {
+    if config.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    unsafe {
+        terminal_new_with_runtime_config(
+            size,
+            &(*config).loaded.runtime_config,
+            startup_command_ptr,
+            startup_command_len,
+            out_terminal,
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_load_default(
+    out_config: *mut *mut TermyFfiConfig,
+) -> TermyFfiStatus {
+    leak_loaded_config(load_config_from_default_path(), out_config)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_load_path(
+    path_ptr: *const u8,
+    path_len: usize,
+    out_config: *mut *mut TermyFfiConfig,
+) -> TermyFfiStatus {
+    let path = match unsafe { required_utf8(path_ptr, path_len) } {
+        Ok(path) => path,
+        Err(status) => return status,
+    };
+    leak_loaded_config(load_config_from_path(Path::new(path)), out_config)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_from_contents(
+    contents_ptr: *const u8,
+    contents_len: usize,
+    out_config: *mut *mut TermyFfiConfig,
+) -> TermyFfiStatus {
+    if out_config.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let contents = match unsafe { contents_utf8(contents_ptr, contents_len) } {
+        Ok(contents) => contents,
+        Err(status) => return status,
+    };
+
+    let loaded = load_config_from_contents(contents);
+    unsafe {
+        *out_config = Box::into_raw(Box::new(TermyFfiConfig { loaded }));
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_free(config: *mut TermyFfiConfig) -> TermyFfiStatus {
+    if config.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    unsafe {
+        drop(Box::from_raw(config));
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_loaded_from_disk(config: *const TermyFfiConfig) -> bool {
+    if config.is_null() {
+        return false;
+    }
+
+    unsafe { (*config).loaded.loaded_from_disk }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_runtime_scrollback_history(
+    config: *const TermyFfiConfig,
+) -> usize {
+    if config.is_null() {
+        return 0;
+    }
+
+    unsafe { (*config).loaded.runtime_config.scrollback_history }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_diagnostic_count(config: *const TermyFfiConfig) -> usize {
+    if config.is_null() {
+        return 0;
+    }
+
+    unsafe { (*config).loaded.diagnostics.len() }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_path(
+    config: *const TermyFfiConfig,
+    out_path: *mut TermyFfiBytes,
+) -> TermyFfiStatus {
+    if config.is_null() || out_path.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let path = unsafe { (*config).loaded.path.as_ref() };
+    let bytes = path.map_or_else(
+        || termy_null_buffer(),
+        |path| ffi_bytes_from_string(path.to_string_lossy().into_owned()),
+    );
+    unsafe {
+        *out_path = bytes;
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_diagnostics(
+    config: *const TermyFfiConfig,
+    out_batch: *mut TermyFfiConfigDiagnosticBatch,
+) -> TermyFfiStatus {
+    if config.is_null() || out_batch.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let diagnostics = unsafe {
+        (*config)
+            .loaded
+            .diagnostics
+            .clone()
+            .into_iter()
+            .map(ffi_config_diagnostic_from_diagnostic)
+            .collect::<Vec<_>>()
+    };
+    let (diagnostics_ptr, diagnostics_len, diagnostics_capacity) = leak_vec(diagnostics);
+
+    unsafe {
+        *out_batch = TermyFfiConfigDiagnosticBatch {
+            diagnostics_ptr,
+            diagnostics_len,
+            diagnostics_capacity,
+        };
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_diagnostics_free(
+    batch: *mut TermyFfiConfigDiagnosticBatch,
+) -> TermyFfiStatus {
+    if batch.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let batch = unsafe { &mut *batch };
+    if !batch.diagnostics_ptr.is_null() {
+        let diagnostics = unsafe {
+            Vec::from_raw_parts(
+                batch.diagnostics_ptr,
+                batch.diagnostics_len,
+                batch.diagnostics_capacity,
+            )
+        };
+        for diagnostic in diagnostics {
+            free_bytes(diagnostic.message);
+        }
+    }
+    *batch = TermyFfiConfigDiagnosticBatch::default();
     TermyFfiStatus::Ok
 }
 
@@ -617,5 +896,39 @@ mod tests {
         assert!(size.rows > 0);
         assert!(size.cell_width > 0.0);
         assert!(size.cell_height > 0.0);
+    }
+
+    #[test]
+    fn config_from_contents_exposes_runtime_fields_and_diagnostics() {
+        let contents = b"scrollback = 77\nunknown_key = true\n";
+        let mut config = ptr::null_mut();
+
+        let status =
+            unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) };
+        assert_eq!(status, TermyFfiStatus::Ok);
+        assert!(!config.is_null());
+
+        assert_eq!(
+            unsafe { termy_config_runtime_scrollback_history(config) },
+            77
+        );
+        assert_eq!(unsafe { termy_config_diagnostic_count(config) }, 1);
+
+        let mut diagnostics = TermyFfiConfigDiagnosticBatch::default();
+        assert_eq!(
+            unsafe { termy_config_diagnostics(config, &mut diagnostics) },
+            TermyFfiStatus::Ok
+        );
+        assert_eq!(diagnostics.diagnostics_len, 1);
+        let first = unsafe { *diagnostics.diagnostics_ptr };
+        assert_eq!(first.line_number, 2);
+        assert_eq!(first.kind, 2);
+        assert!(!first.message.ptr.is_null());
+
+        assert_eq!(
+            unsafe { termy_config_diagnostics_free(&mut diagnostics) },
+            TermyFfiStatus::Ok
+        );
+        assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
     }
 }
