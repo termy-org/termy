@@ -36,7 +36,6 @@ use std::{
     time::{Duration, Instant},
 };
 use sysinfo::{ProcessesToUpdate, System, get_current_pid};
-#[cfg(target_os = "macos")]
 use termy_auto_update::{AutoUpdater, UpdateState};
 use termy_config_core::{MAX_LINE_HEIGHT, MIN_LINE_HEIGHT};
 use termy_search::SearchState;
@@ -71,7 +70,6 @@ mod search;
 pub(crate) mod tab_strip;
 mod tabs;
 mod titles;
-#[cfg(target_os = "macos")]
 mod update_toasts;
 
 use self::benchmark::{BENCHMARK_SAMPLE_INTERVAL, BenchmarkConfig, BenchmarkSession};
@@ -1745,13 +1743,9 @@ pub struct TerminalView {
     render_metrics: TerminalRenderMetricsState,
     quit_prompt_in_flight: bool,
     allow_quit_without_prompt: bool,
-    #[cfg(target_os = "macos")]
     auto_updater: Option<Entity<AutoUpdater>>,
-    #[cfg(target_os = "macos")]
     show_update_banner: bool,
-    #[cfg(target_os = "macos")]
     last_notified_update_state: Option<UpdateState>,
-    #[cfg(target_os = "macos")]
     update_check_toast_id: Option<u64>,
     #[cfg(target_os = "macos")]
     native_file_drop_enabled: bool,
@@ -2439,15 +2433,7 @@ impl TerminalView {
     }
 
     pub(super) fn update_banner_visible(&self) -> bool {
-        #[cfg(target_os = "macos")]
-        {
-            self.show_update_banner
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            false
-        }
+        self.show_update_banner
     }
 
     #[cfg(target_os = "macos")]
@@ -3193,7 +3179,6 @@ impl TerminalView {
         }));
     }
 
-    #[cfg(target_os = "macos")]
     pub(super) fn overlay_banner_visible_for_state(state: Option<&UpdateState>) -> bool {
         matches!(
             state,
@@ -3202,10 +3187,50 @@ impl TerminalView {
                     | UpdateState::Downloading { .. }
                     | UpdateState::Downloaded { .. }
                     | UpdateState::Installing { .. }
+                    | UpdateState::InstallerLaunched { .. }
                     | UpdateState::Installed { .. }
                     | UpdateState::Error(_)
             )
         )
+    }
+
+    fn handle_auto_update_state_change(&mut self, state: &UpdateState, cx: &mut Context<Self>) {
+        self.sync_update_toasts(Some(state));
+        let was_banner_visible = self.show_update_banner;
+        self.show_update_banner = Self::overlay_banner_visible_for_state(Some(state));
+        self.notify_overlay(cx);
+        if self.show_update_banner != was_banner_visible {
+            cx.notify();
+        }
+
+        if matches!(state, UpdateState::InstallerLaunched { .. }) {
+            self.sync_persisted_native_workspace();
+            self.allow_quit_without_prompt = true;
+            cx.quit();
+        }
+    }
+
+    fn observe_auto_updater(&mut self, updater: &Entity<AutoUpdater>, cx: &mut Context<Self>) {
+        cx.observe(updater, |view, updater, cx| {
+            let state = updater.read(cx).state.clone();
+            view.handle_auto_update_state_change(&state, cx);
+        })
+        .detach();
+    }
+
+    fn ensure_auto_updater(&mut self, cx: &mut Context<Self>) -> Option<Entity<AutoUpdater>> {
+        if !AutoUpdater::supported_on_current_platform() {
+            return None;
+        }
+
+        if let Some(updater) = self.auto_updater.as_ref() {
+            return Some(updater.clone());
+        }
+
+        let updater = cx.new(|_| AutoUpdater::new(crate::APP_VERSION));
+        self.observe_auto_updater(&updater, cx);
+        self.auto_updater = Some(updater.clone());
+        Some(updater)
     }
 
     fn scrollbar_color(
@@ -4080,13 +4105,9 @@ impl TerminalView {
             render_metrics: TerminalRenderMetricsState::from_env(),
             quit_prompt_in_flight: false,
             allow_quit_without_prompt: false,
-            #[cfg(target_os = "macos")]
             auto_updater: None,
-            #[cfg(target_os = "macos")]
             show_update_banner: false,
-            #[cfg(target_os = "macos")]
             last_notified_update_state: None,
-            #[cfg(target_os = "macos")]
             update_check_toast_id: None,
             #[cfg(target_os = "macos")]
             native_file_drop_enabled: false,
@@ -4201,27 +4222,15 @@ impl TerminalView {
             .detach();
         }
 
-        #[cfg(target_os = "macos")]
-        if config.auto_update {
-            let updater = cx.new(|_| AutoUpdater::new(crate::APP_VERSION));
-            cx.observe(&updater, |view, updater, cx| {
-                let state = updater.read(cx).state.clone();
-                view.sync_update_toasts(Some(&state));
-                let was_banner_visible = view.show_update_banner;
-                view.show_update_banner = Self::overlay_banner_visible_for_state(Some(&state));
-                view.notify_overlay(cx);
-                if view.show_update_banner != was_banner_visible {
-                    cx.notify();
-                }
-            })
-            .detach();
+        if config.auto_update
+            && let Some(updater) = view.ensure_auto_updater(cx)
+        {
             let weak = updater.downgrade();
             cx.spawn(async move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
                 smol::Timer::after(Duration::from_millis(5000)).await;
                 cx.update(|cx| AutoUpdater::check(weak, cx));
             })
             .detach();
-            view.auto_updater = Some(updater);
         }
 
         view.sync_native_terminal_wakeup_interest();
@@ -5416,7 +5425,6 @@ mod tests {
         assert!(opaque < floor);
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn overlay_banner_visibility_tracks_updater_state_policy() {
         assert!(!TerminalView::overlay_banner_visible_for_state(None));
@@ -5432,7 +5440,10 @@ mod tests {
         assert!(TerminalView::overlay_banner_visible_for_state(Some(
             &UpdateState::Available {
                 version: "1.2.3".to_string(),
+                asset_name: "Termy-v1.2.3-macos-arm64.dmg".to_string(),
                 url: "https://example.com/installer".to_string(),
+                checksum_asset_name: Some("checksums.txt".to_string()),
+                checksum_url: Some("https://example.com/checksums.txt".to_string()),
                 extension: "dmg".to_string(),
             }
         )));
@@ -5451,6 +5462,11 @@ mod tests {
         )));
         assert!(TerminalView::overlay_banner_visible_for_state(Some(
             &UpdateState::Installing {
+                version: "1.2.3".to_string(),
+            }
+        )));
+        assert!(TerminalView::overlay_banner_visible_for_state(Some(
+            &UpdateState::InstallerLaunched {
                 version: "1.2.3".to_string(),
             }
         )));

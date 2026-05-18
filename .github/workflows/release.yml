@@ -93,7 +93,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: termy-setup-x64
-          path: target/dist/Termy-${{ env.VERSION }}-x64-Setup.exe
+          path: target/dist/Termy-${{ env.VERSION }}-windows-x64-Setup.exe
           if-no-files-found: error
 
   build-linux:
@@ -188,6 +188,14 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.tar.gz' -o -name '*.AppImage' \) -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > checksums.txt
+
       - name: Attach artifacts to release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
@@ -197,6 +205,7 @@ jobs:
             dist/*.exe
             dist/*.tar.gz
             dist/*.AppImage
+            dist/checksums.txt
           fail_on_unmatched_files: true
           overwrite_files: true
 

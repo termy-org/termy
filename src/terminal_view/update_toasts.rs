@@ -29,6 +29,12 @@ fn update_toast_effect(state: Option<&UpdateState>) -> UpdateToastEffect {
         Some(UpdateState::Installing { version }) => UpdateToastEffect::StartOrUpdateProgress {
             message: format!("Installing v{version}"),
         },
+        Some(UpdateState::InstallerLaunched { version }) => {
+            UpdateToastEffect::FinishProgressOrEnqueue {
+                kind: termy_toast::ToastKind::Info,
+                message: format!("Installer launched for v{version}; Termy will quit"),
+            }
+        }
         Some(UpdateState::Installed { version }) => UpdateToastEffect::FinishProgressOrEnqueue {
             kind: termy_toast::ToastKind::Success,
             message: installed_update_toast_message(version),
@@ -114,7 +120,10 @@ mod tests {
         assert_eq!(
             update_toast_effect(Some(&UpdateState::Available {
                 version: "0.1.79".to_string(),
+                asset_name: "Termy-v0.1.79-macos-arm64.dmg".to_string(),
                 url: "https://example.com".to_string(),
+                checksum_asset_name: Some("checksums.txt".to_string()),
+                checksum_url: Some("https://example.com/checksums.txt".to_string()),
                 extension: "dmg".to_string(),
             })),
             UpdateToastEffect::Enqueue {
@@ -156,6 +165,19 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn installer_launched_state_finishes_progress_toast() {
+        assert_eq!(
+            update_toast_effect(Some(&UpdateState::InstallerLaunched {
+                version: "0.1.79".to_string(),
+            })),
+            UpdateToastEffect::FinishProgressOrEnqueue {
+                kind: termy_toast::ToastKind::Info,
+                message: "Installer launched for v0.1.79; Termy will quit".to_string(),
+            }
+        );
     }
 
     #[test]

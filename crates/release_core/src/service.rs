@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use crate::DEFAULT_GITHUB_REPO;
 use crate::policy::{
     VersionComparison, compare_versions, current_arch, current_platform, extension_for_asset_name,
-    normalize_release_version, select_platform_asset,
+    normalize_release_version, select_checksum_asset, select_platform_asset,
 };
 use crate::source::ReleaseSource;
 use crate::transport::github::GithubReleaseSource;
@@ -12,7 +12,10 @@ use crate::transport::github::GithubReleaseSource;
 pub struct ReleaseInfo {
     pub version: String,
     pub release_url: String,
+    pub asset_name: String,
     pub download_url: String,
+    pub checksum_asset_name: Option<String>,
+    pub checksum_url: Option<String>,
     pub extension: String,
 }
 
@@ -38,11 +41,15 @@ pub fn fetch_latest_release_with_source(source: &impl ReleaseSource) -> Result<R
     let arch = current_arch();
     let asset = select_platform_asset(&payload.assets, current_platform(), arch)
         .with_context(|| format!("No installer asset found for this platform (arch: '{arch}')"))?;
+    let checksum_asset = select_checksum_asset(&payload.assets, &asset.name);
 
     Ok(ReleaseInfo {
         version,
         release_url: payload.release_url,
+        asset_name: asset.name.clone(),
         download_url: asset.download_url.clone(),
+        checksum_asset_name: checksum_asset.map(|asset| asset.name.clone()),
+        checksum_url: checksum_asset.map(|asset| asset.download_url.clone()),
         extension: extension_for_asset_name(&asset.name),
     })
 }
@@ -120,6 +127,7 @@ mod tests {
                 asset("Termy-v1.0.0-macos-x86_64.dmg"),
                 asset("Termy-v1.0.0-windows-x64.msi"),
                 asset("Termy-v1.0.0-linux-x86_64.tar.gz"),
+                asset("checksums.txt"),
             ],
         }
     }

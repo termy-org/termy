@@ -101,6 +101,14 @@ impl UpdateBannerModel {
                 tone: UpdateBannerTone::Info,
                 buttons: vec![],
             }),
+            UpdateState::InstallerLaunched { version } => Some(Self {
+                badge: "Installer",
+                message: format!("Version {version} installer launched"),
+                detail: Some("Termy will quit so the installer can finish the update.".to_string()),
+                progress_percent: None,
+                tone: UpdateBannerTone::Info,
+                buttons: vec![],
+            }),
             UpdateState::Installed { version } => Some(Self {
                 badge: "Installed",
                 message: format!("Version {version} installed"),
@@ -166,5 +174,16 @@ mod tests {
             model.buttons.first().map(|button| button.action),
             Some(UpdateBannerAction::Restart)
         );
+    }
+
+    #[test]
+    fn installer_launched_state_has_no_manual_action() {
+        let model = UpdateBannerModel::from_state(&UpdateState::InstallerLaunched {
+            version: "1.2.3".to_string(),
+        })
+        .expect("installer launched state should render an update banner");
+
+        assert_eq!(model.badge, "Installer");
+        assert!(model.buttons.is_empty());
     }
 }

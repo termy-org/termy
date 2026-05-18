@@ -25,13 +25,17 @@
 #endif
 
 [Setup]
+AppId={{7D3DD34B-5F8F-4D7B-BBC9-0F54B4C89142}
 AppName=Termy
 AppVersion={#MyAppVersion}
 AppPublisher=Termy
+AppPublisherURL=https://github.com/lassejlv/termy
+AppSupportURL=https://github.com/lassejlv/termy/issues
+AppUpdatesURL=https://github.com/lassejlv/termy/releases
 DefaultDirName={autopf}\Termy
 DefaultGroupName=Termy
 OutputDir=..\target\dist
-OutputBaseFilename=Termy-{#MyAppVersion}-{#MyArch}-Setup
+OutputBaseFilename=Termy-{#MyAppVersion}-windows-{#MyArch}-Setup
 SetupIconFile=..\assets\termy.ico
 Compression=lzma
 SolidCompression=yes
@@ -39,6 +43,9 @@ WizardStyle=modern
 ArchitecturesAllowed={#MyArchAllowed}
 ArchitecturesInstallIn64BitMode={#MyArchInstallMode}
 UninstallDisplayIcon={app}\{#MyExeName}
+PrivilegesRequired=admin
+CloseApplications=yes
+RestartApplications=no
 
 [Files]
 Source: "..\target\{#MyTarget}\release\{#MyExeName}"; DestDir: "{app}"; Flags: ignoreversion

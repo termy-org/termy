@@ -81,7 +81,6 @@ fn smoothstep(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-#[cfg(any(target_os = "macos", test))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct UpdateBannerLayout {
     overlay_top: f32,
@@ -533,7 +532,6 @@ impl Focusable for TerminalView {
 }
 
 impl TerminalView {
-    #[cfg(any(target_os = "macos", test))]
     fn update_banner_layout_for(
         show_update_banner: bool,
         vertical_tabs: bool,
@@ -559,7 +557,6 @@ impl TerminalView {
         })
     }
 
-    #[cfg(target_os = "macos")]
     fn update_banner_layout(&self) -> Option<UpdateBannerLayout> {
         Self::update_banner_layout_for(
             self.update_banner_visible(),
@@ -1195,7 +1192,6 @@ impl TerminalView {
         )
     }
 
-    #[cfg(target_os = "macos")]
     fn render_update_banner(
         &mut self,
         state: &UpdateState,
@@ -2389,7 +2385,6 @@ impl TerminalView {
             overlay.into_any_element()
         });
 
-        #[cfg(target_os = "macos")]
         let banner_overlay: Option<AnyElement> = if self.update_banner_visible() {
             let banner_state = self.auto_updater.as_ref().map(|e| e.read(cx).state.clone());
             let banner_layout = self.update_banner_layout();
@@ -2416,8 +2411,6 @@ impl TerminalView {
         } else {
             None
         };
-        #[cfg(not(target_os = "macos"))]
-        let banner_overlay: Option<AnyElement> = None;
 
         div()
             .id("terminal-overlay-layer")

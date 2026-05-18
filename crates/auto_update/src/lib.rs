@@ -1,6 +1,10 @@
 use anyhow::{Context, Result};
 use gpui::{App, AsyncApp, WeakEntity};
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
 pub use termy_release_core::ReleaseInfo;
 use termy_release_core::{UpdateCheck, check_for_updates};
 
@@ -11,7 +15,10 @@ pub enum UpdateState {
     UpToDate,
     Available {
         version: String,
+        asset_name: String,
         url: String,
+        checksum_asset_name: Option<String>,
+        checksum_url: Option<String>,
         extension: String,
     },
     Downloading {
@@ -24,6 +31,9 @@ pub enum UpdateState {
         installer_path: PathBuf,
     },
     Installing {
+        version: String,
+    },
+    InstallerLaunched {
         version: String,
     },
     Installed {
@@ -43,6 +53,10 @@ impl AutoUpdater {
             current_version,
             state: UpdateState::Idle,
         }
+    }
+
+    pub fn supported_on_current_platform() -> bool {
+        cfg!(any(target_os = "macos", target_os = "windows"))
     }
 
     pub fn check(entity: WeakEntity<Self>, cx: &mut App) {
@@ -67,7 +81,10 @@ impl AutoUpdater {
                         Ok(UpdateCheck::UpdateAvailable(info)) => {
                             this.state = UpdateState::Available {
                                 version: info.version,
+                                asset_name: info.asset_name,
                                 url: info.download_url,
+                                checksum_asset_name: info.checksum_asset_name,
+                                checksum_url: info.checksum_url,
                                 extension: info.extension,
                             };
                         }
@@ -89,14 +106,24 @@ impl AutoUpdater {
     pub fn install(entity: WeakEntity<Self>, cx: &mut App) {
         let Some(this) = entity.upgrade() else { return };
 
-        let (version, url, extension) = {
+        let (version, asset_name, url, checksum_asset_name, checksum_url, extension) = {
             let read = this.read(cx);
             match &read.state {
                 UpdateState::Available {
                     version,
+                    asset_name,
                     url,
+                    checksum_asset_name,
+                    checksum_url,
                     extension,
-                } => (version.clone(), url.clone(), extension.clone()),
+                } => (
+                    version.clone(),
+                    asset_name.clone(),
+                    url.clone(),
+                    checksum_asset_name.clone(),
+                    checksum_url.clone(),
+                    extension.clone(),
+                ),
                 _ => return,
             }
         };
@@ -113,9 +140,16 @@ impl AutoUpdater {
         let (progress_tx, progress_rx) = flume::bounded::<(u64, u64)>(4);
         let dest = cache_installer_path(&version, &extension);
         let dl_version = version.clone();
-        let bg = cx
-            .background_executor()
-            .spawn(async move { download_installer(&url, &dest, progress_tx) });
+        let bg = cx.background_executor().spawn(async move {
+            let path = download_installer(&url, &dest, progress_tx)?;
+            verify_installer_checksum(
+                &path,
+                &asset_name,
+                checksum_asset_name.as_deref(),
+                checksum_url.as_deref(),
+            )?;
+            Ok::<PathBuf, anyhow::Error>(path)
+        });
 
         // Progress reader
         let weak_progress = entity.clone();
@@ -160,7 +194,8 @@ impl AutoUpdater {
                     }
                     Err(e) => {
                         this.update(cx, |this, cx| {
-                            this.state = UpdateState::Error(format!("Download failed: {e}"));
+                            this.state =
+                                UpdateState::Error(format!("Download or verification failed: {e}"));
                             cx.notify();
                         });
                     }
@@ -196,8 +231,11 @@ impl AutoUpdater {
                 let Some(this) = weak.upgrade() else { return };
                 this.update(cx, |this, cx| {
                     match result {
-                        Ok(()) => {
+                        Ok(InstallOutcome::Installed) => {
                             this.state = UpdateState::Installed { version };
+                        }
+                        Ok(InstallOutcome::InstallerLaunched) => {
+                            this.state = UpdateState::InstallerLaunched { version };
                         }
                         Err(e) => {
                             this.state = UpdateState::Error(format!("Install failed: {e}"));
@@ -214,6 +252,13 @@ impl AutoUpdater {
         self.state = UpdateState::Idle;
         cx.notify();
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum InstallOutcome {
+    Installed,
+    InstallerLaunched,
 }
 
 #[cfg(target_os = "macos")]
@@ -258,7 +303,7 @@ fn cache_installer_path(version: &str, extension: &str) -> PathBuf {
 
 fn download_installer(
     url: &str,
-    dest: &PathBuf,
+    dest: &Path,
     progress_tx: flume::Sender<(u64, u64)>,
 ) -> Result<PathBuf> {
     let response = ureq::get(url)
@@ -288,11 +333,124 @@ fn download_installer(
         let _ = progress_tx.try_send((downloaded, total));
     }
 
-    Ok(dest.clone())
+    Ok(dest.to_path_buf())
+}
+
+fn verify_installer_checksum(
+    installer_path: &Path,
+    asset_name: &str,
+    checksum_asset_name: Option<&str>,
+    checksum_url: Option<&str>,
+) -> Result<()> {
+    let Some(checksum_url) = checksum_url else {
+        if checksum_required_for_current_platform() {
+            anyhow::bail!("Release is missing a checksum asset for {asset_name}");
+        }
+
+        log::warn!("Release has no checksum asset for {asset_name}; skipping verification");
+        return Ok(());
+    };
+
+    let checksum_text = download_checksum_text(checksum_url)?;
+    let allow_hash_only = checksum_asset_name.is_some_and(|checksum_asset_name| {
+        checksum_asset_name.eq_ignore_ascii_case(&format!("{asset_name}.sha256"))
+    });
+    let expected = expected_sha256_for_asset(&checksum_text, asset_name, allow_hash_only)
+        .with_context(|| format!("Checksum file did not contain an entry for {asset_name}"))?;
+    let actual = file_sha256_hex(installer_path)?;
+
+    if !actual.eq_ignore_ascii_case(&expected) {
+        anyhow::bail!("Checksum mismatch for {asset_name}: expected {expected}, got {actual}");
+    }
+
+    Ok(())
+}
+
+fn checksum_required_for_current_platform() -> bool {
+    cfg!(target_os = "windows")
+}
+
+fn download_checksum_text(url: &str) -> Result<String> {
+    ureq::get(url)
+        .set("User-Agent", "Termy-Updater/1.0")
+        .call()
+        .context("Failed to download checksum file")?
+        .into_string()
+        .context("Failed to read checksum file")
+}
+
+fn expected_sha256_for_asset(
+    checksum_text: &str,
+    asset_name: &str,
+    allow_hash_only: bool,
+) -> Option<String> {
+    let mut only_hash = None;
+    let mut hash_count = 0usize;
+
+    for line in checksum_text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let hashes = line
+            .split_whitespace()
+            .filter(|part| is_sha256_hex(part.trim()))
+            .collect::<Vec<_>>();
+        for hash in hashes {
+            hash_count += 1;
+            only_hash = Some(hash.to_ascii_lowercase());
+            if checksum_line_matches_asset(line, asset_name) {
+                return Some(hash.to_ascii_lowercase());
+            }
+        }
+    }
+
+    (allow_hash_only && hash_count == 1).then_some(only_hash?)
+}
+
+fn checksum_line_matches_asset(line: &str, asset_name: &str) -> bool {
+    let normalized_asset = normalize_checksum_name(asset_name);
+    line.split_whitespace()
+        .skip(1)
+        .map(normalize_checksum_name)
+        .any(|part| part == normalized_asset)
+}
+
+fn normalize_checksum_name(name: &str) -> String {
+    name.trim_matches(|ch| ch == '*' || ch == '"' || ch == '\'')
+        .trim_start_matches("./")
+        .replace('\\', "/")
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn file_sha256_hex(path: &Path) -> Result<String> {
+    let mut file = std::fs::File::open(path).context("Failed to open downloaded installer")?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 65536];
+
+    loop {
+        let n = file
+            .read(&mut buf)
+            .context("Failed to read downloaded installer for checksum")?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 #[cfg(target_os = "macos")]
-fn do_install(dmg_path: &PathBuf) -> Result<()> {
+fn do_install(dmg_path: &PathBuf) -> Result<InstallOutcome> {
     use std::process::Command;
 
     // Mount the DMG
@@ -387,71 +545,133 @@ fn do_install(dmg_path: &PathBuf) -> Result<()> {
         .arg("-quiet")
         .output();
 
-    install_result
+    install_result.map(|()| InstallOutcome::Installed)
 }
 
 #[cfg(target_os = "windows")]
-fn do_install(installer_path: &PathBuf) -> Result<()> {
-    use std::process::Command;
-
+fn do_install(installer_path: &PathBuf) -> Result<InstallOutcome> {
     let extension = installer_path
         .extension()
         .and_then(|e| e.to_str())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_ascii_lowercase();
 
-    match extension {
+    match extension.as_str() {
         "msi" => {
-            // Run MSI installer silently
-            let result = Command::new("msiexec")
-                .args([
-                    "/i",
-                    &installer_path.to_string_lossy(),
-                    "/passive",
-                    "/norestart",
-                ])
-                .output()
-                .context("Failed to run MSI installer")?;
-
-            if !result.status.success() {
-                anyhow::bail!(
-                    "MSI installation failed: {}",
-                    String::from_utf8_lossy(&result.stderr)
-                );
-            }
+            shell_execute_elevated(
+                "msiexec.exe",
+                &windows_msi_installer_parameters(installer_path),
+            )
+            .context("Failed to launch MSI installer")?;
         }
         "exe" => {
-            // Run Inno Setup installer with silent flags
-            // /VERYSILENT: No UI at all
-            // /SUPPRESSMSGBOXES: Suppress message boxes
-            // /NORESTART: Don't restart after install
-            // /CLOSEAPPLICATIONS: Close running instances of the app
-            let result = Command::new(installer_path)
-                .args([
-                    "/VERYSILENT",
-                    "/SUPPRESSMSGBOXES",
-                    "/NORESTART",
-                    "/CLOSEAPPLICATIONS",
-                ])
-                .output()
-                .context("Failed to run EXE installer")?;
-
-            if !result.status.success() {
-                anyhow::bail!(
-                    "Installer failed with exit code: {:?}",
-                    result.status.code()
-                );
-            }
+            shell_execute_elevated(
+                &installer_path.to_string_lossy(),
+                &windows_exe_installer_parameters(),
+            )
+            .context("Failed to launch EXE installer")?;
         }
         _ => {
             anyhow::bail!("Unsupported installer format: {}", extension);
         }
     }
 
+    Ok(InstallOutcome::InstallerLaunched)
+}
+
+#[cfg(target_os = "windows")]
+fn shell_execute_elevated(file: &str, parameters: &str) -> Result<()> {
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    use windows::core::PCWSTR;
+
+    let operation = wide_null("runas");
+    let file = wide_null(file);
+    let parameters = wide_null(parameters);
+
+    let result = unsafe {
+        ShellExecuteW(
+            None,
+            PCWSTR::from_raw(operation.as_ptr()),
+            PCWSTR::from_raw(file.as_ptr()),
+            PCWSTR::from_raw(parameters.as_ptr()),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    let code = result.0 as isize;
+    if code <= 32 {
+        anyhow::bail!("ShellExecuteW failed with code {code}");
+    }
+
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn wide_null(value: &str) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+
+    std::ffi::OsStr::new(value)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn windows_msi_installer_parameters(installer_path: &Path) -> String {
+    format!(
+        "/i {} /passive /norestart",
+        quote_windows_arg(&installer_path.to_string_lossy())
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn windows_exe_installer_parameters() -> String {
+    [
+        "/SILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/CLOSEAPPLICATIONS",
+    ]
+    .join(" ")
+}
+
+#[cfg(target_os = "windows")]
+fn quote_windows_arg(arg: &str) -> String {
+    if !arg.is_empty()
+        && !arg
+            .bytes()
+            .any(|byte| byte == b' ' || byte == b'\t' || byte == b'"')
+    {
+        return arg.to_string();
+    }
+
+    let mut quoted = String::from("\"");
+    let mut backslashes = 0usize;
+
+    for ch in arg.chars() {
+        match ch {
+            '\\' => backslashes += 1,
+            '"' => {
+                quoted.extend(std::iter::repeat_n('\\', (backslashes * 2) + 1));
+                quoted.push('"');
+                backslashes = 0;
+            }
+            _ => {
+                quoted.extend(std::iter::repeat_n('\\', backslashes));
+                backslashes = 0;
+                quoted.push(ch);
+            }
+        }
+    }
+
+    quoted.extend(std::iter::repeat_n('\\', backslashes * 2));
+    quoted.push('"');
+    quoted
+}
+
 #[cfg(target_os = "linux")]
-fn do_install(tarball_path: &PathBuf) -> Result<()> {
+fn do_install(tarball_path: &PathBuf) -> Result<InstallOutcome> {
     use std::process::Command;
 
     // Determine install directory: prefer ~/.local/bin, fall back to ~/bin
@@ -530,10 +750,86 @@ fn do_install(tarball_path: &PathBuf) -> Result<()> {
     // Cleanup
     let _ = std::fs::remove_dir_all(&temp_dir);
 
-    Ok(())
+    Ok(InstallOutcome::Installed)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-fn do_install(_installer_path: &PathBuf) -> Result<()> {
+fn do_install(_installer_path: &PathBuf) -> Result<InstallOutcome> {
     anyhow::bail!("Auto-install is only supported on macOS, Windows, and Linux")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checksum_parser_finds_matching_manifest_entry() {
+        let checksums = "\
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  Termy-v1.2.3-macos-arm64.dmg
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *Termy-v1.2.3-windows-x64-Setup.exe
+";
+
+        assert_eq!(
+            expected_sha256_for_asset(checksums, "Termy-v1.2.3-windows-x64-Setup.exe", false),
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string())
+        );
+    }
+
+    #[test]
+    fn checksum_parser_accepts_single_hash_asset_file_when_allowed() {
+        assert_eq!(
+            expected_sha256_for_asset(
+                "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+                "Termy-v1.2.3-windows-x64-Setup.exe",
+                true,
+            ),
+            Some("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string())
+        );
+    }
+
+    #[test]
+    fn checksum_parser_rejects_hash_only_manifest_without_asset_name() {
+        assert_eq!(
+            expected_sha256_for_asset(
+                "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+                "Termy-v1.2.3-windows-x64-Setup.exe",
+                false,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn checksum_parser_rejects_ambiguous_hash_only_asset_file() {
+        let checksums = "\
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+";
+
+        assert_eq!(
+            expected_sha256_for_asset(checksums, "Termy-v1.2.3-windows-x64-Setup.exe", true),
+            None
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_exe_installer_uses_silent_handoff_flags() {
+        assert_eq!(
+            windows_exe_installer_parameters(),
+            "/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_msi_installer_quotes_installer_path() {
+        let params = windows_msi_installer_parameters(Path::new(
+            "C:\\Users\\me\\Downloads\\Termy Setup.msi",
+        ));
+        assert_eq!(
+            params,
+            "/i \"C:\\Users\\me\\Downloads\\Termy Setup.msi\" /passive /norestart"
+        );
+    }
 }

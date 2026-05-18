@@ -119,19 +119,14 @@ impl TerminalView {
     }
 
     fn check_for_updates_action(&mut self, cx: &mut Context<Self>) {
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(updater) = self.auto_updater.as_ref() {
-                AutoUpdater::check(updater.downgrade(), cx);
-                self.update_check_toast_id = Some(termy_toast::loading("Checking for updates"));
-                self.notify_overlay(cx);
-            }
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            termy_toast::info("Auto updates are only available on macOS");
+        let Some(updater) = self.ensure_auto_updater(cx) else {
+            termy_toast::info("Auto updates are only available on macOS and Windows");
             self.notify_overlay(cx);
-        }
+            return;
+        };
+
+        AutoUpdater::check(updater.downgrade(), cx);
+        self.update_check_toast_id = Some(termy_toast::loading("Checking for updates"));
+        self.notify_overlay(cx);
     }
 }

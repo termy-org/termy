@@ -5676,7 +5676,7 @@ dependencies = [
 
 [[package]]
 name = "termy"
-version = "0.1.92"
+version = "0.1.93"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -5726,8 +5726,10 @@ dependencies = [
  "flume",
  "gpui",
  "log",
+ "sha2",
  "termy_release_core",
  "ureq",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -5739,7 +5741,7 @@ dependencies = [
 
 [[package]]
 name = "termy_cli"
-version = "0.1.92"
+version = "0.1.93"
 dependencies = [
  "anyhow",
  "clap",

@@ -81,6 +81,22 @@ pub fn select_platform_asset<'a>(
     }
 }
 
+pub fn select_checksum_asset<'a>(
+    assets: &'a [ReleaseAsset],
+    selected_asset_name: &str,
+) -> Option<&'a ReleaseAsset> {
+    let selected_checksum_name = format!("{selected_asset_name}.sha256");
+
+    assets
+        .iter()
+        .find(|asset| asset.name.eq_ignore_ascii_case(&selected_checksum_name))
+        .or_else(|| {
+            assets
+                .iter()
+                .find(|asset| is_checksum_manifest_name(&asset.name))
+        })
+}
+
 pub fn extension_for_asset_name(name: &str) -> String {
     if name.ends_with(".tar.gz") {
         "tar.gz".to_string()
@@ -93,6 +109,13 @@ pub fn extension_for_asset_name(name: &str) -> String {
     } else {
         "bin".to_string()
     }
+}
+
+fn is_checksum_manifest_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "checksums.txt" | "sha256sums" | "sha256sums.txt" | "sha256sum.txt"
+    )
 }
 
 fn find_macos_asset<'a>(assets: &'a [ReleaseAsset], arch: &str) -> Option<&'a ReleaseAsset> {
@@ -155,7 +178,7 @@ fn find_linux_asset<'a>(assets: &'a [ReleaseAsset], arch: &str) -> Option<&'a Re
 mod tests {
     use super::{
         PlatformKind, VersionComparison, compare_versions, extension_for_asset_name,
-        select_platform_asset,
+        select_checksum_asset, select_platform_asset,
     };
     use crate::source::ReleaseAsset;
 
@@ -214,6 +237,36 @@ mod tests {
             "Termy-v1.0.0-linux-aarch64.tar.gz"
         );
         assert!(select_platform_asset(&assets, PlatformKind::Other, "x86_64").is_none());
+    }
+
+    #[test]
+    fn selects_asset_specific_checksum_before_manifest() {
+        let assets = vec![
+            asset("checksums.txt"),
+            asset("Termy-v1.0.0-windows-x64-Setup.exe.sha256"),
+        ];
+
+        assert_eq!(
+            select_checksum_asset(&assets, "Termy-v1.0.0-windows-x64-Setup.exe")
+                .expect("checksum asset")
+                .name,
+            "Termy-v1.0.0-windows-x64-Setup.exe.sha256"
+        );
+    }
+
+    #[test]
+    fn selects_checksum_manifest_when_asset_specific_checksum_is_missing() {
+        let assets = vec![
+            asset("Termy-v1.0.0-windows-x64-Setup.exe"),
+            asset("checksums.txt"),
+        ];
+
+        assert_eq!(
+            select_checksum_asset(&assets, "Termy-v1.0.0-windows-x64-Setup.exe")
+                .expect("checksum manifest")
+                .name,
+            "checksums.txt"
+        );
     }
 
     fn asset(name: &str) -> ReleaseAsset {

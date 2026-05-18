@@ -167,7 +167,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "ISCC failed with exit code $LASTEXITCODE"
 }
 
-$outputFile = Join-Path $repoRoot "target\dist\Termy-$Version-$Arch-Setup.exe"
+$outputFile = Join-Path $repoRoot "target\dist\Termy-$Version-windows-$Arch-Setup.exe"
 if (-not (Test-Path $outputFile)) {
     throw "Installer build finished, but expected output was not found: $outputFile"
 }
