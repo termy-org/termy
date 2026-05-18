@@ -86,8 +86,6 @@ fn smoothstep(value: f32) -> f32 {
 struct UpdateBannerLayout {
     overlay_top: f32,
     overlay_left: f32,
-    root_spacer_height: f32,
-    terminal_pane_spacer_height: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -549,22 +547,12 @@ impl TerminalView {
         let right_pane_only = vertical_tabs && show_tab_strip_chrome;
         Some(UpdateBannerLayout {
             overlay_top: if right_pane_only {
-                0.0
+                10.0
             } else {
-                Self::window_titlebar_height_for(vertical_tabs, show_tab_strip_chrome)
+                Self::window_titlebar_height_for(vertical_tabs, show_tab_strip_chrome) + 10.0
             },
             overlay_left: if right_pane_only {
                 sidebar_width.max(0.0)
-            } else {
-                0.0
-            },
-            root_spacer_height: if right_pane_only {
-                0.0
-            } else {
-                Self::update_banner_height()
-            },
-            terminal_pane_spacer_height: if right_pane_only {
-                Self::update_banner_height()
             } else {
                 0.0
             },
@@ -1342,11 +1330,11 @@ impl TerminalView {
         let progress_element = model.progress_percent.map(|progress| {
             let mut progress_track = colors.foreground;
             progress_track.a = 0.12;
-            let progress_width = 140.0;
+            let progress_width = 220.0;
             let fill_width = (f32::from(progress) / 100.0) * progress_width;
 
             div()
-                .mt(px(4.0))
+                .mt(px(6.0))
                 .w(px(progress_width))
                 .h(px(3.0))
                 .rounded_full()
@@ -1363,30 +1351,35 @@ impl TerminalView {
 
         Some(
             div()
-                .id("update-banner")
+                .id("update-dialog")
                 .w_full()
-                .h(px(Self::update_banner_height()))
+                .max_w(px(380.0))
                 .flex_none()
                 .bg(banner_bg)
-                .border_b_1()
+                .border_1()
                 .border_color(border_color)
+                .rounded(px(8.0))
+                .shadow_md()
                 .child(
                     div()
-                        .size_full()
-                        .px(px(14.0))
+                        .w_full()
+                        .p(px(12.0))
                         .flex()
-                        .items_center()
+                        .items_start()
                         .justify_between()
-                        .gap(px(12.0))
+                        .gap(px(10.0))
                         .child(
                             div()
                                 .flex()
-                                .items_center()
-                                .gap(px(12.0))
+                                .items_start()
+                                .gap(px(10.0))
+                                .min_w(px(0.0))
+                                .flex_1()
                                 .child(
                                     div()
-                                        .w(px(28.0))
-                                        .h(px(28.0))
+                                        .w(px(30.0))
+                                        .h(px(30.0))
+                                        .flex_none()
                                         .rounded(px(TERMINAL_OVERLAY_GEOMETRY.control_radius))
                                         .bg(tone_bg)
                                         .flex()
@@ -1403,6 +1396,7 @@ impl TerminalView {
                                     div()
                                         .flex()
                                         .flex_col()
+                                        .min_w(px(0.0))
                                         .gap(px(1.0))
                                         .child(
                                             div()
@@ -1414,6 +1408,7 @@ impl TerminalView {
                                                         .text_size(px(13.0))
                                                         .font_weight(FontWeight::SEMIBOLD)
                                                         .text_color(primary_text)
+                                                        .overflow_hidden()
                                                         .child(model.message),
                                                 )
                                                 .child(
@@ -1428,6 +1423,7 @@ impl TerminalView {
                                             div()
                                                 .text_size(px(11.0))
                                                 .text_color(muted_text)
+                                                .line_height(px(15.0))
                                                 .child(detail)
                                                 .into_any()
                                         }))
@@ -2429,15 +2425,16 @@ impl TerminalView {
                     let layout = banner_layout.unwrap_or(UpdateBannerLayout {
                         overlay_top: 0.0,
                         overlay_left: 0.0,
-                        root_spacer_height: 0.0,
-                        terminal_pane_spacer_height: 0.0,
                     });
                     div()
-                        .id("update-banner-overlay")
+                        .id("update-dialog-overlay")
                         .absolute()
                         .top(px(layout.overlay_top))
                         .left(px(layout.overlay_left))
                         .right_0()
+                        .px(px(10.0))
+                        .flex()
+                        .justify_end()
                         .child(banner)
                         .into_any_element()
                 })
@@ -2874,35 +2871,6 @@ impl Render for TerminalView {
         let vertical_tab_strip = (self.vertical_tabs && show_tab_strip_chrome).then(|| {
             self.render_vertical_tab_strip(window, &colors, &ui_font_family, tabbar_bg, cx)
         });
-        #[cfg(target_os = "macos")]
-        let update_banner_layout = self.update_banner_layout();
-
-        #[cfg(target_os = "macos")]
-        let banner_spacer: Option<AnyElement> = update_banner_layout
-            .filter(|layout| layout.root_spacer_height > f32::EPSILON)
-            .map(|layout| {
-                div()
-                    .id("update-banner-spacer")
-                    .w_full()
-                    .h(px(layout.root_spacer_height))
-                    .flex_none()
-                    .into_any_element()
-            });
-        #[cfg(not(target_os = "macos"))]
-        let banner_spacer: Option<AnyElement> = None;
-        #[cfg(target_os = "macos")]
-        let terminal_banner_spacer: Option<AnyElement> = update_banner_layout
-            .filter(|layout| layout.terminal_pane_spacer_height > f32::EPSILON)
-            .map(|layout| {
-                div()
-                    .id("update-banner-terminal-spacer")
-                    .w_full()
-                    .h(px(layout.terminal_pane_spacer_height))
-                    .flex_none()
-                    .into_any_element()
-            });
-        #[cfg(not(target_os = "macos"))]
-        let terminal_banner_spacer: Option<AnyElement> = None;
         if self.terminal_scrollbar_mode() == ui_scrollbar::ScrollbarVisibilityMode::OnScroll
             && !self.terminal_scrollbar_animation_active
             && self.terminal_scrollbar_needs_animation(Instant::now())
@@ -3052,7 +3020,6 @@ impl Render for TerminalView {
                 }),
             )
             .children(titlebar_element)
-            .children(banner_spacer)
             .child(
                 div()
                     .id("terminal")
@@ -3152,7 +3119,6 @@ impl Render for TerminalView {
                                     .flex_1()
                                     .h_full()
                                     .overflow_hidden()
-                                    .children(terminal_banner_spacer)
                                     .child(
                                         div()
                                             .id("terminal-surface")
@@ -3298,27 +3264,23 @@ mod tests {
     }
 
     #[test]
-    fn update_banner_layout_stays_full_width_without_vertical_sidebar_chrome() {
+    fn update_dialog_layout_floats_below_titlebar_without_reserving_space() {
         assert_eq!(
             TerminalView::update_banner_layout_for(true, false, true, 0.0),
             Some(UpdateBannerLayout {
-                overlay_top: TerminalView::titlebar_height(),
+                overlay_top: TerminalView::titlebar_height() + 10.0,
                 overlay_left: 0.0,
-                root_spacer_height: TerminalView::update_banner_height(),
-                terminal_pane_spacer_height: 0.0,
             })
         );
     }
 
     #[test]
-    fn update_banner_layout_shifts_to_terminal_pane_for_visible_vertical_tabs() {
+    fn update_dialog_layout_shifts_to_terminal_pane_for_visible_vertical_tabs() {
         assert_eq!(
             TerminalView::update_banner_layout_for(true, true, true, 224.0),
             Some(UpdateBannerLayout {
-                overlay_top: 0.0,
+                overlay_top: 10.0,
                 overlay_left: 224.0,
-                root_spacer_height: 0.0,
-                terminal_pane_spacer_height: TerminalView::update_banner_height(),
             })
         );
     }

@@ -333,7 +333,19 @@ impl SettingsWindow {
         if self.theme_store_loaded || self.theme_store_loading {
             return;
         }
+        self.load_cached_theme_store_themes();
         self.refresh_theme_store_themes(cx);
+    }
+
+    fn load_cached_theme_store_themes(&mut self) {
+        let registry_url = Self::theme_store_registry_url();
+        let Some(themes) = theme_store::load_cached_theme_store_themes(&registry_url) else {
+            return;
+        };
+        self.theme_store_themes = themes;
+        self.theme_store_loaded = true;
+        self.theme_store_error = None;
+        self.theme_store_from_cache = true;
     }
 
     fn refresh_theme_store_themes(&mut self, cx: &mut Context<Self>) {
@@ -363,10 +375,17 @@ impl SettingsWindow {
                             view.theme_store_from_cache = from_cache;
                         }
                         Err(error) => {
-                            view.theme_store_themes.clear();
                             view.theme_store_loaded = true;
-                            view.theme_store_error = Some(error);
-                            view.theme_store_from_cache = false;
+                            if view.theme_store_themes.is_empty() {
+                                view.theme_store_error = Some(error);
+                                view.theme_store_from_cache = false;
+                            } else {
+                                log::warn!(
+                                    "Theme registry refresh failed; keeping cached themes: {error}"
+                                );
+                                view.theme_store_error = None;
+                                view.theme_store_from_cache = true;
+                            }
                         }
                     }
                     cx.notify();

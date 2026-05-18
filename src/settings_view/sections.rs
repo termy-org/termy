@@ -1064,7 +1064,9 @@ impl SettingsWindow {
         let text_primary = self.text_primary();
         let text_muted = self.text_muted();
 
-        if self.theme_store_loading || self.theme_store_error.is_some() {
+        if self.theme_store_themes.is_empty()
+            && (self.theme_store_loading || self.theme_store_error.is_some())
+        {
             return div().into_any_element();
         }
 

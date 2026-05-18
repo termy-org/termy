@@ -98,8 +98,6 @@ const TMUX_TITLE_REFRESH_DEBOUNCE_MS: u64 = 120;
 const CHILD_WORKING_DIR_CACHE_TTL_MS: u64 = 1500;
 const SELECTION_BG_ALPHA: f32 = 0.35;
 const DIM_TEXT_FACTOR: f32 = 0.66;
-#[cfg(target_os = "macos")]
-const UPDATE_BANNER_HEIGHT: f32 = 44.0;
 const COMMAND_PALETTE_WIDTH: f32 = 560.0;
 const COMMAND_PALETTE_MAX_ITEMS: usize = 8;
 const COMMAND_PALETTE_ROW_HEIGHT: f32 = 34.0;
@@ -2435,18 +2433,6 @@ impl TerminalView {
 
     pub(super) fn install_cli_available(&self) -> bool {
         self.install_cli_available
-    }
-
-    pub(super) const fn update_banner_height() -> f32 {
-        #[cfg(target_os = "macos")]
-        {
-            UPDATE_BANNER_HEIGHT
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            0.0
-        }
     }
 
     pub(super) fn update_banner_visible(&self) -> bool {

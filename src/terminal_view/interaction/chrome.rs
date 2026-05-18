@@ -123,35 +123,17 @@ impl TerminalView {
     fn terminal_content_top_inset_for(
         vertical_tabs: bool,
         show_tab_strip_chrome: bool,
-        show_update_banner: bool,
+        _show_update_banner: bool,
     ) -> f32 {
         Self::window_titlebar_height_for(vertical_tabs, show_tab_strip_chrome)
-            + if show_update_banner {
-                Self::update_banner_height()
-            } else {
-                0.0
-            }
     }
 
     fn vertical_tab_strip_top_inset_for(
         vertical_tabs: bool,
         show_tab_strip_chrome: bool,
-        show_update_banner: bool,
+        _show_update_banner: bool,
     ) -> f32 {
-        let titlebar_height =
-            Self::window_titlebar_height_for(vertical_tabs, show_tab_strip_chrome);
-        // When the vertical sidebar owns the top chrome, keep banner spacing
-        // scoped to the terminal pane so the sidebar geometry stays flush.
-        if vertical_tabs && show_tab_strip_chrome {
-            titlebar_height
-        } else {
-            titlebar_height
-                + if show_update_banner {
-                    Self::update_banner_height()
-                } else {
-                    0.0
-                }
-        }
+        Self::window_titlebar_height_for(vertical_tabs, show_tab_strip_chrome)
     }
 
     pub(in super::super) fn terminal_content_top_inset(&self) -> f32 {
@@ -221,18 +203,18 @@ mod tests {
     }
 
     #[test]
-    fn terminal_content_top_inset_includes_banner_for_horizontal_tabs() {
+    fn terminal_content_top_inset_ignores_floating_update_panel_for_horizontal_tabs() {
         assert_eq!(
             TerminalView::terminal_content_top_inset_for(false, true, true),
-            TerminalView::titlebar_height() + TerminalView::update_banner_height()
+            TerminalView::titlebar_height()
         );
     }
 
     #[test]
-    fn terminal_content_top_inset_includes_banner_for_visible_vertical_tabs() {
+    fn terminal_content_top_inset_ignores_floating_update_panel_for_visible_vertical_tabs() {
         assert_eq!(
             TerminalView::terminal_content_top_inset_for(true, true, true),
-            TerminalView::update_banner_height()
+            0.0
         );
     }
 
@@ -245,10 +227,10 @@ mod tests {
     }
 
     #[test]
-    fn vertical_tab_strip_top_inset_keeps_banner_when_sidebar_chrome_is_hidden() {
+    fn vertical_tab_strip_top_inset_ignores_floating_update_panel_when_sidebar_chrome_is_hidden() {
         assert_eq!(
             TerminalView::vertical_tab_strip_top_inset_for(true, false, true),
-            TerminalView::titlebar_height() + TerminalView::update_banner_height()
+            TerminalView::titlebar_height()
         );
     }
 

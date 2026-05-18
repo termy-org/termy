@@ -194,6 +194,17 @@ fn save_theme_store_cache(themes: &[ThemeStoreTheme], registry_url: &str, etag: 
     }
 }
 
+pub(crate) fn load_cached_theme_store_themes(registry_url: &str) -> Option<Vec<ThemeStoreTheme>> {
+    load_theme_store_cache().and_then(|cache| cached_themes_for_registry(cache, registry_url))
+}
+
+fn cached_themes_for_registry(
+    cache: ThemeRegistryCache,
+    registry_url: &str,
+) -> Option<Vec<ThemeStoreTheme>> {
+    (cache.registry_url == registry_url).then_some(cache.themes)
+}
+
 fn load_theme_store_cache() -> Option<ThemeRegistryCache> {
     let path = theme_store_cache_path()?;
     let bytes = std::fs::read(path).ok()?;
@@ -535,4 +546,49 @@ fn parse_theme_store_payload(
             .cmp(&right.name.to_ascii_lowercase())
     });
     Ok(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ThemeRegistryCache, ThemeStoreTheme, cached_themes_for_registry};
+
+    fn theme(slug: &str) -> ThemeStoreTheme {
+        ThemeStoreTheme {
+            name: slug.to_string(),
+            slug: slug.to_string(),
+            description: String::new(),
+            latest_version: Some("1.0.0".to_string()),
+            file_url: Some(format!("https://example.com/{slug}.json")),
+        }
+    }
+
+    #[test]
+    fn cached_themes_only_load_for_matching_registry_url() {
+        let cached_themes = vec![theme("tokyo-night")];
+        let cache = ThemeRegistryCache {
+            version: 1,
+            fetched_at: 0,
+            registry_url: "https://example.com/index.json".to_string(),
+            etag: Some("etag".to_string()),
+            themes: cached_themes.clone(),
+        };
+
+        assert_eq!(
+            cached_themes_for_registry(cache, "https://example.com/index.json"),
+            Some(cached_themes)
+        );
+
+        let cache = ThemeRegistryCache {
+            version: 1,
+            fetched_at: 0,
+            registry_url: "https://example.com/index.json".to_string(),
+            etag: Some("etag".to_string()),
+            themes: vec![theme("tokyo-night")],
+        };
+
+        assert_eq!(
+            cached_themes_for_registry(cache, "https://other.example.com/index.json"),
+            None
+        );
+    }
 }
