@@ -217,6 +217,6 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               release_id: context.payload.release.id,
-              prerelease: false,
-              make_latest: "true"
+              prerelease: context.payload.release.prerelease,
+              make_latest: context.payload.release.prerelease ? "false" : "true"
             });
