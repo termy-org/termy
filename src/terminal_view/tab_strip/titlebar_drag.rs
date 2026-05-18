@@ -292,7 +292,7 @@ impl TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::terminal_view::tab_strip::layout::VerticalTabStripLayoutInput;
+    use crate::terminal_view::tab_strip::layout::{TabStripGeometry, VerticalTabStripLayoutInput};
     use crate::terminal_view::tab_strip::state::TabStripTitlebarState;
 
     fn vertical_layout(

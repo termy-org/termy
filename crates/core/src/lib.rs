@@ -41,8 +41,9 @@ pub use render_metrics::{
 pub use runtime::{
     TabTitleShellIntegration, Terminal, TerminalCursorState, TerminalCursorStyle,
     TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent, TerminalOptions,
-    TerminalRuntimeConfig, TerminalSize, WorkingDirFallback, normalize_working_directory_candidate,
-    resolve_launch_working_directory, resolve_working_directory_path,
+    TerminalRuntimeConfig, TerminalSize, WindowsShell, WorkingDirFallback,
+    normalize_working_directory_candidate, resolve_launch_working_directory,
+    resolve_working_directory_path,
 };
 pub use search::{TermySearchMatch, search_frame};
 pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState};

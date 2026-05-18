@@ -10,7 +10,7 @@ use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
 use crate::types::{
     AppConfig, AppearanceMode, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility,
     TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
-    TerminalScrollbarVisibility, ThemeId, WorkingDirFallback,
+    TerminalScrollbarVisibility, ThemeId, WindowsShell, WorkingDirFallback,
 };
 
 #[derive(Default)]
@@ -515,6 +515,19 @@ impl AppConfig {
                         parse_bool_field(&mut diagnostics, line_number, key, value)
                     {
                         config.show_termy_in_titlebar = parsed;
+                    }
+                }
+                RootSettingId::WindowsShell => {
+                    if let Some(parsed) = WindowsShell::from_str(value) {
+                        config.windows_shell = parsed;
+                    } else {
+                        push_invalid_value(
+                            &mut diagnostics,
+                            line_number,
+                            key,
+                            value,
+                            "one of: cmd, powershell, git_bash",
+                        );
                     }
                 }
                 RootSettingId::Shell => {

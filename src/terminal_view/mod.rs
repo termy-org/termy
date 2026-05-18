@@ -20,13 +20,15 @@ use gpui::{
     StatefulInteractiveElement, Styled, TouchPhase, WeakEntity, Window, WindowBackgroundAppearance,
     div, point, px, relative,
 };
+#[cfg(target_os = "macos")]
+use std::process::Stdio;
 use std::{
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     env,
     ops::Range,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -47,8 +49,9 @@ use termy_terminal_ui::{
     TerminalGridPaintCacheHandle, TerminalGridPaintDamage, TerminalGridRows, TerminalKeyEventKind,
     TerminalKeyboardMode, TerminalMouseMode, TerminalOptions, TerminalQueryColors,
     TerminalReplyHost, TerminalRuntimeConfig, TerminalSize, TmuxLaunchTarget,
-    WorkingDirFallback as RuntimeWorkingDirFallback, find_link_in_line, keystroke_to_input,
-    normalize_working_directory_candidate, resolve_launch_working_directory,
+    WindowsShell as RuntimeWindowsShell, WorkingDirFallback as RuntimeWorkingDirFallback,
+    find_link_in_line, keystroke_to_input, normalize_working_directory_candidate,
+    resolve_launch_working_directory,
 };
 use termy_terminal_ui::{TerminalUiRenderMetricsSnapshot, terminal_ui_render_metrics_snapshot};
 use termy_toast::ToastManager;
@@ -2472,6 +2475,12 @@ impl TerminalView {
 
         TerminalRuntimeConfig {
             shell: config.shell.clone(),
+            windows_shell: match config.windows_shell {
+                config::WindowsShell::Cmd => RuntimeWindowsShell::Cmd,
+                config::WindowsShell::PowerShell => RuntimeWindowsShell::PowerShell,
+                config::WindowsShell::PowerShellCore => RuntimeWindowsShell::PowerShellCore,
+                config::WindowsShell::GitBash => RuntimeWindowsShell::GitBash,
+            },
             term: config.term.clone(),
             colorterm: config.colorterm.clone(),
             query_colors: Self::terminal_query_colors(colors),

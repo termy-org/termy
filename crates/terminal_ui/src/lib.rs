@@ -36,8 +36,8 @@ pub use render_metrics::{
 pub use runtime::{
     TabTitleShellIntegration, Terminal, TerminalCursorState, TerminalDamageSnapshot,
     TerminalDirtySpan, TerminalEvent, TerminalOptions, TerminalRuntimeConfig, TerminalSize,
-    WorkingDirFallback, normalize_working_directory_candidate, resolve_launch_working_directory,
-    resolve_working_directory_path,
+    WindowsShell, WorkingDirFallback, normalize_working_directory_candidate,
+    resolve_launch_working_directory, resolve_working_directory_path,
 };
 pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState};
 pub use tmux::{

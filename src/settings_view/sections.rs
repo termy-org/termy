@@ -312,9 +312,18 @@ impl SettingsWindow {
     }
 
     pub(super) fn render_terminal_shell_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        #[cfg(target_os = "windows")]
+        let windows_shell_meta = Self::setting_metadata_or_fallback("windows_shell");
         let shell_meta = Self::setting_metadata_or_fallback("shell");
         let term_meta = Self::setting_metadata_or_fallback("term");
         let colorterm_meta = Self::setting_metadata_or_fallback("colorterm");
+        #[cfg(target_os = "windows")]
+        let shell = self
+            .config
+            .shell
+            .clone()
+            .unwrap_or_else(|| "Uses Windows Shell".to_string());
+        #[cfg(not(target_os = "windows"))]
         let shell = self
             .config
             .shell
@@ -327,7 +336,18 @@ impl SettingsWindow {
             .clone()
             .unwrap_or_else(|| "Disabled".to_string());
 
-        let rows = vec![
+        let mut rows = Vec::new();
+        #[cfg(target_os = "windows")]
+        rows.push(self.render_editable_row(
+            "windows_shell",
+            EditableField::WindowsShell,
+            windows_shell_meta.title,
+            windows_shell_meta.description,
+            self.editable_field_value(EditableField::WindowsShell),
+            cx,
+        ));
+
+        rows.extend([
             self.render_editable_row(
                 "shell",
                 EditableField::Shell,
@@ -352,7 +372,7 @@ impl SettingsWindow {
                 colorterm,
                 cx,
             ),
-        ];
+        ]);
         self.render_settings_group("SHELL", rows)
     }
 

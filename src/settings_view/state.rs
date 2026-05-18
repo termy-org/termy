@@ -18,6 +18,7 @@ pub(super) enum EditableField {
     LineHeight,
     PaddingX,
     PaddingY,
+    WindowsShell,
     Shell,
     Term,
     Colorterm,
@@ -241,8 +242,7 @@ impl SettingsWindow {
 
         #[cfg(not(target_os = "windows"))]
         {
-            let _ = setting;
-            true
+            !matches!(setting, RootSettingId::WindowsShell)
         }
     }
 
@@ -415,7 +415,8 @@ impl SettingsWindow {
             | EditableField::LineHeight
             | EditableField::PaddingX
             | EditableField::PaddingY => Self::appearance_field_spec(field),
-            EditableField::Shell
+            EditableField::WindowsShell
+            | EditableField::Shell
             | EditableField::Term
             | EditableField::Colorterm
             | EditableField::TmuxBinary
@@ -538,6 +539,7 @@ impl SettingsWindow {
 
     pub(super) fn terminal_field_spec(field: EditableField) -> FieldSpec {
         match field {
+            EditableField::WindowsShell => Self::enum_field_spec(RootSettingId::WindowsShell),
             EditableField::Shell => Self::text_field_spec(Some(RootSettingId::Shell)),
             EditableField::Term => Self::text_field_spec(Some(RootSettingId::Term)),
             EditableField::Colorterm => Self::text_field_spec(Some(RootSettingId::Colorterm)),
@@ -877,6 +879,13 @@ impl SettingsWindow {
             EditableField::LineHeight => format_line_height(self.config.line_height),
             EditableField::PaddingX => format!("{}", self.config.padding_x.round() as i32),
             EditableField::PaddingY => format!("{}", self.config.padding_y.round() as i32),
+            EditableField::WindowsShell => match self.config.windows_shell {
+                termy_config_core::WindowsShell::Cmd => "cmd",
+                termy_config_core::WindowsShell::PowerShell => "powershell",
+                termy_config_core::WindowsShell::PowerShellCore => "pwsh",
+                termy_config_core::WindowsShell::GitBash => "git_bash",
+            }
+            .to_string(),
             EditableField::Shell => self.config.shell.clone().unwrap_or_default(),
             EditableField::Term => self.config.term.clone(),
             EditableField::Colorterm => self.config.colorterm.clone().unwrap_or_default(),
@@ -1246,6 +1255,7 @@ mod tests {
             EditableField::LineHeight,
             EditableField::PaddingX,
             EditableField::PaddingY,
+            EditableField::WindowsShell,
             EditableField::Shell,
             EditableField::Term,
             EditableField::Colorterm,
@@ -1288,6 +1298,7 @@ mod tests {
     #[test]
     fn enum_fields_are_click_only_dropdowns() {
         let enum_fields = [
+            EditableField::WindowsShell,
             EditableField::CursorStyle,
             EditableField::ScrollbarVisibility,
             EditableField::ScrollbarStyle,

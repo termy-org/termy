@@ -5791,6 +5791,7 @@ dependencies = [
  "tempfile",
  "termy_config_core",
  "termy_themes",
+ "winreg",
 ]
 
 [[package]]
@@ -5840,6 +5841,7 @@ dependencies = [
  "gpui",
  "polling",
  "rustix-openpty",
+ "winreg",
 ]
 
 [[package]]

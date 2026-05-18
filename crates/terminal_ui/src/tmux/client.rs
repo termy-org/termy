@@ -1031,14 +1031,16 @@ mod tests {
     #[cfg(not(unix))]
     #[test]
     fn new_reports_unsupported_platform_on_non_unix() {
-        let error = TmuxClient::new(
+        let result = TmuxClient::new(
             TmuxRuntimeConfig::default(),
             120,
             40,
             None,
             None::<flume::Sender<()>>,
-        )
-        .expect_err("non-unix targets must reject tmux runtime startup");
+        );
+        let Err(error) = result else {
+            panic!("non-unix targets must reject tmux runtime startup");
+        };
         assert!(
             error
                 .to_string()

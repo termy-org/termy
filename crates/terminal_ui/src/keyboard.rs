@@ -836,10 +836,9 @@ impl SequenceModifiers {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        TerminalKeyEventKind, TerminalKeyboardMode, associated_text, keystroke_to_input,
-        pure_text_event_text,
-    };
+    #[cfg(target_os = "macos")]
+    use super::pure_text_event_text;
+    use super::{TerminalKeyEventKind, TerminalKeyboardMode, associated_text, keystroke_to_input};
     use gpui::{Keystroke, Modifiers};
 
     fn keystroke(key: &str, key_char: Option<&str>, modifiers: Modifiers) -> Keystroke {

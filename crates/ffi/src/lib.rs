@@ -1157,7 +1157,10 @@ mod tests {
             cell_width: 9.0,
             cell_height: 18.0,
         };
-        let command = b"printf 'alpha beta\nbeta gamma'";
+        #[cfg(target_os = "windows")]
+        let command: &[u8] = b"echo alpha beta && echo beta gamma";
+        #[cfg(not(target_os = "windows"))]
+        let command: &[u8] = b"printf 'alpha beta\nbeta gamma'";
         let mut terminal = ptr::null_mut();
 
         assert_eq!(

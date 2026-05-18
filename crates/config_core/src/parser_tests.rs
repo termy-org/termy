@@ -2,7 +2,7 @@ use crate::{
     AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle, DEFAULT_LINE_HEIGHT,
     PaneFocusEffect, Rgb8, RootSettingId, RootSettingValueKind, TabCloseVisibility, TabTitleMode,
     TabTitleSource, TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility,
-    WorkingDirFallback, root_setting_specs,
+    WindowsShell, WorkingDirFallback, root_setting_specs,
 };
 
 fn parse(input: &str) -> AppConfig {
@@ -297,6 +297,22 @@ fn enum_keys_parse_table_driven() {
     assert_eq!(
         parse("working_dir_fallback = invalid\n").working_dir_fallback,
         WorkingDirFallback::Home
+    );
+
+    let windows_shell_cases = [
+        ("cmd", WindowsShell::Cmd),
+        ("powershell", WindowsShell::PowerShell),
+        ("pwsh", WindowsShell::PowerShellCore),
+        ("powershell-7", WindowsShell::PowerShellCore),
+        ("git-bash", WindowsShell::GitBash),
+    ];
+    for (input, expected) in windows_shell_cases {
+        let config = parse(&format!("windows_shell = {input}\n"));
+        assert_eq!(config.windows_shell, expected);
+    }
+    assert_eq!(
+        parse("windows_shell = invalid\n").windows_shell,
+        WindowsShell::Cmd
     );
 
     assert!(parse("chrome_contrast = true\n").chrome_contrast);

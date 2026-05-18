@@ -1,6 +1,7 @@
 use crate::types::{
     AppConfig, AppearanceMode, CursorStyle, PaneFocusEffect, TabCloseVisibility, TabTitleMode,
-    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, WorkingDirFallback,
+    TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, WindowsShell,
+    WorkingDirFallback,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -291,6 +292,25 @@ pub const WORKING_DIR_FALLBACK_ENUM_CHOICES: &[EnumChoice] = &[
     },
 ];
 
+pub const WINDOWS_SHELL_ENUM_CHOICES: &[EnumChoice] = &[
+    EnumChoice {
+        value: "cmd",
+        label: "Command Prompt",
+    },
+    EnumChoice {
+        value: "powershell",
+        label: "Windows PowerShell",
+    },
+    EnumChoice {
+        value: "pwsh",
+        label: "PowerShell 7",
+    },
+    EnumChoice {
+        value: "git_bash",
+        label: "Git Bash",
+    },
+];
+
 pub const PANE_FOCUS_EFFECT_ENUM_CHOICES: &[EnumChoice] = &[
     EnumChoice {
         value: "off",
@@ -346,7 +366,8 @@ define_root_settings! {
     (VerticalTabsMinimized, "vertical_tabs_minimized", [], Tabs, "TAB STRIP", "Vertical Tabs Minimized", "Start vertical tabs in the collapsed state", ["tab", "tabs", "vertical", "minimized", "collapsed", "sidebar"], RootSettingValueKind::Boolean, false),
     (AutoHideTabbar, "auto_hide_tabbar", [], Tabs, "TAB STRIP", "Auto-hide Tab Bar", "Hide the tab bar when only one tab is open", ["tab", "tabs", "hide", "auto", "single", "tabbar"], RootSettingValueKind::Boolean, false),
     (ShowTermyInTitlebar, "show_termy_in_titlebar", [], Tabs, "TITLE BAR", "Show Termy In Titlebar", "Show or hide the termy branding in the titlebar", ["titlebar", "branding", "tabs"], RootSettingValueKind::Boolean, false),
-    (Shell, "shell", [], Terminal, "SHELL", "Shell", "Executable used for new sessions", ["shell", "bash", "zsh", "fish"], RootSettingValueKind::Text, false),
+    (WindowsShell, "windows_shell", [], Terminal, "SHELL", "Windows Shell Preset", "Preset shell used for new sessions on Windows", ["windows", "shell", "cmd", "powershell", "pwsh", "git bash"], RootSettingValueKind::Enum, false),
+    (Shell, "shell", [], Terminal, "SHELL", "Shell", "Optional executable path used for new sessions; overrides the Windows shell preset on Windows", ["shell", "bash", "zsh", "fish", "custom"], RootSettingValueKind::Text, false),
     (Term, "term", [], Terminal, "SHELL", "TERM", "TERM value exposed to child applications", ["term", "terminal", "env"], RootSettingValueKind::Text, false),
     (Colorterm, "colorterm", [], Terminal, "SHELL", "COLORTERM", "COLORTERM value exposed to child applications", ["colorterm", "color", "env"], RootSettingValueKind::Text, false),
     (WindowWidth, "window_width", [], Advanced, "WINDOW", "Window Width", "Default startup window width in pixels", ["window", "width", "startup", "size"], RootSettingValueKind::Numeric, false),
@@ -418,6 +439,7 @@ pub fn root_setting_enum_choices(id: RootSettingId) -> Option<&'static [EnumChoi
         RootSettingId::TabCloseVisibility => Some(TAB_CLOSE_VISIBILITY_ENUM_CHOICES),
         RootSettingId::TabWidthMode => Some(TAB_WIDTH_MODE_ENUM_CHOICES),
         RootSettingId::ThemeMode => Some(THEME_MODE_ENUM_CHOICES),
+        RootSettingId::WindowsShell => Some(WINDOWS_SHELL_ENUM_CHOICES),
         RootSettingId::CursorStyle => Some(CURSOR_STYLE_ENUM_CHOICES),
         RootSettingId::ScrollbarVisibility => Some(SCROLLBAR_VISIBILITY_ENUM_CHOICES),
         RootSettingId::ScrollbarStyle => Some(SCROLLBAR_STYLE_ENUM_CHOICES),
@@ -505,6 +527,12 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
         RootSettingId::VerticalTabsMinimized => Some(config.vertical_tabs_minimized.to_string()),
         RootSettingId::AutoHideTabbar => Some(config.auto_hide_tabbar.to_string()),
         RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar.to_string()),
+        RootSettingId::WindowsShell => Some(match config.windows_shell {
+            WindowsShell::Cmd => "cmd".to_string(),
+            WindowsShell::PowerShell => "powershell".to_string(),
+            WindowsShell::PowerShellCore => "pwsh".to_string(),
+            WindowsShell::GitBash => "git_bash".to_string(),
+        }),
         RootSettingId::Shell => config.shell.clone(),
         RootSettingId::Term => Some(config.term.clone()),
         RootSettingId::Colorterm => config.colorterm.clone(),
@@ -636,6 +664,15 @@ mod tests {
         assert_eq!(
             enum_choice_values(RootSettingId::WorkingDirFallback),
             vec!["home", "process"]
+        );
+
+        assert_eq!(
+            root_setting_value_kind(RootSettingId::WindowsShell),
+            RootSettingValueKind::Enum
+        );
+        assert_eq!(
+            enum_choice_values(RootSettingId::WindowsShell),
+            vec!["cmd", "powershell", "pwsh", "git_bash"]
         );
 
         assert_eq!(

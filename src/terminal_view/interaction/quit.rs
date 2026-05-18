@@ -40,8 +40,19 @@ impl TerminalView {
         ) && warn_on_quit
     }
 
-    fn should_force_quit_when_prompt_in_flight(target: CloseRequestTarget) -> bool {
-        matches!(target, CloseRequestTarget::Application)
+    fn should_force_close_when_prompt_in_flight(target: CloseRequestTarget) -> bool {
+        matches!(
+            target,
+            CloseRequestTarget::Application | CloseRequestTarget::WindowClose
+        )
+    }
+
+    fn tab_close_request_target(tab_count: usize, tab_id: TabId) -> CloseRequestTarget {
+        if tab_count <= 1 {
+            CloseRequestTarget::WindowClose
+        } else {
+            CloseRequestTarget::TabClose { tab_id }
+        }
     }
 
     pub(in super::super) fn execute_quit_command_action(
@@ -249,11 +260,20 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.quit_prompt_in_flight {
-            if Self::should_force_quit_when_prompt_in_flight(target) {
+            if Self::should_force_close_when_prompt_in_flight(target) {
                 // If the quit confirm prompt is unresponsive, allow a second
-                // Quit shortcut to force-close the app.
-                self.allow_quit_without_prompt = true;
-                cx.quit();
+                // close request to follow through.
+                match target {
+                    CloseRequestTarget::Application => {
+                        self.allow_quit_without_prompt = true;
+                        cx.quit();
+                    }
+                    CloseRequestTarget::WindowClose => {
+                        self.allow_quit_without_prompt = true;
+                        return true;
+                    }
+                    CloseRequestTarget::TabClose { .. } => {}
+                }
             }
             return false;
         }
@@ -351,11 +371,12 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tabs.len() <= 1 || self.active_tab >= self.tabs.len() {
+        if self.active_tab >= self.tabs.len() {
             return;
         }
         let tab_id = self.tabs[self.active_tab].id;
-        let _ = self.request_close(CloseRequestTarget::TabClose { tab_id }, window, cx);
+        let target = Self::tab_close_request_target(self.tabs.len(), tab_id);
+        let _ = self.request_close(target, window, cx);
     }
 
     pub(in super::super) fn request_tab_close_by_index(
@@ -364,11 +385,12 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tabs.len() <= 1 || index >= self.tabs.len() {
+        if index >= self.tabs.len() {
             return;
         }
         let tab_id = self.tabs[index].id;
-        let _ = self.request_close(CloseRequestTarget::TabClose { tab_id }, window, cx);
+        let target = Self::tab_close_request_target(self.tabs.len(), tab_id);
+        let _ = self.request_close(target, window, cx);
     }
 }
 
@@ -377,16 +399,28 @@ mod tests {
     use super::{CloseRequestTarget, TerminalView};
 
     #[test]
-    fn prompt_in_flight_force_quit_policy_only_allows_application_target() {
-        assert!(TerminalView::should_force_quit_when_prompt_in_flight(
+    fn prompt_in_flight_force_close_policy_allows_app_and_window_targets() {
+        assert!(TerminalView::should_force_close_when_prompt_in_flight(
             CloseRequestTarget::Application
         ));
-        assert!(!TerminalView::should_force_quit_when_prompt_in_flight(
+        assert!(TerminalView::should_force_close_when_prompt_in_flight(
             CloseRequestTarget::WindowClose
         ));
-        assert!(!TerminalView::should_force_quit_when_prompt_in_flight(
+        assert!(!TerminalView::should_force_close_when_prompt_in_flight(
             CloseRequestTarget::TabClose { tab_id: 1 }
         ));
+    }
+
+    #[test]
+    fn tab_close_request_targets_window_for_last_tab() {
+        assert_eq!(
+            TerminalView::tab_close_request_target(1, 7),
+            CloseRequestTarget::WindowClose
+        );
+        assert_eq!(
+            TerminalView::tab_close_request_target(2, 7),
+            CloseRequestTarget::TabClose { tab_id: 7 }
+        );
     }
 
     #[test]

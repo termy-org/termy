@@ -385,7 +385,7 @@ mod tests {
     fn predicted_prompt_seed_title_formats_absolute_home_path_relative() {
         let config = TabTitleConfig::default();
         let home = TerminalView::user_home_dir().expect("home dir");
-        let cwd = home.join("projects/termy");
+        let cwd = home.join("projects").join("termy");
         let expected = expected_home_relative_path(&["projects", "termy"]);
         let title = TerminalView::predicted_prompt_seed_title(
             &config,
@@ -522,7 +522,7 @@ mod tests {
     #[test]
     fn resolve_prompt_title_formats_absolute_home_paths_relative() {
         let home = TerminalView::user_home_dir().expect("home dir");
-        let cwd = home.join("projects/termy");
+        let cwd = home.join("projects").join("termy");
         let expected = expected_home_relative_path(&["projects", "termy"]);
 
         assert_eq!(
@@ -571,7 +571,10 @@ mod tests {
             ..Default::default()
         };
         let home = TerminalView::user_home_dir().expect("home dir");
-        let pane = pane_with(home.join("work/project").to_string_lossy().as_ref(), "zsh");
+        let pane = pane_with(
+            home.join("work").join("project").to_string_lossy().as_ref(),
+            "zsh",
+        );
         let expected = format!("cwd:{}", expected_home_relative_path(&["work", "project"]));
 
         let title = TerminalView::derive_tmux_shell_title(&tab_title, &pane);

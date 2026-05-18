@@ -131,7 +131,8 @@ impl TerminalView {
                         .font_weight(FontWeight::BOLD)
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                            cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
+                                window.prevent_default();
                                 let _ = this.set_tab_pinned(close_tab_index, false, cx);
                                 cx.stop_propagation();
                             }),
@@ -182,17 +183,9 @@ impl TerminalView {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, _event: &MouseDownEvent, window, cx| {
-                            let is_active = close_tab_index == this.active_tab;
-                            if Self::tab_shows_close(
-                                this.tab_close_visibility,
-                                is_active,
-                                this.tab_strip.hovered_tab,
-                                this.tab_strip.hovered_tab_close,
-                                close_tab_index,
-                            ) {
-                                this.request_tab_close_by_index(close_tab_index, window, cx);
-                                cx.stop_propagation();
-                            }
+                            window.prevent_default();
+                            this.request_tab_close_by_index(close_tab_index, window, cx);
+                            cx.stop_propagation();
                         }),
                     )
                     .on_mouse_move(cx.listener(

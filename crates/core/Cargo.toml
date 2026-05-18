@@ -19,5 +19,8 @@ termy_themes = { path = "../themes" }
 [target.'cfg(unix)'.dependencies]
 rustix-openpty = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
 [dev-dependencies]
 tempfile = "3"

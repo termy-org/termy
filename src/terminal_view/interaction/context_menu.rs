@@ -3,6 +3,14 @@ use super::*;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 impl TerminalView {
+    fn terminal_context_menu_buffer_position(
+        &self,
+        position: gpui::Point<Pixels>,
+    ) -> Option<SelectionPos> {
+        let (_, buffer_position) = self.position_to_pane_selection_pos(position, false)?;
+        Some(buffer_position)
+    }
+
     pub(in super::super) fn format_terminal_buffer_position(position: SelectionPos) -> String {
         format!(
             "Buffer Position: Line {}, Column {}",
@@ -10,16 +18,9 @@ impl TerminalView {
         )
     }
 
+    #[cfg(any(test, target_os = "macos"))]
     fn copyable_terminal_buffer_position(position: SelectionPos) -> String {
         format!("line={},col={}", position.line, position.col)
-    }
-
-    fn terminal_context_menu_buffer_position(
-        &self,
-        position: gpui::Point<Pixels>,
-    ) -> Option<SelectionPos> {
-        let (_, buffer_position) = self.position_to_pane_selection_pos(position, false)?;
-        Some(buffer_position)
     }
 
     fn terminal_context_menu_capabilities(&self, cx: &mut Context<Self>) -> (bool, bool) {
@@ -32,6 +33,7 @@ impl TerminalView {
         (can_copy, can_paste)
     }
 
+    #[cfg(any(test, target_os = "macos"))]
     fn command_action_for_context_menu_action(
         action: termy_native_sdk::ContextMenuAction,
     ) -> Option<CommandAction> {
@@ -94,27 +96,7 @@ impl TerminalView {
         let _ = self.execute_input_command_action(action, cx);
     }
 
-    pub(in super::super) fn execute_terminal_context_menu_copy_buffer_position(
-        &mut self,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(position) = self
-            .terminal_context_menu
-            .as_ref()
-            .and_then(|state| state.buffer_position)
-        else {
-            let _ = self.close_terminal_context_menu(cx);
-            return;
-        };
-
-        let _ = self.close_terminal_context_menu(cx);
-        cx.write_to_clipboard(ClipboardItem::new_string(
-            Self::copyable_terminal_buffer_position(position),
-        ));
-        termy_toast::success("Copied buffer position");
-        self.notify_overlay(cx);
-    }
-
+    #[cfg(target_os = "macos")]
     fn execute_terminal_context_menu_action(
         &mut self,
         action: termy_native_sdk::ContextMenuAction,
@@ -135,6 +117,26 @@ impl TerminalView {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    fn execute_terminal_context_menu_copy_buffer_position(&mut self, cx: &mut Context<Self>) {
+        let Some(position) = self
+            .terminal_context_menu
+            .as_ref()
+            .and_then(|state| state.buffer_position)
+        else {
+            let _ = self.close_terminal_context_menu(cx);
+            return;
+        };
+
+        let _ = self.close_terminal_context_menu(cx);
+        cx.write_to_clipboard(ClipboardItem::new_string(
+            Self::copyable_terminal_buffer_position(position),
+        ));
+        termy_toast::success("Copied buffer position");
+        self.notify_overlay(cx);
+    }
+
+    #[cfg(target_os = "macos")]
     fn execute_tab_context_menu_action(
         &mut self,
         action: termy_native_sdk::TabContextMenuAction,
@@ -271,6 +273,7 @@ impl TerminalView {
 
         #[cfg(not(target_os = "macos"))]
         {
+            let _ = native_anchor;
             if state_changed {
                 self.notify_overlay(cx);
             }
@@ -288,16 +291,6 @@ impl TerminalView {
                 cx,
             );
         }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    pub(in super::super) fn open_tab_context_menu(
-        &mut self,
-        tab_index: usize,
-        position: gpui::Point<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        self.open_tab_context_menu_with_native_anchor(tab_index, position, None, cx);
     }
 
     pub(in super::super) fn open_tab_context_menu_for_window(
@@ -342,6 +335,7 @@ impl TerminalView {
 
         #[cfg(not(target_os = "macos"))]
         {
+            let _ = native_anchor;
             if state_changed {
                 self.notify_overlay(cx);
             }

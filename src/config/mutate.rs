@@ -2,9 +2,12 @@ use std::{
     collections::HashMap,
     fs,
     io::Read,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{LazyLock, Mutex},
 };
+
+#[cfg(test)]
+use std::cell::RefCell;
 
 use fs4::fs_std::FileExt;
 use termy_config_core::{
@@ -15,9 +18,39 @@ use termy_config_core::{
 };
 
 use super::ConfigIoError;
+#[cfg(test)]
+use super::DEFAULT_CONFIG;
 use super::io::{ensure_config_file, notify_config_changed, write_atomic};
 
 static CONFIG_UPDATE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+#[cfg(test)]
+thread_local! {
+    static TEST_CONFIG_PATH_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
+fn config_file_for_update() -> Result<PathBuf, ConfigIoError> {
+    #[cfg(test)]
+    {
+        if let Some(path) = TEST_CONFIG_PATH_OVERRIDE
+            .with(|override_path| override_path.borrow().as_ref().map(PathBuf::clone))
+        {
+            if !path.exists() {
+                let parent = path
+                    .parent()
+                    .ok_or_else(|| ConfigIoError::InvalidConfigPath(path.clone()))?;
+                fs::create_dir_all(parent).map_err(|source| ConfigIoError::CreateDir {
+                    path: parent.to_path_buf(),
+                    source,
+                })?;
+                write_atomic(&path, DEFAULT_CONFIG)?;
+            }
+            return Ok(path);
+        }
+    }
+
+    ensure_config_file()
+}
 
 fn update_config_contents<R>(
     updater: impl FnOnce(&str) -> Result<(String, R), String>,
@@ -26,7 +59,7 @@ fn update_config_contents<R>(
         log::warn!("Config update lock was poisoned; recovering lock state");
         poison.into_inner()
     });
-    let config_path = ensure_config_file().map_err(|error| error.to_string())?;
+    let config_path = config_file_for_update().map_err(|error| error.to_string())?;
     let lock_path = config_path.with_extension("lock");
     let lock_path_display = lock_path.display().to_string();
     let process_lock_file = fs::OpenOptions::new()
@@ -281,65 +314,71 @@ fn upsert_task_lines(contents: &str, task: &TaskConfig) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
-    use std::path::Path;
-    use std::sync::{LazyLock, Mutex};
+    use std::path::{Path, PathBuf};
 
+    use super::{TEST_CONFIG_PATH_OVERRIDE, write_atomic};
     use super::{clear_color_settings, import_colors_from_json, upsert_task_lines};
     use crate::config::TaskConfig;
 
-    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-
-    struct XdgConfigHomeGuard {
-        previous_xdg: Option<OsString>,
+    struct ConfigPathOverrideGuard {
+        previous: Option<PathBuf>,
     }
 
-    impl XdgConfigHomeGuard {
-        fn set(xdg_home: &Path) -> Self {
-            let previous_xdg = std::env::var_os("XDG_CONFIG_HOME");
-            unsafe { std::env::set_var("XDG_CONFIG_HOME", xdg_home) };
-            Self { previous_xdg }
+    impl ConfigPathOverrideGuard {
+        fn set(path: &Path) -> Self {
+            let previous = TEST_CONFIG_PATH_OVERRIDE
+                .with(|override_path| override_path.replace(Some(path.to_path_buf())));
+            Self { previous }
         }
     }
 
-    impl Drop for XdgConfigHomeGuard {
+    impl Drop for ConfigPathOverrideGuard {
         fn drop(&mut self) {
-            if let Some(previous) = self.previous_xdg.take() {
-                unsafe { std::env::set_var("XDG_CONFIG_HOME", previous) };
-            } else {
-                unsafe { std::env::remove_var("XDG_CONFIG_HOME") };
-            }
+            let previous = self.previous.take();
+            TEST_CONFIG_PATH_OVERRIDE.with(|override_path| {
+                override_path.replace(previous);
+            });
         }
     }
 
-    fn with_temp_xdg_config_home_inner(test: impl FnOnce(&Path)) {
+    fn with_temp_config_file_inner(
+        initial_contents: Option<&str>,
+        test: impl FnOnce(&Path, &Path),
+    ) {
         let temp_dir = tempfile::tempdir().expect("tempdir");
-        let xdg_home = temp_dir.path().join("xdg");
-        std::fs::create_dir_all(&xdg_home).expect("create xdg home");
+        let config_dir = temp_dir.path().join("config");
+        std::fs::create_dir_all(&config_dir).expect("create config dir");
+        let config_path = config_dir.join("config.txt");
+        write_atomic(
+            &config_path,
+            initial_contents.unwrap_or(crate::config::DEFAULT_CONFIG),
+        )
+        .expect("write config");
 
-        let _restore_guard = XdgConfigHomeGuard::set(&xdg_home);
-        test(temp_dir.path());
+        let _restore_guard = ConfigPathOverrideGuard::set(&config_path);
+        test(temp_dir.path(), &config_path);
     }
 
-    fn with_temp_xdg_config_home(test: impl FnOnce(&Path)) {
-        let _guard = ENV_LOCK.lock().expect("env lock");
-        with_temp_xdg_config_home_inner(test);
+    fn with_temp_config_file(test: impl FnOnce(&Path, &Path)) {
+        with_temp_config_file_inner(None, test);
     }
 
     #[test]
-    fn with_temp_xdg_config_home_restores_environment_after_panic() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
-        let before = std::env::var_os("XDG_CONFIG_HOME");
+    fn with_temp_config_file_restores_override_after_panic() {
+        let before = TEST_CONFIG_PATH_OVERRIDE.with(|override_path| override_path.borrow().clone());
         let result = std::panic::catch_unwind(|| {
-            with_temp_xdg_config_home_inner(|_| panic!("intentional panic"));
+            with_temp_config_file_inner(None, |_, _| panic!("intentional panic"));
         });
         assert!(result.is_err());
-        assert_eq!(std::env::var_os("XDG_CONFIG_HOME"), before);
+        assert_eq!(
+            TEST_CONFIG_PATH_OVERRIDE.with(|override_path| override_path.borrow().clone()),
+            before
+        );
     }
 
     #[test]
     fn import_colors_json_accepts_aliases_and_canonical_keys() {
-        with_temp_xdg_config_home(|temp_dir| {
+        with_temp_config_file(|temp_dir, _| {
             let json_path = temp_dir.join("colors.json");
             std::fs::write(
                 &json_path,
@@ -354,25 +393,21 @@ mod tests {
 
     #[test]
     fn clear_color_settings_removes_existing_color_overrides() {
-        with_temp_xdg_config_home(|temp_dir| {
-            let config_dir = temp_dir.join("xdg").join("termy");
-            std::fs::create_dir_all(&config_dir).expect("create config dir");
-            let config_path = config_dir.join("config.txt");
-            std::fs::write(
-                &config_path,
+        with_temp_config_file_inner(
+            Some(
                 "theme = imported-ghostty\n[colors]\nforeground = #112233\nbackground = #445566\nred = #778899\n",
-            )
-            .expect("write config");
+            ),
+            |_, config_path| {
+                clear_color_settings().expect("clear colors");
 
-            clear_color_settings().expect("clear colors");
-
-            let contents = std::fs::read_to_string(config_path).expect("read config");
-            assert!(contents.contains("theme = imported-ghostty\n"));
-            assert!(contents.contains("[colors]\n"));
-            assert!(!contents.contains("foreground ="));
-            assert!(!contents.contains("background ="));
-            assert!(!contents.contains("red ="));
-        });
+                let contents = std::fs::read_to_string(config_path).expect("read config");
+                assert!(contents.contains("theme = imported-ghostty\n"));
+                assert!(contents.contains("[colors]\n"));
+                assert!(!contents.contains("foreground ="));
+                assert!(!contents.contains("background ="));
+                assert!(!contents.contains("red ="));
+            },
+        );
     }
 
     #[test]

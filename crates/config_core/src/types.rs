@@ -253,6 +253,28 @@ impl TerminalScrollbarStyle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WindowsShell {
+    #[default]
+    Cmd,
+    PowerShell,
+    PowerShellCore,
+    GitBash,
+}
+
+impl WindowsShell {
+    pub(crate) fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "cmd" | "command_prompt" | "commandprompt" => Some(Self::Cmd),
+            "powershell" | "power_shell" | "windows_powershell" | "ps" => Some(Self::PowerShell),
+            "pwsh" | "powershell_core" | "powershellcore" | "powershell_7" | "powershell-7"
+            | "powershell7" | "power_shell_7" | "power_shell_core" => Some(Self::PowerShellCore),
+            "git_bash" | "gitbash" | "git-bash" | "bash" => Some(Self::GitBash),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PaneFocusEffect {
     Off,
     #[default]
@@ -310,6 +332,7 @@ pub struct AppConfig {
     pub vertical_tabs_minimized: bool,
     pub auto_hide_tabbar: bool,
     pub show_termy_in_titlebar: bool,
+    pub windows_shell: WindowsShell,
     pub shell: Option<String>,
     pub term: String,
     pub colorterm: Option<String>,
@@ -392,6 +415,7 @@ impl Default for AppConfig {
             vertical_tabs_minimized: false,
             auto_hide_tabbar: true,
             show_termy_in_titlebar: true,
+            windows_shell: WindowsShell::default(),
             shell: None,
             term: DEFAULT_TERM.to_string(),
             colorterm: Some(DEFAULT_COLORTERM.to_string()),

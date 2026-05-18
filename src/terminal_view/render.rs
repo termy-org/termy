@@ -1959,30 +1959,6 @@ impl TerminalView {
                     .child("Open Search")
                     .into_any_element()
             };
-            let copy_buffer_position_item = |enabled: bool| {
-                let text_color = if enabled { text_active } else { text_disabled };
-                div()
-                    .id("terminal-context-menu-copy-buffer-position")
-                    .h(px(row_height))
-                    .px(px(10.0))
-                    .flex()
-                    .items_center()
-                    .text_size(px(13.0))
-                    .text_color(text_color)
-                    .when(enabled, |s| s.cursor_pointer())
-                    .when(enabled, |s| s.hover(|style| style.bg(hover_bg)))
-                    .when(enabled, |s| {
-                        s.on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |view, _event: &MouseDownEvent, _window, cx| {
-                                view.execute_terminal_context_menu_copy_buffer_position(cx);
-                                cx.stop_propagation();
-                            }),
-                        )
-                    })
-                    .child("Copy Buffer Position")
-                    .into_any_element()
-            };
 
             Some(
                 div()
@@ -2047,7 +2023,6 @@ impl TerminalView {
                                     TerminalView::format_terminal_buffer_position(position),
                                 ))
                             })
-                            .child(copy_buffer_position_item(state.buffer_position.is_some()))
                             .child(command_item(
                                 "terminal-context-menu-copy",
                                 "Copy",

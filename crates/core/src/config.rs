@@ -7,12 +7,13 @@ use std::{
 use crate::TermyColor;
 use crate::protocol::TerminalQueryColors;
 use crate::runtime::{
-    TerminalCursorStyle, TerminalRuntimeConfig, WorkingDirFallback as RuntimeWorkingDirFallback,
+    TerminalCursorStyle, TerminalRuntimeConfig, WindowsShell as RuntimeWindowsShell,
+    WorkingDirFallback as RuntimeWorkingDirFallback,
 };
 use alacritty_terminal::vte::ansi::Rgb as AnsiRgb;
 use termy_config_core::{
     AppConfig, ConfigDiagnostic, CursorStyle, SHELL_DECIDE_THEME_ID, SystemAppearance,
-    WorkingDirFallback, resolve_active_theme,
+    WindowsShell, WorkingDirFallback, resolve_active_theme,
 };
 use termy_themes::{ThemeColors, normalize_theme_id, parse_theme_colors_json};
 
@@ -120,6 +121,12 @@ pub fn runtime_config_from_app_config_with_query_colors(
 
     TerminalRuntimeConfig {
         shell: config.shell.clone(),
+        windows_shell: match config.windows_shell {
+            WindowsShell::Cmd => RuntimeWindowsShell::Cmd,
+            WindowsShell::PowerShell => RuntimeWindowsShell::PowerShell,
+            WindowsShell::PowerShellCore => RuntimeWindowsShell::PowerShellCore,
+            WindowsShell::GitBash => RuntimeWindowsShell::GitBash,
+        },
         term: config.term.clone(),
         colorterm: config.colorterm.clone(),
         query_colors,

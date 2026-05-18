@@ -4,7 +4,6 @@ use crate::keyboard::TerminalKeyboardMode;
 use crate::locale::{Utf8LocaleOverridePlan, preferred_utf8_locale, utf8_locale_override_plan};
 use crate::mouse_protocol::TerminalMouseMode;
 use crate::osc_intercept::{OscEvent, OscInterceptor};
-#[cfg(not(target_os = "windows"))]
 use crate::path_env::normalized_path_env;
 use crate::protocol::{TerminalQueryColors, TerminalReplyHost, reply_bytes_for_event};
 use crate::render_metrics::increment_runtime_wakeup_count;
@@ -73,6 +72,15 @@ impl Default for WorkingDirFallback {
 
 const DEFAULT_SCROLLBACK_HISTORY: usize = 2000;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WindowsShell {
+    #[default]
+    Cmd,
+    PowerShell,
+    PowerShellCore,
+    GitBash,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalCursorStyle {
     Line,
@@ -104,6 +112,7 @@ impl Default for TerminalOptions {
 #[derive(Debug, Clone)]
 pub struct TerminalRuntimeConfig {
     pub shell: Option<String>,
+    pub windows_shell: WindowsShell,
     pub term: String,
     pub colorterm: Option<String>,
     pub query_colors: TerminalQueryColors,
@@ -116,6 +125,7 @@ impl Default for TerminalRuntimeConfig {
     fn default() -> Self {
         Self {
             shell: None,
+            windows_shell: WindowsShell::default(),
             term: DEFAULT_TERM.to_string(),
             colorterm: Some(DEFAULT_COLORTERM.to_string()),
             query_colors: TerminalQueryColors::default(),
@@ -256,6 +266,48 @@ fn login_shell_args(shell_path: &str) -> Vec<String> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ShellLaunch {
+    program: String,
+    args: Vec<String>,
+}
+
+#[cfg(target_os = "windows")]
+fn windows_cmd_path() -> String {
+    if let Ok(comspec) = env::var("COMSPEC")
+        && !comspec.trim().is_empty()
+    {
+        return comspec;
+    }
+    "C:\\Windows\\System32\\cmd.exe".to_string()
+}
+
+#[cfg(target_os = "windows")]
+fn windows_git_bash_path() -> String {
+    let mut candidates = Vec::new();
+    if let Ok(program_files) = env::var("ProgramFiles")
+        && !program_files.trim().is_empty()
+    {
+        candidates.push(PathBuf::from(program_files).join("Git\\bin\\bash.exe"));
+    }
+    if let Ok(program_files_x86) = env::var("ProgramFiles(x86)")
+        && !program_files_x86.trim().is_empty()
+    {
+        candidates.push(PathBuf::from(program_files_x86).join("Git\\bin\\bash.exe"));
+    }
+    if let Ok(local_app_data) = env::var("LOCALAPPDATA")
+        && !local_app_data.trim().is_empty()
+    {
+        candidates.push(PathBuf::from(local_app_data).join("Programs\\Git\\bin\\bash.exe"));
+    }
+
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .map_or_else(|| "bash.exe".to_string(), |path| path.display().to_string())
+}
+
+#[cfg(any(not(target_os = "windows"), test))]
 fn resolve_shell_path(configured_shell: Option<&str>) -> String {
     if let Some(shell) = configured_shell
         .map(str::trim)
@@ -272,12 +324,7 @@ fn resolve_shell_path(configured_shell: Option<&str>) -> String {
 
     #[cfg(target_os = "windows")]
     {
-        if let Ok(comspec) = env::var("COMSPEC")
-            && !comspec.trim().is_empty()
-        {
-            return comspec;
-        }
-        "C:\\Windows\\System32\\cmd.exe".to_string()
+        windows_cmd_path()
     }
 
     #[cfg(target_os = "macos")]
@@ -289,6 +336,103 @@ fn resolve_shell_path(configured_shell: Option<&str>) -> String {
     {
         "/bin/bash".to_string()
     }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_shell_launch(windows_shell: WindowsShell) -> ShellLaunch {
+    match windows_shell {
+        WindowsShell::Cmd => ShellLaunch {
+            program: windows_cmd_path(),
+            args: Vec::new(),
+        },
+        WindowsShell::PowerShell => ShellLaunch {
+            program: "powershell.exe".to_string(),
+            args: vec!["-NoLogo".to_string()],
+        },
+        WindowsShell::PowerShellCore => ShellLaunch {
+            program: "pwsh.exe".to_string(),
+            args: vec!["-NoLogo".to_string()],
+        },
+        WindowsShell::GitBash => ShellLaunch {
+            program: windows_git_bash_path(),
+            args: vec!["--login".to_string(), "-i".to_string()],
+        },
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_startup_command_shell(windows_shell: WindowsShell, command: &str) -> ShellLaunch {
+    match windows_shell {
+        WindowsShell::Cmd => ShellLaunch {
+            program: windows_cmd_path(),
+            args: vec!["/C".to_string(), command.to_string()],
+        },
+        WindowsShell::PowerShell => ShellLaunch {
+            program: "powershell.exe".to_string(),
+            args: vec![
+                "-NoLogo".to_string(),
+                "-NoProfile".to_string(),
+                "-ExecutionPolicy".to_string(),
+                "Bypass".to_string(),
+                "-Command".to_string(),
+                command.to_string(),
+            ],
+        },
+        WindowsShell::PowerShellCore => ShellLaunch {
+            program: "pwsh.exe".to_string(),
+            args: vec![
+                "-NoLogo".to_string(),
+                "-NoProfile".to_string(),
+                "-ExecutionPolicy".to_string(),
+                "Bypass".to_string(),
+                "-Command".to_string(),
+                command.to_string(),
+            ],
+        },
+        WindowsShell::GitBash => ShellLaunch {
+            program: windows_git_bash_path(),
+            args: vec!["-lc".to_string(), command.to_string()],
+        },
+    }
+}
+
+fn configured_shell_launch(configured_shell: Option<&str>) -> Option<ShellLaunch> {
+    let shell_path = configured_shell
+        .map(str::trim)
+        .filter(|shell| !shell.is_empty())?;
+    Some(ShellLaunch {
+        program: shell_path.to_string(),
+        args: login_shell_args(shell_path),
+    })
+}
+
+fn default_shell_launch(runtime_config: &TerminalRuntimeConfig) -> ShellLaunch {
+    if let Some(launch) = configured_shell_launch(runtime_config.shell.as_deref()) {
+        return launch;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        windows_shell_launch(runtime_config.windows_shell)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let shell_path = resolve_shell_path(None);
+        ShellLaunch {
+            program: shell_path.clone(),
+            args: login_shell_args(&shell_path),
+        }
+    }
+}
+
+fn launch_to_shell(launch: ShellLaunch) -> Shell {
+    #[cfg(target_os = "windows")]
+    let program = quote_shell_program_if_needed(&launch.program);
+    #[cfg(not(target_os = "windows"))]
+    let program = launch.program;
+
+    Shell::new(program, launch.args)
 }
 
 fn startup_shell(runtime_config: &TerminalRuntimeConfig, startup_command: Option<&str>) -> Shell {
@@ -306,21 +450,26 @@ fn startup_shell(runtime_config: &TerminalRuntimeConfig, startup_command: Option
 
         #[cfg(target_os = "windows")]
         {
-            return Shell::new(
-                "cmd.exe".to_string(),
-                vec!["/C".to_string(), command.to_string()],
-            );
+            if runtime_config
+                .shell
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|shell| !shell.is_empty())
+            {
+                return Shell::new(
+                    "cmd.exe".to_string(),
+                    vec!["/C".to_string(), command.to_string()],
+                );
+            }
+
+            return launch_to_shell(windows_startup_command_shell(
+                runtime_config.windows_shell,
+                command,
+            ));
         }
     }
 
-    let shell_path = resolve_shell_path(runtime_config.shell.as_deref());
-
-    #[cfg(target_os = "windows")]
-    let shell_program = quote_shell_program_if_needed(&shell_path);
-    #[cfg(not(target_os = "windows"))]
-    let shell_program = shell_path.clone();
-
-    Shell::new(shell_program, login_shell_args(&shell_path))
+    launch_to_shell(default_shell_launch(runtime_config))
 }
 
 fn user_home_dir() -> Option<PathBuf> {
@@ -355,11 +504,12 @@ fn pty_env_overrides(
 ) -> HashMap<String, String> {
     let mut env_overrides = HashMap::new();
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Some(path) = normalized_path_env(env::var_os("PATH").as_deref()) {
-            env_overrides.insert("PATH".to_string(), path);
-        }
+    if let Some(path) = normalized_path_env(
+        env::var_os("PATH")
+            .or_else(|| env::var_os("Path"))
+            .as_deref(),
+    ) {
+        env_overrides.insert("PATH".to_string(), path);
     }
 
     let term = runtime_config.term.trim();
@@ -1472,10 +1622,11 @@ mod tests {
         DEFAULT_TERM, GHOSTTY_COMPAT_TERM_PROGRAM, GHOSTTY_COMPAT_TERM_PROGRAM_VERSION,
         JsonEventListener, RuntimeEvent, TERMY_TERM_PROGRAM, TerminalCursorState,
         TerminalCursorStyle, TerminalDamageSnapshot, TerminalEvent, TerminalRuntimeConfig,
-        TerminalSize, WorkingDirFallback, cursor_position_from_term, cursor_state_from_term,
-        drain_runtime_events, normalize_working_directory_candidate, pty_env_overrides,
-        resolve_launch_working_directory, resolve_shell_path, take_term_damage_snapshot,
-        terminal_event_from_osc, termmode_to_terminal_mouse_mode, user_home_dir,
+        TerminalSize, WindowsShell, WorkingDirFallback, cursor_position_from_term,
+        cursor_state_from_term, default_shell_launch, drain_runtime_events,
+        normalize_working_directory_candidate, pty_env_overrides, resolve_launch_working_directory,
+        resolve_shell_path, take_term_damage_snapshot, terminal_event_from_osc,
+        termmode_to_terminal_mouse_mode, user_home_dir,
     };
     use crate::keyboard::{
         Keystroke, Modifiers, TerminalKeyEventKind, TerminalKeyboardMode, keystroke_to_input,
@@ -2370,6 +2521,44 @@ mod tests {
     #[test]
     fn explicit_shell_path_wins() {
         assert_eq!(resolve_shell_path(Some("/bin/custom")), "/bin/custom");
+        let launch = default_shell_launch(&TerminalRuntimeConfig {
+            shell: Some("/bin/custom".to_string()),
+            windows_shell: WindowsShell::PowerShell,
+            ..TerminalRuntimeConfig::default()
+        });
+        assert_eq!(launch.program, "/bin/custom");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_shell_setting_selects_powershell() {
+        let launch = default_shell_launch(&TerminalRuntimeConfig {
+            windows_shell: WindowsShell::PowerShell,
+            ..TerminalRuntimeConfig::default()
+        });
+
+        assert_eq!(launch.program, "powershell.exe");
+        assert_eq!(launch.args, vec!["-NoLogo".to_string()]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_shell_setting_selects_powershell_core() {
+        let launch = default_shell_launch(&TerminalRuntimeConfig {
+            windows_shell: WindowsShell::PowerShellCore,
+            ..TerminalRuntimeConfig::default()
+        });
+
+        assert_eq!(launch.program, "pwsh.exe");
+        assert_eq!(launch.args, vec!["-NoLogo".to_string()]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_startup_commands_use_selected_shell() {
+        let launch = super::windows_startup_command_shell(WindowsShell::GitBash, "echo hi");
+
+        assert_eq!(launch.args, vec!["-lc".to_string(), "echo hi".to_string()]);
     }
 
     #[cfg(target_os = "windows")]

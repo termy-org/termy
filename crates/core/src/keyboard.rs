@@ -854,9 +854,11 @@ impl SequenceModifiers {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    use super::pure_text_event_text;
     use super::{
         Keystroke, Modifiers, TerminalKeyEventKind, TerminalKeyboardMode, associated_text,
-        keystroke_to_input, pure_text_event_text,
+        keystroke_to_input,
     };
 
     fn keystroke(key: &str, key_char: Option<&str>, modifiers: Modifiers) -> Keystroke {

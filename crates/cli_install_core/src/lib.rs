@@ -313,7 +313,7 @@ fn double_quote_fish_value(value: &str) -> String {
     )
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn path_exists_or_symlink(path: &Path) -> bool {
     path.exists() || path.symlink_metadata().is_ok()
 }

@@ -312,6 +312,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn pane_actions_remain_visible_when_tmux_is_disabled() {
         let all_menu_titles = app_menus(true, false, false)

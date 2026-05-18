@@ -19,7 +19,8 @@ impl SettingsWindow {
             | EditableField::LineHeight
             | EditableField::PaddingX
             | EditableField::PaddingY => self.apply_appearance_field(field, value),
-            EditableField::Shell
+            EditableField::WindowsShell
+            | EditableField::Shell
             | EditableField::Term
             | EditableField::Colorterm
             | EditableField::TmuxBinary
@@ -193,6 +194,36 @@ impl SettingsWindow {
         value: &str,
     ) -> Result<(), String> {
         match field {
+            EditableField::WindowsShell => {
+                let parsed = match value.trim().to_ascii_lowercase().as_str() {
+                    "cmd" | "command_prompt" | "commandprompt" => {
+                        termy_config_core::WindowsShell::Cmd
+                    }
+                    "powershell" | "power_shell" | "windows_powershell" | "ps" => {
+                        termy_config_core::WindowsShell::PowerShell
+                    }
+                    "pwsh" | "powershell_core" | "powershellcore" | "powershell_7"
+                    | "powershell-7" | "powershell7" | "power_shell_7" | "power_shell_core" => {
+                        termy_config_core::WindowsShell::PowerShellCore
+                    }
+                    "git_bash" | "gitbash" | "git-bash" | "bash" => {
+                        termy_config_core::WindowsShell::GitBash
+                    }
+                    _ => {
+                        return Err(
+                            "Windows shell must be cmd, powershell, pwsh, or git_bash".to_string()
+                        );
+                    }
+                };
+                self.config.windows_shell = parsed;
+                let canonical = match parsed {
+                    termy_config_core::WindowsShell::Cmd => "cmd",
+                    termy_config_core::WindowsShell::PowerShell => "powershell",
+                    termy_config_core::WindowsShell::PowerShellCore => "pwsh",
+                    termy_config_core::WindowsShell::GitBash => "git_bash",
+                };
+                config::set_root_setting(termy_config_core::RootSettingId::WindowsShell, canonical)
+            }
             EditableField::Shell => {
                 if value.is_empty() {
                     self.config.shell = None;

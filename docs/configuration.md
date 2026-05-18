@@ -102,9 +102,14 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 - Show active tmux pane border highlight in managed sessions
 - Group: `TMUX`
 
+`windows_shell`
+- Default: `cmd`
+- Preset shell used for new sessions on Windows
+- Group: `SHELL`
+
 `shell`
 - Default: unset
-- Executable used for new sessions
+- Optional executable path used for new sessions; overrides the Windows shell preset on Windows
 - Group: `SHELL`
 
 `term`

@@ -33,7 +33,7 @@ pub use types::{
     AppConfig, AppearanceMode, CursorStyle, CustomColors, KeybindConfigLine, PaneFocusEffect, Rgb8,
     SystemAppearance, TabCloseVisibility, TabTitleConfig, TabTitleMode, TabTitleSource,
     TabWidthMode, TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId,
-    WorkingDirFallback, resolve_active_theme,
+    WindowsShell, WorkingDirFallback, resolve_active_theme,
 };
 
 pub fn format_line_height(value: f32) -> String {

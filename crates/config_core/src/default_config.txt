@@ -69,7 +69,9 @@ vertical_tabs_minimized = false
 auto_hide_tabbar = true
 # Show or hide the termy branding in the titlebar
 show_termy_in_titlebar = true
-# Executable used for new sessions
+# Preset shell used for new sessions on Windows
+windows_shell = cmd
+# Optional executable path used for new sessions; overrides the Windows shell preset on Windows
 shell = none
 # TERM value exposed to child applications
 term = xterm-256color
