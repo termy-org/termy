@@ -15,6 +15,10 @@ into:
 - `termy_core` — Rust API for a single headless terminal surface.
 - `termy_ffi` — C ABI wrapper over `termy_core`.
 
+For browser embeddings, use [libtermy.js](/docs/developer/libtermy-js), the
+npm package that wraps the same headless model in WASM and includes an xterm.js
+adapter.
+
 The core API owns PTY startup, terminal parsing, input writes, resize, event
 draining, damage snapshots, and renderer-neutral frame snapshots. It does not
 depend on GPUI and does not expose Termy's app chrome, tabs, panes, or tmux

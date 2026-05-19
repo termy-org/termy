@@ -1,0 +1,248 @@
+---
+title: libtermy.js
+description: Browser WASM package for embedding Termy's parser, config, and theme semantics with xterm.js.
+---
+
+<Callout type="warn">
+  `libtermy.js` is experimental. It tracks the early `libtermy` API surface and
+  can change between releases.
+</Callout>
+
+`libtermy.js` is the npm package for browser embedders. It packages Termy's
+headless terminal core as WebAssembly and adds a small TypeScript adapter for
+[`@xterm/xterm`](https://xtermjs.org/).
+
+Use it when you want Termy's parser, visible-frame snapshots, search, config
+loading, and resolved theme colors in a web terminal. It does not start a shell
+or PTY in the browser. Your app still owns the backend session and transport.
+
+## Install
+
+```sh
+npm install libtermy.js @xterm/xterm
+```
+
+`@xterm/xterm` is a peer dependency. Install it when you use the xterm adapter.
+If you only use the headless WASM API, you can omit xterm.
+
+## Quick Start
+
+```ts
+import { Terminal } from '@xterm/xterm'
+import { attachTermyToXterm, loadTermy } from 'libtermy.js'
+
+const xterm = new Terminal()
+xterm.open(document.querySelector('#terminal')!)
+
+const socket = new WebSocket('/pty')
+const termy = await loadTermy()
+
+const bridge = attachTermyToXterm(xterm, {
+  termy,
+  onInput(data) {
+    socket.send(data)
+  },
+})
+
+socket.addEventListener('message', (event) => {
+  const result = bridge.write(event.data)
+
+  for (const response of result.responses) {
+    socket.send(response)
+  }
+})
+
+window.addEventListener('beforeunload', () => {
+  bridge.dispose()
+  socket.close()
+})
+```
+
+`bridge.write(...)` writes the backend output to xterm and feeds the same bytes
+through Termy's WASM parser. The returned `responses` array contains terminal
+response bytes for device-status queries and similar control sequences. Send
+those responses back to the PTY.
+
+## Runtime Model
+
+`libtermy.js` mirrors the native `libtermy` split:
+
+- the browser owns rendering through xterm.js,
+- the backend owns the shell or PTY,
+- Termy's WASM core tracks terminal state, config, events, responses, snapshots,
+  and search.
+
+This keeps the package renderer-neutral. You can use the xterm adapter for a
+normal web terminal or call the WASM core directly if you are building your own
+renderer.
+
+## API Shape
+
+### `loadTermy(options?)`
+
+Loads the generated WASM module and returns a `LoadedTermy` helper.
+
+```ts
+const termy = await loadTermy()
+const terminal = termy.createTerminal({ cols: 120, rows: 36 })
+```
+
+By default, the package loads the bundled `wasm/termy_wasm_bg.wasm` file. Modern
+bundlers should preserve that asset because it is part of the npm package.
+
+Pass `moduleUrl` or `wasmUrl` when your deployment needs custom asset routing:
+
+```ts
+const termy = await loadTermy({
+  moduleUrl: new URL('/assets/termy_wasm.js', location.origin),
+  wasmUrl: new URL('/assets/termy_wasm_bg.wasm', location.origin),
+})
+```
+
+### `createTerminal(options?)`
+
+Creates a headless terminal core.
+
+```ts
+const core = termy.createTerminal({
+  cols: 80,
+  rows: 24,
+  cellWidth: 9,
+  cellHeight: 18,
+  configContents: 'theme = nord\n',
+})
+```
+
+The core exposes:
+
+- `feed(bytes)` for parser input,
+- `drain()` for pending events and terminal responses,
+- `resize(cols, rows, cellWidth, cellHeight)`,
+- `snapshot()` for the visible frame,
+- `search(query)` for visible-frame search,
+- `setConfigContents(contents)` for applying Termy config text.
+
+### `attachTermyToXterm(xterm, options)`
+
+Connects an xterm-like terminal to a `termy_core` instance.
+
+```ts
+const bridge = attachTermyToXterm(xterm, {
+  termy,
+  configContents: 'theme = nord\nfont_size = 14\n',
+  applyTheme: true,
+  onInput(data) {
+    socket.send(data)
+  },
+})
+```
+
+The bridge forwards xterm input through `onInput`, updates the WASM terminal on
+resize, applies Termy's resolved render config to xterm, and exposes snapshots
+and search:
+
+```ts
+const frame = bridge.snapshot()
+const matches = bridge.search('error')
+```
+
+Call `bridge.dispose()` when the terminal view is unmounted.
+
+## Config and Themes
+
+The package can parse normal Termy config text and return resolved render
+values:
+
+```ts
+const config = termy.renderConfigFromContents(`
+theme = nord
+font_family = "JetBrains Mono"
+font_size = 14
+`)
+
+xterm.options.theme = toXtermTheme(config)
+```
+
+`renderConfigFromContents` returns diagnostics alongside the resolved values.
+Use diagnostics when you expose user-editable config in a browser app:
+
+```ts
+for (const diagnostic of config.diagnostics) {
+  console.warn(
+    `${diagnostic.kind} on line ${diagnostic.lineNumber}: ${diagnostic.message}`,
+  )
+}
+```
+
+Use `toXtermTheme(config)` when xterm should use Termy's foreground,
+background, cursor, and ANSI 16 colors. Use `applyRenderConfigToXterm(xterm,
+config)` when xterm should also receive font, line-height, cursor, and theme
+settings.
+
+## PTY Transport
+
+The browser package intentionally does not create a PTY. A typical setup looks
+like this:
+
+1. Browser opens xterm and `libtermy.js`.
+2. Browser connects to your backend over WebSocket.
+3. Backend starts a PTY and streams output to the browser.
+4. Browser calls `bridge.write(output)` for each output chunk.
+5. Browser sends user input and `result.responses` back to the backend.
+6. Backend writes those bytes into the PTY.
+
+For best results, use binary WebSocket messages for PTY bytes. If your transport
+uses strings, keep encoding consistent on both sides.
+
+## Bundlers and WASM
+
+The published package includes:
+
+- `dist/index.js`
+- `dist/index.d.ts`
+- `wasm/termy_wasm.js`
+- `wasm/termy_wasm_bg.wasm`
+
+The default loader resolves the WASM asset relative to the installed package,
+which works for normal npm installs and modern ESM bundlers. If your framework
+copies WASM assets to a CDN or hashed public path, pass `wasmUrl` explicitly.
+
+Your server should serve `.wasm` files with `application/wasm`. Browsers can
+fall back when the MIME type is wrong, but the fallback is slower.
+
+## Node and Tests
+
+`loadTermy()` also works in Node-based tests. The default loader reads the
+packaged `.wasm` file from `node_modules`, so a basic smoke test can import the
+package directly:
+
+```ts
+import { loadTermy } from 'libtermy.js'
+
+const termy = await loadTermy()
+const terminal = termy.createTerminal({ cols: 20, rows: 4 })
+const result = terminal.feed(new TextEncoder().encode('hello'))
+
+console.log(result.events.length)
+```
+
+This is useful for adapter tests, parser checks, and config/theme assertions.
+It is not a substitute for browser testing your renderer and asset pipeline.
+
+## Troubleshooting
+
+| Symptom | Check |
+| ------- | ----- |
+| `WebAssembly.instantiateStreaming` warns about MIME type | Serve `.wasm` as `application/wasm`. |
+| The terminal displays output but the shell does not answer some queries | Send `result.responses` back to the PTY after every `bridge.write(...)`. |
+| xterm colors do not match Termy | Pass `configContents` to `attachTermyToXterm` or apply `toXtermTheme(...)` yourself. |
+| The WASM asset 404s in production | Pass an explicit `wasmUrl` that matches your framework's public asset path. |
+| Input works twice | Make sure only one `bridge` is attached to a given xterm instance and call `dispose()` on unmount. |
+
+## Related Docs
+
+- [libtermy](/docs/developer/libtermy) for the Rust and C ABI surfaces.
+- [`docs/libtermy-js.md`](https://github.com/lassejlv/termy/blob/main/docs/libtermy-js.md)
+  for repository build notes.
+- [`packages/libtermy-js`](https://github.com/lassejlv/termy/tree/main/packages/libtermy-js)
+  for the package source.
