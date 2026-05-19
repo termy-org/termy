@@ -13,3 +13,6 @@ AGENT_PROMPT_RENDER_PERF.md
 .build
 
 examples/libtermy-swift/.build
+packages/libtermy-js/dist
+packages/libtermy-js/wasm
+packages/libtermy-js/node_modules

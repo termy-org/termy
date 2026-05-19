@@ -156,6 +156,8 @@ typedef struct {
   bool background_opacity_cells;
   bool cursor_blink;
   uint32_t cursor_style;
+  float cell_width;
+  float cell_height;
 } TermyFfiRenderConfig;
 
 typedef struct TermyFfiTerminal TermyFfiTerminal;

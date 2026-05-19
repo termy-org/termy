@@ -1,7 +1,7 @@
 use std::{thread, time::Duration};
 
 use termy_core::{
-    Terminal, TerminalClipboardTarget, TerminalReplyHost, TerminalSize,
+    Terminal, TerminalClipboardTarget, TerminalReplyHost, TerminalSize, measure_cell_from_config,
     load_config_from_default_path,
 };
 
@@ -15,12 +15,13 @@ impl TerminalReplyHost for EmptyClipboard {
 
 fn main() -> anyhow::Result<()> {
     let loaded_config = load_config_from_default_path()?;
+    let cell_metrics = measure_cell_from_config(&loaded_config.app_config);
     let terminal = Terminal::new(
         TerminalSize {
             cols: 24,
             rows: 4,
-            cell_width: 9.0,
-            cell_height: 18.0,
+            cell_width: cell_metrics.cell_width,
+            cell_height: cell_metrics.cell_height,
         },
         None,
         None,

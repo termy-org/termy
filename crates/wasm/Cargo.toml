@@ -1,0 +1,19 @@
+[package]
+name = "termy_wasm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+termy_config_core = { path = "../config_core" }
+termy_themes = { path = "../themes" }
+vte = { version = "0.15", features = ["std", "ansi"], default-features = false }
+wasm-bindgen = "0.2"

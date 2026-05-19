@@ -1,0 +1,61 @@
+{
+  "name": "libtermy.js",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Browser WASM build of libtermy with an xterm.js adapter",
+  "license": "MIT",
+  "homepage": "https://github.com/lassejlv/termy#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lassejlv/termy.git",
+    "directory": "packages/libtermy-js"
+  },
+  "bugs": {
+    "url": "https://github.com/lassejlv/termy/issues"
+  },
+  "keywords": [
+    "terminal",
+    "termy",
+    "xterm",
+    "wasm",
+    "webassembly"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./wasm/termy_wasm.js": "./wasm/termy_wasm.js",
+    "./wasm/termy_wasm_bg.wasm": "./wasm/termy_wasm_bg.wasm",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "wasm"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run build:wasm && tsdown",
+    "build:ts": "tsdown",
+    "build:wasm": "cd ../../crates/wasm && PATH=\"$HOME/.cargo/bin:$PATH\" RUSTUP_TOOLCHAIN=stable wasm-pack build --target web --out-dir ../../packages/libtermy-js/wasm --out-name termy_wasm --no-pack --no-opt && rm -f ../../packages/libtermy-js/wasm/.gitignore",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@xterm/xterm": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "@xterm/xterm": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "tsdown": "^0.22.0",
+    "typescript": "^6.0.3"
+  }
+}

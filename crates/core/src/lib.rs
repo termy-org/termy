@@ -1,3 +1,4 @@
+mod cell_metrics;
 mod config;
 mod frame;
 mod keyboard;
@@ -13,6 +14,7 @@ mod runtime;
 mod search;
 mod shell_integration;
 
+pub use cell_metrics::{TerminalCellMetrics, measure_cell, measure_cell_from_config};
 pub use config::{
     LoadedTermyConfig, ResolvedThemeColors, TermyConfigError, load_config_from_contents,
     load_config_from_default_path, load_config_from_path, resolve_theme_colors_from_app_config,

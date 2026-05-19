@@ -166,6 +166,8 @@ pub struct TermyFfiRenderConfig {
     pub background_opacity_cells: bool,
     pub cursor_blink: bool,
     pub cursor_style: u32,
+    pub cell_width: f32,
+    pub cell_height: f32,
 }
 
 pub struct TermyFfiTerminal {
@@ -646,6 +648,7 @@ pub unsafe extern "C" fn termy_config_render_config(
 
     let loaded = unsafe { &(*config).loaded };
     let app_config = &loaded.app_config;
+    let cell_metrics = termy_core::measure_cell_from_config(app_config);
     let theme_colors = termy_core::resolve_theme_colors_from_app_config(
         app_config,
         loaded.path.as_deref(),
@@ -669,6 +672,8 @@ pub unsafe extern "C" fn termy_config_render_config(
                 termy_core::AppConfigCursorStyle::Line => 1,
                 termy_core::AppConfigCursorStyle::Block => 2,
             },
+            cell_width: cell_metrics.cell_width,
+            cell_height: cell_metrics.cell_height,
         };
     }
     TermyFfiStatus::Ok
@@ -1141,6 +1146,8 @@ mod tests {
         assert!(render_config.background_opacity_cells);
         assert!(!render_config.cursor_blink);
         assert_eq!(render_config.cursor_style, 1);
+        assert!(render_config.cell_width >= 1.0);
+        assert_eq!(render_config.cell_height, 22.5);
 
         assert_eq!(
             unsafe { termy_render_config_free(&mut render_config) },

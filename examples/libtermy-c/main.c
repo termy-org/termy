@@ -6,12 +6,22 @@ int main(void) {
   TermyFfiConfig *config = NULL;
   TermyFfiTerminal *terminal = NULL;
   TermyFfiSize size = termy_size_default();
+  TermyFfiRenderConfig render_config = {0};
   const char command[] = "printf 'hello from libtermy-c'";
 
   TermyFfiStatus status = termy_config_load_default(&config);
   if (status != TERMY_FFI_OK) {
     return 1;
   }
+
+  status = termy_config_render_config(config, &render_config);
+  if (status != TERMY_FFI_OK) {
+    termy_config_free(config);
+    return 1;
+  }
+  size.cell_width = render_config.cell_width;
+  size.cell_height = render_config.cell_height;
+  termy_render_config_free(&render_config);
 
   status = termy_terminal_new_with_config(
       size,

@@ -6,8 +6,10 @@ live libtermy terminal snapshot in SwiftUI. It calls `termy_config_load_default`
 before terminal creation, so it uses the normal Termy config file when one
 exists and falls back to defaults otherwise. The loaded config is also queried
 for renderer settings such as font size, line height, padding, and background
-opacity before the SwiftUI terminal surface is laid out. Theme colors from the
-same config are applied to the terminal snapshots and SwiftUI surface.
+opacity before the SwiftUI terminal surface is laid out. The same render config
+also includes measured cell width/height, so SwiftUI does not have to guess a
+monospace ratio. Theme colors from the same config are applied to the terminal
+snapshots and SwiftUI surface.
 
 The example also demonstrates the embedder-facing event and search APIs:
 `drainEvents()` returns structured runtime events such as title, working

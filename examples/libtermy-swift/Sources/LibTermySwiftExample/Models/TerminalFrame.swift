@@ -44,6 +44,8 @@ struct TerminalRenderConfig: Equatable {
     var backgroundOpacityCells: Bool
     var cursorBlink: Bool
     var cursorStyle: UInt32
+    var measuredCellWidth: CGFloat
+    var measuredCellHeight: CGFloat
 
     static let `default` = TerminalRenderConfig(
         fontFamily: "JetBrains Mono",
@@ -58,7 +60,9 @@ struct TerminalRenderConfig: Equatable {
         backgroundOpacity: 1.0,
         backgroundOpacityCells: false,
         cursorBlink: true,
-        cursorStyle: 2
+        cursorStyle: 2,
+        measuredCellWidth: 9.0,
+        measuredCellHeight: 19.6
     )
 
     init(
@@ -74,7 +78,9 @@ struct TerminalRenderConfig: Equatable {
         backgroundOpacity: Double,
         backgroundOpacityCells: Bool,
         cursorBlink: Bool,
-        cursorStyle: UInt32
+        cursorStyle: UInt32,
+        measuredCellWidth: CGFloat,
+        measuredCellHeight: CGFloat
     ) {
         self.fontFamily = fontFamily
         self.activeTheme = activeTheme
@@ -89,6 +95,8 @@ struct TerminalRenderConfig: Equatable {
         self.backgroundOpacityCells = backgroundOpacityCells
         self.cursorBlink = cursorBlink
         self.cursorStyle = cursorStyle
+        self.measuredCellWidth = max(1.0, measuredCellWidth)
+        self.measuredCellHeight = max(1.0, measuredCellHeight)
     }
 
     init(_ ffiConfig: TermyFfiRenderConfig) {
@@ -105,16 +113,18 @@ struct TerminalRenderConfig: Equatable {
             backgroundOpacity: Double(ffiConfig.background_opacity),
             backgroundOpacityCells: ffiConfig.background_opacity_cells,
             cursorBlink: ffiConfig.cursor_blink,
-            cursorStyle: ffiConfig.cursor_style
+            cursorStyle: ffiConfig.cursor_style,
+            measuredCellWidth: CGFloat(ffiConfig.cell_width),
+            measuredCellHeight: CGFloat(ffiConfig.cell_height)
         )
     }
 
     var cellWidth: CGFloat {
-        max(1.0, fontSize * 0.62)
+        measuredCellWidth
     }
 
     var cellHeight: CGFloat {
-        max(1.0, fontSize * lineHeight)
+        measuredCellHeight
     }
 
     private static func string(from bytes: TermyFfiBytes) -> String? {

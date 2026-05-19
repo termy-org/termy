@@ -22,8 +22,14 @@ Use `termy_core::Terminal` directly:
 
 ```rust
 let loaded_config = termy_core::load_config_from_default_path()?;
+let cell_metrics = termy_core::measure_cell_from_config(&loaded_config.app_config);
 let terminal = termy_core::Terminal::new(
-    termy_core::TerminalSize::default(),
+    termy_core::TerminalSize {
+        cols: 80,
+        rows: 24,
+        cell_width: cell_metrics.cell_width,
+        cell_height: cell_metrics.cell_height,
+    },
     None,
     None,
     None,
@@ -36,6 +42,11 @@ let frame = terminal.snapshot();
 
 `TermyFrame` contains a flat row-major `Vec<TermyCell>`, cursor state, scroll
 state, and cell colors as simple RGBA bytes.
+
+Use `termy_core::measure_cell(font_family, font_size, line_height)` or
+`termy_core::measure_cell_from_config(&app_config)` to derive the
+`TerminalSize` cell width and height from Termy's font metrics instead of
+guessing a monospace ratio in the host app.
 
 See `examples/libtermy-rust/` for a minimal Rust embedding.
 
@@ -85,7 +96,9 @@ and must be released with `termy_render_config_free`. This returns the parsed
 font family, active theme id, foreground/background/cursor colors, font size,
 line height, padding, background opacity, cursor blink, and cursor style so
 non-Rust embedders can render the terminal with the same user config that was
-passed into `termy_terminal_new_with_config`.
+passed into `termy_terminal_new_with_config`. The render config also includes
+`cell_width` and `cell_height`, measured by `termy_core`, for constructing
+`TermyFfiSize` without duplicating font metric logic in the host app.
 
 Event kind values:
 

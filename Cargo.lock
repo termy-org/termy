@@ -5013,6 +5013,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5788,11 +5799,13 @@ dependencies = [
  "anyhow",
  "dirs 6.0.0",
  "flume",
+ "fontdb",
  "polling",
  "rustix-openpty",
  "tempfile",
  "termy_config_core",
  "termy_themes",
+ "ttf-parser",
  "winreg",
 ]
 
@@ -5864,6 +5877,18 @@ dependencies = [
 [[package]]
 name = "termy_toast"
 version = "0.1.0"
+
+[[package]]
+name = "termy_wasm"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde-wasm-bindgen",
+ "termy_config_core",
+ "termy_themes",
+ "vte",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "thiserror"
