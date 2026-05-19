@@ -1429,9 +1429,7 @@ fn encode_mouse_packet(
             // Coordinates are 1-based.
             let col_value = u32::from(col).saturating_add(1);
             let row_value = u32::from(row).saturating_add(1);
-            Some(
-                format!("\x1b[<{encoded_button};{col_value};{row_value}{suffix}").into_bytes(),
-            )
+            Some(format!("\x1b[<{encoded_button};{col_value};{row_value}{suffix}").into_bytes())
         }
         MouseEncoding::Legacy | MouseEncoding::Utf8 => {
             // X10 / legacy / UTF-8: release events collapse to button code 3.
@@ -1556,10 +1554,9 @@ mod tests {
         let mut terminal = TermyTerminal::new(8, 1);
         // Enable everything and verify the next cell still picks up the
         // attributes, then ESC[0m and verify it all clears.
-        terminal.parser.advance(
-            &mut terminal.screen,
-            b"\x1b[1;2;3;4;5;7;8;9mA\x1b[0mB",
-        );
+        terminal
+            .parser
+            .advance(&mut terminal.screen, b"\x1b[1;2;3;4;5;7;8;9mA\x1b[0mB");
         let frame = terminal.screen.snapshot();
         let a = &frame.cells[0];
         assert!(a.bold);
@@ -1665,9 +1662,7 @@ mod tests {
     #[test]
     fn x10_left_click_encodes_legacy_packet() {
         let mut terminal = TermyTerminal::new(80, 24);
-        terminal
-            .parser
-            .advance(&mut terminal.screen, b"\x1b[?9h");
+        terminal.parser.advance(&mut terminal.screen, b"\x1b[?9h");
         let bytes = terminal
             .screen
             .encode_mouse_report(0, 0, 4, 2, 0)
@@ -1679,9 +1674,7 @@ mod tests {
     #[test]
     fn x10_mode_ignores_release_events() {
         let mut terminal = TermyTerminal::new(80, 24);
-        terminal
-            .parser
-            .advance(&mut terminal.screen, b"\x1b[?9h");
+        terminal.parser.advance(&mut terminal.screen, b"\x1b[?9h");
         // Release events are not allowed in X10 mode.
         assert!(terminal.screen.encode_mouse_report(0, 0, 4, 2, 1).is_none());
         // Drag and motion are not allowed either.
@@ -1810,9 +1803,7 @@ mod tests {
             .parser
             .advance(&mut terminal.screen, b"\x1b[?2004h");
         assert!(terminal.screen.bracketed_paste);
-        terminal
-            .parser
-            .advance(&mut terminal.screen, b"some text");
+        terminal.parser.advance(&mut terminal.screen, b"some text");
         assert!(terminal.screen.bracketed_paste);
     }
 

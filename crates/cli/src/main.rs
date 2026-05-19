@@ -9,6 +9,18 @@ mod commands;
 #[command(about = "Termy terminal emulator CLI", long_about = None)]
 #[command(version)]
 struct Cli {
+    /// Open Termy with this working directory
+    #[arg(
+        long = "working-directory",
+        value_name = "PATH",
+        conflicts_with = "path"
+    )]
+    working_directory: Option<PathBuf>,
+
+    /// Open Termy with this working directory
+    #[arg(value_name = "PATH")]
+    path: Option<PathBuf>,
+
     #[command(subcommand)]
     action: Option<Action>,
 }
@@ -101,6 +113,11 @@ enum Action {
 
 fn main() {
     let cli = Cli::parse();
+
+    if let Some(path) = cli.working_directory.or(cli.path) {
+        commands::open::run(path);
+        return;
+    }
 
     match cli.action {
         Some(Action::Version) => commands::version::run(),

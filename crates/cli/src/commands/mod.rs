@@ -5,6 +5,7 @@ pub mod list_colors;
 pub mod list_fonts;
 pub mod list_keybinds;
 pub mod list_themes;
+pub mod open;
 pub mod prettify_config;
 pub mod providers;
 pub mod show_config;

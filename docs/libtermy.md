@@ -60,6 +60,7 @@ Use `termy_ffi` as an opaque-handle API:
 - `termy_config_from_contents`
 - `termy_config_free`
 - `termy_terminal_new_with_config`
+- `termy_terminal_new_with_options`
 - `termy_terminal_new`
 - `termy_terminal_free`
 - `termy_terminal_write`
@@ -80,6 +81,11 @@ Search match line payloads owned by a search batch are freed by
 `termy_search_batch_free`.
 Embedders should synchronize access to a terminal handle if they call into it
 from multiple threads.
+
+`termy_terminal_new_with_options` is the host-control constructor. It accepts an
+optional loaded config plus a launch working directory, startup command, and a
+list of environment variable overrides. The environment array is copied during
+the call and may be released by the caller after the constructor returns.
 
 Config diagnostics are available through `termy_config_diagnostics` and must be
 released with `termy_config_diagnostics_free`. Diagnostic kind values:

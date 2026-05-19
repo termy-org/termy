@@ -40,6 +40,9 @@ typedef enum {
   TERMY_FFI_PROGRESS_WARNING = 4,
 } TermyFfiProgressState;
 
+typedef struct TermyFfiTerminal TermyFfiTerminal;
+typedef struct TermyFfiConfig TermyFfiConfig;
+
 typedef struct {
   uint16_t cols;
   uint16_t rows;
@@ -160,8 +163,22 @@ typedef struct {
   float cell_height;
 } TermyFfiRenderConfig;
 
-typedef struct TermyFfiTerminal TermyFfiTerminal;
-typedef struct TermyFfiConfig TermyFfiConfig;
+typedef struct {
+  const uint8_t *key_ptr;
+  size_t key_len;
+  const uint8_t *value_ptr;
+  size_t value_len;
+} TermyFfiEnvVar;
+
+typedef struct {
+  const TermyFfiConfig *config;
+  const uint8_t *working_directory_ptr;
+  size_t working_directory_len;
+  const uint8_t *startup_command_ptr;
+  size_t startup_command_len;
+  const TermyFfiEnvVar *env_vars_ptr;
+  size_t env_vars_len;
+} TermyFfiTerminalOptions;
 
 TermyFfiSize termy_size_default(void);
 TermyFfiStatus termy_terminal_new(
@@ -174,6 +191,10 @@ TermyFfiStatus termy_terminal_new_with_config(
     const TermyFfiConfig *config,
     const uint8_t *startup_command_ptr,
     size_t startup_command_len,
+    TermyFfiTerminal **out_terminal);
+TermyFfiStatus termy_terminal_new_with_options(
+    TermyFfiSize size,
+    const TermyFfiTerminalOptions *options,
     TermyFfiTerminal **out_terminal);
 TermyFfiStatus termy_config_load_default(TermyFfiConfig **out_config);
 TermyFfiStatus termy_config_load_path(

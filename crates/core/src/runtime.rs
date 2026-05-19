@@ -115,6 +115,7 @@ pub struct TerminalRuntimeConfig {
     pub windows_shell: WindowsShell,
     pub term: String,
     pub colorterm: Option<String>,
+    pub environment: HashMap<String, String>,
     pub query_colors: TerminalQueryColors,
     pub working_dir_fallback: WorkingDirFallback,
     pub scrollback_history: usize,
@@ -128,6 +129,7 @@ impl Default for TerminalRuntimeConfig {
             windows_shell: WindowsShell::default(),
             term: DEFAULT_TERM.to_string(),
             colorterm: Some(DEFAULT_COLORTERM.to_string()),
+            environment: HashMap::new(),
             query_colors: TerminalQueryColors::default(),
             working_dir_fallback: WorkingDirFallback::default(),
             scrollback_history: DEFAULT_SCROLLBACK_HISTORY,
@@ -541,6 +543,14 @@ fn pty_env_overrides(
         "TERMY_TERM_PROGRAM".to_string(),
         TERMY_TERM_PROGRAM.to_string(),
     );
+
+    for (key, value) in &runtime_config.environment {
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        env_overrides.insert(key.to_string(), value.clone());
+    }
 
     // Locale overrides are intentionally Unix-only. POSIX shells use libc locale
     // (`LC_*`/`LANG`) for wcwidth/prompt width, while native Windows shells
@@ -1640,6 +1650,7 @@ mod tests {
         vte::ansi::{self, CursorShape, NamedColor},
     };
     use flume::unbounded;
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     fn test_terminal_size() -> TerminalSize {
@@ -2516,6 +2527,23 @@ mod tests {
         };
         let env = pty_env_overrides(None, &config);
         assert!(!env.contains_key("COLORTERM"));
+    }
+
+    #[test]
+    fn env_overrides_merge_host_environment_last() {
+        let config = TerminalRuntimeConfig {
+            environment: HashMap::from([
+                ("CMUX_SOCKET_PATH".to_string(), "/tmp/cmux.sock".to_string()),
+                ("TERM_PROGRAM".to_string(), "cmux".to_string()),
+            ]),
+            ..TerminalRuntimeConfig::default()
+        };
+        let env = pty_env_overrides(None, &config);
+        assert_eq!(
+            env.get("CMUX_SOCKET_PATH").map(String::as_str),
+            Some("/tmp/cmux.sock")
+        );
+        assert_eq!(env.get("TERM_PROGRAM").map(String::as_str), Some("cmux"));
     }
 
     #[test]

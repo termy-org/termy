@@ -5687,7 +5687,7 @@ dependencies = [
 
 [[package]]
 name = "termy"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -5752,7 +5752,7 @@ dependencies = [
 
 [[package]]
 name = "termy_cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -5764,6 +5764,7 @@ dependencies = [
  "semver",
  "serde_json",
  "sha2",
+ "tempfile",
  "termy_cli_install_core",
  "termy_command_core",
  "termy_config_core",

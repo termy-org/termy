@@ -129,6 +129,7 @@ pub fn runtime_config_from_app_config_with_query_colors(
         },
         term: config.term.clone(),
         colorterm: config.colorterm.clone(),
+        environment: Default::default(),
         query_colors,
         working_dir_fallback,
         scrollback_history: config.scrollback_history,

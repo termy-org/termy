@@ -45,6 +45,45 @@ const WINDOWS_DEFAULT_WINDOW_WIDTH: f32 = 1280.0;
 #[cfg(target_os = "windows")]
 const WINDOWS_DEFAULT_WINDOW_HEIGHT: f32 = 820.0;
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct StartupArguments {
+    working_dir: Option<String>,
+    deeplinks: Vec<String>,
+}
+
+fn parse_startup_arguments<I, S>(args: I) -> StartupArguments
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let mut startup = StartupArguments::default();
+    let mut args = args.into_iter().map(Into::into).peekable();
+
+    while let Some(arg) = args.next() {
+        if arg.starts_with("termy://") {
+            startup.deeplinks.push(arg);
+        } else if let Some(value) = arg.strip_prefix("--working-directory=") {
+            startup.working_dir = non_empty_arg_value(value);
+        } else if arg == "--working-directory" {
+            startup.working_dir = args.next().and_then(|value| non_empty_arg_value(&value));
+        } else if arg == "--" {
+            if let Some(value) = args.next() {
+                startup.working_dir = non_empty_arg_value(&value);
+            }
+            break;
+        } else if !arg.starts_with('-') && startup.working_dir.is_none() {
+            startup.working_dir = non_empty_arg_value(&arg);
+        }
+    }
+
+    startup
+}
+
+fn non_empty_arg_value(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn preflight_tmux_runtime(config: &config::AppConfig) -> Result<(), StartupBlocker> {
     if !config.tmux_enabled {
@@ -389,21 +428,14 @@ fn spawn_deeplink_listener(cx: &mut App, deeplink_rx: Receiver<Vec<String>>) {
 fn main() {
     env_logger::init();
 
+    let startup_arguments = parse_startup_arguments(std::env::args().skip(1));
     let (deeplink_tx, deeplink_rx) = flume::unbounded::<Vec<String>>();
     let application = Application::new().with_assets(crate::asset_source::EmbeddedAssets);
 
-    // On Windows, URL scheme launches pass the URL as a command-line argument
-    // (argv[1]) instead of going through Application::on_open_urls(). Enqueue
-    // any termy:// argument so the deeplink listener processes it after startup.
-    #[cfg(target_os = "windows")]
+    if !startup_arguments.deeplinks.is_empty()
+        && let Err(error) = deeplink_tx.send(startup_arguments.deeplinks.clone())
     {
-        if let Some(url) = std::env::args().nth(1) {
-            if url.starts_with("termy://") {
-                if let Err(error) = deeplink_tx.send(vec![url]) {
-                    log::error!("Failed to enqueue Windows argv deeplink: {error}");
-                }
-            }
-        }
+        log::error!("Failed to enqueue argv deeplink: {error}");
     }
 
     application.on_reopen(|cx| {
@@ -443,7 +475,10 @@ fn main() {
         let mut startup_config_error = None;
         let startup_load =
             config::load_runtime_config(&mut startup_config_error, "Failed to load config");
-        let app_config = startup_load.config;
+        let mut app_config = startup_load.config;
+        if let Some(working_dir) = startup_arguments.working_dir.clone() {
+            app_config.working_dir = Some(working_dir);
+        }
         let show_onboarding = onboarding::should_show_onboarding(was_first_run, &app_config);
         if let Err(blocker) = preflight_tmux_runtime(&app_config) {
             blocker.present_and_exit();
@@ -477,7 +512,7 @@ mod tests {
     use super::{
         DeepLinkArgument, DeepLinkRoute, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH,
         focus_or_open_main_window, handle_open_urls_with_main_window,
-        normalized_startup_window_size, reopen_if_no_windows,
+        normalized_startup_window_size, parse_startup_arguments, reopen_if_no_windows,
     };
     #[cfg(target_os = "windows")]
     use super::{
@@ -506,6 +541,26 @@ mod tests {
             cx.new(|_cx| ReopenTestView)
         })
         .expect("test window should open");
+    }
+
+    #[test]
+    fn startup_arguments_parse_positional_working_directory() {
+        let parsed = parse_startup_arguments(["/tmp/project"]);
+        assert_eq!(parsed.working_dir.as_deref(), Some("/tmp/project"));
+        assert!(parsed.deeplinks.is_empty());
+    }
+
+    #[test]
+    fn startup_arguments_parse_working_directory_flag() {
+        let parsed = parse_startup_arguments(["--working-directory", "/tmp/project"]);
+        assert_eq!(parsed.working_dir.as_deref(), Some("/tmp/project"));
+    }
+
+    #[test]
+    fn startup_arguments_keep_deeplinks() {
+        let parsed = parse_startup_arguments(["termy://new?dir=%2Ftmp%2Fproject"]);
+        assert_eq!(parsed.working_dir, None);
+        assert_eq!(parsed.deeplinks, vec!["termy://new?dir=%2Ftmp%2Fproject"]);
     }
 
     #[gpui::test]

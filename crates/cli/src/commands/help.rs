@@ -1,4 +1,9 @@
 pub fn run() {
+    println!("Usage:");
+    println!();
+    println!("  termy /path/to/project");
+    println!("  termy --working-directory /path/to/project");
+    println!();
     println!("Available commands:");
     println!();
     println!("  -tui              Interactive TUI for all CLI features");

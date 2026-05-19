@@ -61,7 +61,7 @@ strip = "symbols"
 
 [package]
 name = "termy"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 
 [package.metadata.bundle]

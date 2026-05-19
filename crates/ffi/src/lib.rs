@@ -1,6 +1,6 @@
 #![allow(clippy::missing_safety_doc)]
 
-use std::{path::Path, ptr, slice, str};
+use std::{collections::HashMap, path::Path, ptr, slice, str};
 
 use termy_core::{
     ConfigDiagnostic, ConfigDiagnosticKind, LoadedTermyConfig, ProgressState, Terminal,
@@ -178,6 +178,27 @@ pub struct TermyFfiConfig {
     loaded: LoadedTermyConfig,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiEnvVar {
+    pub key_ptr: *const u8,
+    pub key_len: usize,
+    pub value_ptr: *const u8,
+    pub value_len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiTerminalOptions {
+    pub config: *const TermyFfiConfig,
+    pub working_directory_ptr: *const u8,
+    pub working_directory_len: usize,
+    pub startup_command_ptr: *const u8,
+    pub startup_command_len: usize,
+    pub env_vars_ptr: *const TermyFfiEnvVar,
+    pub env_vars_len: usize,
+}
+
 struct EmptyReplyHost;
 
 impl TerminalReplyHost for EmptyReplyHost {
@@ -337,6 +358,13 @@ unsafe fn optional_utf8<'a>(ptr: *const u8, len: usize) -> Result<Option<&'a str
         .map_err(|_| TermyFfiStatus::InvalidUtf8)
 }
 
+unsafe fn optional_utf8_owned(
+    ptr: *const u8,
+    len: usize,
+) -> Result<Option<String>, TermyFfiStatus> {
+    unsafe { optional_utf8(ptr, len) }.map(|value| value.map(ToOwned::to_owned))
+}
+
 unsafe fn required_utf8<'a>(ptr: *const u8, len: usize) -> Result<&'a str, TermyFfiStatus> {
     if ptr.is_null() {
         return Err(TermyFfiStatus::Null);
@@ -355,6 +383,34 @@ unsafe fn contents_utf8<'a>(ptr: *const u8, len: usize) -> Result<&'a str, Termy
     }
 
     unsafe { required_utf8(ptr, len) }
+}
+
+unsafe fn env_vars_from_ffi(
+    ptr: *const TermyFfiEnvVar,
+    len: usize,
+) -> Result<HashMap<String, String>, TermyFfiStatus> {
+    if len == 0 {
+        return Ok(HashMap::new());
+    }
+    if ptr.is_null() {
+        return Err(TermyFfiStatus::Null);
+    }
+
+    let env_vars = unsafe { slice::from_raw_parts(ptr, len) };
+    let mut result = HashMap::with_capacity(env_vars.len());
+    for env_var in env_vars {
+        let key = unsafe { optional_utf8_owned(env_var.key_ptr, env_var.key_len) }?;
+        let Some(key) = key.map(|value| value.trim().to_string()) else {
+            continue;
+        };
+        if key.is_empty() {
+            continue;
+        }
+        let value = unsafe { optional_utf8_owned(env_var.value_ptr, env_var.value_len) }?
+            .unwrap_or_default();
+        result.insert(key, value);
+    }
+    Ok(result)
 }
 
 fn config_diagnostic_kind(kind: ConfigDiagnosticKind) -> u32 {
@@ -397,6 +453,7 @@ fn leak_loaded_config(
 unsafe fn terminal_new_with_runtime_config(
     size: TermyFfiSize,
     runtime_config: &TerminalRuntimeConfig,
+    configured_working_dir: Option<&str>,
     startup_command_ptr: *const u8,
     startup_command_len: usize,
     out_terminal: *mut *mut TermyFfiTerminal,
@@ -412,7 +469,7 @@ unsafe fn terminal_new_with_runtime_config(
 
     let Ok(terminal) = Terminal::new(
         size.into(),
-        None,
+        configured_working_dir,
         None,
         None,
         Some(runtime_config),
@@ -449,6 +506,7 @@ pub unsafe extern "C" fn termy_terminal_new(
         terminal_new_with_runtime_config(
             size,
             &TerminalRuntimeConfig::default(),
+            None,
             startup_command_ptr,
             startup_command_len,
             out_terminal,
@@ -472,8 +530,50 @@ pub unsafe extern "C" fn termy_terminal_new_with_config(
         terminal_new_with_runtime_config(
             size,
             &(*config).loaded.runtime_config,
+            None,
             startup_command_ptr,
             startup_command_len,
+            out_terminal,
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_new_with_options(
+    size: TermyFfiSize,
+    options: *const TermyFfiTerminalOptions,
+    out_terminal: *mut *mut TermyFfiTerminal,
+) -> TermyFfiStatus {
+    if options.is_null() || out_terminal.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let options = unsafe { *options };
+    let mut runtime_config = if options.config.is_null() {
+        TerminalRuntimeConfig::default()
+    } else {
+        unsafe { (*options.config).loaded.runtime_config.clone() }
+    };
+    let working_directory = match unsafe {
+        optional_utf8(options.working_directory_ptr, options.working_directory_len)
+    } {
+        Ok(value) => value,
+        Err(status) => return status,
+    };
+    let environment = match unsafe { env_vars_from_ffi(options.env_vars_ptr, options.env_vars_len) }
+    {
+        Ok(value) => value,
+        Err(status) => return status,
+    };
+    runtime_config.environment.extend(environment);
+
+    unsafe {
+        terminal_new_with_runtime_config(
+            size,
+            &runtime_config,
+            working_directory,
+            options.startup_command_ptr,
+            options.startup_command_len,
             out_terminal,
         )
     }
