@@ -87,10 +87,12 @@ const termy = await loadTermy()
 const terminal = termy.createTerminal({ cols: 120, rows: 36 })
 ```
 
-By default, the package loads the bundled `wasm/termy_wasm_bg.wasm` file. Modern
-bundlers should preserve that asset because it is part of the npm package.
+By default, the package initializes from WASM bytes embedded into `dist/index.js`.
+Apps do not need to copy `.wasm` files, add a bundler plugin, configure a public
+asset path, or pass a `wasmUrl`.
 
-Pass `moduleUrl` or `wasmUrl` when your deployment needs custom asset routing:
+Pass `moduleUrl` or `wasmUrl` only when your deployment needs custom
+wasm-bindgen assets:
 
 ```ts
 const termy = await loadTermy({
@@ -203,12 +205,13 @@ The published package includes:
 - `wasm/termy_wasm.js`
 - `wasm/termy_wasm_bg.wasm`
 
-The default loader resolves the WASM asset relative to the installed package,
-which works for normal npm installs and modern ESM bundlers. If your framework
-copies WASM assets to a CDN or hashed public path, pass `wasmUrl` explicitly.
+The default loader uses the embedded bytes in `dist/index.js`. The `wasm/` files
+are still published for advanced embedders that want to host or route the
+wasm-bindgen assets themselves.
 
-Your server should serve `.wasm` files with `application/wasm`. Browsers can
-fall back when the MIME type is wrong, but the fallback is slower.
+If you opt into external WASM assets, serve `.wasm` files with
+`application/wasm`. The default embedded path does not require a WASM MIME
+route.
 
 ## Node and Tests
 
@@ -233,10 +236,10 @@ It is not a substitute for browser testing your renderer and asset pipeline.
 
 | Symptom | Check |
 | ------- | ----- |
-| `WebAssembly.instantiateStreaming` warns about MIME type | Serve `.wasm` as `application/wasm`. |
+| `WebAssembly.instantiateStreaming` warns about MIME type | You are using an external `wasmUrl`; serve `.wasm` as `application/wasm` or use the embedded default. |
 | The terminal displays output but the shell does not answer some queries | Send `result.responses` back to the PTY after every `bridge.write(...)`. |
 | xterm colors do not match Termy | Pass `configContents` to `attachTermyToXterm` or apply `toXtermTheme(...)` yourself. |
-| The WASM asset 404s in production | Pass an explicit `wasmUrl` that matches your framework's public asset path. |
+| The WASM asset 404s in production | Use the embedded default path, or pass an explicit `wasmUrl` that matches your framework's public asset path. |
 | Input works twice | Make sure only one `bridge` is attached to a given xterm instance and call `dispose()` on unmount. |
 
 ## Related Docs

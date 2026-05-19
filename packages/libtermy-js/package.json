@@ -1,7 +1,7 @@
 {
   "name": "libtermy.js",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Browser WASM build of libtermy with an xterm.js adapter",
   "license": "MIT",
   "homepage": "https://github.com/lassejlv/termy#readme",
@@ -40,11 +40,15 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun run build:wasm && tsdown",
+    "build": "bun run prepare:wasm && tsdown",
     "build:ts": "tsdown",
     "build:wasm": "cd ../../crates/wasm && PATH=\"$HOME/.cargo/bin:$PATH\" RUSTUP_TOOLCHAIN=stable wasm-pack build --target web --out-dir ../../packages/libtermy-js/wasm --out-name termy_wasm --no-pack --no-opt && rm -f ../../packages/libtermy-js/wasm/.gitignore",
+    "embed:wasm": "node ./scripts/embed-wasm.mjs",
     "dev": "tsdown --watch",
-    "typecheck": "tsc --noEmit"
+    "prepare:wasm": "bun run build:wasm && bun run embed:wasm",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun run build && tsc --noEmit",
+    "typecheck": "bun run prepare:wasm && tsc --noEmit"
   },
   "peerDependencies": {
     "@xterm/xterm": ">=5"

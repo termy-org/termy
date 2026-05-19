@@ -1,3 +1,6 @@
+import { embeddedWasmBytes } from './generated/wasm-bytes'
+import * as bundledWasmModule from './generated/termy-wasm.js'
+
 export interface TermyColor {
   r: number
   g: number
@@ -163,11 +166,19 @@ export interface TermyXtermBridge {
 const textEncoder = new TextEncoder()
 
 export async function loadTermy(options: LoadTermyOptions = {}): Promise<LoadedTermy> {
-  const moduleUrl = options.moduleUrl ?? new URL('../wasm/termy_wasm.js', import.meta.url)
-  const wasmModule = (await import(/* @vite-ignore */ moduleUrl.toString())) as TermyWasmModule
+  const moduleUrl = options.moduleUrl
+  const usesBundledModule = moduleUrl === undefined
+  const wasmModule =
+    usesBundledModule
+      ? (bundledWasmModule as TermyWasmModule)
+      : ((await import(/* @vite-ignore */ moduleUrl.toString())) as TermyWasmModule)
 
   if (options.wasmUrl === undefined) {
-    await wasmModule.default(await defaultWasmInitInput())
+    if (usesBundledModule) {
+      await wasmModule.default({ module_or_path: embeddedWasmBytes() })
+    } else {
+      await wasmModule.default()
+    }
   } else {
     await wasmModule.default({ module_or_path: options.wasmUrl })
   }
@@ -326,30 +337,4 @@ function withOpacity(color: TermyColor, opacity: number): TermyColor {
 
 function bytesFromXtermData(data: string | Uint8Array): Uint8Array {
   return typeof data === 'string' ? textEncoder.encode(data) : data
-}
-
-async function defaultWasmInitInput(): Promise<unknown | undefined> {
-  if (!isNodeRuntime()) {
-    return undefined
-  }
-
-  const wasmUrl = new URL('../wasm/termy_wasm_bg.wasm', import.meta.url)
-  const dynamicImport = new Function('specifier', 'return import(specifier)') as (
-    specifier: string,
-  ) => Promise<{ readFile(path: URL): Promise<Uint8Array> }>
-  const { readFile } = await dynamicImport('node:fs/promises')
-
-  return { module_or_path: await readFile(wasmUrl) }
-}
-
-function isNodeRuntime(): boolean {
-  const candidate = globalThis as {
-    process?: {
-      versions?: {
-        node?: string
-      }
-    }
-  }
-
-  return typeof candidate.process?.versions?.node === 'string'
 }

@@ -16,3 +16,4 @@ examples/libtermy-swift/.build
 packages/libtermy-js/dist
 packages/libtermy-js/wasm
 packages/libtermy-js/node_modules
+packages/libtermy-js/src/generated

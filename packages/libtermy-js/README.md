@@ -26,6 +26,10 @@ socket.addEventListener('message', (event) => {
 })
 ```
 
+`loadTermy()` is self-contained by default. The npm package embeds the generated
+WASM bytes into `dist/index.js`, so apps do not need to copy `.wasm` files,
+configure public asset paths, or pass a `wasmUrl`.
+
 `bridge.write(...)` writes data into xterm and feeds the same bytes through the
 WASM parser. The returned feed result includes runtime events and terminal
 responses that should be sent back to the backing PTY.
