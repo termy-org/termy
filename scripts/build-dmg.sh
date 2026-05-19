@@ -158,7 +158,7 @@ if ! cargo bundle --version >/dev/null 2>&1; then
   die "cargo-bundle not found. Install it with: cargo install cargo-bundle"
 fi
 
-if [[ ! -f "$REPO_ROOT/assets/termy.icns" ]]; then
+if [[ ! -f "$REPO_ROOT/assets/termy.icns" || "$REPO_ROOT/assets/termy_icon@1024px.png" -nt "$REPO_ROOT/assets/termy.icns" ]]; then
   log "Generating app icon"
   "$SCRIPT_DIR/generate-icon.sh"
 fi

@@ -227,10 +227,9 @@ EOF
       cp "$APPDIR/${APP_NAME_LOWER}.desktop" "$APPDIR/usr/share/applications/${APP_NAME_LOWER}.desktop"
     fi
 
-    if [[ -f "$ICON_SOURCE" ]]; then
-      cp "$ICON_SOURCE" "$APPDIR/${APP_NAME_LOWER}.png"
-      cp "$ICON_SOURCE" "$APPDIR/usr/share/icons/hicolor/512x512/apps/${APP_NAME_LOWER}.png"
-    fi
+    [[ -f "$ICON_SOURCE" ]] || die "Linux app icon not found at $ICON_SOURCE"
+    cp "$ICON_SOURCE" "$APPDIR/${APP_NAME_LOWER}.png"
+    cp "$ICON_SOURCE" "$APPDIR/usr/share/icons/hicolor/512x512/apps/${APP_NAME_LOWER}.png"
 
     cat > "$APPDIR/AppRun" <<'APP_RUN'
 #!/usr/bin/env bash

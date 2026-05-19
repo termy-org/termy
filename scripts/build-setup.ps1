@@ -113,6 +113,7 @@ Set-Location $repoRoot
 
 $cargoToml = Join-Path $repoRoot "Cargo.toml"
 $issPath = Join-Path $repoRoot "installer\termy.iss"
+$iconPath = Join-Path $repoRoot "assets\termy.ico"
 
 if (-not (Test-Path $cargoToml)) {
     throw "Cargo.toml not found at $cargoToml"
@@ -120,6 +121,10 @@ if (-not (Test-Path $cargoToml)) {
 
 if (-not (Test-Path $issPath)) {
     throw "Inno Setup script not found at $issPath"
+}
+
+if (-not (Test-Path $iconPath)) {
+    throw "Windows installer icon not found at $iconPath. Generate it with scripts/generate-icon.sh."
 }
 
 if (-not $Version) {
