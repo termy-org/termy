@@ -5886,6 +5886,7 @@ dependencies = [
  "serde-wasm-bindgen",
  "termy_config_core",
  "termy_themes",
+ "unicode-width 0.2.0",
  "vte",
  "wasm-bindgen",
 ]

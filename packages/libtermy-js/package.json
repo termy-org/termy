@@ -1,7 +1,7 @@
 {
   "name": "libtermy.js",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Browser WASM build of libtermy with an xterm.js adapter",
   "license": "MIT",
   "homepage": "https://github.com/lassejlv/termy#readme",

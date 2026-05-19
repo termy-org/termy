@@ -1,5 +1,27 @@
 import { embeddedWasmBytes } from './generated/wasm-bytes'
 import * as bundledWasmModule from './generated/termy-wasm.js'
+import { createTermyRenderer } from './renderer'
+import type { CreateTermyRendererOptions, TermyRenderer } from './renderer/types'
+
+export type {
+  CreateTermyRendererOptions,
+  Disposable,
+  LinkPayload,
+  ResizePayload,
+  SearchOptions,
+  SelectionPayload,
+  TermyRenderer,
+  TermyRendererBackend,
+  BellMode,
+} from './renderer/types'
+export type { Keystroke, KeyModifiers, TerminalKeyboardMode } from './renderer/keyboard'
+export {
+  createTermyRenderer,
+  encodeKeystroke,
+  DEFAULT_KEYBOARD_MODE,
+  EMPTY_MODIFIERS,
+  serializeFrameToAnsi,
+} from './renderer'
 
 export interface TermyColor {
   r: number
@@ -16,7 +38,29 @@ export interface TermyCell {
   bg: TermyColor
   usesTerminalDefaultBg: boolean
   bold: boolean
+  italic: boolean
+  underline: boolean
+  strikethrough: boolean
+  dim: boolean
+  /**
+   * Reverse video. The cell still carries the logical fg/bg colors; the
+   * renderer is responsible for swapping them at paint time.
+   */
+  reverse: boolean
+  blink: boolean
+  invisible: boolean
   renderText: boolean
+  hyperlinkId: number | null
+  /**
+   * Column width occupied by this cell.
+   *
+   * * `1` — normal narrow cell (default).
+   * * `2` — wide cell (CJK / emoji / fullwidth). The glyph is painted
+   *   spanning this column and the next.
+   * * `0` — placeholder representing the right half of a wide glyph; the
+   *   renderer should skip emitting a glyph for it.
+   */
+  width: number
 }
 
 export interface TermyCursor {
@@ -25,6 +69,9 @@ export interface TermyCursor {
   style: 'line' | 'block'
 }
 
+export type MouseMode = 'none' | 'x10' | 'normal' | 'button-event' | 'any-event'
+export type MouseEncoding = 'legacy' | 'sgr' | 'utf8' | 'sgr-pixel'
+
 export interface TermyFrame {
   cols: number
   rows: number
@@ -32,6 +79,11 @@ export interface TermyFrame {
   cursor: TermyCursor | null
   displayOffset: number
   historySize: number
+  applicationCursorKeys: boolean
+  mouseMode: MouseMode
+  mouseEncoding: MouseEncoding
+  bracketedPaste: boolean
+  hyperlinks: string[]
 }
 
 export interface TermyRuntimeEvent {
@@ -99,6 +151,23 @@ export interface TermyCore {
   drain(): TermyFeedResult
   snapshot(): TermyFrame
   search(query: string): TermySearchMatch[]
+  setScrollback(budget: number): void
+  scrollLines(amount: number): void
+  scrollToBottom(): void
+  displayOffset(): number
+  historySize(): number
+  applicationCursorKeys(): boolean
+  mouseMode(): MouseMode
+  mouseEncoding(): MouseEncoding
+  bracketedPaste(): boolean
+  hyperlinkAt(row: number, col: number): string | undefined
+  encodeMouseReport(
+    button: number,
+    modifiers: number,
+    col: number,
+    row: number,
+    kind: number,
+  ): Uint8Array | undefined
 }
 
 export interface TermyWasmModule {
@@ -119,6 +188,7 @@ export interface LoadTermyOptions {
 export interface LoadedTermy {
   module: TermyWasmModule
   createTerminal(options?: CreateTermyTerminalOptions): TermyCore
+  createRenderer(host: HTMLElement | null, options?: CreateTermyRendererOptions): TermyRenderer
   defaultRenderConfig(): TermyRenderConfig
   renderConfigFromContents(contents: string): TermyRenderConfig
 }
@@ -129,6 +199,7 @@ export interface CreateTermyTerminalOptions {
   cellWidth?: number
   cellHeight?: number
   configContents?: string
+  scrollback?: number
 }
 
 export interface XtermDisposable {
@@ -152,6 +223,7 @@ export interface AttachTermyToXtermOptions extends CreateTermyTerminalOptions {
   onInput?: (data: string) => void
   onResize?: (size: { cols: number; rows: number }) => void
   applyTheme?: boolean
+  silenceDeprecation?: boolean
 }
 
 export interface TermyXtermBridge {
@@ -164,6 +236,8 @@ export interface TermyXtermBridge {
 }
 
 const textEncoder = new TextEncoder()
+
+let attachTermyToXtermDeprecationWarned = false
 
 export async function loadTermy(options: LoadTermyOptions = {}): Promise<LoadedTermy> {
   const moduleUrl = options.moduleUrl
@@ -183,7 +257,7 @@ export async function loadTermy(options: LoadTermyOptions = {}): Promise<LoadedT
     await wasmModule.default({ module_or_path: options.wasmUrl })
   }
 
-  return {
+  const loaded: LoadedTermy = {
     module: wasmModule,
     createTerminal(createOptions = {}) {
       const cols = createOptions.cols ?? 80
@@ -192,21 +266,47 @@ export async function loadTermy(options: LoadTermyOptions = {}): Promise<LoadedT
       const cellHeight = createOptions.cellHeight ?? 18
       const terminal = wasmModule.TermyTerminal.withCellSize(cols, rows, cellWidth, cellHeight)
 
+      if (createOptions.scrollback !== undefined) {
+        terminal.setScrollback(createOptions.scrollback)
+      }
+
       if (createOptions.configContents) {
         terminal.setConfigContents(createOptions.configContents)
       }
 
       return terminal
     },
+    createRenderer(host, rendererOptions = {}) {
+      return createTermyRenderer(host, { ...rendererOptions, termy: loaded })
+    },
     defaultRenderConfig: wasmModule.defaultRenderConfig,
     renderConfigFromContents: wasmModule.renderConfigFromContents,
   }
+  return loaded
 }
 
+/**
+ * @deprecated `attachTermyToXterm` double-parses input — once via `xterm.write()` for
+ * rendering and again via `core.feed()` for the libtermy snapshot/search index — which
+ * wastes CPU and can desync the two parsers on edge-case escape sequences. Use the
+ * first-party {@link createTermyRenderer} instead; it owns rendering, keyboard input,
+ * selection, scrollback, and URL detection in a single pass. See the "Migration: from
+ * xterm.js to first-party rendering" section of the libtermy.js README for a side-by-side
+ * example. Pass `silenceDeprecation: true` to suppress the runtime warning.
+ */
 export function attachTermyToXterm(
   xterm: XtermTerminalLike,
   options: AttachTermyToXtermOptions = {},
 ): TermyXtermBridge {
+  if (!options.silenceDeprecation && !attachTermyToXtermDeprecationWarned) {
+    attachTermyToXtermDeprecationWarned = true
+    console.warn(
+      '[libtermy.js] attachTermyToXterm is deprecated and double-parses input. ' +
+        'Migrate to createTermyRenderer (see README "Migration" section). ' +
+        'Pass { silenceDeprecation: true } to hide this warning.',
+    )
+  }
+
   const loaded = options.termy
   const core =
     options.core ??
