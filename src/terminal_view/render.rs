@@ -3008,6 +3008,7 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::handle_move_tab_right_action))
                     .on_action(cx.listener(Self::handle_switch_tab_left_action))
                     .on_action(cx.listener(Self::handle_switch_tab_right_action))
+                    .on_action(cx.listener(Self::handle_cycle_tabs_action))
                     .on_action(cx.listener(Self::handle_switch_to_tab_1_action))
                     .on_action(cx.listener(Self::handle_switch_to_tab_2_action))
                     .on_action(cx.listener(Self::handle_switch_to_tab_3_action))

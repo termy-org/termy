@@ -432,6 +432,22 @@ define_commands!(
             MenuActionRole::Normal
         ))
     ),
+    (
+        CycleTabs,
+        TERMINAL_CONTEXT,
+        Some(palette(
+            "Cycle Tabs",
+            "cycle next tab wrap",
+            CommandPaletteVisibility::Always
+        )),
+        Some(menu(
+            MenuRoot::Window,
+            1,
+            "Cycle Tabs",
+            MenuVisibility::Always,
+            MenuActionRole::Normal
+        ))
+    ),
     (SwitchToTab1, TERMINAL_CONTEXT, None, None),
     (SwitchToTab2, TERMINAL_CONTEXT, None, None),
     (SwitchToTab3, TERMINAL_CONTEXT, None, None),
@@ -1107,6 +1123,11 @@ mod tests {
             entries
                 .iter()
                 .any(|entry| entry.action == CommandAction::SwitchTabRight)
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.action == CommandAction::CycleTabs)
         );
         assert!(
             entries

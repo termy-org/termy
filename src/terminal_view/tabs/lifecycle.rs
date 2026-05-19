@@ -83,6 +83,7 @@ impl TerminalView {
                 self.switch_active_tab_right(cx);
                 true
             }
+            CommandAction::CycleTabs => self.cycle_active_tab(cx),
             CommandAction::SwitchToTab1 => self.switch_to_tab_position(1, cx),
             CommandAction::SwitchToTab2 => self.switch_to_tab_position(2, cx),
             CommandAction::SwitchToTab3 => self.switch_to_tab_position(3, cx),
@@ -142,6 +143,14 @@ impl TerminalView {
         } else {
             active_tab.checked_sub(1)
         }
+    }
+
+    fn cycled_tab_index(active_tab: usize, tab_count: usize) -> Option<usize> {
+        if tab_count <= 1 || active_tab >= tab_count {
+            return None;
+        }
+
+        Some((active_tab + 1) % tab_count)
     }
 
     fn adjacent_pane_index(active_pane: usize, pane_count: usize, step: i32) -> Option<usize> {
@@ -246,6 +255,20 @@ impl TerminalView {
     pub(crate) fn switch_active_tab_right(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(target_index) = Self::adjacent_tab_index(self.active_tab, self.tabs.len(), true)
         else {
+            return false;
+        };
+
+        match self.runtime_kind() {
+            RuntimeKind::Tmux => self.tmux_switch_active_tab_right(cx),
+            RuntimeKind::Native => {
+                self.switch_tab(target_index, cx);
+                true
+            }
+        }
+    }
+
+    pub(crate) fn cycle_active_tab(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(target_index) = Self::cycled_tab_index(self.active_tab, self.tabs.len()) else {
             return false;
         };
 
@@ -1650,6 +1673,20 @@ mod tests {
         assert_eq!(TerminalView::adjacent_tab_index(0, 0, false), None);
         assert_eq!(TerminalView::adjacent_tab_index(0, 1, true), None);
         assert_eq!(TerminalView::adjacent_tab_index(5, 3, true), None);
+    }
+
+    #[test]
+    fn cycled_tab_index_wraps_from_last_to_first_tab() {
+        assert_eq!(TerminalView::cycled_tab_index(0, 4), Some(1));
+        assert_eq!(TerminalView::cycled_tab_index(2, 4), Some(3));
+        assert_eq!(TerminalView::cycled_tab_index(3, 4), Some(0));
+    }
+
+    #[test]
+    fn cycled_tab_index_is_none_for_invalid_or_singleton_state() {
+        assert_eq!(TerminalView::cycled_tab_index(0, 0), None);
+        assert_eq!(TerminalView::cycled_tab_index(0, 1), None);
+        assert_eq!(TerminalView::cycled_tab_index(3, 3), None);
     }
 
     #[test]

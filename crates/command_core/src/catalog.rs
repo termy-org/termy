@@ -9,6 +9,7 @@ macro_rules! termy_command_catalog {
             (MoveTabRight, "move_tab_right"),
             (SwitchTabLeft, "switch_tab_left"),
             (SwitchTabRight, "switch_tab_right"),
+            (CycleTabs, "cycle_tabs"),
             (SwitchToTab1, "switch_to_tab_1"),
             (SwitchToTab2, "switch_to_tab_2"),
             (SwitchToTab3, "switch_to_tab_3"),

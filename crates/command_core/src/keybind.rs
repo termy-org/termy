@@ -69,6 +69,10 @@ pub fn default_keybinds_for_platform(platform: KeybindPlatform) -> Vec<DefaultKe
             action: CommandId::ClosePaneOrTab,
         },
         DefaultKeybind {
+            trigger: "ctrl-tab",
+            action: CommandId::CycleTabs,
+        },
+        DefaultKeybind {
             trigger: "secondary-1",
             action: CommandId::SwitchToTab1,
         },
@@ -514,6 +518,20 @@ mod tests {
                         && binding.action == CommandId::ToggleVerticalTabSidebar
                 }),
                 "missing secondary-b -> toggle_vertical_tab_sidebar on {}",
+                platform.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn default_keybinds_cycle_tabs_on_ctrl_tab() {
+        for platform in KeybindPlatform::ALL {
+            let defaults = default_keybinds_for_platform(platform);
+            assert!(
+                defaults.iter().any(|binding| {
+                    binding.trigger == "ctrl-tab" && binding.action == CommandId::CycleTabs
+                }),
+                "missing ctrl-tab -> cycle_tabs on {}",
                 platform.as_str()
             );
         }

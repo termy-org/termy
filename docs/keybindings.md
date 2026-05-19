@@ -13,6 +13,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_pane_or_tab`
+- `ctrl-tab` -> `cycle_tabs`
 - `secondary-1` -> `switch_to_tab_1`
 - `secondary-2` -> `switch_to_tab_2`
 - `secondary-3` -> `switch_to_tab_3`
@@ -53,6 +54,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_pane_or_tab`
+- `ctrl-tab` -> `cycle_tabs`
 - `secondary-1` -> `switch_to_tab_1`
 - `secondary-2` -> `switch_to_tab_2`
 - `secondary-3` -> `switch_to_tab_3`
@@ -92,6 +94,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_pane_or_tab`
+- `ctrl-tab` -> `cycle_tabs`
 - `secondary-1` -> `switch_to_tab_1`
 - `secondary-2` -> `switch_to_tab_2`
 - `secondary-3` -> `switch_to_tab_3`
@@ -131,6 +134,7 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-p` -> `toggle_command_palette`
 - `secondary-t` -> `new_tab`
 - `secondary-w` -> `close_pane_or_tab`
+- `ctrl-tab` -> `cycle_tabs`
 - `secondary-1` -> `switch_to_tab_1`
 - `secondary-2` -> `switch_to_tab_2`
 - `secondary-3` -> `switch_to_tab_3`
@@ -198,6 +202,7 @@ Related UI option:
 - `move_tab_right`
 - `switch_tab_left`
 - `switch_tab_right`
+- `cycle_tabs`
 - `switch_to_tab_1`
 - `switch_to_tab_2`
 - `switch_to_tab_3`

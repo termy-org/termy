@@ -28,7 +28,7 @@ fn command_icon_path(id: termy_command_core::CommandId) -> &'static str {
         NewTab => "icons/command_palette/new-tab.svg",
         CloseTab | ClosePane | ClosePaneOrTab => "icons/command_palette/close-tab.svg",
         MoveTabLeft | SwitchTabLeft => "icons/command_palette/tab-left.svg",
-        MoveTabRight | SwitchTabRight => "icons/command_palette/tab-right.svg",
+        MoveTabRight | SwitchTabRight | CycleTabs => "icons/command_palette/tab-right.svg",
         SwitchToTab1 | SwitchToTab2 | SwitchToTab3 | SwitchToTab4 | SwitchToTab5 | SwitchToTab6
         | SwitchToTab7 | SwitchToTab8 | SwitchToTab9 => "icons/command_palette/tab-right.svg",
         RenameTab => "icons/command_palette/rename.svg",
@@ -1537,6 +1537,7 @@ impl TerminalView {
             | CommandAction::MoveTabRight
             | CommandAction::SwitchTabLeft
             | CommandAction::SwitchTabRight
+            | CommandAction::CycleTabs
             | CommandAction::SwitchToTab1
             | CommandAction::SwitchToTab2
             | CommandAction::SwitchToTab3

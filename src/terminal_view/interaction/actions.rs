@@ -175,6 +175,7 @@ impl TerminalView {
             | CommandAction::MoveTabRight
             | CommandAction::SwitchTabLeft
             | CommandAction::SwitchTabRight
+            | CommandAction::CycleTabs
             | CommandAction::SwitchToTab1
             | CommandAction::SwitchToTab2
             | CommandAction::SwitchToTab3
@@ -401,6 +402,15 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         self.execute_command_action(CommandAction::SwitchTabRight, true, window, cx);
+    }
+
+    pub(in super::super) fn handle_cycle_tabs_action(
+        &mut self,
+        _: &commands::CycleTabs,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_command_action(CommandAction::CycleTabs, true, window, cx);
     }
 
     pub(in super::super) fn handle_switch_to_tab_1_action(
