@@ -30,7 +30,7 @@ pub(crate) const TAB_HORIZONTAL_TITLE_FONT_SIZE: f32 = 13.0;
 pub(crate) const TAB_TITLE_FONT_SIZE: f32 = 13.0;
 // Adds a small cushion to avoid early clipping from glyph/metrics variance.
 pub(crate) const TAB_TITLE_LAYOUT_SLACK_PX: f32 = 18.0;
-pub(crate) const TAB_MIN_WIDTH: f32 = 72.0;
+pub(crate) const TAB_MIN_WIDTH: f32 = 120.0;
 pub(crate) const TAB_MAX_WIDTH: f32 = 320.0;
 pub(crate) const TAB_ADAPTIVE_GROWTH_FACTOR: f32 = 0.85;
 pub(crate) const TAB_ADAPTIVE_HARD_CAP_RATIO: f32 = 0.60;

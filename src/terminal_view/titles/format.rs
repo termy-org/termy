@@ -79,6 +79,26 @@ impl TerminalView {
         formatted
     }
 
+    fn end_truncated_tab_label_for_preserved_chars(
+        chars: &[char],
+        preserved_chars: usize,
+    ) -> String {
+        if chars.is_empty() {
+            return String::new();
+        }
+
+        if preserved_chars == 0 {
+            return "...".to_string();
+        }
+
+        let mut formatted = String::with_capacity(preserved_chars + 3);
+        for ch in chars.iter().take(preserved_chars) {
+            formatted.push(*ch);
+        }
+        formatted.push_str("...");
+        formatted
+    }
+
     fn fitting_dots_for_width<F>(available_text_px: f32, measure_text_px: &mut F) -> String
     where
         F: FnMut(&str) -> f32,
@@ -118,8 +138,29 @@ impl TerminalView {
         }
 
         if !Self::is_path_like_tab_title(title) {
-            // Non-path titles keep end-truncation behavior through render-level text ellipsis.
-            return title.to_string();
+            let chars: Vec<char> = title.chars().collect();
+            if chars.is_empty() {
+                return String::new();
+            }
+
+            let mut low = 0usize;
+            let mut high = chars.len();
+            while low < high {
+                let mid = (low + high).div_ceil(2);
+                let candidate = Self::end_truncated_tab_label_for_preserved_chars(&chars, mid);
+                if measure_text_px(candidate.as_str()) <= available_text_px {
+                    low = mid;
+                } else {
+                    high = mid.saturating_sub(1);
+                }
+            }
+
+            let fitted = Self::end_truncated_tab_label_for_preserved_chars(&chars, low);
+            if measure_text_px(fitted.as_str()) <= available_text_px {
+                return fitted;
+            }
+
+            return Self::fitting_dots_for_width(available_text_px, &mut measure_text_px);
         }
 
         let chars: Vec<char> = title.chars().collect();
@@ -224,15 +265,15 @@ mod tests {
     }
 
     #[test]
-    fn measured_tab_title_fit_leaves_non_path_titles_for_end_truncation() {
+    fn measured_tab_title_fit_end_truncates_non_path_titles() {
         let title = "cargo test --workspace --all-features";
         assert_eq!(
             TerminalView::format_tab_label_for_render_measured(
                 title,
-                synthetic_text_width("cargo test"),
+                synthetic_text_width("cargo test..."),
                 synthetic_text_width,
             ),
-            "cargo test --workspace --all-features"
+            "cargo test..."
         );
     }
 

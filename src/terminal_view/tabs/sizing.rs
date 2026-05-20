@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn tab_display_width_for_text_px_tapers_slack_for_short_titles() {
-        let long_text_width = 90.0;
+        let long_text_width = 120.0;
         let long_width = TerminalView::tab_display_width_for_text_px_with_max(
             long_text_width,
             TAB_MAX_WIDTH * 2.0,
@@ -478,7 +478,7 @@ mod tests {
         let expected_long = (TAB_TEXT_PADDING_X * 2.0) + long_text_width + TAB_CLOSE_SLOT_WIDTH;
         assert_eq!(long_width, expected_long);
 
-        let short_text_width = 10.0;
+        let short_text_width = 64.0;
         let short_width = TerminalView::tab_display_width_for_text_px_with_max(
             short_text_width,
             TAB_MAX_WIDTH * 2.0,
@@ -490,9 +490,9 @@ mod tests {
 
     #[test]
     fn tab_display_width_for_text_px_is_monotonic_near_slack_transition() {
-        let width_7 = TerminalView::tab_display_width_for_text_px_with_max(49.0, 512.0);
-        let width_8 = TerminalView::tab_display_width_for_text_px_with_max(56.0, 512.0);
-        let width_9 = TerminalView::tab_display_width_for_text_px_with_max(63.0, 512.0);
+        let width_7 = TerminalView::tab_display_width_for_text_px_with_max(64.0, 512.0);
+        let width_8 = TerminalView::tab_display_width_for_text_px_with_max(74.0, 512.0);
+        let width_9 = TerminalView::tab_display_width_for_text_px_with_max(84.0, 512.0);
 
         assert!(width_7 < width_8);
         assert!(width_8 < width_9);
@@ -707,7 +707,7 @@ mod tests {
     #[test]
     fn active_grow_sticky_caps_sticky_width_under_pressure() {
         let text_width = synthetic_title_width_px("tab");
-        let effective_max = 118.0;
+        let effective_max = TAB_MIN_WIDTH + 10.0;
         let prior_sticky = 260.0;
 
         let (next_width, next_sticky) = TerminalView::resolve_tab_width_for_mode(
