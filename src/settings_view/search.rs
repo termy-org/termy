@@ -109,6 +109,7 @@ mod tests {
 static SETTINGS_METADATA: LazyLock<Vec<SettingMetadata>> = LazyLock::new(|| {
     let mut entries = root_setting_specs()
         .iter()
+        .filter(|spec| SettingsWindow::root_setting_visible_in_current_settings(spec.id))
         .map(|spec| SettingMetadata {
             key: spec.key,
             section: match spec.section {

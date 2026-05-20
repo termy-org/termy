@@ -30,10 +30,10 @@ pub use schema::{
     root_setting_from_key, root_setting_spec, root_setting_specs, root_setting_value_kind,
 };
 pub use types::{
-    AppConfig, AppearanceMode, CursorStyle, CustomColors, KeybindConfigLine, PaneFocusEffect, Rgb8,
-    SystemAppearance, TabCloseVisibility, TabTitleConfig, TabTitleMode, TabTitleSource,
-    TabWidthMode, TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId,
-    WindowsShell, WorkingDirFallback, resolve_active_theme,
+    AppConfig, AppIcon, AppearanceMode, CursorStyle, CustomColors, KeybindConfigLine,
+    PaneFocusEffect, Rgb8, SystemAppearance, TabCloseVisibility, TabTitleConfig, TabTitleMode,
+    TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility,
+    ThemeId, WindowsShell, WorkingDirFallback, resolve_active_theme,
 };
 
 pub fn format_line_height(value: f32) -> String {

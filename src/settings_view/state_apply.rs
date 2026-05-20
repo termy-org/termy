@@ -12,6 +12,7 @@ impl SettingsWindow {
             | EditableField::ThemeMode
             | EditableField::ThemeLight
             | EditableField::ThemeDark
+            | EditableField::AppIcon
             | EditableField::BackgroundOpacity
             | EditableField::FontFamily
             | EditableField::UiFontFamily
@@ -94,6 +95,18 @@ impl SettingsWindow {
                 }
                 config::set_root_setting(termy_config_core::RootSettingId::ThemeDark, value)?;
                 self.config.theme_dark = value.to_string();
+                Ok(())
+            }
+            EditableField::AppIcon => {
+                let parsed = termy_config_core::AppIcon::from_str(value)
+                    .ok_or_else(|| "App icon must be default or old".to_string())?;
+                let canonical = match parsed {
+                    termy_config_core::AppIcon::TermyDefault => "default",
+                    termy_config_core::AppIcon::TermyOld => "old",
+                };
+                config::set_root_setting(termy_config_core::RootSettingId::AppIcon, canonical)?;
+                self.config.app_icon = parsed;
+                crate::app_icon::apply(parsed);
                 Ok(())
             }
             EditableField::BackgroundOpacity => {

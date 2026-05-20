@@ -4273,6 +4273,7 @@ impl TerminalView {
     }
 
     fn apply_runtime_config(&mut self, config: AppConfig, cx: &mut Context<Self>) -> bool {
+        crate::app_icon::apply_from_config(&config);
         keybindings::install_keybindings(cx, &config, self.runtime_uses_tmux());
         self.cached_tmux_binary = {
             let binary = config.tmux_binary.trim().to_string();

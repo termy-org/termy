@@ -350,6 +350,19 @@ impl AppConfig {
                         );
                     }
                 }
+                RootSettingId::AppIcon => {
+                    if let Some(parsed) = crate::types::AppIcon::from_str(value) {
+                        config.app_icon = parsed;
+                    } else {
+                        push_invalid_value(
+                            &mut diagnostics,
+                            line_number,
+                            key,
+                            value,
+                            "one of: default, old",
+                        );
+                    }
+                }
                 RootSettingId::WarnOnQuit => {
                     if let Some(parsed) =
                         parse_bool_field(&mut diagnostics, line_number, key, value)

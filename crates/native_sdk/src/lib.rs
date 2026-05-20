@@ -215,7 +215,23 @@ pub fn app_icon_png_for_path(path: &str, size_px: f64) -> Option<Vec<u8>> {
     }
 }
 
-/// Set the macOS dock icon from PNG data. No-op on other platforms.
+#[cfg(target_os = "macos")]
+fn image_from_png_data(png_data: &[u8]) -> Option<Retained<NSImage>> {
+    use objc2::AnyThread;
+
+    let data = NSData::with_bytes(png_data);
+    NSImage::initWithData(NSImage::alloc(), &data)
+}
+
+#[cfg(target_os = "macos")]
+fn current_app_bundle_path() -> Option<std::path::PathBuf> {
+    let exe_path = std::env::current_exe().ok()?;
+    exe_path
+        .ancestors()
+        .find(|path| path.extension().and_then(|ext| ext.to_str()) == Some("app"))
+        .map(std::path::Path::to_path_buf)
+}
+
 /// Set the macOS dock icon from PNG data. No-op on other platforms.
 ///
 /// # Safety
@@ -223,11 +239,8 @@ pub fn app_icon_png_for_path(path: &str, size_px: f64) -> Option<Vec<u8>> {
 pub fn set_dock_icon_from_png(png_data: &[u8]) {
     #[cfg(target_os = "macos")]
     {
-        use objc2::AnyThread;
-
-        let mtm = unsafe { MainThreadMarker::new_unchecked() };
-        let data = NSData::with_bytes(png_data);
-        if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+        if let Some(image) = image_from_png_data(png_data) {
+            let mtm = unsafe { MainThreadMarker::new_unchecked() };
             let app = NSApplication::sharedApplication(mtm);
             unsafe {
                 app.setApplicationIconImage(Some(&image));
@@ -237,6 +250,66 @@ pub fn set_dock_icon_from_png(png_data: &[u8]) {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = png_data;
+    }
+}
+
+/// Persist a custom icon on the current `.app` bundle. Returns false when the
+/// process is not running from a bundle or macOS refuses the file icon update.
+///
+/// # Safety
+/// Must be called from the main thread.
+pub fn set_current_app_bundle_file_icon_from_png(png_data: &[u8]) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(image) = image_from_png_data(png_data) else {
+            return false;
+        };
+        let Some(bundle_path) = current_app_bundle_path() else {
+            return false;
+        };
+        let Some(bundle_path) = bundle_path.to_str() else {
+            return false;
+        };
+        let path = NSString::from_str(bundle_path);
+        let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+        workspace.setIcon_forFile_options(
+            Some(&image),
+            &path,
+            objc2_app_kit::NSWorkspaceIconCreationOptions::empty(),
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = png_data;
+        false
+    }
+}
+
+/// Clear a custom file icon from the current `.app` bundle so macOS uses the
+/// bundled default icon again.
+///
+/// # Safety
+/// Must be called from the main thread.
+pub fn clear_current_app_bundle_file_icon() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let Some(bundle_path) = current_app_bundle_path() else {
+            return false;
+        };
+        let Some(bundle_path) = bundle_path.to_str() else {
+            return false;
+        };
+        let path = NSString::from_str(bundle_path);
+        let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+        workspace.setIcon_forFile_options(
+            None,
+            &path,
+            objc2_app_kit::NSWorkspaceIconCreationOptions::empty(),
+        )
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
     }
 }
 

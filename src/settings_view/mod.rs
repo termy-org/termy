@@ -601,6 +601,9 @@ impl SettingsWindow {
     }
 
     fn apply_runtime_config(&mut self, config: AppConfig) -> bool {
+        if self.config.app_icon != config.app_icon {
+            crate::app_icon::apply(config.app_icon);
+        }
         let resolved_theme = resolve_active_theme(&config, self.system_appearance);
         self.colors = TerminalColors::from_theme(resolved_theme, &config.colors);
         self.config = config;

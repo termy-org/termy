@@ -58,6 +58,8 @@ impl SettingsWindow {
         let theme_mode_value = self.editable_field_value(EditableField::ThemeMode);
         let theme_light = self.config.theme_light.clone();
         let theme_dark = self.config.theme_dark.clone();
+        #[cfg(target_os = "macos")]
+        let app_icon = self.config.app_icon;
         let theme_mode_is_system = matches!(
             self.config.theme_mode,
             termy_config_core::AppearanceMode::System
@@ -73,6 +75,8 @@ impl SettingsWindow {
         let theme_mode_meta = Self::setting_metadata_or_fallback("theme_mode");
         let theme_light_meta = Self::setting_metadata_or_fallback("theme_light");
         let theme_dark_meta = Self::setting_metadata_or_fallback("theme_dark");
+        #[cfg(target_os = "macos")]
+        let app_icon_meta = Self::setting_metadata_or_fallback("app_icon");
         let opacity_meta = Self::setting_metadata_or_fallback("background_opacity");
         let font_family_meta = Self::setting_metadata_or_fallback("font_family");
         let ui_font_family_meta = Self::setting_metadata_or_fallback("ui_font_family");
@@ -117,6 +121,24 @@ impl SettingsWindow {
             ));
         }
         let theme_group = self.render_settings_group("THEME", theme_rows);
+
+        #[cfg(target_os = "macos")]
+        let app_rows = vec![
+            self.render_editable_row(
+                "app_icon",
+                EditableField::AppIcon,
+                app_icon_meta.title,
+                app_icon_meta.description,
+                match app_icon {
+                    termy_config_core::AppIcon::TermyDefault => "default",
+                    termy_config_core::AppIcon::TermyOld => "old",
+                }
+                .to_string(),
+                cx,
+            ),
+        ];
+        #[cfg(target_os = "macos")]
+        let app_group = self.render_settings_group("APP", app_rows);
 
         let chrome_rows = vec![self.render_root_bool_setting_row(
             "chrome_contrast",
@@ -210,7 +232,7 @@ impl SettingsWindow {
         ];
         let padding_group = self.render_settings_group("PADDING", padding_rows);
 
-        div()
+        let mut content = div()
             .flex()
             .flex_col()
             .gap(px(CARD_GAP))
@@ -220,7 +242,12 @@ impl SettingsWindow {
                 SettingsSection::Appearance,
                 cx,
             ))
-            .child(theme_group)
+            .child(theme_group);
+        #[cfg(target_os = "macos")]
+        {
+            content = content.child(app_group);
+        }
+        content
             .child(chrome_group)
             .child(window_group)
             .child(font_group)

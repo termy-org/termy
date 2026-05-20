@@ -114,6 +114,25 @@ impl AppearanceMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AppIcon {
+    #[default]
+    TermyDefault,
+    TermyOld,
+}
+
+impl AppIcon {
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "default" | "termy_default" | "termy-default" | "termy default" => {
+                Some(Self::TermyDefault)
+            }
+            "old" | "termy_old" | "termy-old" | "termy old" => Some(Self::TermyOld),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SystemAppearance {
     Light,
@@ -309,6 +328,7 @@ pub struct AppConfig {
     pub theme_mode: AppearanceMode,
     pub theme_light: ThemeId,
     pub theme_dark: ThemeId,
+    pub app_icon: AppIcon,
     pub chrome_contrast: bool,
     pub auto_update: bool,
     pub tmux_enabled: bool,
@@ -392,6 +412,7 @@ impl Default for AppConfig {
             theme_mode: AppearanceMode::default(),
             theme_light: "termy".to_string(),
             theme_dark: "termy".to_string(),
+            app_icon: AppIcon::default(),
             chrome_contrast: false,
             auto_update: true,
             tmux_enabled: DEFAULT_TMUX_ENABLED,

@@ -1,5 +1,5 @@
 use crate::{
-    AppConfig, ConfigDiagnosticKind, ConfigParseReport, CursorStyle, DEFAULT_LINE_HEIGHT,
+    AppConfig, AppIcon, ConfigDiagnosticKind, ConfigParseReport, CursorStyle, DEFAULT_LINE_HEIGHT,
     PaneFocusEffect, Rgb8, RootSettingId, RootSettingValueKind, TabCloseVisibility, TabTitleMode,
     TabTitleSource, TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility,
     WindowsShell, WorkingDirFallback, root_setting_specs,
@@ -47,6 +47,29 @@ fn simple_mode_parses_as_boolean_and_defaults_off() {
     assert!(!parse("").simple_mode);
     assert!(parse("simple_mode = true\n").simple_mode);
     assert!(!parse("simple_mode = false\n").simple_mode);
+}
+
+#[test]
+fn app_icon_parses_default_and_old_values() {
+    assert_eq!(parse("").app_icon, AppIcon::TermyDefault);
+    assert_eq!(
+        parse("app_icon = default\n").app_icon,
+        AppIcon::TermyDefault
+    );
+    assert_eq!(parse("app_icon = old\n").app_icon, AppIcon::TermyOld);
+    assert_eq!(parse("app_icon = Termy Old\n").app_icon, AppIcon::TermyOld);
+}
+
+#[test]
+fn invalid_app_icon_keeps_default_and_reports_diagnostic() {
+    let report = parse_report("app_icon = neon\n");
+
+    assert_eq!(report.config.app_icon, AppIcon::TermyDefault);
+    assert_eq!(report.diagnostics.len(), 1);
+    assert_eq!(
+        report.diagnostics[0].kind,
+        ConfigDiagnosticKind::InvalidValue
+    );
 }
 
 #[test]

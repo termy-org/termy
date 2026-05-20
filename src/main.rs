@@ -1,6 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod app_actions;
+mod app_icon;
 mod asset_source;
 mod chrome_style;
 mod colors;
@@ -448,10 +449,6 @@ fn main() {
     });
 
     application.run(move |cx: &mut App| {
-        // Set the dock icon for development builds (no .app bundle).
-        #[cfg(debug_assertions)]
-        termy_native_sdk::set_dock_icon_from_png(include_bytes!("../assets/termy_icon@1024px.png"));
-
         #[cfg(target_os = "macos")]
         macos_thermal_observer::neutralize_gpui_thermal_state_observer();
 
@@ -479,6 +476,7 @@ fn main() {
         if let Some(working_dir) = startup_arguments.working_dir.clone() {
             app_config.working_dir = Some(working_dir);
         }
+        app_icon::apply_from_config(&app_config);
         let show_onboarding = onboarding::should_show_onboarding(was_first_run, &app_config);
         if let Err(blocker) = preflight_tmux_runtime(&app_config) {
             blocker.present_and_exit();

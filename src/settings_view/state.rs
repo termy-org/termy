@@ -4,13 +4,14 @@ const MAX_THEME_SUGGESTIONS: usize = 16;
 const MAX_FONT_SUGGESTIONS: usize = 200;
 const PANE_FOCUS_MAX: f32 = 2.0;
 
-#[cfg_attr(target_os = "windows", allow(dead_code))]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum EditableField {
     Theme,
     ThemeMode,
     ThemeLight,
     ThemeDark,
+    AppIcon,
     BackgroundOpacity,
     FontFamily,
     UiFontFamily,
@@ -79,9 +80,7 @@ impl DropdownOption {
     }
 
     pub(super) fn display_text(&self) -> String {
-        if self.show_raw_value {
-            format!("{} ({})", self.label, self.value)
-        } else if self.label == self.value {
+        if !self.show_raw_value || self.label == self.value {
             self.label.clone()
         } else {
             format!("{} ({})", self.label, self.value)
@@ -228,22 +227,22 @@ impl SettingsWindow {
             .map(|spec| spec.id)
     }
 
-    fn root_setting_visible_in_current_settings(setting: RootSettingId) -> bool {
-        #[cfg(target_os = "windows")]
-        {
-            !matches!(
+    pub(super) fn root_setting_visible_in_current_settings(setting: RootSettingId) -> bool {
+        if matches!(setting, RootSettingId::AppIcon) {
+            return cfg!(target_os = "macos");
+        }
+
+        if cfg!(target_os = "windows") {
+            return !matches!(
                 setting,
                 RootSettingId::TmuxEnabled
                     | RootSettingId::TmuxPersistence
                     | RootSettingId::TmuxShowActivePaneBorder
                     | RootSettingId::TmuxBinary
-            )
+            );
         }
 
-        #[cfg(not(target_os = "windows"))]
-        {
-            !matches!(setting, RootSettingId::WindowsShell)
-        }
+        !matches!(setting, RootSettingId::WindowsShell)
     }
 
     fn is_root_setting_at_default(&self, setting: RootSettingId) -> bool {
@@ -408,6 +407,7 @@ impl SettingsWindow {
             | EditableField::ThemeMode
             | EditableField::ThemeLight
             | EditableField::ThemeDark
+            | EditableField::AppIcon
             | EditableField::BackgroundOpacity
             | EditableField::FontFamily
             | EditableField::UiFontFamily
@@ -471,6 +471,7 @@ impl SettingsWindow {
                 dropdown_click_only: false,
                 numeric_step: None,
             },
+            EditableField::AppIcon => Self::enum_field_spec(RootSettingId::AppIcon),
             EditableField::BackgroundOpacity => FieldSpec {
                 root_setting: Some(RootSettingId::BackgroundOpacity),
                 codec: FieldCodec::Numeric,
@@ -698,8 +699,13 @@ impl SettingsWindow {
         Self::field_spec(field).dropdown_click_only
     }
 
-    pub(super) fn dropdown_option_for_enum_choice(value: &str, label: &str) -> DropdownOption {
-        DropdownOption::labeled(value.to_string(), label.to_string(), true)
+    pub(super) fn dropdown_option_for_enum_choice(
+        setting: RootSettingId,
+        value: &str,
+        label: &str,
+    ) -> DropdownOption {
+        let show_raw_value = !matches!(setting, RootSettingId::AppIcon);
+        DropdownOption::labeled(value.to_string(), label.to_string(), show_raw_value)
     }
 
     pub(super) fn normalize_dropdown_query_token(value: &str) -> String {
@@ -725,7 +731,9 @@ impl SettingsWindow {
 
         let mut options = choices
             .iter()
-            .map(|choice| Self::dropdown_option_for_enum_choice(choice.value, choice.label))
+            .map(|choice| {
+                Self::dropdown_option_for_enum_choice(setting, choice.value, choice.label)
+            })
             .collect::<Vec<_>>();
 
         let trimmed_query = query.trim();
@@ -813,7 +821,7 @@ impl SettingsWindow {
         else {
             return raw_value.to_string();
         };
-        Self::dropdown_option_for_enum_choice(choice.value, choice.label).display_text()
+        Self::dropdown_option_for_enum_choice(setting, choice.value, choice.label).display_text()
     }
 
     pub(super) fn apply_dropdown_selection(
@@ -869,6 +877,11 @@ impl SettingsWindow {
             .to_string(),
             EditableField::ThemeLight => self.config.theme_light.clone(),
             EditableField::ThemeDark => self.config.theme_dark.clone(),
+            EditableField::AppIcon => match self.config.app_icon {
+                termy_config_core::AppIcon::TermyDefault => "default",
+                termy_config_core::AppIcon::TermyOld => "old",
+            }
+            .to_string(),
             EditableField::BackgroundOpacity => format!(
                 "{}",
                 (self.effective_background_opacity() * 100.0).round() as i32
@@ -1249,6 +1262,10 @@ mod tests {
     fn field_spec_covers_all_editable_fields() {
         let fields = vec![
             EditableField::Theme,
+            EditableField::ThemeMode,
+            EditableField::ThemeLight,
+            EditableField::ThemeDark,
+            EditableField::AppIcon,
             EditableField::BackgroundOpacity,
             EditableField::FontFamily,
             EditableField::FontSize,
@@ -1303,6 +1320,7 @@ mod tests {
             EditableField::ScrollbarVisibility,
             EditableField::ScrollbarStyle,
             EditableField::PaneFocusEffect,
+            EditableField::AppIcon,
             EditableField::TabTitleMode,
             EditableField::TabCloseVisibility,
             EditableField::TabWidthMode,
@@ -1314,6 +1332,17 @@ mod tests {
             assert_eq!(spec.codec, FieldCodec::Enum);
             assert!(spec.dropdown_click_only);
         }
+    }
+
+    #[test]
+    fn app_icon_dropdown_displays_user_facing_labels_only() {
+        let option = SettingsWindow::dropdown_option_for_enum_choice(
+            termy_config_core::RootSettingId::AppIcon,
+            "default",
+            "Termy Default",
+        );
+
+        assert_eq!(option.display_text(), "Termy Default");
     }
 
     #[test]
