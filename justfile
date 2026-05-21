@@ -7,6 +7,9 @@ set shell := ["bash", "-cu"]
 run:
     cargo run --release
 
+run-macos:
+    cd macos && ./script/build_and_run.sh
+
 test:
     cargo test --release
 
