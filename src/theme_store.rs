@@ -6,7 +6,7 @@ use termy_themes::{
     registry_file_url, theme_colors_json_pretty,
 };
 
-const DEFAULT_THEME_STORE_API_URL: &str = "https://api.termy.run";
+const DEFAULT_THEME_STORE_API_URL: &str = "https://api.termy.sh";
 const DEFAULT_THEME_REGISTRY_URL: &str =
     "https://raw.githubusercontent.com/termy-org/themes/main/index.json";
 

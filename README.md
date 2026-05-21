@@ -2,7 +2,7 @@
 
 A fast, minimal terminal emulator built with [GPUI](https://gpui.rs) and [alacritty_terminal](https://alacritty.org).
 
-[Docs](https://termy.run/docs) · [Download](https://termy.run/#download) · [Contribute](CONTRIBUTING.md)
+[Docs](https://termy.sh/docs) · [Download](https://termy.sh/#download) · [Contribute](CONTRIBUTING.md)
 
 ## Features
 
@@ -14,7 +14,7 @@ A fast, minimal terminal emulator built with [GPUI](https://gpui.rs) and [alacri
 
 ## Install
 
-Prebuilt binaries: [termy.run](https://termy.run/#download).
+Prebuilt binaries: [termy.sh](https://termy.sh/#download).
 
 Build from source:
 
@@ -25,10 +25,6 @@ cargo run --release -p termy
 ## Configuration
 
 Config and keybinds live under your platform config dir. See [docs/configuration.md](docs/configuration.md) and [docs/keybindings.md](docs/keybindings.md).
-
-## Platform Notes
-
-- Windows: Agent Sidebar/Workspace is currently disabled.
 
 ## Contributing
 

@@ -107,7 +107,7 @@ The final push before tagging v1.0.
 - Publish migration guides for users switching from Ghostty, Alacritty, iTerm2, and Windows Terminal
 - Compile a v1 changelog from all closed issues and unreleased work
 - Run a dependency license audit
-- Polish termy.run to reflect v1 quality
+- Polish termy.sh to reflect v1 quality
 
 ---
 
