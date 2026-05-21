@@ -325,6 +325,7 @@ impl TerminalView {
                 );
 
                 let tab_id = self.allocate_tab_id();
+                let old_active_tab = self.active_tab;
                 let new_tab_index = self.active_tab.saturating_add(1).min(self.tabs.len());
                 self.tabs.insert(
                     new_tab_index,
@@ -337,6 +338,22 @@ impl TerminalView {
                     ),
                 );
                 self.refresh_tab_title(new_tab_index);
+                self.active_tab = new_tab_index;
+                if let Some(inactive_scrollback) = self.inactive_tab_scrollback {
+                    let active_options = self.terminal_runtime.term_options();
+                    let inactive_options =
+                        active_options.with_scrollback_history(inactive_scrollback);
+                    if let Some(tab) = self.tabs.get(old_active_tab) {
+                        for pane in &tab.panes {
+                            pane.terminal.set_term_options(inactive_options);
+                        }
+                    }
+                    if let Some(tab) = self.tabs.get(new_tab_index) {
+                        for pane in &tab.panes {
+                            pane.terminal.set_term_options(active_options);
+                        }
+                    }
+                }
                 self.mark_tab_strip_layout_dirty();
                 self.reset_tab_interaction_state();
                 self.sync_tab_strip_for_active_tab();
