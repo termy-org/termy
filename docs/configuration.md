@@ -30,6 +30,11 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 - Theme applied when system appearance is dark
 - Group: `THEME`
 
+`app_icon`
+- Default: `default`
+- macOS app icon shown in the Dock and app switcher
+- Group: `APP`
+
 `chrome_contrast`
 - Default: `false`
 - Increase contrast of non-terminal UI surfaces

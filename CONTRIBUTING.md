@@ -15,8 +15,10 @@ This guide focuses on the current Termy workflow so you can get a change from cl
 - `src/`: main desktop app built with Rust + GPUI
 - `crates/`: shared workspace crates such as config, command catalog, plugin host, search, terminal UI, and CLI helpers
 - `docs/`: repository docs used by contributors
-- `site/`: website and public docs
+- `website/`: website and public docs
 - `.github/`: issue templates, PR template, and CI workflows
+
+See [Project Layout](docs/architecture/project-layout.md) for ownership boundaries between the app, reusable crates, embedding surfaces, and docs.
 
 ## Local setup
 
@@ -113,7 +115,7 @@ If you change commands or keybind-facing actions:
 Pick the right place:
 
 - contributor-facing repo docs: `docs/`
-- public user docs: `site/src/content/`
+- public user docs: `website/content/`
 - quick project entry points: `README.md`
 
 When behavior changes, update docs in the same PR.

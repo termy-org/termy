@@ -131,3 +131,9 @@ Build from this package directory:
 bun install
 bun run build
 ```
+
+## Ownership
+
+This package wraps the WASM build from `crates/wasm` and provides browser
+renderer helpers. Keep package docs aligned with `docs/libtermy-js.md` and the
+website developer docs when public behavior changes.

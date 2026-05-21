@@ -57,6 +57,7 @@ use termy_toast::ToastManager;
 
 mod benchmark;
 mod command_palette;
+mod constants;
 mod inline_input;
 mod interaction;
 #[cfg(target_os = "macos")]
@@ -74,6 +75,7 @@ mod update_toasts;
 
 use self::benchmark::{BENCHMARK_SAMPLE_INTERVAL, BenchmarkConfig, BenchmarkSession};
 use command_palette::{CommandPaletteMode, CommandPaletteState, TmuxSessionIntent};
+use constants::*;
 use inline_input::{InlineInputAlignment, InlineInputState};
 #[cfg(target_os = "macos")]
 pub(crate) use macos_file_drop::{NativeDropResult, install_native_file_drop};
@@ -81,125 +83,6 @@ use overlay_view::TerminalOverlayView;
 use runtime::{RuntimeKind, RuntimeState, TmuxRuntime};
 pub(crate) use tab_strip::constants::*;
 use tab_strip::state::TabStripState;
-
-const MIN_FONT_SIZE: f32 = 8.0;
-const MAX_FONT_SIZE: f32 = 40.0;
-const ZOOM_STEP: f32 = 1.0;
-#[cfg(target_os = "windows")]
-const TITLEBAR_HEIGHT: f32 = 32.0;
-#[cfg(not(target_os = "windows"))]
-const TITLEBAR_HEIGHT: f32 = 34.0;
-const MAX_TAB_TITLE_CHARS: usize = 96;
-const DEFAULT_TAB_TITLE: &str = "Terminal";
-const COMMAND_TITLE_DELAY_MS: u64 = 250;
-#[cfg(not(test))]
-const CONFIG_WATCH_INTERVAL_MS: u64 = 750;
-const CURSOR_BLINK_INTERVAL_MS: u64 = 530;
-const TMUX_TITLE_REFRESH_DEBOUNCE_MS: u64 = 120;
-const CHILD_WORKING_DIR_CACHE_TTL_MS: u64 = 1500;
-const SELECTION_BG_ALPHA: f32 = 0.35;
-const DIM_TEXT_FACTOR: f32 = 0.66;
-const COMMAND_PALETTE_WIDTH: f32 = 560.0;
-const COMMAND_PALETTE_MAX_ITEMS: usize = 8;
-const COMMAND_PALETTE_ROW_HEIGHT: f32 = 34.0;
-const COMMAND_PALETTE_SCROLLBAR_WIDTH: f32 = 8.0;
-const COMMAND_PALETTE_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 18.0;
-const COMMAND_PALETTE_INPUT_HEAD_HEIGHT: f32 = 44.0;
-const COMMAND_PALETTE_INPUT_TEXT_SIZE: f32 = 14.0;
-const COMMAND_PALETTE_ROW_ICON_SIZE: f32 = 14.0;
-const COMMAND_PALETTE_ROW_PADDING_X: f32 = 12.0;
-const COMMAND_PALETTE_SCRIM_ALPHA: f32 = 0.12;
-const COMMAND_PALETTE_DIVIDER_ALPHA: f32 = 0.10;
-const COMMAND_PALETTE_TOP_OFFSET: f32 = 60.0;
-const TERMINAL_SCROLLBAR_GUTTER_WIDTH: f32 = 12.0;
-const TERMINAL_SCROLLBAR_TRACK_WIDTH: f32 = 12.0;
-const TERMINAL_SCROLLBAR_MIN_THUMB_HEIGHT: f32 = 40.0;
-const TERMINAL_SCROLLBAR_HOLD_MS: u64 = 900;
-const TERMINAL_SCROLLBAR_FADE_MS: u64 = 140;
-const TERMINAL_SCROLLBAR_TRACK_HOLD_REPEAT_MS: u64 = 65;
-const TERMINAL_SCROLLBAR_HOLD_DURATION: Duration =
-    Duration::from_millis(TERMINAL_SCROLLBAR_HOLD_MS);
-const TERMINAL_SCROLLBAR_FADE_DURATION: Duration =
-    Duration::from_millis(TERMINAL_SCROLLBAR_FADE_MS);
-const TERMINAL_SCROLLBAR_GUTTER_ALPHA: f32 = 0.0;
-const TERMINAL_SCROLLBAR_TRACK_ALPHA: f32 = 0.06;
-const TERMINAL_SCROLLBAR_THUMB_ALPHA: f32 = 0.38;
-const TERMINAL_SCROLLBAR_THUMB_ACTIVE_ALPHA: f32 = 0.72;
-const TERMINAL_SCROLLBAR_MATCH_MARKER_ALPHA: f32 = 0.48;
-const TERMINAL_SCROLLBAR_CURRENT_MARKER_ALPHA: f32 = 0.92;
-const TERMINAL_SCROLLBAR_MARKER_HEIGHT: f32 = 2.0;
-const TERMINAL_SCROLLBAR_TRACK_RADIUS: f32 = 999.0;
-const TERMINAL_SCROLLBAR_THUMB_RADIUS: f32 = 999.0;
-const TERMINAL_SCROLLBAR_THUMB_INSET: f32 = 3.0;
-const TERMINAL_SCROLLBAR_MUTED_THEME_BLEND: f32 = 0.38;
-const SEARCH_BAR_WIDTH: f32 = 420.0;
-const SEARCH_BAR_HEIGHT: f32 = 44.0;
-const SEARCH_DEBOUNCE_MS: u64 = 50;
-const TMUX_RESIZE_ERROR_TOAST_DEBOUNCE_MS: u64 = 2000;
-const DEBUG_OVERLAY_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
-#[cfg(target_os = "windows")]
-const TMUX_UNSUPPORTED_WINDOWS_TOAST: &str =
-    "tmux integration is unsupported on Windows; using native runtime instead.";
-const INPUT_SCROLL_SUPPRESS_MS: u64 = 160;
-const TOAST_COPY_FEEDBACK_MS: u64 = 1200;
-const WINDOW_RESIZE_INDICATOR_MS: u64 = 850;
-const RESIZE_THROTTLE_MS: u64 = 32;
-const CHILD_WORKING_DIR_CACHE_TTL: Duration = Duration::from_millis(CHILD_WORKING_DIR_CACHE_TTL_MS);
-const BENCHMARK_EXIT_GRACE_DURATION: Duration = Duration::from_millis(250);
-const OVERLAY_PANEL_ALPHA_FLOOR_RATIO: f32 = 0.72;
-const OVERLAY_PRIMARY_TEXT_ALPHA: f32 = 0.95;
-const OVERLAY_MUTED_TEXT_ALPHA: f32 = 0.62;
-const COMMAND_PALETTE_PANEL_SOLID_ALPHA: f32 = 0.90;
-const COMMAND_PALETTE_ROW_SELECTED_BG_ALPHA: f32 = 0.20;
-const COMMAND_PALETTE_SHORTCUT_BG_ALPHA: f32 = 0.10;
-const COMMAND_PALETTE_SHORTCUT_TEXT_ALPHA: f32 = 0.80;
-const COMMAND_PALETTE_PANEL_BG_ALPHA: f32 = 0.98;
-const COMMAND_PALETTE_INPUT_SELECTION_ALPHA: f32 = 0.28;
-const COMMAND_PALETTE_SCROLLBAR_TRACK_ALPHA: f32 = 0.10;
-const COMMAND_PALETTE_SCROLLBAR_THUMB_ALPHA: f32 = 0.42;
-const SEARCH_BAR_BG_ALPHA: f32 = 0.92;
-const SEARCH_INPUT_BG_ALPHA: f32 = 0.15;
-const SEARCH_COUNTER_TEXT_ALPHA: f32 = 0.72;
-const SEARCH_BUTTON_TEXT_ALPHA: f32 = 0.70;
-const SEARCH_BUTTON_HOVER_BG_ALPHA: f32 = 0.20;
-const SEARCH_INPUT_SELECTION_ALPHA: f32 = 0.30;
-const TAB_SWITCH_HINT_ANIMATION_FRAME_MS: u64 = 16;
-const NEW_TAB_ANIMATION_DURATION: Duration = Duration::from_millis(180);
-const NEW_TAB_ANIMATION_FRAME_MS: u64 = 16;
-const TAB_INTERACTION_ANIMATION_FRAME_MS: u64 = 16;
-const MAX_PANE_FOCUS_STRENGTH: f32 = 2.0;
-const NATIVE_PANE_MIN_COLS: u16 = 24;
-const NATIVE_PANE_MIN_ROWS: u16 = 8;
-#[cfg(debug_assertions)]
-const RENDER_METRICS_LOG_INTERVAL: Duration = Duration::from_secs(1);
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct TerminalOverlayGeometry {
-    panel_radius: f32,
-    input_radius: f32,
-    control_radius: f32,
-}
-
-// Floating terminal chrome stays square to match the app's shared overlay language.
-const TERMINAL_OVERLAY_GEOMETRY: TerminalOverlayGeometry = TerminalOverlayGeometry {
-    panel_radius: 0.0,
-    input_radius: 0.0,
-    control_radius: 0.0,
-};
-
-// Search bar uses rounded corners for a native macOS feel.
-const SEARCH_OVERLAY_GEOMETRY: TerminalOverlayGeometry = TerminalOverlayGeometry {
-    panel_radius: 10.0,
-    input_radius: 6.0,
-    control_radius: 6.0,
-};
-
-// Toast feedback uses rounded corners for a softer, modern look.
-const TOAST_GEOMETRY: TerminalOverlayGeometry = TerminalOverlayGeometry {
-    panel_radius: 10.0,
-    input_radius: 6.0,
-    control_radius: 6.0,
-};
 
 type TabId = u64;
 
