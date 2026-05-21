@@ -66,6 +66,20 @@ fn color_to_rgba(
     }
 }
 
+fn bold_foreground_color(color: AnsiColor) -> AnsiColor {
+    match color {
+        AnsiColor::Named(NamedColor::Black) => AnsiColor::Named(NamedColor::BrightBlack),
+        AnsiColor::Named(NamedColor::Red) => AnsiColor::Named(NamedColor::BrightRed),
+        AnsiColor::Named(NamedColor::Green) => AnsiColor::Named(NamedColor::BrightGreen),
+        AnsiColor::Named(NamedColor::Yellow) => AnsiColor::Named(NamedColor::BrightYellow),
+        AnsiColor::Named(NamedColor::Blue) => AnsiColor::Named(NamedColor::BrightBlue),
+        AnsiColor::Named(NamedColor::Magenta) => AnsiColor::Named(NamedColor::BrightMagenta),
+        AnsiColor::Named(NamedColor::Cyan) => AnsiColor::Named(NamedColor::BrightCyan),
+        AnsiColor::Named(NamedColor::White) => AnsiColor::Named(NamedColor::BrightWhite),
+        _ => color,
+    }
+}
+
 fn default_cell(
     col: usize,
     row: usize,
@@ -124,6 +138,9 @@ pub(crate) fn snapshot_from_term<T: EventListener>(
         let mut bg = cell.bg;
         if cell.flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut fg, &mut bg);
+        }
+        if cell.flags.contains(Flags::BOLD) {
+            fg = bold_foreground_color(fg);
         }
 
         let mut fg = color_to_rgba(fg, live_colors, query_colors);
@@ -187,5 +204,57 @@ mod tests {
         assert_eq!(frame.cells[0].char, 'o');
         assert_eq!(frame.cells[1].char, 'k');
         assert_eq!(frame.cells.len(), 8);
+    }
+
+    #[test]
+    fn snapshot_brightens_bold_named_foreground_colors() {
+        let size = TerminalSize {
+            cols: 2,
+            rows: 1,
+            cell_width: 9.0,
+            cell_height: 18.0,
+        };
+        let mut term = Term::new(TermConfig::default(), &size, VoidListener);
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, b"\x1b[31;1mX");
+
+        let frame = snapshot_from_term(&term, size, TerminalQueryColors::default());
+
+        assert_eq!(
+            frame.cells[0].fg,
+            TermyColor {
+                r: 0xff,
+                g: 0x00,
+                b: 0x00,
+                a: 255,
+            }
+        );
+        assert!(frame.cells[0].bold);
+    }
+
+    #[test]
+    fn snapshot_marks_explicit_backgrounds() {
+        let size = TerminalSize {
+            cols: 2,
+            rows: 1,
+            cell_width: 9.0,
+            cell_height: 18.0,
+        };
+        let mut term = Term::new(TermConfig::default(), &size, VoidListener);
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, b"\x1b[44mX");
+
+        let frame = snapshot_from_term(&term, size, TerminalQueryColors::default());
+
+        assert!(!frame.cells[0].uses_terminal_default_bg);
+        assert_eq!(
+            frame.cells[0].bg,
+            TermyColor {
+                r: 0x00,
+                g: 0x00,
+                b: 0xee,
+                a: 255,
+            }
+        );
     }
 }

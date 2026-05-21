@@ -180,6 +180,19 @@ typedef struct {
   size_t env_vars_len;
 } TermyFfiTerminalOptions;
 
+typedef struct {
+  bool control;
+  bool alt;
+  bool shift;
+  bool platform;
+  bool function;
+  const uint8_t *key_ptr;
+  size_t key_len;
+  const uint8_t *key_char_ptr;
+  size_t key_char_len;
+  uint32_t event_kind;
+} TermyFfiKeystroke;
+
 TermyFfiSize termy_size_default(void);
 TermyFfiStatus termy_terminal_new(
     TermyFfiSize size,
@@ -209,6 +222,13 @@ TermyFfiStatus termy_config_free(TermyFfiConfig *config);
 bool termy_config_loaded_from_disk(const TermyFfiConfig *config);
 size_t termy_config_runtime_scrollback_history(const TermyFfiConfig *config);
 size_t termy_config_diagnostic_count(const TermyFfiConfig *config);
+TermyFfiStatus termy_config_window_size(
+    const TermyFfiConfig *config,
+    float *out_width,
+    float *out_height);
+TermyFfiStatus termy_config_working_directory(
+    const TermyFfiConfig *config,
+    TermyFfiBytes *out_working_directory);
 TermyFfiStatus termy_config_path(
     const TermyFfiConfig *config,
     TermyFfiBytes *out_path);
@@ -225,10 +245,21 @@ TermyFfiStatus termy_terminal_write(
     TermyFfiTerminal *terminal,
     const uint8_t *bytes_ptr,
     size_t bytes_len);
+TermyFfiStatus termy_terminal_encode_key(
+    TermyFfiTerminal *terminal,
+    const TermyFfiKeystroke *keystroke,
+    TermyFfiBytes *out_bytes);
 TermyFfiStatus termy_terminal_resize(TermyFfiTerminal *terminal, TermyFfiSize size);
 TermyFfiStatus termy_terminal_set_wakeup_enabled(
     TermyFfiTerminal *terminal,
     bool enabled);
+TermyFfiStatus termy_terminal_scroll_display(
+    TermyFfiTerminal *terminal,
+    int32_t delta_lines,
+    bool *out_changed);
+TermyFfiStatus termy_terminal_scroll_to_bottom(
+    TermyFfiTerminal *terminal,
+    bool *out_changed);
 TermyFfiStatus termy_terminal_snapshot(
     TermyFfiTerminal *terminal,
     TermyFfiFrame *out_frame);

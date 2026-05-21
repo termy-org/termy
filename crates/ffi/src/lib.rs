@@ -5,9 +5,10 @@ use std::{collections::HashMap, path::Path, ptr, slice, str};
 use termy_core::{
     ConfigDiagnostic, ConfigDiagnosticKind, LoadedTermyConfig, ProgressState, Terminal,
     TerminalClipboardTarget, TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent,
-    TerminalOptions, TerminalQueryColors, TerminalReplyHost, TerminalRuntimeConfig, TerminalSize,
-    TermyCell, TermyColor, TermySearchMatch, load_config_from_contents,
-    load_config_from_default_path, load_config_from_path,
+    TerminalKeyEventKind, TerminalOptions, TerminalQueryColors, TerminalReplyHost,
+    TerminalRuntimeConfig, TerminalSize, TermyCell, TermyColor, TermyKeystroke, TermyModifiers,
+    TermySearchMatch, keystroke_to_input, load_config_from_contents, load_config_from_default_path,
+    load_config_from_path,
 };
 
 #[repr(C)]
@@ -197,6 +198,21 @@ pub struct TermyFfiTerminalOptions {
     pub startup_command_len: usize,
     pub env_vars_ptr: *const TermyFfiEnvVar,
     pub env_vars_len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiKeystroke {
+    pub control: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub platform: bool,
+    pub function: bool,
+    pub key_ptr: *const u8,
+    pub key_len: usize,
+    pub key_char_ptr: *const u8,
+    pub key_char_len: usize,
+    pub event_kind: u32,
 }
 
 struct EmptyReplyHost;
@@ -663,6 +679,44 @@ pub unsafe extern "C" fn termy_config_diagnostic_count(config: *const TermyFfiCo
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_window_size(
+    config: *const TermyFfiConfig,
+    out_width: *mut f32,
+    out_height: *mut f32,
+) -> TermyFfiStatus {
+    if config.is_null() || out_width.is_null() || out_height.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let app_config = unsafe { &(*config).loaded.app_config };
+    unsafe {
+        *out_width = app_config.window_width;
+        *out_height = app_config.window_height;
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_working_directory(
+    config: *const TermyFfiConfig,
+    out_working_directory: *mut TermyFfiBytes,
+) -> TermyFfiStatus {
+    if config.is_null() || out_working_directory.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let working_directory = unsafe { (*config).loaded.app_config.working_dir.as_ref() };
+    let bytes = working_directory.map_or_else(
+        || termy_null_buffer(),
+        |working_directory| ffi_bytes_from_string(working_directory.clone()),
+    );
+    unsafe {
+        *out_working_directory = bytes;
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn termy_config_path(
     config: *const TermyFfiConfig,
     out_path: *mut TermyFfiBytes,
@@ -824,6 +878,56 @@ pub unsafe extern "C" fn termy_terminal_write(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_encode_key(
+    terminal: *mut TermyFfiTerminal,
+    keystroke: *const TermyFfiKeystroke,
+    out_bytes: *mut TermyFfiBytes,
+) -> TermyFfiStatus {
+    if terminal.is_null() || keystroke.is_null() || out_bytes.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let keystroke = unsafe { *keystroke };
+    let key = match unsafe { required_utf8(keystroke.key_ptr, keystroke.key_len) } {
+        Ok(key) => key.to_owned(),
+        Err(status) => return status,
+    };
+    let key_char = match unsafe { optional_utf8(keystroke.key_char_ptr, keystroke.key_char_len) } {
+        Ok(key_char) => key_char.map(ToOwned::to_owned),
+        Err(status) => return status,
+    };
+    let event_kind = match keystroke.event_kind {
+        2 => TerminalKeyEventKind::Repeat,
+        3 => TerminalKeyEventKind::Release,
+        _ => TerminalKeyEventKind::Press,
+    };
+    let input = unsafe {
+        let terminal = &(*terminal).terminal;
+        keystroke_to_input(
+            &TermyKeystroke {
+                modifiers: TermyModifiers {
+                    control: keystroke.control,
+                    alt: keystroke.alt,
+                    shift: keystroke.shift,
+                    platform: keystroke.platform,
+                    function: keystroke.function,
+                },
+                key,
+                key_char,
+            },
+            event_kind,
+            terminal.keyboard_mode(),
+            true,
+        )
+    };
+
+    unsafe {
+        *out_bytes = input.map_or_else(|| termy_null_buffer(), ffi_bytes_from_vec);
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn termy_terminal_resize(
     terminal: *mut TermyFfiTerminal,
     size: TermyFfiSize,
@@ -849,6 +953,37 @@ pub unsafe extern "C" fn termy_terminal_set_wakeup_enabled(
 
     unsafe {
         (*terminal).terminal.set_wakeup_enabled(enabled);
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_scroll_display(
+    terminal: *mut TermyFfiTerminal,
+    delta_lines: i32,
+    out_changed: *mut bool,
+) -> TermyFfiStatus {
+    if terminal.is_null() || out_changed.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    unsafe {
+        *out_changed = (*terminal).terminal.scroll_display(delta_lines);
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_scroll_to_bottom(
+    terminal: *mut TermyFfiTerminal,
+    out_changed: *mut bool,
+) -> TermyFfiStatus {
+    if terminal.is_null() || out_changed.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    unsafe {
+        *out_changed = (*terminal).terminal.scroll_to_bottom();
     }
     TermyFfiStatus::Ok
 }
@@ -1156,7 +1291,7 @@ mod tests {
 
     #[test]
     fn config_from_contents_exposes_runtime_fields_and_diagnostics() {
-        let contents = b"scrollback = 77\nunknown_key = true\n";
+        let contents = b"scrollback = 77\nwindow_width = 1440\nwindow_height = 900\nworking_dir = /tmp\nunknown_key = true\n";
         let mut config = ptr::null_mut();
 
         let status =
@@ -1170,6 +1305,33 @@ mod tests {
         );
         assert_eq!(unsafe { termy_config_diagnostic_count(config) }, 1);
 
+        let mut width = 0.0;
+        let mut height = 0.0;
+        assert_eq!(
+            unsafe { termy_config_window_size(config, &mut width, &mut height) },
+            TermyFfiStatus::Ok
+        );
+        assert_eq!(width, 1440.0);
+        assert_eq!(height, 900.0);
+
+        let mut working_directory = TermyFfiBytes::default();
+        assert_eq!(
+            unsafe { termy_config_working_directory(config, &mut working_directory) },
+            TermyFfiStatus::Ok
+        );
+        let working_directory_text = unsafe {
+            str::from_utf8(slice::from_raw_parts(
+                working_directory.ptr,
+                working_directory.len,
+            ))
+            .expect("working directory utf8")
+        };
+        assert_eq!(working_directory_text, "/tmp");
+        assert_eq!(
+            unsafe { termy_buffer_free(working_directory) },
+            TermyFfiStatus::Ok
+        );
+
         let mut diagnostics = TermyFfiConfigDiagnosticBatch::default();
         assert_eq!(
             unsafe { termy_config_diagnostics(config, &mut diagnostics) },
@@ -1177,7 +1339,7 @@ mod tests {
         );
         assert_eq!(diagnostics.diagnostics_len, 1);
         let first = unsafe { *diagnostics.diagnostics_ptr };
-        assert_eq!(first.line_number, 2);
+        assert_eq!(first.line_number, 5);
         assert_eq!(first.kind, 2);
         assert!(!first.message.ptr.is_null());
 
@@ -1295,6 +1457,41 @@ mod tests {
             unsafe { termy_search_batch_free(&mut batch) },
             TermyFfiStatus::Ok
         );
+        assert_eq!(unsafe { termy_terminal_free(terminal) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
+    fn terminal_encode_key_uses_core_keyboard_mapping() {
+        let size = TermyFfiSize {
+            cols: 16,
+            rows: 4,
+            cell_width: 9.0,
+            cell_height: 18.0,
+        };
+        let mut terminal = ptr::null_mut();
+
+        assert_eq!(
+            unsafe { termy_terminal_new(size, ptr::null(), 0, &mut terminal) },
+            TermyFfiStatus::Ok
+        );
+
+        let key = b"tab";
+        let keystroke = TermyFfiKeystroke {
+            shift: true,
+            key_ptr: key.as_ptr(),
+            key_len: key.len(),
+            event_kind: 1,
+            ..TermyFfiKeystroke::default()
+        };
+        let mut bytes = TermyFfiBytes::default();
+        assert_eq!(
+            unsafe { termy_terminal_encode_key(terminal, &keystroke, &mut bytes) },
+            TermyFfiStatus::Ok
+        );
+        let encoded = unsafe { slice::from_raw_parts(bytes.ptr, bytes.len) };
+        assert_eq!(encoded, b"\x1b[Z");
+
+        assert_eq!(unsafe { termy_buffer_free(bytes) }, TermyFfiStatus::Ok);
         assert_eq!(unsafe { termy_terminal_free(terminal) }, TermyFfiStatus::Ok);
     }
 }
