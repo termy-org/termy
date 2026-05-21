@@ -5,7 +5,8 @@ import PackageDescription
 
 let packageDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let repoRoot = packageDirectory.deletingLastPathComponent()
-let ffiLibraryPath = repoRoot.appendingPathComponent("target/debug").path
+let ffiLibraryPath = ProcessInfo.processInfo.environment["TERMY_FFI_LIBRARY_PATH"]
+    ?? repoRoot.appendingPathComponent("target/debug").path
 
 let package = Package(
     name: "termy-swift",
@@ -27,6 +28,8 @@ let package = Package(
                 .unsafeFlags([
                     "-L", ffiLibraryPath,
                     "-ltermy_ffi",
+                    "-Xlinker", "-rpath",
+                    "-Xlinker", "@executable_path/../Frameworks",
                     "-Xlinker", "-rpath",
                     "-Xlinker", ffiLibraryPath
                 ])

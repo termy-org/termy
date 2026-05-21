@@ -82,3 +82,22 @@ check-boundaries:
 
 test-tmux-integration:
     cargo test -p termy_terminal_ui --test tmux_split_integration -- --ignored --nocapture --test-threads=1
+
+# Bump version in root + cli Cargo.toml. Kind: major | minor | patch
+bump kind:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KIND="{{ kind }}"
+    CURRENT=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+    IFS=. read -r MAJOR MINOR PATCH <<<"$CURRENT"
+    case "$KIND" in
+      major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+      minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+      patch) PATCH=$((PATCH + 1)) ;;
+      *) echo "usage: just bump <major|minor|patch>"; exit 1 ;;
+    esac
+    NEW="$MAJOR.$MINOR.$PATCH"
+    export NEW
+    perl -i -pe 's/^version = ".*"/version = "$ENV{NEW}"/ if !$done++' Cargo.toml
+    perl -i -pe 's/^version = ".*"/version = "$ENV{NEW}"/ if !$done++' crates/cli/Cargo.toml
+    echo "Bumped $CURRENT -> $NEW"
