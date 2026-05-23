@@ -5814,6 +5814,8 @@ dependencies = [
 name = "termy_ffi"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
+ "termy_config_core",
  "termy_core",
 ]
 

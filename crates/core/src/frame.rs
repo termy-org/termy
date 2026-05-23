@@ -139,6 +139,11 @@ pub(crate) fn snapshot_from_term<T: EventListener>(
         if cell.flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut fg, &mut bg);
         }
+        // Compute default-bg *after* the inverse swap: a reverse-video cell
+        // (e.g. Ink/Claude Code's cursor) paints with the default *foreground*
+        // color, so it is no longer the terminal's default background and must
+        // be drawn rather than skipped/made transparent.
+        let uses_terminal_default_bg = matches!(bg, AnsiColor::Named(NamedColor::Background));
         if cell.flags.contains(Flags::BOLD) {
             fg = bold_foreground_color(fg);
         }
@@ -160,7 +165,7 @@ pub(crate) fn snapshot_from_term<T: EventListener>(
             char: cell.c,
             fg,
             bg: color_to_rgba(bg, live_colors, query_colors),
-            uses_terminal_default_bg: matches!(cell.bg, AnsiColor::Named(NamedColor::Background)),
+            uses_terminal_default_bg,
             bold: cell.flags.contains(Flags::BOLD),
             render_text: !cell.flags.intersects(
                 Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN,
@@ -230,6 +235,34 @@ mod tests {
             }
         );
         assert!(frame.cells[0].bold);
+    }
+
+    #[test]
+    fn snapshot_inverse_default_cell_paints_background() {
+        // Ink/Claude Code render the cursor as a reverse-video cell with the
+        // terminal's default colors. After the inverse swap its background is
+        // the default foreground, so it must NOT be flagged as default-bg or
+        // the renderer skips it and the cursor disappears.
+        let size = TerminalSize {
+            cols: 2,
+            rows: 1,
+            cell_width: 9.0,
+            cell_height: 18.0,
+        };
+        let mut term = Term::new(TermConfig::default(), &size, VoidListener);
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, b"\x1b[7mX");
+
+        let frame = snapshot_from_term(&term, size, TerminalQueryColors::default());
+
+        assert!(!frame.cells[0].uses_terminal_default_bg);
+        // Inverse swaps fg/bg, so the cell background is the default foreground.
+        let default_fg = color_to_rgba(
+            AnsiColor::Named(NamedColor::Foreground),
+            term.colors(),
+            TerminalQueryColors::default(),
+        );
+        assert_eq!(frame.cells[0].bg, default_fg);
     }
 
     #[test]

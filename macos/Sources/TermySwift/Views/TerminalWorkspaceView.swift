@@ -3,10 +3,30 @@ import SwiftUI
 
 struct TerminalWorkspaceView: View {
     @StateObject private var store = TerminalWorkspaceStore()
+    @State private var appConfigurationError = TermyAppConfiguration.loadErrorMessage
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             TerminalPaneNodeView(node: store.root, store: store)
+
+            if let appConfigurationError {
+                HStack(spacing: 8) {
+                    Text(appConfigurationError)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.red)
+                    Button {
+                        self.appConfigurationError = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .padding(8)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .zIndex(11)
+            }
 
             if store.isSearchVisible, let terminal = store.focusedTerminal {
                 TerminalSearchPanel(
@@ -160,6 +180,7 @@ private struct TerminalPaneLeafView: View {
         TerminalSurfaceView(
             terminal: pane.terminal,
             isFocused: store.focusedPaneID == pane.id,
+            showsFocusBorder: store.paneCount > 1,
             isInputEnabled: !store.isSearchVisible,
             onFocus: {
                 store.focus(pane)
@@ -175,6 +196,10 @@ private struct TerminalPaneLeafView: View {
             onClosePane: {
                 store.focus(pane)
                 store.closeFocusedPane()
+            },
+            onClosePaneIfSplit: {
+                store.focus(pane)
+                return store.closeFocusedPaneIfSplit()
             },
             onFocusNextPane: store.focusNextPane,
             onShowSearch: store.showSearch

@@ -2,60 +2,73 @@ import CTermy
 import CoreGraphics
 import Foundation
 
+enum TermyAppConfigurationError: Error, CustomStringConvertible {
+    case missingConfig
+
+    var description: String {
+        switch self {
+        case .missingConfig:
+            return "libtermy did not return a config handle"
+        }
+    }
+}
+
 struct TermyAppConfiguration {
     var windowWidth: CGFloat
     var windowHeight: CGFloat
-    var workingDirectory: String?
 
     var windowSize: CGSize {
         CGSize(width: windowWidth, height: windowHeight)
     }
 
-    static let current = load()
-
-    static let fallback = TermyAppConfiguration(
+    private static let defaultConfiguration = TermyAppConfiguration(
         windowWidth: 1280,
-        windowHeight: 820,
-        workingDirectory: nil
+        windowHeight: 820
     )
 
-    private static func load() -> TermyAppConfiguration {
+    private static let loadedConfiguration = Result {
+        try load()
+    }
+
+    static let current: TermyAppConfiguration = {
+        switch loadedConfiguration {
+        case .success(let configuration):
+            return configuration
+        case .failure:
+            return defaultConfiguration
+        }
+    }()
+
+    static let loadErrorMessage: String? = {
+        switch loadedConfiguration {
+        case .success:
+            return nil
+        case .failure(let error):
+            return String(describing: error)
+        }
+    }()
+
+    private static func load() throws -> TermyAppConfiguration {
         var config: OpaquePointer?
-        guard termy_config_load_default(&config) == TERMY_FFI_OK, let config else {
-            return .fallback
+        try TermyFfiBridge.requireOK("termy_config_load_default", termy_config_load_default(&config))
+        guard let config else {
+            throw TermyAppConfigurationError.missingConfig
         }
         defer {
             _ = termy_config_free(config)
         }
 
-        var width: Float = Float(fallback.windowWidth)
-        var height: Float = Float(fallback.windowHeight)
-        _ = termy_config_window_size(config, &width, &height)
+        var width: Float = Float(defaultConfiguration.windowWidth)
+        var height: Float = Float(defaultConfiguration.windowHeight)
+        try TermyFfiBridge.requireOK(
+            "termy_config_window_size",
+            termy_config_window_size(config, &width, &height)
+        )
 
         return TermyAppConfiguration(
             windowWidth: CGFloat(max(320, width)),
-            windowHeight: CGFloat(max(240, height)),
-            workingDirectory: workingDirectory(from: config)
+            windowHeight: CGFloat(max(240, height))
         )
     }
 
-    private static func workingDirectory(from config: OpaquePointer) -> String? {
-        var bytes = TermyFfiBytes()
-        guard termy_config_working_directory(config, &bytes) == TERMY_FFI_OK else {
-            return nil
-        }
-        defer {
-            if bytes.ptr != nil {
-                _ = termy_buffer_free(bytes)
-            }
-        }
-
-        guard let ptr = bytes.ptr, bytes.len > 0 else {
-            return nil
-        }
-        let buffer = UnsafeBufferPointer(start: ptr, count: Int(bytes.len))
-        let value = String(decoding: buffer, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
-    }
 }

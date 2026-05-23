@@ -15,6 +15,8 @@ typedef enum {
   TERMY_FFI_INVALID_UTF8 = 2,
   TERMY_FFI_SPAWN_FAILED = 3,
   TERMY_FFI_CONFIG_LOAD_FAILED = 4,
+  TERMY_FFI_UNKNOWN_KEY = 5,
+  TERMY_FFI_WRITE_FAILED = 6,
 } TermyFfiStatus;
 
 typedef enum {
@@ -240,6 +242,26 @@ TermyFfiStatus termy_config_render_config(
     const TermyFfiConfig *config,
     TermyFfiRenderConfig *out_render_config);
 TermyFfiStatus termy_render_config_free(TermyFfiRenderConfig *render_config);
+TermyFfiStatus termy_settings_schema_json(
+    const TermyFfiConfig *config,
+    TermyFfiBytes *out_bytes);
+TermyFfiStatus termy_settings_set_root(
+    const uint8_t *key_ptr,
+    size_t key_len,
+    const uint8_t *value_ptr,
+    size_t value_len);
+TermyFfiStatus termy_settings_reset_root(
+    const uint8_t *key_ptr,
+    size_t key_len);
+TermyFfiStatus termy_settings_set_color(
+    const uint8_t *key_ptr,
+    size_t key_len,
+    const uint8_t *hex_ptr,
+    size_t hex_len);
+TermyFfiStatus termy_settings_set_keybinds(
+    const uint8_t *text_ptr,
+    size_t text_len);
+TermyFfiStatus termy_terminal_reload_default_config_colors(TermyFfiTerminal *terminal);
 TermyFfiStatus termy_terminal_free(TermyFfiTerminal *terminal);
 TermyFfiStatus termy_terminal_write(
     TermyFfiTerminal *terminal,
@@ -258,6 +280,9 @@ TermyFfiStatus termy_terminal_scroll_display(
     int32_t delta_lines,
     bool *out_changed);
 TermyFfiStatus termy_terminal_scroll_to_bottom(
+    TermyFfiTerminal *terminal,
+    bool *out_changed);
+TermyFfiStatus termy_terminal_clear_scrollback(
     TermyFfiTerminal *terminal,
     bool *out_changed);
 TermyFfiStatus termy_terminal_snapshot(

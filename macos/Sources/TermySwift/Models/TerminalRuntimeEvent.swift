@@ -1,24 +1,59 @@
 import CTermy
 import Foundation
 
+enum TerminalRuntimeEventKind: UInt32 {
+    case wakeup = 1
+    case title = 2
+    case resetTitle = 3
+    case bell = 4
+    case exit = 5
+    case clipboardStore = 6
+    case shellPromptStart = 7
+    case shellCommandStart = 8
+    case shellCommandExecuting = 9
+    case shellCommandFinished = 10
+    case progress = 11
+    case workingDirectory = 12
+}
+
+enum TerminalProgressKind: UInt8 {
+    case clear = 0
+    case inProgress = 1
+    case error = 2
+    case indeterminate = 3
+    case warning = 4
+}
+
+struct TerminalProgressPercent: Equatable {
+    var value: UInt8
+
+    init(_ value: UInt8) {
+        self.value = min(value, 100)
+    }
+
+    var fraction: Double {
+        Double(value) / 100.0
+    }
+}
+
 enum TerminalProgress: Equatable {
     case clear
-    case inProgress(UInt8)
-    case error(UInt8)
+    case inProgress(TerminalProgressPercent)
+    case error(TerminalProgressPercent)
     case indeterminate
-    case warning(UInt8)
+    case warning(TerminalProgressPercent)
 
     init(state: UInt8, value: UInt8) {
-        switch state {
-        case UInt8(TERMY_FFI_PROGRESS_IN_PROGRESS.rawValue):
-            self = .inProgress(value)
-        case UInt8(TERMY_FFI_PROGRESS_ERROR.rawValue):
-            self = .error(value)
-        case UInt8(TERMY_FFI_PROGRESS_INDETERMINATE.rawValue):
+        switch TerminalProgressKind(rawValue: state) {
+        case .inProgress:
+            self = .inProgress(TerminalProgressPercent(value))
+        case .error:
+            self = .error(TerminalProgressPercent(value))
+        case .indeterminate:
             self = .indeterminate
-        case UInt8(TERMY_FFI_PROGRESS_WARNING.rawValue):
-            self = .warning(value)
-        default:
+        case .warning:
+            self = .warning(TerminalProgressPercent(value))
+        case .clear, nil:
             self = .clear
         }
     }
@@ -30,7 +65,7 @@ enum TerminalProgress: Equatable {
     var fraction: Double? {
         switch self {
         case let .inProgress(value), let .error(value), let .warning(value):
-            return Double(value) / 100.0
+            return value.fraction
         case .clear, .indeterminate:
             return nil
         }
@@ -60,36 +95,4 @@ struct TerminalSearchMatch: Identifiable, Equatable {
     var row: Int
     var startCol: Int
     var endCol: Int
-    var line: String
-}
-
-struct TerminalKeyInput: Equatable {
-    var key: String
-    var keyChar: String?
-    var control: Bool
-    var alt: Bool
-    var shift: Bool
-    var platform: Bool
-    var function: Bool
-    var eventKind: UInt32
-
-    init(
-        key: String,
-        keyChar: String? = nil,
-        control: Bool = false,
-        alt: Bool = false,
-        shift: Bool = false,
-        platform: Bool = false,
-        function: Bool = false,
-        eventKind: UInt32 = 1
-    ) {
-        self.key = key
-        self.keyChar = keyChar
-        self.control = control
-        self.alt = alt
-        self.shift = shift
-        self.platform = platform
-        self.function = function
-        self.eventKind = eventKind
-    }
 }

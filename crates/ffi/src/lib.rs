@@ -19,6 +19,8 @@ pub enum TermyFfiStatus {
     InvalidUtf8 = 2,
     SpawnFailed = 3,
     ConfigLoadFailed = 4,
+    UnknownKey = 5,
+    WriteFailed = 6,
 }
 
 #[repr(C)]
@@ -848,6 +850,290 @@ pub unsafe extern "C" fn termy_render_config_free(
     TermyFfiStatus::Ok
 }
 
+// ---------------------------------------------------------------------------
+// Settings (native settings window <-> config.txt bridge)
+// ---------------------------------------------------------------------------
+
+use termy_config_core as cfg;
+
+fn settings_read_contents() -> String {
+    match cfg::config_path().and_then(|path| std::fs::read_to_string(path).ok()) {
+        Some(contents) if !contents.trim().is_empty() => contents,
+        _ => cfg::DEFAULT_CONFIG_TEMPLATE.to_string(),
+    }
+}
+
+fn settings_write_contents(contents: &str) -> Result<(), TermyFfiStatus> {
+    let path = cfg::config_path().ok_or(TermyFfiStatus::WriteFailed)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|_| TermyFfiStatus::WriteFailed)?;
+    }
+    std::fs::write(&path, contents).map_err(|_| TermyFfiStatus::WriteFailed)
+}
+
+fn settings_color_hex(app: &cfg::AppConfig, id: cfg::ColorSettingId) -> Option<String> {
+    use cfg::ColorSettingId::*;
+    let rgb = match id {
+        Foreground => app.colors.foreground,
+        Background => app.colors.background,
+        Cursor => app.colors.cursor,
+        Black => app.colors.ansi[0],
+        Red => app.colors.ansi[1],
+        Green => app.colors.ansi[2],
+        Yellow => app.colors.ansi[3],
+        Blue => app.colors.ansi[4],
+        Magenta => app.colors.ansi[5],
+        Cyan => app.colors.ansi[6],
+        White => app.colors.ansi[7],
+        BrightBlack => app.colors.ansi[8],
+        BrightRed => app.colors.ansi[9],
+        BrightGreen => app.colors.ansi[10],
+        BrightYellow => app.colors.ansi[11],
+        BrightBlue => app.colors.ansi[12],
+        BrightMagenta => app.colors.ansi[13],
+        BrightCyan => app.colors.ansi[14],
+        BrightWhite => app.colors.ansi[15],
+    };
+    rgb.map(|c| format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b))
+}
+
+fn settings_schema_json(loaded: &LoadedTermyConfig) -> String {
+    use serde_json::{Value, json};
+
+    let app = &loaded.app_config;
+    let sections_meta = [
+        (cfg::SettingsSection::Appearance, "appearance", "Appearance", "paintbrush"),
+        (cfg::SettingsSection::Terminal, "terminal", "Terminal", "terminal"),
+        (cfg::SettingsSection::Tabs, "tabs", "Tabs", "square.on.square"),
+        (cfg::SettingsSection::Advanced, "advanced", "Advanced", "gearshape.2"),
+        (cfg::SettingsSection::Colors, "colors", "Colors", "paintpalette"),
+        (cfg::SettingsSection::Keybindings, "keybindings", "Keybindings", "keyboard"),
+    ];
+
+    let mut sections = Vec::new();
+    for (section, id, label, icon) in sections_meta {
+        let mut obj = json!({ "id": id, "label": label, "systemImage": icon });
+
+        match section {
+            cfg::SettingsSection::Colors => {
+                let colors: Vec<Value> = cfg::COLOR_SETTING_SPECS
+                    .iter()
+                    .map(|spec| {
+                        json!({
+                            "key": spec.key,
+                            "title": spec.title,
+                            "description": spec.description,
+                            "hex": settings_color_hex(app, spec.id),
+                        })
+                    })
+                    .collect();
+                obj["colors"] = json!(colors);
+            }
+            cfg::SettingsSection::Keybindings => {
+                let lines: Vec<&str> =
+                    app.keybind_lines.iter().map(|line| line.value.as_str()).collect();
+                obj["keybinds"] = json!(lines);
+            }
+            _ => {
+                let mut groups: Vec<(&str, Vec<Value>)> = Vec::new();
+                for spec in cfg::ROOT_SETTING_SPECS {
+                    if spec.section != section
+                        || matches!(spec.id, cfg::RootSettingId::Keybind)
+                    {
+                        continue;
+                    }
+
+                    let kind = match spec.value_kind {
+                        cfg::RootSettingValueKind::Text => "text",
+                        cfg::RootSettingValueKind::Numeric => "numeric",
+                        cfg::RootSettingValueKind::Boolean => "boolean",
+                        cfg::RootSettingValueKind::Enum => "enum",
+                        cfg::RootSettingValueKind::Special => "special",
+                    };
+
+                    let mut setting = json!({
+                        "key": spec.key,
+                        "title": spec.title,
+                        "description": spec.description,
+                        "kind": kind,
+                        "value": cfg::root_setting_default_value(app, spec.id),
+                    });
+
+                    if let Some(choices) = cfg::root_setting_enum_choices(spec.id) {
+                        let choices: Vec<Value> = choices
+                            .iter()
+                            .map(|choice| json!({ "value": choice.value, "label": choice.label }))
+                            .collect();
+                        setting["choices"] = json!(choices);
+                    }
+
+                    match groups.iter_mut().find(|(group, _)| *group == spec.group) {
+                        Some((_, settings)) => settings.push(setting),
+                        None => groups.push((spec.group, vec![setting])),
+                    }
+                }
+
+                let groups: Vec<Value> = groups
+                    .into_iter()
+                    .map(|(group, settings)| json!({ "label": group, "settings": settings }))
+                    .collect();
+                obj["groups"] = json!(groups);
+            }
+        }
+
+        sections.push(obj);
+    }
+
+    json!({
+        "configPath": loaded.path.as_ref().map(|path| path.to_string_lossy().into_owned()),
+        "loadedFromDisk": loaded.loaded_from_disk,
+        "sections": sections,
+    })
+    .to_string()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_settings_schema_json(
+    config: *const TermyFfiConfig,
+    out_bytes: *mut TermyFfiBytes,
+) -> TermyFfiStatus {
+    if config.is_null() || out_bytes.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let loaded = unsafe { &(*config).loaded };
+    let json = settings_schema_json(loaded);
+    unsafe {
+        *out_bytes = ffi_bytes_from_string(json);
+    }
+    TermyFfiStatus::Ok
+}
+
+unsafe fn settings_set_root_inner(
+    key_ptr: *const u8,
+    key_len: usize,
+    value_ptr: *const u8,
+    value_len: usize,
+) -> Result<(), TermyFfiStatus> {
+    let key = unsafe { required_utf8(key_ptr, key_len) }?;
+    let value = unsafe { optional_utf8(value_ptr, value_len) }?.unwrap_or("");
+    let id = cfg::root_setting_from_key(key).ok_or(TermyFfiStatus::UnknownKey)?;
+    let updated = cfg::upsert_root_setting(&settings_read_contents(), id, value.trim());
+    settings_write_contents(&updated)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_settings_set_root(
+    key_ptr: *const u8,
+    key_len: usize,
+    value_ptr: *const u8,
+    value_len: usize,
+) -> TermyFfiStatus {
+    match unsafe { settings_set_root_inner(key_ptr, key_len, value_ptr, value_len) } {
+        Ok(()) => TermyFfiStatus::Ok,
+        Err(status) => status,
+    }
+}
+
+unsafe fn settings_reset_root_inner(
+    key_ptr: *const u8,
+    key_len: usize,
+) -> Result<(), TermyFfiStatus> {
+    let key = unsafe { required_utf8(key_ptr, key_len) }?;
+    let id = cfg::root_setting_from_key(key).ok_or(TermyFfiStatus::UnknownKey)?;
+    let updated = cfg::remove_root_setting(&settings_read_contents(), id);
+    settings_write_contents(&updated)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_settings_reset_root(
+    key_ptr: *const u8,
+    key_len: usize,
+) -> TermyFfiStatus {
+    match unsafe { settings_reset_root_inner(key_ptr, key_len) } {
+        Ok(()) => TermyFfiStatus::Ok,
+        Err(status) => status,
+    }
+}
+
+unsafe fn settings_set_color_inner(
+    key_ptr: *const u8,
+    key_len: usize,
+    hex_ptr: *const u8,
+    hex_len: usize,
+) -> Result<(), TermyFfiStatus> {
+    let key = unsafe { required_utf8(key_ptr, key_len) }?;
+    let id = cfg::color_setting_from_key(key).ok_or(TermyFfiStatus::UnknownKey)?;
+    let value = unsafe { optional_utf8(hex_ptr, hex_len) }?.map(|hex| hex.trim().to_string());
+    let updated = cfg::apply_color_updates(
+        &settings_read_contents(),
+        &[cfg::ColorSettingUpdate { id, value }],
+    );
+    settings_write_contents(&updated)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_settings_set_color(
+    key_ptr: *const u8,
+    key_len: usize,
+    hex_ptr: *const u8,
+    hex_len: usize,
+) -> TermyFfiStatus {
+    match unsafe { settings_set_color_inner(key_ptr, key_len, hex_ptr, hex_len) } {
+        Ok(()) => TermyFfiStatus::Ok,
+        Err(status) => status,
+    }
+}
+
+unsafe fn settings_set_keybinds_inner(
+    text_ptr: *const u8,
+    text_len: usize,
+) -> Result<(), TermyFfiStatus> {
+    let text = unsafe { optional_utf8(text_ptr, text_len) }?.unwrap_or("");
+    let lines: Vec<String> = text
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect();
+    let updated = cfg::replace_keybind_lines(&settings_read_contents(), &lines);
+    settings_write_contents(&updated)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_settings_set_keybinds(
+    text_ptr: *const u8,
+    text_len: usize,
+) -> TermyFfiStatus {
+    match unsafe { settings_set_keybinds_inner(text_ptr, text_len) } {
+        Ok(()) => TermyFfiStatus::Ok,
+        Err(status) => status,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_reload_default_config_colors(
+    terminal: *mut TermyFfiTerminal,
+) -> TermyFfiStatus {
+    if terminal.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let Ok(loaded) = load_config_from_default_path() else {
+        return TermyFfiStatus::ConfigLoadFailed;
+    };
+    let query_colors = termy_core::terminal_query_colors_from_resolved_theme(
+        &termy_core::resolve_theme_colors_from_app_config(
+            &loaded.app_config,
+            loaded.path.as_deref(),
+            termy_core::SystemAppearance::Dark,
+        ),
+    );
+    unsafe {
+        (*terminal).terminal.set_query_colors(query_colors);
+    }
+    TermyFfiStatus::Ok
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn termy_terminal_free(terminal: *mut TermyFfiTerminal) -> TermyFfiStatus {
     if terminal.is_null() {
@@ -984,6 +1270,21 @@ pub unsafe extern "C" fn termy_terminal_scroll_to_bottom(
 
     unsafe {
         *out_changed = (*terminal).terminal.scroll_to_bottom();
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_clear_scrollback(
+    terminal: *mut TermyFfiTerminal,
+    out_changed: *mut bool,
+) -> TermyFfiStatus {
+    if terminal.is_null() || out_changed.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    unsafe {
+        *out_changed = (*terminal).terminal.clear_scrollback();
     }
     TermyFfiStatus::Ok
 }
@@ -1287,6 +1588,67 @@ mod tests {
         assert!(size.rows > 0);
         assert!(size.cell_width > 0.0);
         assert!(size.cell_height > 0.0);
+    }
+
+    #[test]
+    fn settings_schema_json_covers_sections_and_values() {
+        let contents =
+            b"font_size = 18\ncursor_style = line\n[colors]\nforeground = #abcdef\n";
+        let mut config = ptr::null_mut();
+        assert_eq!(
+            unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) },
+            TermyFfiStatus::Ok
+        );
+
+        let mut bytes = TermyFfiBytes::default();
+        assert_eq!(
+            unsafe { termy_settings_schema_json(config, &mut bytes) },
+            TermyFfiStatus::Ok
+        );
+        let json = unsafe {
+            str::from_utf8(slice::from_raw_parts(bytes.ptr, bytes.len)).expect("schema utf8")
+        };
+        let value: serde_json::Value = serde_json::from_str(json).expect("valid json");
+
+        let sections = value["sections"].as_array().expect("sections array");
+        let ids: Vec<&str> = sections
+            .iter()
+            .map(|section| section["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                "appearance",
+                "terminal",
+                "tabs",
+                "advanced",
+                "colors",
+                "keybindings"
+            ]
+        );
+
+        // Appearance carries the edited font size value.
+        let appearance = &sections[0];
+        let font_size = appearance["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|group| group["settings"].as_array().unwrap())
+            .find(|setting| setting["key"] == "font_size")
+            .expect("font_size setting");
+        assert_eq!(font_size["value"], "18");
+        assert_eq!(font_size["kind"], "numeric");
+
+        // Colors section reflects the override hex.
+        let colors = &sections[4]["colors"].as_array().unwrap();
+        let foreground = colors
+            .iter()
+            .find(|color| color["key"] == "foreground")
+            .expect("foreground color");
+        assert_eq!(foreground["hex"], "#abcdef");
+
+        assert_eq!(unsafe { termy_buffer_free(bytes) }, TermyFfiStatus::Ok);
+        assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
     }
 
     #[test]

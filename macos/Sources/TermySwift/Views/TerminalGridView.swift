@@ -8,31 +8,38 @@ struct TerminalGridView: View {
     let activeSearchMatch: TerminalSearchMatch?
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            backgroundOverlay
-            searchOverlay
-            selectionOverlay
-            cursorOverlay
-
-            textOverlay
+        Canvas(opaque: false, rendersAsynchronously: false) { context, _ in
+            draw(in: &context)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipped()
     }
 
-    private var backgroundOverlay: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(frame.cells.filter(shouldPaintBackground)) { cell in
-                Rectangle()
-                    .fill(cell.background.swiftUIColor.opacity(backgroundOpacity(for: cell)))
-                    .frame(width: renderConfig.cellWidth, height: renderConfig.cellHeight)
-                    .offset(
-                        x: renderConfig.paddingX + CGFloat(cell.col) * renderConfig.cellWidth,
-                        y: renderConfig.paddingY + CGFloat(cell.row) * renderConfig.cellHeight
-                    )
-            }
+    private func draw(in context: inout GraphicsContext) {
+        drawBackgrounds(in: &context)
+        drawSearch(in: &context)
+        drawSelection(in: &context)
+        drawCursor(in: &context)
+        drawText(in: &context)
+    }
+
+    private func cellRect(col: Int, row: Int, cols: Int = 1) -> CGRect {
+        CGRect(
+            x: renderConfig.paddingX + CGFloat(col) * renderConfig.cellWidth,
+            y: renderConfig.paddingY + CGFloat(row) * renderConfig.cellHeight,
+            width: CGFloat(cols) * renderConfig.cellWidth,
+            height: renderConfig.cellHeight
+        )
+    }
+
+    private func drawBackgrounds(in context: inout GraphicsContext) {
+        for cell in frame.cells where shouldPaintBackground(cell) {
+            let rect = cellRect(col: cell.col, row: cell.row)
+            context.fill(
+                Path(rect),
+                with: .color(cell.background.swiftUIColor.opacity(backgroundOpacity(for: cell)))
+            )
         }
-        .allowsHitTesting(false)
     }
 
     private func shouldPaintBackground(_ cell: TerminalCell) -> Bool {
@@ -43,42 +50,30 @@ struct TerminalGridView: View {
         cell.usesTerminalDefaultBackground ? renderConfig.backgroundOpacity : 1.0
     }
 
-    private var selectionOverlay: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(selection?.rowRanges(cols: frame.cols, rows: frame.rows) ?? []) { range in
-                Rectangle()
-                    .fill(Color.accentColor.opacity(0.35))
-                    .frame(
-                        width: CGFloat(range.endCol - range.startCol + 1)
-                            * renderConfig.cellWidth,
-                        height: renderConfig.cellHeight
-                    )
-                    .offset(
-                        x: renderConfig.paddingX + CGFloat(range.startCol) * renderConfig.cellWidth,
-                        y: renderConfig.paddingY + CGFloat(range.row) * renderConfig.cellHeight
-                    )
-            }
+    private func drawSelection(in context: inout GraphicsContext) {
+        guard let ranges = selection?.rowRanges(cols: frame.cols, rows: frame.rows) else {
+            return
         }
-        .allowsHitTesting(false)
+        let fill = GraphicsContext.Shading.color(Color.accentColor.opacity(0.35))
+        for range in ranges {
+            let rect = cellRect(
+                col: range.startCol,
+                row: range.row,
+                cols: range.endCol - range.startCol + 1
+            )
+            context.fill(Path(rect), with: fill)
+        }
     }
 
-    private var searchOverlay: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(searchMatches) { match in
-                Rectangle()
-                    .fill(searchColor(for: match))
-                    .frame(
-                        width: CGFloat(max(1, match.endCol - match.startCol + 1))
-                            * renderConfig.cellWidth,
-                        height: renderConfig.cellHeight
-                    )
-                    .offset(
-                        x: renderConfig.paddingX + CGFloat(match.startCol) * renderConfig.cellWidth,
-                        y: renderConfig.paddingY + CGFloat(match.row) * renderConfig.cellHeight
-                    )
-            }
+    private func drawSearch(in context: inout GraphicsContext) {
+        for match in searchMatches {
+            let rect = cellRect(
+                col: match.startCol,
+                row: match.row,
+                cols: max(1, match.endCol - match.startCol + 1)
+            )
+            context.fill(Path(rect), with: .color(searchColor(for: match)))
         }
-        .allowsHitTesting(false)
     }
 
     private func searchColor(for match: TerminalSearchMatch) -> Color {
@@ -88,40 +83,28 @@ struct TerminalGridView: View {
         return .yellow.opacity(0.28)
     }
 
-    private var cursorOverlay: some View {
-        Group {
-            if let cursor = frame.cursor, frame.displayOffset == 0 {
-                Rectangle()
-                    .fill(renderConfig.cursor.swiftUIColor)
-                    .frame(width: renderConfig.cellWidth, height: renderConfig.cellHeight)
-                    .offset(
-                        x: renderConfig.paddingX + CGFloat(cursor.col) * renderConfig.cellWidth,
-                        y: renderConfig.paddingY + CGFloat(cursor.row) * renderConfig.cellHeight
-                    )
-            }
+    private func drawCursor(in context: inout GraphicsContext) {
+        guard let cursor = frame.cursor, frame.displayOffset == 0 else {
+            return
         }
-        .allowsHitTesting(false)
+        let rect = cellRect(col: cursor.col, row: cursor.row)
+        context.fill(Path(rect), with: .color(renderConfig.cursor.swiftUIColor))
     }
 
-    private var textOverlay: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(textSegments) { segment in
-                Text(verbatim: segment.text)
-                    .font(terminalFont(weight: segment.bold ? .semibold : .regular))
-                    .foregroundStyle(segment.foreground.swiftUIColor)
-                    .lineLimit(1)
-                    .frame(
-                        width: CGFloat(segment.text.count) * renderConfig.cellWidth,
-                        height: renderConfig.cellHeight,
-                        alignment: .leading
-                    )
-                    .offset(
-                        x: renderConfig.paddingX + CGFloat(segment.startCol) * renderConfig.cellWidth,
-                        y: renderConfig.paddingY + CGFloat(segment.row) * renderConfig.cellHeight
-                    )
-            }
+    private func drawText(in context: inout GraphicsContext) {
+        let centerY = renderConfig.cellHeight / 2
+        for segment in textSegments {
+            var text = Text(verbatim: segment.text)
+                .font(terminalFont(weight: segment.bold ? .semibold : .regular))
+            text = text.foregroundColor(segment.foreground.swiftUIColor)
+
+            let resolved = context.resolve(text)
+            let origin = CGPoint(
+                x: renderConfig.paddingX + CGFloat(segment.startCol) * renderConfig.cellWidth,
+                y: renderConfig.paddingY + CGFloat(segment.row) * renderConfig.cellHeight + centerY
+            )
+            context.draw(resolved, at: origin, anchor: .leading)
         }
-        .allowsHitTesting(false)
     }
 
     private var textSegments: [TerminalTextSegment] {
@@ -181,14 +164,10 @@ struct TerminalGridView: View {
     }
 }
 
-private struct TerminalTextSegment: Identifiable {
+private struct TerminalTextSegment {
     var row: Int
     var startCol: Int
     var text: String
     var foreground: TerminalRGBA
     var bold: Bool
-
-    var id: String {
-        "\(row):\(startCol):\(text.count):\(foreground.red):\(foreground.green):\(foreground.blue):\(bold)"
-    }
 }
