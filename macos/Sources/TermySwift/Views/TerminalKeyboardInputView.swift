@@ -11,9 +11,13 @@ struct TerminalKeyboardInputView: NSViewRepresentable {
     var onBytes: ([UInt8]) -> Void
     var onKeyInput: (TerminalKeyInput) -> Void
     var onScrollLines: (Int) -> Void
+    var onScrollToTop: () -> Void
+    var onScrollToBottom: () -> Void
+    var onClearBuffer: () -> Void
     var onSplitRight: () -> Void
     var onSplitDown: () -> Void
     var onClosePane: () -> Void
+    var onClosePaneIfSplit: () -> Bool
     var onFocusNextPane: () -> Void
     var onShowSearch: () -> Void
     var onSelectionChanged: (TerminalSelection?) -> Void
@@ -21,44 +25,14 @@ struct TerminalKeyboardInputView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> KeyboardCaptureView {
         let view = KeyboardCaptureView()
-        view.cols = cols
-        view.rows = rows
-        view.renderConfig = renderConfig
-        view.isTerminalFocused = isFocused
-        view.isInputEnabled = isInputEnabled
-        view.onFocus = onFocus
-        view.onBytes = onBytes
-        view.onKeyInput = onKeyInput
-        view.onScrollLines = onScrollLines
-        view.onSplitRight = onSplitRight
-        view.onSplitDown = onSplitDown
-        view.onClosePane = onClosePane
-        view.onFocusNextPane = onFocusNextPane
-        view.onShowSearch = onShowSearch
-        view.onSelectionChanged = onSelectionChanged
-        view.onCopy = onCopy
+        view.apply(configuration: self)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
         return view
     }
 
     func updateNSView(_ view: KeyboardCaptureView, context: Context) {
-        view.cols = cols
-        view.rows = rows
-        view.renderConfig = renderConfig
-        view.isTerminalFocused = isFocused
-        view.isInputEnabled = isInputEnabled
-        view.onFocus = onFocus
-        view.onBytes = onBytes
-        view.onKeyInput = onKeyInput
-        view.onScrollLines = onScrollLines
-        view.onSplitRight = onSplitRight
-        view.onSplitDown = onSplitDown
-        view.onClosePane = onClosePane
-        view.onFocusNextPane = onFocusNextPane
-        view.onShowSearch = onShowSearch
-        view.onSelectionChanged = onSelectionChanged
-        view.onCopy = onCopy
+        view.apply(configuration: self)
         if isFocused, isInputEnabled {
             view.focus()
         }
@@ -75,9 +49,13 @@ final class KeyboardCaptureView: NSView {
     var onBytes: ([UInt8]) -> Void = { _ in }
     var onKeyInput: (TerminalKeyInput) -> Void = { _ in }
     var onScrollLines: (Int) -> Void = { _ in }
+    var onScrollToTop: () -> Void = {}
+    var onScrollToBottom: () -> Void = {}
+    var onClearBuffer: () -> Void = {}
     var onSplitRight: () -> Void = {}
     var onSplitDown: () -> Void = {}
     var onClosePane: () -> Void = {}
+    var onClosePaneIfSplit: () -> Bool = { false }
     var onFocusNextPane: () -> Void = {}
     var onShowSearch: () -> Void = {}
     var onSelectionChanged: (TerminalSelection?) -> Void = { _ in }
@@ -175,6 +153,19 @@ final class KeyboardCaptureView: NSView {
         }
 
         if event.modifierFlags.contains(.command) {
+            // cmd+up/down scroll the viewport to the history extremes.
+            if handleCommandScroll(event) {
+                return
+            }
+            // Forward macOS line-editing shortcuts (cmd+arrows/backspace/delete);
+            // the core maps these to ^A/^E/^U/^K. Everything else falls through
+            // to the menu/responder chain.
+            if let keyCode = MacKeyCode(rawValue: event.keyCode),
+               isLineEditingKeyCode(keyCode),
+               let keyInput = terminalKeyInput(for: event) {
+                onKeyInput(keyInput)
+                return
+            }
             super.keyDown(with: event)
             return
         }
@@ -185,6 +176,32 @@ final class KeyboardCaptureView: NSView {
         }
 
         super.keyDown(with: event)
+    }
+
+    private func isLineEditingKeyCode(_ keyCode: MacKeyCode) -> Bool {
+        switch keyCode {
+        case .deleteBackward, .forwardDelete, .leftArrow, .rightArrow, .home, .end:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func handleCommandScroll(_ event: NSEvent) -> Bool {
+        guard let keyCode = MacKeyCode(rawValue: event.keyCode) else {
+            return false
+        }
+
+        switch keyCode {
+        case .upArrow:
+            onScrollToTop()
+            return true
+        case .downArrow:
+            onScrollToBottom()
+            return true
+        default:
+            return false
+        }
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -256,7 +273,7 @@ final class KeyboardCaptureView: NSView {
             onClosePane()
             return true
         case ("w", false):
-            if TerminalCommandRouter.shared.closeFocusedPaneIfSplit() {
+            if onClosePaneIfSplit() {
                 return true
             }
             return false
@@ -266,69 +283,76 @@ final class KeyboardCaptureView: NSView {
         case ("f", _):
             onShowSearch()
             return true
+        case ("k", false):
+            onClearBuffer()
+            return true
         default:
             return false
         }
     }
 
     private func terminalKeyInput(for event: NSEvent) -> TerminalKeyInput? {
-        switch event.keyCode {
-        case 36, 76:
-            return keyInput("enter", event: event)
-        case 48:
-            return keyInput("tab", event: event)
-        case 51:
-            return keyInput("backspace", event: event)
-        case 53:
-            return keyInput("escape", event: event)
-        case 115:
-            return keyInput("home", event: event)
-        case 119:
-            return keyInput("end", event: event)
-        case 116:
-            return keyInput("pageup", event: event)
-        case 121:
-            return keyInput("pagedown", event: event)
-        case 117:
-            return keyInput("delete", event: event)
-        case 123:
-            return keyInput("left", event: event)
-        case 124:
-            return keyInput("right", event: event)
-        case 125:
-            return keyInput("down", event: event)
-        case 126:
-            return keyInput("up", event: event)
-        case 122:
-            return keyInput("f1", event: event, function: true)
-        case 120:
-            return keyInput("f2", event: event, function: true)
-        case 99:
-            return keyInput("f3", event: event, function: true)
-        case 118:
-            return keyInput("f4", event: event, function: true)
-        case 96:
-            return keyInput("f5", event: event, function: true)
-        case 97:
-            return keyInput("f6", event: event, function: true)
-        case 98:
-            return keyInput("f7", event: event, function: true)
-        case 100:
-            return keyInput("f8", event: event, function: true)
-        case 101:
-            return keyInput("f9", event: event, function: true)
-        case 109:
-            return keyInput("f10", event: event, function: true)
-        case 103:
-            return keyInput("f11", event: event, function: true)
-        case 111:
-            return keyInput("f12", event: event, function: true)
-        case 49:
-            return keyInput("space", event: event, keyChar: event.characters)
-        default:
-            break
+        guard let keyCode = MacKeyCode(rawValue: event.keyCode) else {
+            return characterKeyInput(for: event)
         }
 
+        switch keyCode {
+        case .returnKey, .keypadEnter:
+            return keyInput("enter", event: event)
+        case .tab:
+            return keyInput("tab", event: event)
+        case .deleteBackward:
+            return keyInput("backspace", event: event)
+        case .escape:
+            return keyInput("escape", event: event)
+        case .home:
+            return keyInput("home", event: event)
+        case .end:
+            return keyInput("end", event: event)
+        case .pageUp:
+            return keyInput("pageup", event: event)
+        case .pageDown:
+            return keyInput("pagedown", event: event)
+        case .forwardDelete:
+            return keyInput("delete", event: event)
+        case .leftArrow:
+            return keyInput("left", event: event)
+        case .rightArrow:
+            return keyInput("right", event: event)
+        case .downArrow:
+            return keyInput("down", event: event)
+        case .upArrow:
+            return keyInput("up", event: event)
+        case .f1:
+            return keyInput("f1", event: event, function: true)
+        case .f2:
+            return keyInput("f2", event: event, function: true)
+        case .f3:
+            return keyInput("f3", event: event, function: true)
+        case .f4:
+            return keyInput("f4", event: event, function: true)
+        case .f5:
+            return keyInput("f5", event: event, function: true)
+        case .f6:
+            return keyInput("f6", event: event, function: true)
+        case .f7:
+            return keyInput("f7", event: event, function: true)
+        case .f8:
+            return keyInput("f8", event: event, function: true)
+        case .f9:
+            return keyInput("f9", event: event, function: true)
+        case .f10:
+            return keyInput("f10", event: event, function: true)
+        case .f11:
+            return keyInput("f11", event: event, function: true)
+        case .f12:
+            return keyInput("f12", event: event, function: true)
+        case .space:
+            return keyInput("space", event: event, keyChar: event.characters)
+        }
+    }
+
+    private func characterKeyInput(for event: NSEvent) -> TerminalKeyInput? {
         guard let key = event.charactersIgnoringModifiers, !key.isEmpty else {
             return nil
         }
@@ -354,7 +378,7 @@ final class KeyboardCaptureView: NSView {
             shift: flags.contains(.shift),
             platform: flags.contains(.command),
             function: flags.contains(.function) || function,
-            eventKind: event.isARepeat ? 2 : 1
+            eventKind: event.isARepeat ? .repeat : .press
         )
     }
 
@@ -369,4 +393,59 @@ final class KeyboardCaptureView: NSView {
         return TerminalGridPosition(col: col, row: row)
     }
 
+}
+
+private enum MacKeyCode: UInt16 {
+    case returnKey = 36
+    case keypadEnter = 76
+    case tab = 48
+    case deleteBackward = 51
+    case escape = 53
+    case home = 115
+    case end = 119
+    case pageUp = 116
+    case pageDown = 121
+    case forwardDelete = 117
+    case leftArrow = 123
+    case rightArrow = 124
+    case downArrow = 125
+    case upArrow = 126
+    case f1 = 122
+    case f2 = 120
+    case f3 = 99
+    case f4 = 118
+    case f5 = 96
+    case f6 = 97
+    case f7 = 98
+    case f8 = 100
+    case f9 = 101
+    case f10 = 109
+    case f11 = 103
+    case f12 = 111
+    case space = 49
+}
+
+private extension KeyboardCaptureView {
+    func apply(configuration: TerminalKeyboardInputView) {
+        cols = configuration.cols
+        rows = configuration.rows
+        renderConfig = configuration.renderConfig
+        isTerminalFocused = configuration.isFocused
+        isInputEnabled = configuration.isInputEnabled
+        onFocus = configuration.onFocus
+        onBytes = configuration.onBytes
+        onKeyInput = configuration.onKeyInput
+        onScrollLines = configuration.onScrollLines
+        onScrollToTop = configuration.onScrollToTop
+        onScrollToBottom = configuration.onScrollToBottom
+        onClearBuffer = configuration.onClearBuffer
+        onSplitRight = configuration.onSplitRight
+        onSplitDown = configuration.onSplitDown
+        onClosePane = configuration.onClosePane
+        onClosePaneIfSplit = configuration.onClosePaneIfSplit
+        onFocusNextPane = configuration.onFocusNextPane
+        onShowSearch = configuration.onShowSearch
+        onSelectionChanged = configuration.onSelectionChanged
+        onCopy = configuration.onCopy
+    }
 }

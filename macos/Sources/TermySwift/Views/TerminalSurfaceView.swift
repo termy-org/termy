@@ -4,13 +4,16 @@ struct TerminalSurfaceView: View {
     @ObservedObject var terminal: TerminalViewModel
     @State private var isScrollBarVisible = false
     @State private var scrollBarHideTask: Task<Void, Never>?
+    @State private var lastSize: CGSize = .zero
 
     let isFocused: Bool
+    let showsFocusBorder: Bool
     let isInputEnabled: Bool
     let onFocus: () -> Void
     let onSplitRight: () -> Void
     let onSplitDown: () -> Void
     let onClosePane: () -> Void
+    let onClosePaneIfSplit: () -> Bool
     let onFocusNextPane: () -> Void
     let onShowSearch: () -> Void
 
@@ -43,9 +46,21 @@ struct TerminalSurfaceView: View {
                         revealScrollBar()
                         terminal.scrollDisplay(deltaLines: lines)
                     },
+                    onScrollToTop: {
+                        revealScrollBar()
+                        terminal.scrollToTop()
+                    },
+                    onScrollToBottom: {
+                        revealScrollBar()
+                        terminal.scrollToBottom()
+                    },
+                    onClearBuffer: {
+                        terminal.clearScrollback()
+                    },
                     onSplitRight: onSplitRight,
                     onSplitDown: onSplitDown,
                     onClosePane: onClosePane,
+                    onClosePaneIfSplit: onClosePaneIfSplit,
                     onFocusNextPane: onFocusNextPane,
                     onShowSearch: onShowSearch,
                     onSelectionChanged: { selection in
@@ -70,7 +85,7 @@ struct TerminalSurfaceView: View {
                 }
             }
             .overlay {
-                if isFocused {
+                if isFocused && showsFocusBorder {
                     Rectangle()
                         .stroke(Color.accentColor.opacity(0.6), lineWidth: 1)
                         .allowsHitTesting(false)
@@ -102,10 +117,17 @@ struct TerminalSurfaceView: View {
             }
             .onAppear {
                 terminal.start()
+                lastSize = proxy.size
                 resizeTerminal(to: proxy.size)
             }
             .onChange(of: proxy.size) { _, size in
+                lastSize = size
                 resizeTerminal(to: size)
+            }
+            .onChange(of: terminal.renderConfig) { _, _ in
+                // Font/padding changes alter cell metrics, so recompute the grid
+                // for the current pixel size when settings live-apply.
+                resizeTerminal(to: lastSize)
             }
             .onChange(of: terminal.frame.displayOffset) { oldValue, newValue in
                 if oldValue != newValue {

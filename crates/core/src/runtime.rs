@@ -1459,6 +1459,17 @@ impl Terminal {
         true
     }
 
+    /// Purge scrollback history and snap the viewport back to live output.
+    /// Returns true if there was any history or scroll offset to clear.
+    pub fn clear_scrollback(&self) -> bool {
+        let mut term = self.term.lock();
+        if term.grid().history_size() == 0 && term.grid().display_offset() == 0 {
+            return false;
+        }
+        term.grid_mut().clear_history();
+        true
+    }
+
     /// Return `(display_offset, history_size)` for viewport scrollbar rendering.
     pub fn scroll_state(&self) -> (usize, usize) {
         let term = self.term.lock();

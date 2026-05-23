@@ -13,6 +13,10 @@ struct TermySwiftApp: App {
                 .background(WindowConfigurator())
         }
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                OpenSettingsButton()
+            }
+
             CommandGroup(replacing: .newItem) {
                 Button("New Tab") {
                     NativeTabWindowManager.shared.openNativeTab()
@@ -68,16 +72,37 @@ struct TermySwiftApp: App {
                 .disabled(terminalCommands == nil)
             }
         }
+
+        Window("Termy Settings", id: Self.settingsWindowID) {
+            SettingsRootView()
+        }
+        .defaultSize(width: 860, height: 600)
+        .windowResizability(.contentMinSize)
+    }
+
+    static let settingsWindowID = "termy-settings"
+}
+
+/// Opens settings in a dedicated window while preserving the standard shortcut.
+private struct OpenSettingsButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Settings…") {
+            openWindow(id: TermySwiftApp.settingsWindowID)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut(",", modifiers: .command)
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var closePaneEventMonitor: Any?
+    private var closePaneEventMonitor: LocalEventMonitor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSWindow.allowsAutomaticWindowTabbing = true
-        closePaneEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
             guard event.modifierFlags.contains(.command),
                   !event.modifierFlags.contains(.shift),
                   event.charactersIgnoringModifiers?.lowercased() == "w"
@@ -86,14 +111,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             return TerminalCommandRouter.shared.closeFocusedPaneIfSplit() ? nil : event
+        }) {
+            closePaneEventMonitor = LocalEventMonitor(monitor)
         }
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if let closePaneEventMonitor {
-            NSEvent.removeMonitor(closePaneEventMonitor)
+        closePaneEventMonitor?.invalidate()
+    }
+}
+
+private final class LocalEventMonitor {
+    private var invalidateHandler: (() -> Void)?
+
+    init<Token>(_ token: Token) {
+        invalidateHandler = {
+            NSEvent.removeMonitor(token)
         }
+    }
+
+    func invalidate() {
+        invalidateHandler?()
+        invalidateHandler = nil
+    }
+
+    deinit {
+        invalidate()
     }
 }
 

@@ -5,13 +5,10 @@ import Foundation
 final class TerminalViewModel: ObservableObject {
     @Published private(set) var frame: TerminalFrame = .empty
     @Published private(set) var errorMessage: String?
-    @Published private(set) var configSummary = "config: loading"
     @Published private(set) var renderConfig = TerminalRenderConfig.default
     @Published private(set) var title = "Shell"
     @Published private(set) var progress = TerminalProgress.clear
-    @Published private(set) var workingDirectory: String?
     @Published private(set) var isExited = false
-    @Published private(set) var lastEvents: [TerminalRuntimeEvent] = []
     @Published private(set) var searchMatches: [TerminalSearchMatch] = []
     @Published private(set) var activeSearchMatchIndex = 0
     @Published var selection: TerminalSelection?
@@ -19,9 +16,7 @@ final class TerminalViewModel: ObservableObject {
     private var terminal: LibTermyTerminal?
     private var timer: Timer?
     private var lastResize: TerminalResize?
-    private var shouldExitAfterFirstRender: Bool {
-        ProcessInfo.processInfo.environment["TERMY_SWIFT_EXAMPLE_EXIT_AFTER_RENDER"] == "1"
-    }
+    private var settingsObserver: NSObjectProtocol?
 
     func start() {
         guard terminal == nil else {
@@ -31,7 +26,6 @@ final class TerminalViewModel: ObservableObject {
         do {
             let terminal = try LibTermyTerminal()
             self.terminal = terminal
-            configSummary = terminal.configSummary
             renderConfig = terminal.renderConfig
             isExited = false
             refresh(force: true)
@@ -41,17 +35,43 @@ final class TerminalViewModel: ObservableObject {
                     self?.refresh()
                 }
             }
+            settingsObserver = NotificationCenter.default.addObserver(
+                forName: .termySettingsChanged,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.reloadAppearance()
+                }
+            }
         } catch {
-            errorMessage = String(describing: error)
+            report(error)
         }
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
+            self.settingsObserver = nil
+        }
         terminal = nil
         isExited = true
         progress = .clear
+    }
+
+    /// Re-read appearance settings from the config file and apply them to this
+    /// live terminal: refreshed render config (font/metrics/padding/opacity) and
+    /// reloaded theme palette so existing cells recolor.
+    private func reloadAppearance() {
+        do {
+            renderConfig = try LibTermyTerminal.loadRenderConfig()
+            try terminal?.reloadColors()
+            refresh(force: true)
+        } catch {
+            report(error)
+        }
     }
 
     func sendControlC() {
@@ -65,7 +85,7 @@ final class TerminalViewModel: ObservableObject {
             }
             send(bytes: bytes)
         } catch {
-            errorMessage = String(describing: error)
+            report(error)
         }
     }
 
@@ -82,7 +102,7 @@ final class TerminalViewModel: ObservableObject {
             try terminal?.write(bytes)
             refresh(force: true)
         } catch {
-            errorMessage = String(describing: error)
+            report(error)
         }
     }
 
@@ -92,28 +112,30 @@ final class TerminalViewModel: ObservableObject {
         }
 
         let clampedDelta = max(Int(Int32.min), min(Int(Int32.max), deltaLines))
-        do {
-            if try terminal?.scrollDisplay(deltaLines: Int32(clampedDelta)) == true {
-                refresh(force: true)
-            }
-        } catch {
-            errorMessage = String(describing: error)
+        refreshIfChanged {
+            try terminal?.scrollDisplay(deltaLines: Int32(clampedDelta)) == true
         }
     }
 
     func scrollToBottom() {
-        do {
-            if try terminal?.scrollToBottom() == true {
-                refresh(force: true)
-            }
-        } catch {
-            errorMessage = String(describing: error)
+        refreshIfChanged {
+            try terminal?.scrollToBottom() == true
         }
     }
 
     func scrollToDisplayOffset(_ offset: Int) {
         let targetOffset = max(0, min(offset, frame.historySize))
         scrollDisplay(deltaLines: targetOffset - frame.displayOffset)
+    }
+
+    func scrollToTop() {
+        scrollToDisplayOffset(frame.historySize)
+    }
+
+    func clearScrollback() {
+        refreshIfChanged {
+            try terminal?.clearScrollback() == true
+        }
     }
 
     func updateSelection(_ selection: TerminalSelection?) {
@@ -134,7 +156,7 @@ final class TerminalViewModel: ObservableObject {
         do {
             return try terminal?.search(query) ?? []
         } catch {
-            errorMessage = String(describing: error)
+            report(error)
             return []
         }
     }
@@ -189,7 +211,7 @@ final class TerminalViewModel: ObservableObject {
             )
             refresh(force: true)
         } catch {
-            errorMessage = String(describing: error)
+            report(error)
         }
     }
 
@@ -206,11 +228,24 @@ final class TerminalViewModel: ObservableObject {
             if let nextFrame = try terminal?.snapshot() {
                 frame = nextFrame
                 errorMessage = nil
-                terminateForSmokeTestIfNeeded(nextFrame)
             }
         } catch {
-            errorMessage = String(describing: error)
+            report(error)
         }
+    }
+
+    private func refreshIfChanged(_ operation: () throws -> Bool) {
+        do {
+            if try operation() {
+                refresh(force: true)
+            }
+        } catch {
+            report(error)
+        }
+    }
+
+    private func report(_ error: Error) {
+        errorMessage = String(describing: error)
     }
 
     private func handle(_ events: [TerminalRuntimeEvent]) {
@@ -218,7 +253,6 @@ final class TerminalViewModel: ObservableObject {
             return
         }
 
-        lastEvents = events
         for event in events {
             switch event {
             case .title(let title):
@@ -232,33 +266,19 @@ final class TerminalViewModel: ObservableObject {
                 progress = .clear
             case .progress(let progress):
                 self.progress = progress
-            case .workingDirectory(let path):
-                workingDirectory = path.isEmpty ? nil : path
             case .wakeup,
                  .bell,
                  .clipboardStore(_),
                  .shellPromptStart,
                  .shellCommandStart,
                  .shellCommandExecuting,
-                 .shellCommandFinished(_):
+                 .shellCommandFinished(_),
+                 .workingDirectory(_):
                 break
             }
         }
     }
 
-    private func terminateForSmokeTestIfNeeded(_ frame: TerminalFrame) {
-        guard shouldExitAfterFirstRender else {
-            return
-        }
-        let hasText = frame.cells.contains { $0.renderText && $0.character != " " }
-        guard hasText else {
-            return
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            NSApp.terminate(nil)
-        }
-    }
 }
 
 private struct TerminalResize: Equatable {

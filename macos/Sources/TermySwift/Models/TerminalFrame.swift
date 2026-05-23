@@ -43,7 +43,7 @@ struct TerminalRenderConfig: Equatable {
     var backgroundOpacity: Double
     var backgroundOpacityCells: Bool
     var cursorBlink: Bool
-    var cursorStyle: UInt32
+    var cursorStyle: TerminalCursorStyle
     var measuredCellWidth: CGFloat
     var measuredCellHeight: CGFloat
 
@@ -60,7 +60,7 @@ struct TerminalRenderConfig: Equatable {
         backgroundOpacity: 1.0,
         backgroundOpacityCells: false,
         cursorBlink: true,
-        cursorStyle: 2,
+        cursorStyle: .block,
         measuredCellWidth: 9.0,
         measuredCellHeight: 19.6
     )
@@ -78,7 +78,7 @@ struct TerminalRenderConfig: Equatable {
         backgroundOpacity: Double,
         backgroundOpacityCells: Bool,
         cursorBlink: Bool,
-        cursorStyle: UInt32,
+        cursorStyle: TerminalCursorStyle,
         measuredCellWidth: CGFloat,
         measuredCellHeight: CGFloat
     ) {
@@ -101,8 +101,8 @@ struct TerminalRenderConfig: Equatable {
 
     init(_ ffiConfig: TermyFfiRenderConfig) {
         self.init(
-            fontFamily: Self.string(from: ffiConfig.font_family) ?? Self.default.fontFamily,
-            activeTheme: Self.string(from: ffiConfig.active_theme) ?? Self.default.activeTheme,
+            fontFamily: TermyFfiBridge.string(from: ffiConfig.font_family) ?? Self.default.fontFamily,
+            activeTheme: TermyFfiBridge.string(from: ffiConfig.active_theme) ?? Self.default.activeTheme,
             foreground: TerminalRGBA(ffiConfig.foreground),
             background: TerminalRGBA(ffiConfig.background),
             cursor: TerminalRGBA(ffiConfig.cursor),
@@ -113,7 +113,7 @@ struct TerminalRenderConfig: Equatable {
             backgroundOpacity: Double(ffiConfig.background_opacity),
             backgroundOpacityCells: ffiConfig.background_opacity_cells,
             cursorBlink: ffiConfig.cursor_blink,
-            cursorStyle: ffiConfig.cursor_style,
+            cursorStyle: TerminalCursorStyle(ffiRawValue: ffiConfig.cursor_style),
             measuredCellWidth: CGFloat(ffiConfig.cell_width),
             measuredCellHeight: CGFloat(ffiConfig.cell_height)
         )
@@ -126,13 +126,14 @@ struct TerminalRenderConfig: Equatable {
     var cellHeight: CGFloat {
         measuredCellHeight
     }
+}
 
-    private static func string(from bytes: TermyFfiBytes) -> String? {
-        guard let ptr = bytes.ptr, bytes.len > 0 else {
-            return nil
-        }
-        let buffer = UnsafeBufferPointer(start: ptr, count: Int(bytes.len))
-        return String(decoding: buffer, as: UTF8.self)
+enum TerminalCursorStyle: UInt32 {
+    case line = 1
+    case block = 2
+
+    init(ffiRawValue: UInt32) {
+        self = TerminalCursorStyle(rawValue: ffiRawValue) ?? .block
     }
 }
 
@@ -204,7 +205,7 @@ struct TerminalCell: Identifiable, Equatable {
 struct TerminalCursor: Equatable {
     var col: Int
     var row: Int
-    var style: UInt32
+    var style: TerminalCursorStyle
 }
 
 struct TerminalFrame: Equatable {
