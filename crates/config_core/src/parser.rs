@@ -84,7 +84,10 @@ impl AppConfig {
                 continue;
             }
 
-            if in_colors_section {
+            if in_colors_section
+                && root_setting_from_key(key).is_none()
+                && !is_removed_notification_key(key)
+            {
                 match apply_color_entry(&mut config.colors, key, value) {
                     Ok(()) => {}
                     Err(ColorEntryError::UnknownKey) => diagnostics.push(ConfigDiagnostic {

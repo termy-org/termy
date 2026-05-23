@@ -17,6 +17,7 @@ pub fn upsert_root_setting(contents: &str, setting: RootSettingId, value: &str) 
     let mut replaced = false;
     let mut inserted_before_first_section = false;
     let mut in_root = true;
+    let mut in_colors = false;
 
     for line in contents.lines() {
         let trimmed = line.trim();
@@ -29,15 +30,18 @@ pub fn upsert_root_setting(contents: &str, setting: RootSettingId, value: &str) 
                 inserted_before_first_section = true;
             }
             in_root = false;
+            in_colors = trimmed[1..trimmed.len() - 1]
+                .trim()
+                .eq_ignore_ascii_case("colors");
             out.push(line.to_string());
             continue;
         }
 
-        if in_root
+        if (in_root || in_colors)
             && let Some((raw_key, _)) = line.split_once('=')
             && root_setting_from_key(raw_key.trim()) == Some(setting)
         {
-            if !replaced {
+            if in_root && !replaced {
                 out.push(format!("{} = {}", spec.key, value));
                 replaced = true;
             }
@@ -57,17 +61,21 @@ pub fn upsert_root_setting(contents: &str, setting: RootSettingId, value: &str) 
 pub fn remove_root_setting(contents: &str, setting: RootSettingId) -> String {
     let mut out = Vec::new();
     let mut in_root = true;
+    let mut in_colors = false;
 
     for line in contents.lines() {
         let trimmed = line.trim();
         let is_section_header = trimmed.starts_with('[') && trimmed.ends_with(']');
         if is_section_header {
             in_root = false;
+            in_colors = trimmed[1..trimmed.len() - 1]
+                .trim()
+                .eq_ignore_ascii_case("colors");
             out.push(line.to_string());
             continue;
         }
 
-        if in_root
+        if (in_root || in_colors)
             && let Some((raw_key, _)) = line.split_once('=')
             && root_setting_from_key(raw_key.trim()) == Some(setting)
         {
@@ -294,6 +302,23 @@ mod tests {
         let input =
             "theme = termy\nshell = /bin/zsh\nshell = /bin/bash\n[colors]\nforeground = #fff\n";
         let output = remove_root_setting(input, RootSettingId::Shell);
+        assert_eq!(output, "theme = termy\n[colors]\nforeground = #fff\n");
+    }
+
+    #[test]
+    fn root_setting_writes_clean_misplaced_color_section_entries() {
+        let input = "theme = termy\n[colors]\ntheme_mode = system\nforeground = #fff\n";
+        let output = upsert_root_setting(input, RootSettingId::ThemeMode, "manual");
+        assert_eq!(
+            output,
+            "theme = termy\ntheme_mode = manual\n[colors]\nforeground = #fff\n"
+        );
+    }
+
+    #[test]
+    fn remove_root_setting_cleans_misplaced_color_section_entries() {
+        let input = "theme = termy\n[colors]\ntheme_mode = system\nforeground = #fff\n";
+        let output = remove_root_setting(input, RootSettingId::ThemeMode);
         assert_eq!(output, "theme = termy\n[colors]\nforeground = #fff\n");
     }
 

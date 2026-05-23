@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TerminalSurfaceView: View {
@@ -90,6 +91,14 @@ struct TerminalSurfaceView: View {
                         .background(.regularMaterial)
                         .padding(8)
                 }
+
+                if terminal.isExited && !hasVisibleTerminalContent {
+                    Text("Process exited")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
             }
             .overlay {
                 if isFocused && showsFocusBorder {
@@ -117,6 +126,11 @@ struct TerminalSurfaceView: View {
                 terminal.renderConfig.background.swiftUIColor
                     .opacity(terminal.renderConfig.backgroundOpacity)
             )
+            .background(TerminalWindowChromeSyncView(
+                title: terminal.title,
+                background: terminal.renderConfig.background,
+                isFocused: isFocused
+            ))
             .onTapGesture {
                 onFocus()
                 if isSearchVisible {
@@ -124,6 +138,7 @@ struct TerminalSurfaceView: View {
                 }
             }
             .onAppear {
+                onFocus()
                 terminal.start()
                 lastSize = proxy.size
                 resizeTerminal(to: proxy.size)
@@ -179,6 +194,77 @@ struct TerminalSurfaceView: View {
             return false
         }
         return !text.isEmpty
+    }
+
+    private var hasVisibleTerminalContent: Bool {
+        terminal.frame.cells.contains { cell in
+            cell.renderText && cell.character != " "
+        }
+    }
+}
+
+private struct TerminalWindowChromeSyncView: NSViewRepresentable {
+    let title: String
+    let background: TerminalRGBA
+    let isFocused: Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        syncChrome(from: view)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        syncChrome(from: view)
+    }
+
+    private func syncChrome(from view: NSView) {
+        guard isFocused else {
+            return
+        }
+        let nextTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTitle = nextTitle.isEmpty ? "Shell" : nextTitle
+        let resolvedBackground = background.nsTitlebarColor
+        let resolvedAppearance = background.prefersDarkTitlebarAppearance
+            ? NSAppearance(named: .darkAqua)
+            : NSAppearance(named: .aqua)
+        DispatchQueue.main.async {
+            guard let window = view.window else {
+                return
+            }
+            if window.title != resolvedTitle {
+                window.title = resolvedTitle
+            }
+            window.titlebarAppearsTransparent = true
+            window.backgroundColor = resolvedBackground
+            window.appearance = resolvedAppearance
+        }
+    }
+}
+
+private extension TerminalRGBA {
+    var nsTitlebarColor: NSColor {
+        NSColor(
+            srgbRed: red,
+            green: green,
+            blue: blue,
+            alpha: 1.0
+        )
+    }
+
+    var prefersDarkTitlebarAppearance: Bool {
+        let linearRed = linearizedSRGB(red)
+        let linearGreen = linearizedSRGB(green)
+        let linearBlue = linearizedSRGB(blue)
+        let luminance = (0.2126 * linearRed) + (0.7152 * linearGreen) + (0.0722 * linearBlue)
+        return luminance < 0.5
+    }
+
+    private func linearizedSRGB(_ component: Double) -> Double {
+        if component <= 0.04045 {
+            return component / 12.92
+        }
+        return pow((component + 0.055) / 1.055, 2.4)
     }
 }
 

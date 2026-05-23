@@ -1,8 +1,8 @@
 use crate::{
-    AppConfig, AppIcon, ConfigDiagnosticKind, ConfigParseReport, CursorStyle, DEFAULT_LINE_HEIGHT,
-    PaneFocusEffect, Rgb8, RootSettingId, RootSettingValueKind, TabCloseVisibility, TabTitleMode,
-    TabTitleSource, TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility,
-    WindowsShell, WorkingDirFallback, root_setting_specs,
+    AppConfig, AppIcon, AppearanceMode, ConfigDiagnosticKind, ConfigParseReport, CursorStyle,
+    DEFAULT_LINE_HEIGHT, PaneFocusEffect, Rgb8, RootSettingId, RootSettingValueKind,
+    TabCloseVisibility, TabTitleMode, TabTitleSource, TabWidthMode, TerminalScrollbarStyle,
+    TerminalScrollbarVisibility, WindowsShell, WorkingDirFallback, root_setting_specs,
 };
 
 fn parse(input: &str) -> AppConfig {
@@ -763,6 +763,22 @@ fn custom_colors_parse() {
     assert!(config.colors.ansi[10].is_some());
     assert!(config.colors.ansi[8].is_some());
     assert!(config.colors.ansi[2].is_none());
+}
+
+#[test]
+fn root_settings_in_colors_section_parse_for_legacy_settings_writes() {
+    let report = parse_report(
+        "theme = termy\n\
+         [colors]\n\
+         theme_mode = system\n\
+         theme_dark = tokyo-night\n\
+         foreground = #e7ebf5\n",
+    );
+
+    assert_eq!(report.config.theme_mode, AppearanceMode::System);
+    assert_eq!(report.config.theme_dark, "tokyo-night");
+    assert!(report.config.colors.foreground.is_some());
+    assert!(report.diagnostics.is_empty());
 }
 
 #[test]

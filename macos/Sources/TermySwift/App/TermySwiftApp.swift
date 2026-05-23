@@ -34,6 +34,15 @@ struct TermySwiftApp: App {
             }
 
             CommandMenu("Terminal") {
+                ForEach(1...9, id: \.self) { tabNumber in
+                    Button("Select Tab \(tabNumber)") {
+                        NativeTabWindowManager.shared.selectNativeTab(number: tabNumber)
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character(String(tabNumber))), modifiers: [.command])
+                }
+
+                Divider()
+
                 Button("Split Right") {
                     terminalCommands?.execute(.splitPaneVertical)
                 }
@@ -275,7 +284,7 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
     private let tabbingIdentifier = "\(AppMetadata.bundleIdentifier).native-tabs"
 
     func configure(_ window: NSWindow) {
-        window.title = AppMetadata.displayName
+        window.titlebarAppearsTransparent = true
         window.tabbingMode = .preferred
         window.tabbingIdentifier = tabbingIdentifier
         window.collectionBehavior.insert(.fullScreenPrimary)
@@ -285,6 +294,9 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
             return
         }
         configuredWindowIDs.insert(identifier)
+        if window.title.isEmpty || window.title == "Window" {
+            window.title = AppMetadata.displayName
+        }
         window.setContentSize(TermyAppConfiguration.current.windowSize)
         window.center()
     }
@@ -299,6 +311,27 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         }
 
         window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func selectNativeTab(number: Int) {
+        let index = number - 1
+        guard index >= 0,
+              let sourceWindow = nativeTabSourceWindow()
+        else {
+            return
+        }
+
+        let tabbedWindows = nativeTabWindows(for: sourceWindow)
+        guard tabbedWindows.indices.contains(index) else {
+            return
+        }
+
+        let targetWindow = tabbedWindows[index]
+        if targetWindow.isMiniaturized {
+            targetWindow.deminiaturize(nil)
+        }
+        targetWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -324,5 +357,24 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         window.delegate = self
         configure(window)
         return window
+    }
+
+    private func nativeTabSourceWindow() -> NSWindow? {
+        for window in [NSApp.keyWindow, NSApp.mainWindow].compactMap(\.self) {
+            if isNativeTerminalTabWindow(window) {
+                return window
+            }
+        }
+
+        return NSApp.windows.first(where: isNativeTerminalTabWindow)
+    }
+
+    private func nativeTabWindows(for sourceWindow: NSWindow) -> [NSWindow] {
+        let windows = sourceWindow.tabbedWindows ?? [sourceWindow]
+        return windows.filter(isNativeTerminalTabWindow)
+    }
+
+    private func isNativeTerminalTabWindow(_ window: NSWindow) -> Bool {
+        window.tabbingIdentifier == tabbingIdentifier
     }
 }

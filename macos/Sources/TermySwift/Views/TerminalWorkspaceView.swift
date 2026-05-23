@@ -399,6 +399,7 @@ private struct TerminalPaneLeafView: View {
             onShowSearch: store.showSearch,
             onDismissSearch: store.hideSearch
         )
+        .id(pane.id)
         .frame(minWidth: 240, minHeight: 120)
     }
 }

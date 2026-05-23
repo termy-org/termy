@@ -17,6 +17,7 @@ final class TerminalViewModel: ObservableObject {
     private var timer: Timer?
     private var lastResize: TerminalResize?
     private var settingsObserver: NSObjectProtocol?
+    private var startupRefreshUntil: Date?
 
     func start() {
         guard terminal == nil else {
@@ -28,6 +29,7 @@ final class TerminalViewModel: ObservableObject {
             self.terminal = terminal
             renderConfig = terminal.renderConfig
             isExited = false
+            startupRefreshUntil = Date().addingTimeInterval(2)
             refresh(force: true)
             timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) {
                 [weak self] _ in
@@ -59,6 +61,7 @@ final class TerminalViewModel: ObservableObject {
         terminal = nil
         isExited = true
         progress = .clear
+        startupRefreshUntil = nil
     }
 
     /// Re-read appearance settings from the config file and apply them to this
@@ -240,7 +243,8 @@ final class TerminalViewModel: ObservableObject {
             handle(events)
             let hasEvents = !events.isEmpty
             let hasDamage = try terminal?.takeDamage() ?? false
-            guard force || hasEvents || hasDamage else {
+            let isStartupRefresh = shouldForceStartupRefresh()
+            guard force || isStartupRefresh || hasEvents || hasDamage else {
                 return
             }
 
@@ -251,6 +255,17 @@ final class TerminalViewModel: ObservableObject {
         } catch {
             report(error)
         }
+    }
+
+    private func shouldForceStartupRefresh() -> Bool {
+        guard let startupRefreshUntil else {
+            return false
+        }
+        if Date() < startupRefreshUntil {
+            return true
+        }
+        self.startupRefreshUntil = nil
+        return false
     }
 
     private func refreshIfChanged(_ operation: () throws -> Bool) {

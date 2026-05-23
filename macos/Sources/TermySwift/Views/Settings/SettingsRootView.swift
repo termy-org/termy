@@ -101,17 +101,32 @@ private struct SettingRow: View {
                 SettingLabelView(setting: setting)
             }
         case .enumeration:
-            Picker(selection: store.enumBinding(setting.key)) {
-                ForEach(setting.choices ?? []) { choice in
-                    Text(choice.label).tag(choice.value)
-                }
-            } label: {
-                SettingLabelView(setting: setting)
-            }
+            ChoiceSettingRow(setting: setting, store: store)
         case .numeric:
             NumericSettingRow(setting: setting, store: store)
-        case .text, .special:
+        case .text:
             CommittingTextFieldRow(setting: setting, store: store, maxWidth: 240)
+        case .special:
+            if setting.choices?.isEmpty == false {
+                ChoiceSettingRow(setting: setting, store: store)
+            } else {
+                CommittingTextFieldRow(setting: setting, store: store, maxWidth: 240)
+            }
+        }
+    }
+}
+
+private struct ChoiceSettingRow: View {
+    let setting: Setting
+    @ObservedObject var store: SettingsStore
+
+    var body: some View {
+        Picker(selection: store.enumBinding(setting.key)) {
+            ForEach(setting.choices ?? []) { choice in
+                Text(choice.label).tag(choice.value)
+            }
+        } label: {
+            SettingLabelView(setting: setting)
         }
     }
 }

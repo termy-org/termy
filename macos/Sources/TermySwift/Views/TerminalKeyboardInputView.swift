@@ -30,6 +30,7 @@ struct TerminalKeyboardInputView: NSViewRepresentable {
         view.apply(configuration: self)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
+        view.registerForDraggedTypes(TerminalDropInput.acceptedPasteboardTypes)
         return view
     }
 
@@ -85,6 +86,27 @@ final class KeyboardCaptureView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dragOperation(for: sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dragOperation(for: sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard isInputEnabled,
+              let bytes = TerminalDropInput.bytes(from: sender.draggingPasteboard)
+        else {
+            return false
+        }
+
+        onFocus()
+        focus()
+        onBytes(bytes)
+        return true
     }
 
     override func updateTrackingAreas() {
@@ -342,6 +364,15 @@ final class KeyboardCaptureView: NSView {
             return
         }
         window.makeFirstResponder(self)
+    }
+
+    private func dragOperation(for sender: NSDraggingInfo) -> NSDragOperation {
+        guard isInputEnabled,
+              TerminalDropInput.canDecode(sender.draggingPasteboard)
+        else {
+            return []
+        }
+        return .copy
     }
 
     private func scrollLines(

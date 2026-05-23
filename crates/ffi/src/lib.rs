@@ -1,6 +1,10 @@
 #![allow(clippy::missing_safety_doc)]
 
-use std::{collections::HashMap, path::Path, ptr, slice, str};
+use std::{
+    collections::{BTreeSet, HashMap},
+    path::Path,
+    ptr, slice, str,
+};
 
 use termy_core::{
     ConfigDiagnostic, ConfigDiagnosticKind, LoadedTermyConfig, ProgressState, Terminal,
@@ -940,6 +944,135 @@ fn settings_color_hex(app: &cfg::AppConfig, id: cfg::ColorSettingId) -> Option<S
     rgb.map(|c| format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b))
 }
 
+const SETTINGS_BUILTIN_THEME_IDS: &[&str] = &[
+    "termy",
+    "tokyo-night",
+    "catppuccin-mocha",
+    "dracula",
+    "gruvbox-dark",
+    "nord",
+    "solarized-dark",
+    "one-dark",
+    "monokai",
+    "material-dark",
+    "palenight",
+    "tomorrow-night",
+    "oceanic-next",
+];
+
+fn settings_normalize_theme_id(theme_id: &str) -> String {
+    let mut normalized = String::new();
+    let mut last_dash = false;
+
+    for character in theme_id.trim().chars() {
+        let character = character.to_ascii_lowercase();
+        match character {
+            'a'..='z' | '0'..='9' => {
+                normalized.push(character);
+                last_dash = false;
+            }
+            '-' | '_' | ' ' if !normalized.is_empty() && !last_dash => {
+                normalized.push('-');
+                last_dash = true;
+            }
+            _ => {}
+        }
+    }
+
+    while normalized.ends_with('-') {
+        normalized.pop();
+    }
+
+    normalized
+}
+
+fn settings_installed_theme_ids(config_path: Option<&Path>) -> Vec<String> {
+    let owned_config_path;
+    let config_path = if let Some(path) = config_path {
+        path
+    } else {
+        owned_config_path = match cfg::config_path() {
+            Some(path) => path,
+            None => return Vec::new(),
+        };
+        owned_config_path.as_path()
+    };
+    let Some(config_dir) = config_path.parent() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(config_dir.join("themes")) else {
+        return Vec::new();
+    };
+
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            let is_json = path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
+            if !is_json {
+                return None;
+            }
+
+            let stem = path.file_stem()?.to_str()?;
+            let normalized = settings_normalize_theme_id(stem);
+            (!normalized.is_empty()).then_some(normalized)
+        })
+        .collect()
+}
+
+fn settings_theme_label(theme_id: &str) -> String {
+    if theme_id == cfg::SHELL_DECIDE_THEME_ID {
+        return "Shell Decide".to_string();
+    }
+
+    theme_id
+        .split(|character| character == '-' || character == '_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn settings_theme_choices(
+    loaded: &LoadedTermyConfig,
+    current_value: Option<&str>,
+) -> Vec<serde_json::Value> {
+    use serde_json::json;
+
+    let mut ids = BTreeSet::new();
+    ids.insert(cfg::SHELL_DECIDE_THEME_ID.to_string());
+    ids.extend(
+        SETTINGS_BUILTIN_THEME_IDS
+            .iter()
+            .map(|theme_id| (*theme_id).to_string()),
+    );
+    ids.extend(settings_installed_theme_ids(loaded.path.as_deref()));
+    if let Some(current_value) = current_value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        ids.insert(current_value.to_string());
+    }
+
+    ids.into_iter()
+        .map(|theme_id| {
+            json!({
+                "value": theme_id,
+                "label": settings_theme_label(&theme_id),
+            })
+        })
+        .collect()
+}
+
 fn settings_schema_json(loaded: &LoadedTermyConfig) -> String {
     use serde_json::{Value, json};
 
@@ -1039,6 +1172,15 @@ fn settings_schema_json(loaded: &LoadedTermyConfig) -> String {
                             .map(|choice| json!({ "value": choice.value, "label": choice.label }))
                             .collect();
                         setting["choices"] = json!(choices);
+                    }
+                    if matches!(
+                        spec.id,
+                        cfg::RootSettingId::Theme
+                            | cfg::RootSettingId::ThemeLight
+                            | cfg::RootSettingId::ThemeDark
+                    ) {
+                        setting["choices"] =
+                            json!(settings_theme_choices(loaded, setting["value"].as_str()));
                     }
 
                     match groups.iter_mut().find(|(group, _)| *group == spec.group) {
@@ -1776,6 +1918,25 @@ mod tests {
             .expect("font_size setting");
         assert_eq!(font_size["value"], "18");
         assert_eq!(font_size["kind"], "numeric");
+        let theme = appearance["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|group| group["settings"].as_array().unwrap())
+            .find(|setting| setting["key"] == "theme")
+            .expect("theme setting");
+        assert_eq!(theme["kind"], "special");
+        let theme_choices = theme["choices"].as_array().expect("theme choices");
+        assert!(
+            theme_choices
+                .iter()
+                .any(|choice| choice["value"] == cfg::SHELL_DECIDE_THEME_ID)
+        );
+        assert!(
+            theme_choices
+                .iter()
+                .any(|choice| choice["value"] == "tokyo-night")
+        );
 
         // Colors section reflects the override hex.
         let colors = &sections[4]["colors"].as_array().unwrap();
