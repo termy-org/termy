@@ -7,9 +7,11 @@ struct TerminalKeyboardInputView: NSViewRepresentable {
     var renderConfig: TerminalRenderConfig
     var isFocused: Bool
     var isInputEnabled: Bool
+    var canCopy: Bool
     var onFocus: () -> Void
     var onBytes: ([UInt8]) -> Void
     var onKeyInput: (TerminalKeyInput) -> Void
+    var onMouseInput: (TerminalMouseInput) -> Bool
     var onScrollLines: (Int) -> Void
     var onScrollToTop: () -> Void
     var onScrollToBottom: () -> Void
@@ -45,9 +47,11 @@ final class KeyboardCaptureView: NSView {
     var renderConfig = TerminalRenderConfig.default
     var isTerminalFocused = false
     var isInputEnabled = true
+    var canCopy = false
     var onFocus: () -> Void = {}
     var onBytes: ([UInt8]) -> Void = { _ in }
     var onKeyInput: (TerminalKeyInput) -> Void = { _ in }
+    var onMouseInput: (TerminalMouseInput) -> Bool = { _ in false }
     var onScrollLines: (Int) -> Void = { _ in }
     var onScrollToTop: () -> Void = {}
     var onScrollToBottom: () -> Void = {}
@@ -64,6 +68,8 @@ final class KeyboardCaptureView: NSView {
     private var selectionAnchor: TerminalGridPosition?
     private var didDragSelection = false
     private var preciseScrollRemainder: CGFloat = 0
+    private var preciseHorizontalScrollRemainder: CGFloat = 0
+    private var activeMouseButton: TerminalMouseButton?
 
     override var acceptsFirstResponder: Bool {
         true
@@ -81,6 +87,18 @@ final class KeyboardCaptureView: NSView {
         true
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for trackingArea in trackingAreas {
+            removeTrackingArea(trackingArea)
+        }
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved],
+            owner: self
+        ))
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard isInputEnabled else {
             return nil
@@ -96,6 +114,18 @@ final class KeyboardCaptureView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        handleMouseDown(event, button: .left)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        handleRightMouseDown(event)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        handleMouseDown(event, button: .middle)
+    }
+
+    private func handleMouseDown(_ event: NSEvent, button: TerminalMouseButton) {
         guard isInputEnabled else {
             super.mouseDown(with: event)
             return
@@ -103,13 +133,62 @@ final class KeyboardCaptureView: NSView {
         onFocus()
         focus()
         didDragSelection = false
+
+        if sendMouse(kind: .press, button: button, event: event) {
+            activeMouseButton = button
+            selectionAnchor = nil
+            onSelectionChanged(nil)
+            return
+        }
+
+        activeMouseButton = nil
+        guard button == .left else {
+            return
+        }
         selectionAnchor = gridPosition(for: event)
         onSelectionChanged(nil)
     }
 
+    private func handleRightMouseDown(_ event: NSEvent) {
+        guard isInputEnabled else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        onFocus()
+        focus()
+        didDragSelection = false
+
+        if sendMouse(kind: .press, button: .right, event: event) {
+            activeMouseButton = .right
+            selectionAnchor = nil
+            onSelectionChanged(nil)
+            return
+        }
+
+        activeMouseButton = nil
+        selectionAnchor = nil
+        showTerminalContextMenu(for: event)
+    }
+
     override func mouseDragged(with event: NSEvent) {
+        handleMouseDragged(event)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        handleMouseDragged(event)
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        handleMouseDragged(event)
+    }
+
+    private func handleMouseDragged(_ event: NSEvent) {
         guard isInputEnabled else {
             super.mouseDragged(with: event)
+            return
+        }
+        if let activeMouseButton,
+           sendMouse(kind: .drag, button: activeMouseButton, event: event) {
             return
         }
         guard let anchor = selectionAnchor else {
@@ -120,8 +199,25 @@ final class KeyboardCaptureView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        handleMouseUp(event, button: .left)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        handleMouseUp(event, button: .right)
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        handleMouseUp(event, button: .middle)
+    }
+
+    private func handleMouseUp(_ event: NSEvent, button: TerminalMouseButton) {
         guard isInputEnabled else {
             super.mouseUp(with: event)
+            return
+        }
+        if activeMouseButton != nil {
+            _ = sendMouse(kind: .release, button: button, event: event)
+            activeMouseButton = nil
             return
         }
         guard let anchor = selectionAnchor else {
@@ -139,6 +235,14 @@ final class KeyboardCaptureView: NSView {
         }
 
         onSelectionChanged(TerminalSelection(anchor: anchor, active: gridPosition(for: event)))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard isInputEnabled else {
+            super.mouseMoved(with: event)
+            return
+        }
+        _ = sendMouse(kind: .move, button: .none, event: event)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -211,15 +315,21 @@ final class KeyboardCaptureView: NSView {
         }
         onFocus()
 
-        let deltaLines: Int
-        if event.hasPreciseScrollingDeltas {
-            let rawLines = (event.scrollingDeltaY / max(1, renderConfig.cellHeight))
-                + preciseScrollRemainder
-            let wholeLines = rawLines.rounded(.towardZero)
-            preciseScrollRemainder = rawLines - wholeLines
-            deltaLines = Int(wholeLines)
-        } else {
-            deltaLines = Int(event.scrollingDeltaY.rounded())
+        let deltaLines = scrollLines(
+            delta: event.scrollingDeltaY,
+            unit: renderConfig.cellHeight,
+            precise: event.hasPreciseScrollingDeltas,
+            remainder: &preciseScrollRemainder
+        )
+        let horizontalDeltaLines = scrollLines(
+            delta: event.scrollingDeltaX,
+            unit: renderConfig.cellWidth,
+            precise: event.hasPreciseScrollingDeltas,
+            remainder: &preciseHorizontalScrollRemainder
+        )
+
+        if sendWheelEvents(vertical: deltaLines, horizontal: horizontalDeltaLines, event: event) {
+            return
         }
 
         if deltaLines != 0 {
@@ -232,6 +342,68 @@ final class KeyboardCaptureView: NSView {
             return
         }
         window.makeFirstResponder(self)
+    }
+
+    private func scrollLines(
+        delta: CGFloat,
+        unit: CGFloat,
+        precise: Bool,
+        remainder: inout CGFloat
+    ) -> Int {
+        if precise {
+            let rawLines = (delta / max(1, unit)) + remainder
+            let wholeLines = rawLines.rounded(.towardZero)
+            remainder = rawLines - wholeLines
+            return Int(wholeLines)
+        }
+        return Int(delta.rounded())
+    }
+
+    private func sendWheelEvents(vertical: Int, horizontal: Int, event: NSEvent) -> Bool {
+        var didSend = false
+        if vertical != 0 {
+            let kind: TerminalMouseEventKind = vertical > 0 ? .wheelUp : .wheelDown
+            didSend = sendRepeatedMouse(kind: kind, count: abs(vertical), event: event) || didSend
+        }
+        if horizontal != 0 {
+            let kind: TerminalMouseEventKind = horizontal > 0 ? .wheelLeft : .wheelRight
+            didSend = sendRepeatedMouse(kind: kind, count: abs(horizontal), event: event) || didSend
+        }
+        return didSend
+    }
+
+    private func sendRepeatedMouse(
+        kind: TerminalMouseEventKind,
+        count: Int,
+        event: NSEvent
+    ) -> Bool {
+        let count = min(count, 32)
+        guard count > 0, sendMouse(kind: kind, button: .none, event: event) else {
+            return false
+        }
+        guard count > 1 else {
+            return true
+        }
+        for _ in 1..<count {
+            _ = sendMouse(kind: kind, button: .none, event: event)
+        }
+        return true
+    }
+
+    private func sendMouse(
+        kind: TerminalMouseEventKind,
+        button: TerminalMouseButton,
+        event: NSEvent
+    ) -> Bool {
+        let flags = event.modifierFlags
+        return onMouseInput(TerminalMouseInput(
+            kind: kind,
+            button: button,
+            position: gridPosition(for: event),
+            control: flags.contains(.control),
+            alt: flags.contains(.option),
+            shift: flags.contains(.shift)
+        ))
     }
 
     private func handleCopy(_ event: NSEvent) -> Bool {
@@ -253,6 +425,38 @@ final class KeyboardCaptureView: NSView {
 
         onBytes(Array(text.utf8))
         return true
+    }
+
+    private func pasteFromPasteboard() {
+        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else {
+            return
+        }
+        onBytes(Array(text.utf8))
+    }
+
+    private func showTerminalContextMenu(for event: NSEvent) {
+        let menu = TerminalSurfaceContextMenu.make(
+            canCopy: canCopy,
+            canPaste: NSPasteboard.general.string(forType: .string) != nil,
+            target: self
+        )
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc func copyFromTerminalContextMenu(_ sender: Any?) {
+        _ = onCopy()
+    }
+
+    @objc func pasteFromTerminalContextMenu(_ sender: Any?) {
+        pasteFromPasteboard()
+    }
+
+    @objc func clearBufferFromTerminalContextMenu(_ sender: Any?) {
+        onClearBuffer()
+    }
+
+    @objc func showSearchFromTerminalContextMenu(_ sender: Any?) {
+        onShowSearch()
     }
 
     private func handleHostCommand(_ event: NSEvent) -> Bool {
@@ -432,9 +636,11 @@ private extension KeyboardCaptureView {
         renderConfig = configuration.renderConfig
         isTerminalFocused = configuration.isFocused
         isInputEnabled = configuration.isInputEnabled
+        canCopy = configuration.canCopy
         onFocus = configuration.onFocus
         onBytes = configuration.onBytes
         onKeyInput = configuration.onKeyInput
+        onMouseInput = configuration.onMouseInput
         onScrollLines = configuration.onScrollLines
         onScrollToTop = configuration.onScrollToTop
         onScrollToBottom = configuration.onScrollToBottom

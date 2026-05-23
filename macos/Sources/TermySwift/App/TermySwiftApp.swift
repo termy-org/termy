@@ -1,13 +1,18 @@
 import AppKit
 import SwiftUI
 
+private enum AppMetadata {
+    static let displayName = "Termy Native Preview"
+    static let bundleIdentifier = "com.lassevestergaard.TermyNativePreview"
+}
+
 @main
 struct TermySwiftApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @FocusedValue(\.terminalCommands) private var terminalCommands
 
     var body: some Scene {
-        WindowGroup("TermySwift") {
+        WindowGroup(AppMetadata.displayName) {
             TerminalWorkspaceView()
                 .frame(minWidth: 760, minHeight: 480)
                 .background(WindowConfigurator())
@@ -19,40 +24,116 @@ struct TermySwiftApp: App {
 
             CommandGroup(replacing: .newItem) {
                 Button("New Tab") {
-                    NativeTabWindowManager.shared.openNativeTab()
+                    if let terminalCommands {
+                        terminalCommands.execute(.newTab)
+                    } else {
+                        NativeTabWindowManager.shared.openNativeTab()
+                    }
                 }
                 .keyboardShortcut("t", modifiers: [.command])
             }
 
             CommandMenu("Terminal") {
                 Button("Split Right") {
-                    terminalCommands?.splitRight()
+                    terminalCommands?.execute(.splitPaneVertical)
                 }
                 .keyboardShortcut("d", modifiers: [.command])
                 .disabled(terminalCommands == nil)
 
                 Button("Split Down") {
-                    terminalCommands?.splitDown()
+                    terminalCommands?.execute(.splitPaneHorizontal)
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
                 .disabled(terminalCommands == nil)
 
+                Divider()
+
+                Button("Close Pane or Tab") {
+                    terminalCommands?.execute(.closePaneOrTab)
+                }
+                .keyboardShortcut("w", modifiers: [.command])
+                .disabled(terminalCommands == nil)
+
                 Button("Close Pane") {
-                    terminalCommands?.closePane()
+                    terminalCommands?.execute(.closePane)
                 }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
                 .disabled(terminalCommands == nil)
 
+                Divider()
+
                 Button("Next Pane") {
-                    terminalCommands?.focusNextPane()
+                    terminalCommands?.execute(.focusPaneNext)
                 }
-                .keyboardShortcut("]", modifiers: [.command])
+                .keyboardShortcut("o", modifiers: [.command])
+                .disabled(terminalCommands == nil)
+
+                Button("Previous Pane") {
+                    terminalCommands?.execute(.focusPanePrevious)
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(terminalCommands == nil)
+
+                Button("Focus Pane Left") {
+                    terminalCommands?.execute(.focusPane(.left))
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                .disabled(terminalCommands == nil)
+
+                Button("Focus Pane Right") {
+                    terminalCommands?.execute(.focusPane(.right))
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                .disabled(terminalCommands == nil)
+
+                Button("Focus Pane Up") {
+                    terminalCommands?.execute(.focusPane(.up))
+                }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                .disabled(terminalCommands == nil)
+
+                Button("Focus Pane Down") {
+                    terminalCommands?.execute(.focusPane(.down))
+                }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                .disabled(terminalCommands == nil)
+
+                Divider()
+
+                Button("Resize Pane Left") {
+                    terminalCommands?.execute(.resizePane(.left))
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
+                .disabled(terminalCommands == nil)
+
+                Button("Resize Pane Right") {
+                    terminalCommands?.execute(.resizePane(.right))
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
+                .disabled(terminalCommands == nil)
+
+                Button("Resize Pane Up") {
+                    terminalCommands?.execute(.resizePane(.up))
+                }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option, .shift])
+                .disabled(terminalCommands == nil)
+
+                Button("Resize Pane Down") {
+                    terminalCommands?.execute(.resizePane(.down))
+                }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option, .shift])
+                .disabled(terminalCommands == nil)
+
+                Button("Toggle Pane Zoom") {
+                    terminalCommands?.execute(.togglePaneZoom)
+                }
+                .keyboardShortcut(.return, modifiers: [.command])
                 .disabled(terminalCommands == nil)
 
                 Divider()
 
                 Button("Send Interrupt") {
-                    terminalCommands?.sendInterrupt()
+                    terminalCommands?.execute(.sendInterrupt)
                 }
                 .keyboardShortcut("c", modifiers: [.control])
                 .disabled(terminalCommands == nil)
@@ -60,20 +141,44 @@ struct TermySwiftApp: App {
 
             CommandGroup(after: .textEditing) {
                 Button("Find") {
-                    terminalCommands?.showSearch()
+                    terminalCommands?.execute(.openSearch)
                 }
                 .keyboardShortcut("f", modifiers: [.command])
                 .disabled(terminalCommands == nil)
 
+                Button("Find Next") {
+                    terminalCommands?.execute(.searchNext)
+                }
+                .keyboardShortcut("g", modifiers: [.command])
+                .disabled(terminalCommands == nil)
+
+                Button("Find Previous") {
+                    terminalCommands?.execute(.searchPrevious)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .disabled(terminalCommands == nil)
+
+                Button("Case Sensitive") {
+                    terminalCommands?.execute(.toggleSearchCaseSensitive)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+                .disabled(terminalCommands == nil)
+
+                Button("Regex") {
+                    terminalCommands?.execute(.toggleSearchRegex)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .option])
+                .disabled(terminalCommands == nil)
+
                 Button("Close Search") {
-                    terminalCommands?.hideSearch()
+                    terminalCommands?.execute(.closeSearch)
                 }
                 .keyboardShortcut(.escape, modifiers: [])
                 .disabled(terminalCommands == nil)
             }
         }
 
-        Window("Termy Settings", id: Self.settingsWindowID) {
+        Window("\(AppMetadata.displayName) Settings", id: Self.settingsWindowID) {
             SettingsRootView()
         }
         .defaultSize(width: 860, height: 600)
@@ -110,7 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return event
             }
 
-            return TerminalCommandRouter.shared.closeFocusedPaneIfSplit() ? nil : event
+            return TerminalCommandRouter.shared.closeFocusedPaneIfSplit(for: event) ? nil : event
         }) {
             closePaneEventMonitor = LocalEventMonitor(monitor)
         }
@@ -167,10 +272,10 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
 
     private var retainedWindows: [NSWindow] = []
     private var configuredWindowIDs = Set<ObjectIdentifier>()
-    private let tabbingIdentifier = "com.lassevestergaard.TermySwift.native-tabs"
+    private let tabbingIdentifier = "\(AppMetadata.bundleIdentifier).native-tabs"
 
     func configure(_ window: NSWindow) {
-        window.title = "TermySwift"
+        window.title = AppMetadata.displayName
         window.tabbingMode = .preferred
         window.tabbingIdentifier = tabbingIdentifier
         window.collectionBehavior.insert(.fullScreenPrimary)

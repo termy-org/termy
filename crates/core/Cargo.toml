@@ -15,6 +15,7 @@ dirs = "6.0"
 fontdb = "0.23"
 polling = "3.11"
 termy_config_core = { path = "../config_core" }
+termy_search = { path = "../search" }
 termy_themes = { path = "../themes" }
 ttf-parser = "0.25"
 

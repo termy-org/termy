@@ -5,10 +5,11 @@ use std::{collections::HashMap, path::Path, ptr, slice, str};
 use termy_core::{
     ConfigDiagnostic, ConfigDiagnosticKind, LoadedTermyConfig, ProgressState, Terminal,
     TerminalClipboardTarget, TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent,
-    TerminalKeyEventKind, TerminalOptions, TerminalQueryColors, TerminalReplyHost,
+    TerminalKeyEventKind, TerminalMouseButton, TerminalMouseEventKind, TerminalMouseModifiers,
+    TerminalMousePosition, TerminalOptions, TerminalQueryColors, TerminalReplyHost,
     TerminalRuntimeConfig, TerminalSize, TermyCell, TermyColor, TermyKeystroke, TermyModifiers,
-    TermySearchMatch, keystroke_to_input, load_config_from_contents, load_config_from_default_path,
-    load_config_from_path,
+    TermySearchMatch, TermySearchOptions, encode_mouse_report, keystroke_to_input,
+    load_config_from_contents, load_config_from_default_path, load_config_from_path,
 };
 
 #[repr(C)]
@@ -139,6 +140,13 @@ pub struct TermyFfiSearchBatch {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiSearchOptions {
+    pub case_sensitive: bool,
+    pub regex: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TermyFfiConfigDiagnostic {
     pub line_number: usize,
     pub kind: u32,
@@ -215,6 +223,18 @@ pub struct TermyFfiKeystroke {
     pub key_char_ptr: *const u8,
     pub key_char_len: usize,
     pub event_kind: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiMouseInput {
+    pub kind: u32,
+    pub button: u32,
+    pub col: usize,
+    pub row: usize,
+    pub control: bool,
+    pub alt: bool,
+    pub shift: bool,
 }
 
 struct EmptyReplyHost;
@@ -439,6 +459,29 @@ fn config_diagnostic_kind(kind: ConfigDiagnosticKind) -> u32 {
         ConfigDiagnosticKind::InvalidSyntax => 4,
         ConfigDiagnosticKind::InvalidValue => 5,
         ConfigDiagnosticKind::DuplicateRootKey => 6,
+    }
+}
+
+fn mouse_button(button: u32) -> Option<TerminalMouseButton> {
+    match button {
+        1 => Some(TerminalMouseButton::Left),
+        2 => Some(TerminalMouseButton::Middle),
+        3 => Some(TerminalMouseButton::Right),
+        _ => None,
+    }
+}
+
+fn mouse_event(input: TermyFfiMouseInput) -> Option<TerminalMouseEventKind> {
+    match input.kind {
+        1 => Some(TerminalMouseEventKind::Press(mouse_button(input.button)?)),
+        2 => Some(TerminalMouseEventKind::Release(mouse_button(input.button)?)),
+        3 => Some(TerminalMouseEventKind::Drag(mouse_button(input.button)?)),
+        4 => Some(TerminalMouseEventKind::Move),
+        5 => Some(TerminalMouseEventKind::WheelUp),
+        6 => Some(TerminalMouseEventKind::WheelDown),
+        7 => Some(TerminalMouseEventKind::WheelLeft),
+        8 => Some(TerminalMouseEventKind::WheelRight),
+        _ => None,
     }
 }
 
@@ -902,12 +945,42 @@ fn settings_schema_json(loaded: &LoadedTermyConfig) -> String {
 
     let app = &loaded.app_config;
     let sections_meta = [
-        (cfg::SettingsSection::Appearance, "appearance", "Appearance", "paintbrush"),
-        (cfg::SettingsSection::Terminal, "terminal", "Terminal", "terminal"),
-        (cfg::SettingsSection::Tabs, "tabs", "Tabs", "square.on.square"),
-        (cfg::SettingsSection::Advanced, "advanced", "Advanced", "gearshape.2"),
-        (cfg::SettingsSection::Colors, "colors", "Colors", "paintpalette"),
-        (cfg::SettingsSection::Keybindings, "keybindings", "Keybindings", "keyboard"),
+        (
+            cfg::SettingsSection::Appearance,
+            "appearance",
+            "Appearance",
+            "paintbrush",
+        ),
+        (
+            cfg::SettingsSection::Terminal,
+            "terminal",
+            "Terminal",
+            "terminal",
+        ),
+        (
+            cfg::SettingsSection::Tabs,
+            "tabs",
+            "Tabs",
+            "square.on.square",
+        ),
+        (
+            cfg::SettingsSection::Advanced,
+            "advanced",
+            "Advanced",
+            "gearshape.2",
+        ),
+        (
+            cfg::SettingsSection::Colors,
+            "colors",
+            "Colors",
+            "paintpalette",
+        ),
+        (
+            cfg::SettingsSection::Keybindings,
+            "keybindings",
+            "Keybindings",
+            "keyboard",
+        ),
     ];
 
     let mut sections = Vec::new();
@@ -930,16 +1003,17 @@ fn settings_schema_json(loaded: &LoadedTermyConfig) -> String {
                 obj["colors"] = json!(colors);
             }
             cfg::SettingsSection::Keybindings => {
-                let lines: Vec<&str> =
-                    app.keybind_lines.iter().map(|line| line.value.as_str()).collect();
+                let lines: Vec<&str> = app
+                    .keybind_lines
+                    .iter()
+                    .map(|line| line.value.as_str())
+                    .collect();
                 obj["keybinds"] = json!(lines);
             }
             _ => {
                 let mut groups: Vec<(&str, Vec<Value>)> = Vec::new();
                 for spec in cfg::ROOT_SETTING_SPECS {
-                    if spec.section != section
-                        || matches!(spec.id, cfg::RootSettingId::Keybind)
-                    {
+                    if spec.section != section || matches!(spec.id, cfg::RootSettingId::Keybind) {
                         continue;
                     }
 
@@ -1214,6 +1288,44 @@ pub unsafe extern "C" fn termy_terminal_encode_key(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_encode_mouse(
+    terminal: *mut TermyFfiTerminal,
+    input: *const TermyFfiMouseInput,
+    out_bytes: *mut TermyFfiBytes,
+) -> TermyFfiStatus {
+    if terminal.is_null() || input.is_null() || out_bytes.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let input = unsafe { *input };
+    let Some(event) = mouse_event(input) else {
+        return TermyFfiStatus::UnknownKey;
+    };
+
+    let encoded = unsafe {
+        let terminal = &(*terminal).terminal;
+        encode_mouse_report(
+            terminal.mouse_mode(),
+            event,
+            TerminalMousePosition {
+                col: input.col,
+                row: input.row,
+            },
+            TerminalMouseModifiers {
+                shift: input.shift,
+                alt: input.alt,
+                control: input.control,
+            },
+        )
+    };
+
+    unsafe {
+        *out_bytes = encoded.map_or_else(|| termy_null_buffer(), ffi_bytes_from_vec);
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn termy_terminal_resize(
     terminal: *mut TermyFfiTerminal,
     size: TermyFfiSize,
@@ -1472,6 +1584,25 @@ pub unsafe extern "C" fn termy_terminal_search(
     query_len: usize,
     out_batch: *mut TermyFfiSearchBatch,
 ) -> TermyFfiStatus {
+    unsafe {
+        termy_terminal_search_with_options(
+            terminal,
+            query_ptr,
+            query_len,
+            TermyFfiSearchOptions::default(),
+            out_batch,
+        )
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_terminal_search_with_options(
+    terminal: *mut TermyFfiTerminal,
+    query_ptr: *const u8,
+    query_len: usize,
+    options: TermyFfiSearchOptions,
+    out_batch: *mut TermyFfiSearchBatch,
+) -> TermyFfiStatus {
     if terminal.is_null() || out_batch.is_null() {
         return TermyFfiStatus::Null;
     }
@@ -1481,10 +1612,18 @@ pub unsafe extern "C" fn termy_terminal_search(
         Err(status) => return status,
     };
 
-    let matches = unsafe { (*terminal).terminal.search(query) }
-        .into_iter()
-        .map(ffi_search_match_from_match)
-        .collect::<Vec<_>>();
+    let matches = unsafe {
+        (*terminal).terminal.search_with_options(
+            query,
+            TermySearchOptions {
+                case_sensitive: options.case_sensitive,
+                regex: options.regex,
+            },
+        )
+    }
+    .into_iter()
+    .map(ffi_search_match_from_match)
+    .collect::<Vec<_>>();
     let (matches_ptr, matches_len, matches_capacity) = leak_vec(matches);
 
     unsafe {
@@ -1592,8 +1731,7 @@ mod tests {
 
     #[test]
     fn settings_schema_json_covers_sections_and_values() {
-        let contents =
-            b"font_size = 18\ncursor_style = line\n[colors]\nforeground = #abcdef\n";
+        let contents = b"font_size = 18\ncursor_style = line\n[colors]\nforeground = #abcdef\n";
         let mut config = ptr::null_mut();
         assert_eq!(
             unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) },
@@ -1823,6 +1961,59 @@ mod tests {
     }
 
     #[test]
+    fn terminal_search_with_options_supports_case_sensitive_matching() {
+        let size = TermyFfiSize {
+            cols: 16,
+            rows: 4,
+            cell_width: 9.0,
+            cell_height: 18.0,
+        };
+        #[cfg(target_os = "windows")]
+        let command: &[u8] = b"echo alpha Beta && echo beta gamma";
+        #[cfg(not(target_os = "windows"))]
+        let command: &[u8] = b"printf 'alpha Beta\nbeta gamma'";
+        let mut terminal = ptr::null_mut();
+
+        assert_eq!(
+            unsafe { termy_terminal_new(size, command.as_ptr(), command.len(), &mut terminal,) },
+            TermyFfiStatus::Ok
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let query = b"beta";
+        let mut batch = TermyFfiSearchBatch::default();
+        assert_eq!(
+            unsafe {
+                termy_terminal_search_with_options(
+                    terminal,
+                    query.as_ptr(),
+                    query.len(),
+                    TermyFfiSearchOptions {
+                        case_sensitive: true,
+                        regex: false,
+                    },
+                    &mut batch,
+                )
+            },
+            TermyFfiStatus::Ok
+        );
+
+        let matches = unsafe { slice::from_raw_parts(batch.matches_ptr, batch.matches_len) };
+        assert!(!matches.is_empty());
+        assert!(
+            matches
+                .iter()
+                .all(|search_match| search_match.start_col == 0)
+        );
+
+        assert_eq!(
+            unsafe { termy_search_batch_free(&mut batch) },
+            TermyFfiStatus::Ok
+        );
+        assert_eq!(unsafe { termy_terminal_free(terminal) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
     fn terminal_encode_key_uses_core_keyboard_mapping() {
         let size = TermyFfiSize {
             cols: 16,
@@ -1852,6 +2043,51 @@ mod tests {
         );
         let encoded = unsafe { slice::from_raw_parts(bytes.ptr, bytes.len) };
         assert_eq!(encoded, b"\x1b[Z");
+
+        assert_eq!(unsafe { termy_buffer_free(bytes) }, TermyFfiStatus::Ok);
+        assert_eq!(unsafe { termy_terminal_free(terminal) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
+    fn terminal_encode_mouse_uses_live_mouse_mode() {
+        let size = TermyFfiSize {
+            cols: 16,
+            rows: 4,
+            cell_width: 9.0,
+            cell_height: 18.0,
+        };
+        let mut terminal = ptr::null_mut();
+
+        assert_eq!(
+            unsafe { termy_terminal_new(size, ptr::null(), 0, &mut terminal) },
+            TermyFfiStatus::Ok
+        );
+
+        let input = TermyFfiMouseInput {
+            kind: 1,
+            button: 1,
+            col: 4,
+            row: 2,
+            ..TermyFfiMouseInput::default()
+        };
+        let mut bytes = TermyFfiBytes::default();
+        assert_eq!(
+            unsafe { termy_terminal_encode_mouse(terminal, &input, &mut bytes) },
+            TermyFfiStatus::Ok
+        );
+        assert!(bytes.ptr.is_null());
+
+        unsafe {
+            (*terminal)
+                .terminal
+                .hydrate_output(b"\x1b[?1000h\x1b[?1006h");
+        }
+        assert_eq!(
+            unsafe { termy_terminal_encode_mouse(terminal, &input, &mut bytes) },
+            TermyFfiStatus::Ok
+        );
+        let encoded = unsafe { slice::from_raw_parts(bytes.ptr, bytes.len) };
+        assert_eq!(encoded, b"\x1b[<0;5;3M");
 
         assert_eq!(unsafe { termy_buffer_free(bytes) }, TermyFfiStatus::Ok);
         assert_eq!(unsafe { termy_terminal_free(terminal) }, TermyFfiStatus::Ok);

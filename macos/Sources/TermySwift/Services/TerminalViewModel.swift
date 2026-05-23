@@ -89,6 +89,19 @@ final class TerminalViewModel: ObservableObject {
         }
     }
 
+    func sendMouse(_ mouseInput: TerminalMouseInput) -> Bool {
+        do {
+            guard let bytes = try terminal?.encodeMouse(mouseInput), !bytes.isEmpty else {
+                return false
+            }
+            send(bytes: bytes)
+            return true
+        } catch {
+            report(error)
+            return false
+        }
+    }
+
     func send(bytes: [UInt8]) {
         guard !bytes.isEmpty else {
             return
@@ -152,16 +165,22 @@ final class TerminalViewModel: ObservableObject {
         return true
     }
 
-    func search(_ query: String) -> [TerminalSearchMatch] {
+    func search(
+        _ query: String,
+        options: TerminalSearchOptions = TerminalSearchOptions()
+    ) -> [TerminalSearchMatch] {
         do {
-            return try terminal?.search(query) ?? []
+            return try terminal?.search(query, options: options) ?? []
         } catch {
             report(error)
             return []
         }
     }
 
-    func updateSearch(_ query: String) {
+    func updateSearch(
+        _ query: String,
+        options: TerminalSearchOptions = TerminalSearchOptions()
+    ) {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             searchMatches = []
@@ -169,7 +188,7 @@ final class TerminalViewModel: ObservableObject {
             return
         }
 
-        let matches = search(trimmedQuery)
+        let matches = search(trimmedQuery, options: options)
         searchMatches = matches
         activeSearchMatchIndex = matches.isEmpty ? 0 : min(activeSearchMatchIndex, matches.count - 1)
     }

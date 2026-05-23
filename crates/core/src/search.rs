@@ -1,40 +1,62 @@
 use crate::frame::TermyFrame;
+use termy_search::{SearchConfig, SearchEngine, SearchMode};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TermySearchMatch {
     pub row: usize,
     pub start_col: usize,
+    /// Inclusive end column for Swift/FFI consumers.
     pub end_col: usize,
     pub line: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermySearchOptions {
+    pub case_sensitive: bool,
+    pub regex: bool,
+}
+
 pub fn search_frame(frame: &TermyFrame, query: &str) -> Vec<TermySearchMatch> {
+    search_frame_with_options(frame, query, TermySearchOptions::default())
+}
+
+pub fn search_frame_with_options(
+    frame: &TermyFrame,
+    query: &str,
+    options: TermySearchOptions,
+) -> Vec<TermySearchMatch> {
     if query.is_empty() || frame.cols == 0 {
         return Vec::new();
     }
 
-    let query = query.to_ascii_lowercase();
-    let query_len = query.chars().count();
+    let mut engine = SearchEngine::new(SearchConfig {
+        case_sensitive: options.case_sensitive,
+        mode: if options.regex {
+            SearchMode::Regex
+        } else {
+            SearchMode::Literal
+        },
+    });
+    if engine.set_pattern(query).is_err() {
+        return Vec::new();
+    }
+
     let cols = usize::from(frame.cols);
     let rows = usize::from(frame.rows);
     let mut matches = Vec::new();
 
     for row in 0..rows {
         let line = line_text(frame, row, cols);
-        let searchable = line.to_ascii_lowercase();
-        let mut offset = 0;
-
-        while let Some(byte_index) = searchable[offset..].find(&query) {
-            let start_byte = offset + byte_index;
-            let start_col = searchable[..start_byte].chars().count();
-            let end_col = start_col + query_len.saturating_sub(1);
+        for search_match in engine.search_line(row as i32, &line) {
+            if search_match.end_col <= search_match.start_col {
+                continue;
+            }
             matches.push(TermySearchMatch {
                 row,
-                start_col,
-                end_col,
+                start_col: search_match.start_col,
+                end_col: search_match.end_col.saturating_sub(1),
                 line: line.clone(),
             });
-            offset = start_byte + query.len();
         }
     }
 
@@ -89,6 +111,70 @@ mod tests {
     #[test]
     fn empty_query_returns_no_matches() {
         assert!(search_frame(&frame_from_rows(4, &["abc"]), "").is_empty());
+    }
+
+    #[test]
+    fn search_options_can_enable_case_sensitive_matching() {
+        let frame = frame_from_rows(12, &["Hello HELLO"]);
+
+        let matches = search_frame_with_options(
+            &frame,
+            "HELLO",
+            TermySearchOptions {
+                case_sensitive: true,
+                regex: false,
+            },
+        );
+
+        assert_eq!(
+            matches,
+            vec![TermySearchMatch {
+                row: 0,
+                start_col: 6,
+                end_col: 10,
+                line: "Hello HELLO".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn search_options_can_enable_regex_matching() {
+        let frame = frame_from_rows(16, &["foo 123 bar"]);
+
+        let matches = search_frame_with_options(
+            &frame,
+            r"\d+",
+            TermySearchOptions {
+                case_sensitive: false,
+                regex: true,
+            },
+        );
+
+        assert_eq!(
+            matches,
+            vec![TermySearchMatch {
+                row: 0,
+                start_col: 4,
+                end_col: 6,
+                line: "foo 123 bar".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn invalid_regex_returns_no_matches() {
+        let frame = frame_from_rows(12, &["hello"]);
+
+        let matches = search_frame_with_options(
+            &frame,
+            "[",
+            TermySearchOptions {
+                case_sensitive: false,
+                regex: true,
+            },
+        );
+
+        assert!(matches.is_empty());
     }
 
     fn frame_from_rows(cols: u16, rows: &[&str]) -> TermyFrame {

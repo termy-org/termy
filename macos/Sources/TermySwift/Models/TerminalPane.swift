@@ -5,10 +5,21 @@ enum TerminalSplitAxis: Equatable {
     case vertical
 }
 
+enum TerminalPaneDirection: Equatable {
+    case left
+    case right
+    case up
+    case down
+}
+
 @MainActor
 final class TerminalPane: ObservableObject, Identifiable {
-    let id = UUID()
+    let id: UUID
     let terminal = TerminalViewModel()
+
+    init(id: UUID = UUID()) {
+        self.id = id
+    }
 }
 
 @MainActor
@@ -20,13 +31,23 @@ final class TerminalPaneNode: ObservableObject, Identifiable {
 
     let id = UUID()
     @Published var kind: Kind
+    @Published private(set) var splitRatio: Double
 
-    init(kind: Kind) {
+    init(kind: Kind, splitRatio: Double = 0.5) {
         self.kind = kind
+        self.splitRatio = TerminalPaneNode.normalizedSplitRatio(splitRatio)
     }
 
     static func leaf(_ pane: TerminalPane = TerminalPane()) -> TerminalPaneNode {
         TerminalPaneNode(kind: .leaf(pane))
+    }
+
+    func setSplitRatio(_ ratio: Double) {
+        splitRatio = TerminalPaneNode.normalizedSplitRatio(ratio)
+    }
+
+    private static func normalizedSplitRatio(_ ratio: Double) -> Double {
+        min(max(ratio, 0.1), 0.9)
     }
 }
 
@@ -35,11 +56,59 @@ final class TerminalWorkspaceStore: ObservableObject {
     @Published private(set) var root: TerminalPaneNode
     @Published var focusedPaneID: UUID
     @Published var isSearchVisible = false
+    @Published var searchOptions = TerminalSearchOptions()
+    @Published private(set) var zoomedPaneID: UUID?
 
     init() {
         let firstPane = TerminalPane()
         root = TerminalPaneNode.leaf(firstPane)
         focusedPaneID = firstPane.id
+    }
+
+    func snapshot() -> TerminalWorkspaceSnapshot {
+        let panes = leaves()
+        let paneIndices = Dictionary(uniqueKeysWithValues: panes.enumerated().map { index, pane in
+            (pane.id, index)
+        })
+        let activePane = panes.firstIndex { $0.id == focusedPaneID } ?? 0
+        let tab = TerminalWorkspaceTabSnapshot(
+            panes: panes.map { pane in
+                TerminalWorkspacePaneSnapshot(id: pane.id, title: pane.terminal.title)
+            },
+            layoutTree: layoutSnapshot(from: root, paneIndices: paneIndices),
+            activePane: activePane,
+            isSearchVisible: isSearchVisible
+        )
+
+        return TerminalWorkspaceSnapshot(tabs: [tab])
+    }
+
+    @discardableResult
+    func restore(from snapshot: TerminalWorkspaceSnapshot) -> Bool {
+        guard !snapshot.tabs.isEmpty else {
+            return false
+        }
+
+        let tabIndex = max(0, min(snapshot.activeTab, snapshot.tabs.count - 1))
+        let tab = snapshot.tabs[tabIndex]
+        guard !tab.panes.isEmpty else {
+            return false
+        }
+
+        let restoredPanes = tab.panes.map { TerminalPane(id: $0.id) }
+        let restoredRoot = tab.layoutTree.flatMap { nodeSnapshot in
+            node(from: nodeSnapshot, panes: restoredPanes)
+        } ?? fallbackNode(for: restoredPanes)
+
+        leaves().forEach { $0.terminal.stop() }
+        root = restoredRoot
+
+        let activePane = max(0, min(tab.activePane, restoredPanes.count - 1))
+        focusedPaneID = restoredPanes[activePane].id
+        isSearchVisible = tab.isSearchVisible
+        zoomedPaneID = nil
+        objectWillChange.send()
+        return true
     }
 
     var focusedTerminal: TerminalViewModel? {
@@ -52,6 +121,25 @@ final class TerminalWorkspaceStore: ObservableObject {
 
     var paneCount: Int {
         leaves().count
+    }
+
+    var panesInStableOrder: [TerminalPane] {
+        leaves()
+    }
+
+    var paneIDsInStableOrder: [UUID] {
+        leaves().map(\.id)
+    }
+
+    var isZoomed: Bool {
+        zoomedPaneID != nil
+    }
+
+    var zoomedPane: TerminalPane? {
+        guard let zoomedPaneID else {
+            return nil
+        }
+        return pane(with: zoomedPaneID)
     }
 
     func focus(_ pane: TerminalPane) {
@@ -72,6 +160,7 @@ final class TerminalWorkspaceStore: ObservableObject {
             with: TerminalPaneNode(kind: .split(axis: axis, first: existingNode, second: newNode))
         ) {
             focusedPaneID = newPane.id
+            zoomedPaneID = nil
             objectWillChange.send()
         }
     }
@@ -88,6 +177,9 @@ final class TerminalWorkspaceStore: ObservableObject {
             return
         }
         root = nextRoot
+        if let zoomedID = zoomedPaneID, pane(with: zoomedID) == nil {
+            zoomedPaneID = nil
+        }
         if pane(with: focusedPaneID) == nil, let first = leaves().first {
             focusedPaneID = first.id
         }
@@ -113,13 +205,79 @@ final class TerminalWorkspaceStore: ObservableObject {
         focusedPaneID = panes[(index + 1) % panes.count].id
     }
 
+    func focusPreviousPane() {
+        let panes = leaves()
+        guard !panes.isEmpty else {
+            return
+        }
+        guard let index = panes.firstIndex(where: { $0.id == focusedPaneID }) else {
+            focusedPaneID = panes[0].id
+            return
+        }
+        focusedPaneID = panes[(index + panes.count - 1) % panes.count].id
+    }
+
+    @discardableResult
+    func focusPane(in direction: TerminalPaneDirection) -> Bool {
+        let frames = leafFrames()
+        guard
+            let current = frames.first(where: { $0.pane.id == focusedPaneID }),
+            let next = directionalCandidate(from: current, in: direction, candidates: frames)
+        else {
+            return false
+        }
+        focusedPaneID = next.pane.id
+        return true
+    }
+
+    @discardableResult
+    func resizeFocusedPane(in direction: TerminalPaneDirection, step: Double = 0.05) -> Bool {
+        let axis: TerminalSplitAxis
+        switch direction {
+        case .left, .right:
+            axis = .horizontal
+        case .up, .down:
+            axis = .vertical
+        }
+
+        guard resizeSplit(containing: focusedPaneID, in: root, axis: axis, direction: direction, step: step) else {
+            return false
+        }
+        objectWillChange.send()
+        return true
+    }
+
+    func toggleFocusedPaneZoom() {
+        guard pane(with: focusedPaneID) != nil else {
+            zoomedPaneID = nil
+            return
+        }
+        zoomedPaneID = zoomedPaneID == focusedPaneID ? nil : focusedPaneID
+    }
+
+    func clearPaneZoom() {
+        zoomedPaneID = nil
+    }
+
+    func isPaneZoomed(_ pane: TerminalPane) -> Bool {
+        zoomedPaneID == pane.id
+    }
+
     func showSearch() {
         isSearchVisible = true
     }
 
     func hideSearch() {
         isSearchVisible = false
-        focusedTerminal?.updateSearch("")
+        focusedTerminal?.updateSearch("", options: searchOptions)
+    }
+
+    func toggleSearchCaseSensitive() {
+        searchOptions.caseSensitive.toggle()
+    }
+
+    func toggleSearchRegex() {
+        searchOptions.usesRegex.toggle()
     }
 
     private func pane(with id: UUID) -> TerminalPane? {
@@ -139,10 +297,20 @@ final class TerminalWorkspaceStore: ObservableObject {
         }
     }
 
+    private func containsPane(_ paneID: UUID, in node: TerminalPaneNode) -> Bool {
+        switch node.kind {
+        case .leaf(let pane):
+            return pane.id == paneID
+        case .split(_, let first, let second):
+            return containsPane(paneID, in: first) || containsPane(paneID, in: second)
+        }
+    }
+
     private func replaceLeaf(paneID: UUID, in node: TerminalPaneNode, with replacement: TerminalPaneNode) -> Bool {
         switch node.kind {
         case .leaf(let pane) where pane.id == paneID:
             node.kind = replacement.kind
+            node.setSplitRatio(replacement.splitRatio)
             return true
         case .leaf:
             return false
@@ -172,7 +340,10 @@ final class TerminalWorkspaceStore: ObservableObject {
             let nextSecond = removingLeaf(paneID: paneID, from: second)
             switch (nextFirst, nextSecond) {
             case let (first?, second?):
-                return TerminalPaneNode(kind: nodeSplit(axisOf: node, first: first, second: second))
+                return TerminalPaneNode(
+                    kind: nodeSplit(axisOf: node, first: first, second: second),
+                    splitRatio: node.splitRatio
+                )
             case let (first?, nil):
                 return first
             case let (nil, second?):
@@ -180,6 +351,55 @@ final class TerminalWorkspaceStore: ObservableObject {
             case (nil, nil):
                 return nil
             }
+        }
+    }
+
+    private func resizeSplit(
+        containing paneID: UUID,
+        in node: TerminalPaneNode,
+        axis targetAxis: TerminalSplitAxis,
+        direction: TerminalPaneDirection,
+        step: Double
+    ) -> Bool {
+        switch node.kind {
+        case .leaf:
+            return false
+        case .split(let axis, let first, let second):
+            if resizeSplit(
+                containing: paneID,
+                in: first,
+                axis: targetAxis,
+                direction: direction,
+                step: step
+            ) {
+                return true
+            }
+            if resizeSplit(
+                containing: paneID,
+                in: second,
+                axis: targetAxis,
+                direction: direction,
+                step: step
+            ) {
+                return true
+            }
+            guard axis == targetAxis,
+                  containsPane(paneID, in: first) || containsPane(paneID, in: second)
+            else {
+                return false
+            }
+
+            node.setSplitRatio(node.splitRatio + splitRatioDelta(for: direction, step: step))
+            return true
+        }
+    }
+
+    private func splitRatioDelta(for direction: TerminalPaneDirection, step: Double) -> Double {
+        switch direction {
+        case .left, .up:
+            return -abs(step)
+        case .right, .down:
+            return abs(step)
         }
     }
 
@@ -192,5 +412,210 @@ final class TerminalWorkspaceStore: ObservableObject {
             return .split(axis: axis, first: first, second: second)
         }
         return .split(axis: .horizontal, first: first, second: second)
+    }
+
+    private func layoutSnapshot(
+        from node: TerminalPaneNode,
+        paneIndices: [UUID: Int]
+    ) -> TerminalWorkspaceLayoutNode? {
+        switch node.kind {
+        case .leaf(let pane):
+            guard let paneIndex = paneIndices[pane.id] else {
+                return nil
+            }
+            return .leaf(pane: paneIndex)
+        case .split(let axis, let first, let second):
+            guard
+                let first = layoutSnapshot(from: first, paneIndices: paneIndices),
+                let second = layoutSnapshot(from: second, paneIndices: paneIndices)
+            else {
+                return nil
+            }
+            return .split(axis: axis, ratio: node.splitRatio, first: first, second: second)
+        }
+    }
+
+    private func node(
+        from snapshot: TerminalWorkspaceLayoutNode,
+        panes: [TerminalPane]
+    ) -> TerminalPaneNode? {
+        switch snapshot {
+        case .leaf(let pane):
+            guard panes.indices.contains(pane) else {
+                return nil
+            }
+            return TerminalPaneNode.leaf(panes[pane])
+        case .split(let axis, let ratio, let first, let second):
+            guard
+                let firstNode = node(from: first, panes: panes),
+                let secondNode = node(from: second, panes: panes)
+            else {
+                return nil
+            }
+            return TerminalPaneNode(
+                kind: .split(axis: axis, first: firstNode, second: secondNode),
+                splitRatio: ratio
+            )
+        }
+    }
+
+    private func fallbackNode(for panes: [TerminalPane]) -> TerminalPaneNode {
+        guard let firstPane = panes.first else {
+            return TerminalPaneNode.leaf()
+        }
+
+        return panes.dropFirst().reduce(TerminalPaneNode.leaf(firstPane)) { partial, pane in
+            TerminalPaneNode(
+                kind: .split(
+                    axis: .horizontal,
+                    first: partial,
+                    second: TerminalPaneNode.leaf(pane)
+                )
+            )
+        }
+    }
+
+    private func leafFrames() -> [TerminalPaneFrame] {
+        collectLeafFrames(
+            from: root,
+            frame: NormalizedPaneFrame(x: 0, y: 0, width: 1, height: 1)
+        )
+    }
+
+    private func collectLeafFrames(
+        from node: TerminalPaneNode,
+        frame: NormalizedPaneFrame
+    ) -> [TerminalPaneFrame] {
+        switch node.kind {
+        case .leaf(let pane):
+            return [TerminalPaneFrame(pane: pane, frame: frame)]
+        case .split(let axis, let first, let second):
+            let ratio = node.splitRatio
+            let firstFrame: NormalizedPaneFrame
+            let secondFrame: NormalizedPaneFrame
+
+            switch axis {
+            case .horizontal:
+                firstFrame = NormalizedPaneFrame(
+                    x: frame.x,
+                    y: frame.y,
+                    width: frame.width * ratio,
+                    height: frame.height
+                )
+                secondFrame = NormalizedPaneFrame(
+                    x: frame.x + firstFrame.width,
+                    y: frame.y,
+                    width: frame.width - firstFrame.width,
+                    height: frame.height
+                )
+            case .vertical:
+                firstFrame = NormalizedPaneFrame(
+                    x: frame.x,
+                    y: frame.y,
+                    width: frame.width,
+                    height: frame.height * ratio
+                )
+                secondFrame = NormalizedPaneFrame(
+                    x: frame.x,
+                    y: frame.y + firstFrame.height,
+                    width: frame.width,
+                    height: frame.height - firstFrame.height
+                )
+            }
+
+            return collectLeafFrames(from: first, frame: firstFrame)
+                + collectLeafFrames(from: second, frame: secondFrame)
+        }
+    }
+
+    private func directionalCandidate(
+        from current: TerminalPaneFrame,
+        in direction: TerminalPaneDirection,
+        candidates: [TerminalPaneFrame]
+    ) -> TerminalPaneFrame? {
+        candidates
+            .filter { candidate in
+                candidate.pane.id != current.pane.id
+                    && isCandidate(candidate.frame, direction: direction, from: current.frame)
+            }
+            .min { lhs, rhs in
+                directionalScore(lhs.frame, direction: direction, from: current.frame)
+                    < directionalScore(rhs.frame, direction: direction, from: current.frame)
+            }
+    }
+
+    private func isCandidate(
+        _ candidate: NormalizedPaneFrame,
+        direction: TerminalPaneDirection,
+        from current: NormalizedPaneFrame
+    ) -> Bool {
+        let epsilon = 0.0001
+        switch direction {
+        case .left:
+            return candidate.maxX <= current.minX + epsilon
+                && candidate.overlapsVertically(with: current)
+        case .right:
+            return candidate.minX >= current.maxX - epsilon
+                && candidate.overlapsVertically(with: current)
+        case .up:
+            return candidate.maxY <= current.minY + epsilon
+                && candidate.overlapsHorizontally(with: current)
+        case .down:
+            return candidate.minY >= current.maxY - epsilon
+                && candidate.overlapsHorizontally(with: current)
+        }
+    }
+
+    private func directionalScore(
+        _ candidate: NormalizedPaneFrame,
+        direction: TerminalPaneDirection,
+        from current: NormalizedPaneFrame
+    ) -> Double {
+        let primaryDistance: Double
+        let secondaryDistance: Double
+
+        switch direction {
+        case .left:
+            primaryDistance = current.minX - candidate.maxX
+            secondaryDistance = abs(current.midY - candidate.midY)
+        case .right:
+            primaryDistance = candidate.minX - current.maxX
+            secondaryDistance = abs(current.midY - candidate.midY)
+        case .up:
+            primaryDistance = current.minY - candidate.maxY
+            secondaryDistance = abs(current.midX - candidate.midX)
+        case .down:
+            primaryDistance = candidate.minY - current.maxY
+            secondaryDistance = abs(current.midX - candidate.midX)
+        }
+
+        return primaryDistance * 1_000 + secondaryDistance
+    }
+}
+
+private struct TerminalPaneFrame {
+    let pane: TerminalPane
+    let frame: NormalizedPaneFrame
+}
+
+private struct NormalizedPaneFrame {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+
+    var minX: Double { x }
+    var maxX: Double { x + width }
+    var midX: Double { x + width / 2 }
+    var minY: Double { y }
+    var maxY: Double { y + height }
+    var midY: Double { y + height / 2 }
+
+    func overlapsHorizontally(with other: NormalizedPaneFrame) -> Bool {
+        min(maxX, other.maxX) - max(minX, other.minX) > 0.0001
+    }
+
+    func overlapsVertically(with other: NormalizedPaneFrame) -> Bool {
+        min(maxY, other.maxY) - max(minY, other.minY) > 0.0001
     }
 }

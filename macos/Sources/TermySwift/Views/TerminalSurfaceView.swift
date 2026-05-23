@@ -9,6 +9,7 @@ struct TerminalSurfaceView: View {
     let isFocused: Bool
     let showsFocusBorder: Bool
     let isInputEnabled: Bool
+    let isSearchVisible: Bool
     let onFocus: () -> Void
     let onSplitRight: () -> Void
     let onSplitDown: () -> Void
@@ -16,6 +17,7 @@ struct TerminalSurfaceView: View {
     let onClosePaneIfSplit: () -> Bool
     let onFocusNextPane: () -> Void
     let onShowSearch: () -> Void
+    let onDismissSearch: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -25,7 +27,8 @@ struct TerminalSurfaceView: View {
                     selection: terminal.selection,
                     renderConfig: terminal.renderConfig,
                     searchMatches: terminal.searchMatches,
-                    activeSearchMatch: terminal.searchMatches[safe: terminal.activeSearchMatchIndex]
+                    activeSearchMatch: terminal.searchMatches[safe: terminal.activeSearchMatchIndex],
+                    isFocused: isFocused
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
@@ -35,12 +38,16 @@ struct TerminalSurfaceView: View {
                     renderConfig: terminal.renderConfig,
                     isFocused: isFocused,
                     isInputEnabled: isInputEnabled,
+                    canCopy: hasCopyableSelection,
                     onFocus: onFocus,
                     onBytes: { bytes in
                         terminal.send(bytes: bytes)
                     },
                     onKeyInput: { keyInput in
                         terminal.sendKey(keyInput)
+                    },
+                    onMouseInput: { mouseInput in
+                        terminal.sendMouse(mouseInput)
                     },
                     onScrollLines: { lines in
                         revealScrollBar()
@@ -111,8 +118,9 @@ struct TerminalSurfaceView: View {
                     .opacity(terminal.renderConfig.backgroundOpacity)
             )
             .onTapGesture {
-                if isInputEnabled {
-                    onFocus()
+                onFocus()
+                if isSearchVisible {
+                    onDismissSearch()
                 }
             }
             .onAppear {
@@ -164,6 +172,13 @@ struct TerminalSurfaceView: View {
                 isScrollBarVisible = false
             }
         }
+    }
+
+    private var hasCopyableSelection: Bool {
+        guard let text = terminal.frame.selectedText(for: terminal.selection) else {
+            return false
+        }
+        return !text.isEmpty
     }
 }
 

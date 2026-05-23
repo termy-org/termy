@@ -47,7 +47,7 @@ pub use runtime::{
     normalize_working_directory_candidate, resolve_launch_working_directory,
     resolve_working_directory_path,
 };
-pub use search::{TermySearchMatch, search_frame};
+pub use search::{TermySearchMatch, TermySearchOptions, search_frame, search_frame_with_options};
 pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState};
 pub use termy_config_core::{
     AppConfig, ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport,

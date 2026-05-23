@@ -136,6 +136,11 @@ typedef struct {
 } TermyFfiSearchBatch;
 
 typedef struct {
+  bool case_sensitive;
+  bool regex;
+} TermyFfiSearchOptions;
+
+typedef struct {
   size_t line_number;
   uint32_t kind;
   TermyFfiBytes message;
@@ -194,6 +199,16 @@ typedef struct {
   size_t key_char_len;
   uint32_t event_kind;
 } TermyFfiKeystroke;
+
+typedef struct {
+  uint32_t kind;
+  uint32_t button;
+  size_t col;
+  size_t row;
+  bool control;
+  bool alt;
+  bool shift;
+} TermyFfiMouseInput;
 
 TermyFfiSize termy_size_default(void);
 TermyFfiStatus termy_terminal_new(
@@ -271,6 +286,10 @@ TermyFfiStatus termy_terminal_encode_key(
     TermyFfiTerminal *terminal,
     const TermyFfiKeystroke *keystroke,
     TermyFfiBytes *out_bytes);
+TermyFfiStatus termy_terminal_encode_mouse(
+    TermyFfiTerminal *terminal,
+    const TermyFfiMouseInput *input,
+    TermyFfiBytes *out_bytes);
 TermyFfiStatus termy_terminal_resize(TermyFfiTerminal *terminal, TermyFfiSize size);
 TermyFfiStatus termy_terminal_set_wakeup_enabled(
     TermyFfiTerminal *terminal,
@@ -301,6 +320,12 @@ TermyFfiStatus termy_terminal_search(
     TermyFfiTerminal *terminal,
     const uint8_t *query_ptr,
     size_t query_len,
+    TermyFfiSearchBatch *out_batch);
+TermyFfiStatus termy_terminal_search_with_options(
+    TermyFfiTerminal *terminal,
+    const uint8_t *query_ptr,
+    size_t query_len,
+    TermyFfiSearchOptions options,
     TermyFfiSearchBatch *out_batch);
 TermyFfiStatus termy_search_batch_free(TermyFfiSearchBatch *batch);
 TermyFfiStatus termy_buffer_free(TermyFfiBytes bytes);

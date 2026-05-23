@@ -4,10 +4,18 @@ import SwiftUI
 struct TerminalWorkspaceView: View {
     @StateObject private var store = TerminalWorkspaceStore()
     @State private var appConfigurationError = TermyAppConfiguration.loadErrorMessage
+    @State private var workspacePersistenceError: String?
+    @State private var didRestoreWorkspace = false
+    @State private var persistenceSaveTask: Task<Void, Never>?
+    private let workspacePersistence = TerminalWorkspacePersistence()
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            TerminalPaneNodeView(node: store.root, store: store)
+            if let zoomedPane = store.zoomedPane {
+                TerminalPaneLeafView(pane: zoomedPane, store: store)
+            } else {
+                TerminalPaneNodeView(node: store.root, store: store)
+            }
 
             if let appConfigurationError {
                 HStack(spacing: 8) {
@@ -28,31 +36,206 @@ struct TerminalWorkspaceView: View {
                 .zIndex(11)
             }
 
+            if let workspacePersistenceError {
+                HStack(spacing: 8) {
+                    Text(workspacePersistenceError)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.orange)
+                    Button {
+                        self.workspacePersistenceError = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .padding(8)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .zIndex(11)
+            }
+
             if store.isSearchVisible, let terminal = store.focusedTerminal {
                 TerminalSearchPanel(
                     terminal: terminal,
+                    options: $store.searchOptions,
                     onClose: store.hideSearch
                 )
                 .padding(10)
                 .zIndex(10)
             }
         }
+        .background(TerminalWorkspaceRoutingView(store: store))
         .focusedValue(\.terminalCommands, commandSet)
         .onAppear {
-            TerminalCommandRouter.shared.activeStore = store
+            TerminalCommandRouter.shared.activate(store)
+            restoreWorkspaceIfNeeded()
+        }
+        .onDisappear {
+            persistWorkspace()
+        }
+        .onReceive(store.objectWillChange) { _ in
+            scheduleWorkspacePersistence()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            persistWorkspace()
         }
     }
 
     private var commandSet: TerminalCommandSet {
         TerminalCommandSet(
-            splitRight: { store.splitFocused(.horizontal) },
-            splitDown: { store.splitFocused(.vertical) },
-            closePane: store.closeFocusedPane,
+            newTab: {
+                NativeTabWindowManager.shared.openNativeTab()
+            },
+            closePaneOrTab: {
+                if !store.closeFocusedPaneIfSplit() {
+                    NSApp.keyWindow?.performClose(nil)
+                }
+                scheduleWorkspacePersistence()
+            },
+            splitRight: {
+                store.splitFocused(.horizontal)
+                scheduleWorkspacePersistence()
+            },
+            splitDown: {
+                store.splitFocused(.vertical)
+                scheduleWorkspacePersistence()
+            },
+            closePane: {
+                store.closeFocusedPane()
+                scheduleWorkspacePersistence()
+            },
+            focusPane: { direction in
+                _ = store.focusPane(in: direction)
+            },
             focusNextPane: store.focusNextPane,
+            focusPreviousPane: store.focusPreviousPane,
+            resizePane: { direction in
+                if store.resizeFocusedPane(in: direction) {
+                    scheduleWorkspacePersistence()
+                }
+            },
+            togglePaneZoom: store.toggleFocusedPaneZoom,
+            copy: {
+                store.focusedTerminal?.copySelection() ?? false
+            },
+            paste: {
+                guard let text = NSPasteboard.general.string(forType: .string) else {
+                    return
+                }
+                store.focusedTerminal?.send(bytes: Array(text.utf8))
+            },
+            clearScrollback: {
+                store.focusedTerminal?.clearScrollback()
+            },
             showSearch: store.showSearch,
             hideSearch: store.hideSearch,
+            searchNext: {
+                store.focusedTerminal?.selectNextSearchMatch()
+            },
+            searchPrevious: {
+                store.focusedTerminal?.selectPreviousSearchMatch()
+            },
+            toggleSearchCaseSensitive: {
+                store.toggleSearchCaseSensitive()
+            },
+            toggleSearchRegex: {
+                store.toggleSearchRegex()
+            },
             sendInterrupt: { store.focusedTerminal?.sendControlC() }
         )
+    }
+
+    private func restoreWorkspaceIfNeeded() {
+        guard !didRestoreWorkspace else {
+            return
+        }
+        didRestoreWorkspace = true
+
+        do {
+            let snapshot = try workspacePersistence.loadLastSession()
+            if store.restore(from: snapshot) {
+                workspacePersistenceError = nil
+            }
+        } catch TerminalWorkspacePersistenceError.missingLastSession {
+            workspacePersistenceError = nil
+        } catch {
+            workspacePersistenceError = "Could not restore workspace: \(error)"
+        }
+    }
+
+    private func scheduleWorkspacePersistence() {
+        guard didRestoreWorkspace else {
+            return
+        }
+        persistenceSaveTask?.cancel()
+        persistenceSaveTask = Task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else {
+                return
+            }
+            await MainActor.run {
+                persistWorkspace()
+            }
+        }
+    }
+
+    private func persistWorkspace() {
+        guard didRestoreWorkspace else {
+            return
+        }
+        do {
+            try workspacePersistence.saveLastSession(store.snapshot())
+            workspacePersistenceError = nil
+        } catch {
+            workspacePersistenceError = "Could not save workspace: \(error)"
+        }
+    }
+}
+
+private struct TerminalWorkspaceRoutingView: NSViewRepresentable {
+    @ObservedObject var store: TerminalWorkspaceStore
+
+    func makeNSView(context: Context) -> RoutingRegistrationView {
+        RoutingRegistrationView(store: store)
+    }
+
+    func updateNSView(_ view: RoutingRegistrationView, context: Context) {
+        view.store = store
+        view.registerCurrentWindow()
+    }
+}
+
+private final class RoutingRegistrationView: NSView {
+    weak var store: TerminalWorkspaceStore?
+    private weak var registeredWindow: NSWindow?
+
+    init(store: TerminalWorkspaceStore) {
+        self.store = store
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        registerCurrentWindow()
+    }
+
+    func registerCurrentWindow() {
+        if let registeredWindow, registeredWindow !== window {
+            TerminalCommandRouter.shared.unregister(window: registeredWindow)
+            self.registeredWindow = nil
+        }
+
+        guard let window, let store else {
+            return
+        }
+        registeredWindow = window
+        TerminalCommandRouter.shared.register(store, for: window)
     }
 }
 
@@ -65,7 +248,7 @@ private struct TerminalPaneNodeView: View {
         case .leaf(let pane):
             TerminalPaneLeafView(pane: pane, store: store)
         case .split(let axis, let first, let second):
-            StableSplitView(axis: axis) {
+            StableSplitView(axis: axis, ratio: node.splitRatio) {
                 TerminalPaneNodeView(node: first, store: store)
             } second: {
                 TerminalPaneNodeView(node: second, store: store)
@@ -76,28 +259,31 @@ private struct TerminalPaneNodeView: View {
 
 private struct StableSplitView<First: View, Second: View>: NSViewControllerRepresentable {
     let axis: TerminalSplitAxis
+    let ratio: Double
     let first: First
     let second: Second
 
     init(
         axis: TerminalSplitAxis,
+        ratio: Double,
         @ViewBuilder first: () -> First,
         @ViewBuilder second: () -> Second
     ) {
         self.axis = axis
+        self.ratio = ratio
         self.first = first()
         self.second = second()
     }
 
     func makeNSViewController(context: Context) -> StableSplitViewController<First, Second> {
-        StableSplitViewController(axis: axis, first: first, second: second)
+        StableSplitViewController(axis: axis, ratio: ratio, first: first, second: second)
     }
 
     func updateNSViewController(
         _ splitViewController: StableSplitViewController<First, Second>,
         context: Context
     ) {
-        splitViewController.update(axis: axis, first: first, second: second)
+        splitViewController.update(axis: axis, ratio: ratio, first: first, second: second)
     }
 }
 
@@ -106,9 +292,11 @@ private final class StableSplitViewController<First: View, Second: View>: NSSpli
     private let secondHostingController: NSHostingController<Second>
     private var didApplyInitialDividerPosition = false
     private var axis: TerminalSplitAxis
+    private var ratio: Double
 
-    init(axis: TerminalSplitAxis, first: First, second: Second) {
+    init(axis: TerminalSplitAxis, ratio: Double, first: First, second: Second) {
         self.axis = axis
+        self.ratio = ratio
         firstHostingController = NSHostingController(rootView: first)
         secondHostingController = NSHostingController(rootView: second)
         super.init(nibName: nil, bundle: nil)
@@ -126,7 +314,7 @@ private final class StableSplitViewController<First: View, Second: View>: NSSpli
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(axis: TerminalSplitAxis, first: First, second: Second) {
+    func update(axis: TerminalSplitAxis, ratio: Double, first: First, second: Second) {
         firstHostingController.rootView = first
         secondHostingController.rootView = second
 
@@ -135,6 +323,11 @@ private final class StableSplitViewController<First: View, Second: View>: NSSpli
             splitView.isVertical = axis == .horizontal
             didApplyInitialDividerPosition = false
             updateMinimumThickness()
+        }
+
+        if abs(self.ratio - ratio) > 0.0001 {
+            self.ratio = ratio
+            didApplyInitialDividerPosition = false
         }
     }
 
@@ -167,7 +360,7 @@ private final class StableSplitViewController<First: View, Second: View>: NSSpli
             return
         }
 
-        splitView.setPosition(length / 2, ofDividerAt: 0)
+        splitView.setPosition(length * ratio, ofDividerAt: 0)
         didApplyInitialDividerPosition = true
     }
 }
@@ -182,6 +375,7 @@ private struct TerminalPaneLeafView: View {
             isFocused: store.focusedPaneID == pane.id,
             showsFocusBorder: store.paneCount > 1,
             isInputEnabled: !store.isSearchVisible,
+            isSearchVisible: store.isSearchVisible,
             onFocus: {
                 store.focus(pane)
             },
@@ -202,7 +396,8 @@ private struct TerminalPaneLeafView: View {
                 return store.closeFocusedPaneIfSplit()
             },
             onFocusNextPane: store.focusNextPane,
-            onShowSearch: store.showSearch
+            onShowSearch: store.showSearch,
+            onDismissSearch: store.hideSearch
         )
         .frame(minWidth: 240, minHeight: 120)
     }
@@ -210,6 +405,7 @@ private struct TerminalPaneLeafView: View {
 
 private struct TerminalSearchPanel: View {
     @ObservedObject var terminal: TerminalViewModel
+    @Binding var options: TerminalSearchOptions
     let onClose: () -> Void
 
     @State private var query = ""
@@ -250,6 +446,26 @@ private struct TerminalSearchPanel: View {
             .disabled(terminal.searchMatches.isEmpty)
 
             Button {
+                options.caseSensitive.toggle()
+            } label: {
+                Text("Aa")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.borderless)
+            .help("Case Sensitive")
+            .foregroundStyle(options.caseSensitive ? Color.accentColor : Color.secondary)
+
+            Button {
+                options.usesRegex.toggle()
+            } label: {
+                Text(".*")
+                    .font(.caption.monospaced().weight(.semibold))
+            }
+            .buttonStyle(.borderless)
+            .help("Regex")
+            .foregroundStyle(options.usesRegex ? Color.accentColor : Color.secondary)
+
+            Button {
                 onClose()
             } label: {
                 Image(systemName: "xmark")
@@ -265,10 +481,13 @@ private struct TerminalSearchPanel: View {
         }
         .onAppear {
             isFieldFocused = true
-            terminal.updateSearch(query)
+            terminal.updateSearch(query, options: options)
         }
         .onChange(of: query) { _, value in
-            terminal.updateSearch(value)
+            terminal.updateSearch(value, options: options)
+        }
+        .onChange(of: options) { _, value in
+            terminal.updateSearch(query, options: value)
         }
     }
 

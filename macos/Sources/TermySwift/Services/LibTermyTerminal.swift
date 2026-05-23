@@ -106,6 +106,34 @@ final class LibTermyTerminal {
         return Array(UnsafeBufferPointer(start: ptr, count: Int(outBytes.len)))
     }
 
+    func encodeMouse(_ mouseInput: TerminalMouseInput) throws -> [UInt8]? {
+        let handle = try terminalHandle()
+        var ffiInput = TermyFfiMouseInput(
+            kind: mouseInput.kind.rawValue,
+            button: mouseInput.button.rawValue,
+            col: mouseInput.position.col,
+            row: mouseInput.position.row,
+            control: mouseInput.control,
+            alt: mouseInput.alt,
+            shift: mouseInput.shift
+        )
+        var outBytes = TermyFfiBytes()
+        try TermyFfiBridge.requireOK(
+            "termy_terminal_encode_mouse",
+            termy_terminal_encode_mouse(handle, &ffiInput, &outBytes)
+        )
+        defer {
+            if outBytes.ptr != nil {
+                _ = termy_buffer_free(outBytes)
+            }
+        }
+
+        guard let ptr = outBytes.ptr, outBytes.len > 0 else {
+            return nil
+        }
+        return Array(UnsafeBufferPointer(start: ptr, count: Int(outBytes.len)))
+    }
+
     func resize(cols: UInt16, rows: UInt16, cellWidth: Float, cellHeight: Float) throws {
         let handle = try terminalHandle()
         var size = termy_size_default()
@@ -220,14 +248,27 @@ final class LibTermyTerminal {
         )
     }
 
-    func search(_ query: String) throws -> [TerminalSearchMatch] {
+    func search(
+        _ query: String,
+        options: TerminalSearchOptions = TerminalSearchOptions()
+    ) throws -> [TerminalSearchMatch] {
         let handle = try terminalHandle()
 
         var batch = TermyFfiSearchBatch()
+        let ffiOptions = TermyFfiSearchOptions(
+            case_sensitive: options.caseSensitive,
+            regex: options.usesRegex
+        )
         let status = Array(query.utf8).withUnsafeBufferPointer { buffer in
-            termy_terminal_search(handle, buffer.baseAddress, buffer.count, &batch)
+            termy_terminal_search_with_options(
+                handle,
+                buffer.baseAddress,
+                buffer.count,
+                ffiOptions,
+                &batch
+            )
         }
-        try TermyFfiBridge.requireOK("termy_terminal_search", status)
+        try TermyFfiBridge.requireOK("termy_terminal_search_with_options", status)
         defer {
             _ = termy_search_batch_free(&batch)
         }

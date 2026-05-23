@@ -1,11 +1,14 @@
 import SwiftUI
 
 struct TerminalGridView: View {
+    @Environment(\.displayScale) private var displayScale
+
     let frame: TerminalFrame
     let selection: TerminalSelection?
     let renderConfig: TerminalRenderConfig
     let searchMatches: [TerminalSearchMatch]
     let activeSearchMatch: TerminalSearchMatch?
+    let isFocused: Bool
 
     var body: some View {
         Canvas(opaque: false, rendersAsynchronously: false) { context, _ in
@@ -32,12 +35,25 @@ struct TerminalGridView: View {
         )
     }
 
+    private func pixelAlignedCellRect(col: Int, row: Int, cols: Int = 1) -> CGRect {
+        pixelAligned(cellRect(col: col, row: row, cols: cols))
+    }
+
+    private func pixelAligned(_ rect: CGRect) -> CGRect {
+        let scale = max(1.0, displayScale)
+        let minX = floor(rect.minX * scale) / scale
+        let minY = floor(rect.minY * scale) / scale
+        let maxX = ceil(rect.maxX * scale) / scale
+        let maxY = ceil(rect.maxY * scale) / scale
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     private func drawBackgrounds(in context: inout GraphicsContext) {
-        for cell in frame.cells where shouldPaintBackground(cell) {
-            let rect = cellRect(col: cell.col, row: cell.row)
+        for run in backgroundRuns {
+            let rect = pixelAlignedCellRect(col: run.startCol, row: run.row, cols: run.cols)
             context.fill(
                 Path(rect),
-                with: .color(cell.background.swiftUIColor.opacity(backgroundOpacity(for: cell)))
+                with: .color(run.color.swiftUIColor.opacity(run.opacity))
             )
         }
     }
@@ -56,7 +72,7 @@ struct TerminalGridView: View {
         }
         let fill = GraphicsContext.Shading.color(Color.accentColor.opacity(0.35))
         for range in ranges {
-            let rect = cellRect(
+            let rect = pixelAlignedCellRect(
                 col: range.startCol,
                 row: range.row,
                 cols: range.endCol - range.startCol + 1
@@ -67,7 +83,7 @@ struct TerminalGridView: View {
 
     private func drawSearch(in context: inout GraphicsContext) {
         for match in searchMatches {
-            let rect = cellRect(
+            let rect = pixelAlignedCellRect(
                 col: match.startCol,
                 row: match.row,
                 cols: max(1, match.endCol - match.startCol + 1)
@@ -84,10 +100,10 @@ struct TerminalGridView: View {
     }
 
     private func drawCursor(in context: inout GraphicsContext) {
-        guard let cursor = frame.cursor, frame.displayOffset == 0 else {
+        guard isFocused, let cursor = frame.cursor, frame.displayOffset == 0 else {
             return
         }
-        let rect = cellRect(col: cursor.col, row: cursor.row)
+        let rect = pixelAlignedCellRect(col: cursor.col, row: cursor.row)
         context.fill(Path(rect), with: .color(renderConfig.cursor.swiftUIColor))
     }
 
@@ -105,6 +121,49 @@ struct TerminalGridView: View {
             )
             context.draw(resolved, at: origin, anchor: .leading)
         }
+    }
+
+    private var backgroundRuns: [TerminalBackgroundRun] {
+        var runs: [TerminalBackgroundRun] = []
+
+        for row in 0..<frame.rows {
+            var activeRun: TerminalBackgroundRun?
+
+            func flush() {
+                guard let run = activeRun else {
+                    return
+                }
+                runs.append(run)
+                activeRun = nil
+            }
+
+            for cell in frame.cells(inRow: row) {
+                guard shouldPaintBackground(cell) else {
+                    flush()
+                    continue
+                }
+
+                let opacity = backgroundOpacity(for: cell)
+                if var run = activeRun,
+                   run.canAppend(cell: cell, opacity: opacity) {
+                    run.cols += 1
+                    activeRun = run
+                } else {
+                    flush()
+                    activeRun = TerminalBackgroundRun(
+                        row: row,
+                        startCol: cell.col,
+                        cols: 1,
+                        color: cell.background,
+                        opacity: opacity
+                    )
+                }
+            }
+
+            flush()
+        }
+
+        return runs
     }
 
     private var textSegments: [TerminalTextSegment] {
@@ -138,17 +197,22 @@ struct TerminalGridView: View {
         }
 
         for cell in frame.cells(inRow: row) {
+            guard cell.renderText else {
+                flush()
+                segmentForeground = nil
+                segmentBold = false
+                continue
+            }
+
             let foreground = cell.foreground
             let bold = cell.bold
-            if segmentForeground != foreground || segmentBold != bold || !cell.renderText {
+            if segmentForeground != foreground || segmentBold != bold {
                 flush()
                 segmentForeground = foreground
                 segmentBold = bold
                 segmentStartCol = cell.col
             }
-            if cell.renderText {
-                segment.append(cell.character)
-            }
+            segment.append(cell.character)
         }
 
         flush()
@@ -161,6 +225,21 @@ struct TerminalGridView: View {
             return .system(size: renderConfig.fontSize, weight: weight, design: .monospaced)
         }
         return .custom(fontFamily, size: renderConfig.fontSize).weight(weight)
+    }
+}
+
+private struct TerminalBackgroundRun {
+    var row: Int
+    var startCol: Int
+    var cols: Int
+    var color: TerminalRGBA
+    var opacity: Double
+
+    func canAppend(cell: TerminalCell, opacity: Double) -> Bool {
+        cell.row == row
+            && cell.col == startCol + cols
+            && cell.background == color
+            && opacity == self.opacity
     }
 }
 
