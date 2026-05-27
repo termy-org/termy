@@ -46,6 +46,15 @@ struct TerminalRenderConfig: Equatable {
     var cursorStyle: TerminalCursorStyle
     var measuredCellWidth: CGFloat
     var measuredCellHeight: CGFloat
+    var backgroundBlur: Bool
+    var mouseScrollMultiplier: CGFloat
+    var scrollbarVisibility: TerminalScrollbarVisibility
+    var scrollbarStyle: TerminalScrollbarStyle
+    var copyOnSelect: Bool
+    var copyOnSelectToast: Bool
+    var paneFocusEffect: TerminalPaneFocusEffect
+    var paneFocusStrength: CGFloat
+    var chromeContrast: Bool
 
     static let `default` = TerminalRenderConfig(
         fontFamily: "JetBrains Mono",
@@ -62,7 +71,16 @@ struct TerminalRenderConfig: Equatable {
         cursorBlink: true,
         cursorStyle: .block,
         measuredCellWidth: 9.0,
-        measuredCellHeight: 19.6
+        measuredCellHeight: 19.6,
+        backgroundBlur: false,
+        mouseScrollMultiplier: 3.0,
+        scrollbarVisibility: .onScroll,
+        scrollbarStyle: .neutral,
+        copyOnSelect: false,
+        copyOnSelectToast: true,
+        paneFocusEffect: .softSpotlight,
+        paneFocusStrength: 0.6,
+        chromeContrast: false
     )
 
     init(
@@ -80,7 +98,16 @@ struct TerminalRenderConfig: Equatable {
         cursorBlink: Bool,
         cursorStyle: TerminalCursorStyle,
         measuredCellWidth: CGFloat,
-        measuredCellHeight: CGFloat
+        measuredCellHeight: CGFloat,
+        backgroundBlur: Bool,
+        mouseScrollMultiplier: CGFloat,
+        scrollbarVisibility: TerminalScrollbarVisibility,
+        scrollbarStyle: TerminalScrollbarStyle,
+        copyOnSelect: Bool,
+        copyOnSelectToast: Bool,
+        paneFocusEffect: TerminalPaneFocusEffect,
+        paneFocusStrength: CGFloat,
+        chromeContrast: Bool
     ) {
         self.fontFamily = fontFamily
         self.activeTheme = activeTheme
@@ -97,6 +124,15 @@ struct TerminalRenderConfig: Equatable {
         self.cursorStyle = cursorStyle
         self.measuredCellWidth = max(1.0, measuredCellWidth)
         self.measuredCellHeight = max(1.0, measuredCellHeight)
+        self.backgroundBlur = backgroundBlur
+        self.mouseScrollMultiplier = max(0.0, mouseScrollMultiplier)
+        self.scrollbarVisibility = scrollbarVisibility
+        self.scrollbarStyle = scrollbarStyle
+        self.copyOnSelect = copyOnSelect
+        self.copyOnSelectToast = copyOnSelectToast
+        self.paneFocusEffect = paneFocusEffect
+        self.paneFocusStrength = max(0.0, min(2.0, paneFocusStrength))
+        self.chromeContrast = chromeContrast
     }
 
     init(_ ffiConfig: TermyFfiRenderConfig) {
@@ -115,7 +151,16 @@ struct TerminalRenderConfig: Equatable {
             cursorBlink: ffiConfig.cursor_blink,
             cursorStyle: TerminalCursorStyle(ffiRawValue: ffiConfig.cursor_style),
             measuredCellWidth: CGFloat(ffiConfig.cell_width),
-            measuredCellHeight: CGFloat(ffiConfig.cell_height)
+            measuredCellHeight: CGFloat(ffiConfig.cell_height),
+            backgroundBlur: ffiConfig.background_blur,
+            mouseScrollMultiplier: CGFloat(ffiConfig.mouse_scroll_multiplier),
+            scrollbarVisibility: TerminalScrollbarVisibility(ffiRawValue: ffiConfig.scrollbar_visibility),
+            scrollbarStyle: TerminalScrollbarStyle(ffiRawValue: ffiConfig.scrollbar_style),
+            copyOnSelect: ffiConfig.copy_on_select,
+            copyOnSelectToast: ffiConfig.copy_on_select_toast,
+            paneFocusEffect: TerminalPaneFocusEffect(ffiRawValue: ffiConfig.pane_focus_effect),
+            paneFocusStrength: CGFloat(ffiConfig.pane_focus_strength),
+            chromeContrast: ffiConfig.chrome_contrast
         )
     }
 
@@ -134,6 +179,37 @@ enum TerminalCursorStyle: UInt32 {
 
     init(ffiRawValue: UInt32) {
         self = TerminalCursorStyle(rawValue: ffiRawValue) ?? .block
+    }
+}
+
+enum TerminalScrollbarVisibility: UInt32 {
+    case off = 0
+    case always = 1
+    case onScroll = 2
+
+    init(ffiRawValue: UInt32) {
+        self = TerminalScrollbarVisibility(rawValue: ffiRawValue) ?? .onScroll
+    }
+}
+
+enum TerminalScrollbarStyle: UInt32 {
+    case neutral = 0
+    case mutedTheme = 1
+    case theme = 2
+
+    init(ffiRawValue: UInt32) {
+        self = TerminalScrollbarStyle(rawValue: ffiRawValue) ?? .neutral
+    }
+}
+
+enum TerminalPaneFocusEffect: UInt32 {
+    case off = 0
+    case softSpotlight = 1
+    case cinematic = 2
+    case minimal = 3
+
+    init(ffiRawValue: UInt32) {
+        self = TerminalPaneFocusEffect(rawValue: ffiRawValue) ?? .softSpotlight
     }
 }
 

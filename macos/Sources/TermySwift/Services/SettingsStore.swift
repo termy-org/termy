@@ -53,7 +53,11 @@ final class SettingsStore: ObservableObject {
     func commitRoot(key: String, value: String) {
         values[key] = value
         commit {
-            try SettingsBridge.setRoot(key: key, value: value)
+            if Self.shouldResetRootSetting(key: key, value: value) {
+                try SettingsBridge.resetRoot(key: key)
+            } else {
+                try SettingsBridge.setRoot(key: key, value: value)
+            }
         }
     }
 
@@ -103,5 +107,17 @@ final class SettingsStore: ObservableObject {
 
     private func report(_ error: Error) {
         errorMessage = String(describing: error)
+    }
+
+    private static func shouldResetRootSetting(key: String, value: String) -> Bool {
+        guard value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return [
+            "working_dir",
+            "shell",
+            "colorterm",
+            "inactive_tab_scrollback",
+        ].contains(key)
     }
 }

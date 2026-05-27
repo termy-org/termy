@@ -183,6 +183,41 @@ pub struct TermyFfiRenderConfig {
     pub cursor_style: u32,
     pub cell_width: f32,
     pub cell_height: f32,
+    pub background_blur: bool,
+    pub mouse_scroll_multiplier: f32,
+    pub scrollbar_visibility: u32,
+    pub scrollbar_style: u32,
+    pub copy_on_select: bool,
+    pub copy_on_select_toast: bool,
+    pub pane_focus_effect: u32,
+    pub pane_focus_strength: f32,
+    pub chrome_contrast: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TermyFfiSafetyConfig {
+    pub warn_on_quit: bool,
+    pub warn_on_quit_with_running_process: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TermyFfiNativeConfig {
+    pub simple_mode: bool,
+    pub native_tab_persistence: bool,
+    pub native_layout_autosave: bool,
+    pub native_buffer_persistence: bool,
+    pub chrome_contrast: bool,
+    pub command_palette_show_keybinds: bool,
+    pub app_icon: u32,
+    pub shell_integration_enabled: bool,
+    pub progress_indicator_enabled: bool,
+    pub vertical_tabs: bool,
+    pub vertical_tabs_width: f32,
+    pub vertical_tabs_minimized: bool,
+    pub auto_hide_tabbar: bool,
+    pub show_termy_in_titlebar: bool,
 }
 
 pub struct TermyFfiTerminal {
@@ -515,9 +550,19 @@ fn leak_loaded_config(
     TermyFfiStatus::Ok
 }
 
+fn tab_title_shell_integration_from_config(
+    app_config: &termy_core::AppConfig,
+) -> termy_core::TabTitleShellIntegration {
+    termy_core::TabTitleShellIntegration {
+        enabled: app_config.shell_integration_enabled && app_config.tab_title.shell_integration,
+        explicit_prefix: app_config.tab_title.explicit_prefix.clone(),
+    }
+}
+
 unsafe fn terminal_new_with_runtime_config(
     size: TermyFfiSize,
     runtime_config: &TerminalRuntimeConfig,
+    tab_title_shell_integration: Option<&termy_core::TabTitleShellIntegration>,
     configured_working_dir: Option<&str>,
     startup_command_ptr: *const u8,
     startup_command_len: usize,
@@ -536,7 +581,7 @@ unsafe fn terminal_new_with_runtime_config(
         size.into(),
         configured_working_dir,
         None,
-        None,
+        tab_title_shell_integration,
         Some(runtime_config),
         startup_command,
     ) else {
@@ -572,6 +617,7 @@ pub unsafe extern "C" fn termy_terminal_new(
             size,
             &TerminalRuntimeConfig::default(),
             None,
+            None,
             startup_command_ptr,
             startup_command_len,
             out_terminal,
@@ -592,9 +638,12 @@ pub unsafe extern "C" fn termy_terminal_new_with_config(
     }
 
     unsafe {
+        let tab_title_shell_integration =
+            tab_title_shell_integration_from_config(&(*config).loaded.app_config);
         terminal_new_with_runtime_config(
             size,
             &(*config).loaded.runtime_config,
+            Some(&tab_title_shell_integration),
             None,
             startup_command_ptr,
             startup_command_len,
@@ -614,10 +663,17 @@ pub unsafe extern "C" fn termy_terminal_new_with_options(
     }
 
     let options = unsafe { *options };
-    let mut runtime_config = if options.config.is_null() {
-        TerminalRuntimeConfig::default()
+    let (mut runtime_config, tab_title_shell_integration) = if options.config.is_null() {
+        (TerminalRuntimeConfig::default(), None)
     } else {
-        unsafe { (*options.config).loaded.runtime_config.clone() }
+        unsafe {
+            (
+                (*options.config).loaded.runtime_config.clone(),
+                Some(tab_title_shell_integration_from_config(
+                    &(*options.config).loaded.app_config,
+                )),
+            )
+        }
     };
     let working_directory = match unsafe {
         optional_utf8(options.working_directory_ptr, options.working_directory_len)
@@ -636,6 +692,7 @@ pub unsafe extern "C" fn termy_terminal_new_with_options(
         terminal_new_with_runtime_config(
             size,
             &runtime_config,
+            tab_title_shell_integration.as_ref(),
             working_directory,
             options.startup_command_ptr,
             options.startup_command_len,
@@ -766,6 +823,59 @@ pub unsafe extern "C" fn termy_config_working_directory(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_safety(
+    config: *const TermyFfiConfig,
+    out_safety: *mut TermyFfiSafetyConfig,
+) -> TermyFfiStatus {
+    if config.is_null() || out_safety.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let app_config = unsafe { &(*config).loaded.app_config };
+    unsafe {
+        *out_safety = TermyFfiSafetyConfig {
+            warn_on_quit: app_config.warn_on_quit,
+            warn_on_quit_with_running_process: app_config.warn_on_quit_with_running_process,
+        };
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_native(
+    config: *const TermyFfiConfig,
+    out_native: *mut TermyFfiNativeConfig,
+) -> TermyFfiStatus {
+    if config.is_null() || out_native.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let app_config = unsafe { &(*config).loaded.app_config };
+    unsafe {
+        *out_native = TermyFfiNativeConfig {
+            simple_mode: app_config.simple_mode,
+            native_tab_persistence: app_config.native_tab_persistence,
+            native_layout_autosave: app_config.native_layout_autosave,
+            native_buffer_persistence: app_config.native_buffer_persistence,
+            chrome_contrast: app_config.chrome_contrast,
+            command_palette_show_keybinds: app_config.command_palette_show_keybinds,
+            app_icon: match app_config.app_icon {
+                cfg::AppIcon::TermyDefault => 0,
+                cfg::AppIcon::TermyOld => 1,
+            },
+            shell_integration_enabled: app_config.shell_integration_enabled,
+            progress_indicator_enabled: app_config.progress_indicator_enabled,
+            vertical_tabs: app_config.vertical_tabs,
+            vertical_tabs_width: app_config.vertical_tabs_width,
+            vertical_tabs_minimized: app_config.vertical_tabs_minimized,
+            auto_hide_tabbar: app_config.auto_hide_tabbar,
+            show_termy_in_titlebar: app_config.show_termy_in_titlebar,
+        };
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn termy_config_path(
     config: *const TermyFfiConfig,
     out_path: *mut TermyFfiBytes,
@@ -781,6 +891,79 @@ pub unsafe extern "C" fn termy_config_path(
     );
     unsafe {
         *out_path = bytes;
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_tasks_json(
+    config: *const TermyFfiConfig,
+    out_json: *mut TermyFfiBytes,
+) -> TermyFfiStatus {
+    if config.is_null() || out_json.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let tasks = unsafe { &(*config).loaded.app_config.tasks };
+    let json = serde_json::to_string(
+        &tasks
+            .iter()
+            .map(|task| {
+                serde_json::json!({
+                    "name": task.name,
+                    "command": task.command,
+                    "layout": task.layout,
+                    "working_dir": task.working_dir,
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .unwrap_or_else(|_| "[]".to_string());
+
+    unsafe {
+        *out_json = ffi_bytes_from_string(json);
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_keybinds_json(
+    config: *const TermyFfiConfig,
+    out_json: *mut TermyFfiBytes,
+) -> TermyFfiStatus {
+    if config.is_null() || out_json.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let keybind_lines = unsafe { &(*config).loaded.app_config.keybind_lines };
+    let line_refs = keybind_lines
+        .iter()
+        .map(|line| termy_command_core::KeybindLineRef {
+            line_number: line.line_number,
+            value: line.value.as_str(),
+        });
+    let (directives, _warnings) = termy_command_core::parse_keybind_directives_from_iter(line_refs);
+    let resolved = termy_command_core::resolve_keybinds(
+        termy_command_core::default_resolved_keybinds_for_platform(
+            termy_command_core::KeybindPlatform::MacOs,
+        ),
+        &directives,
+    );
+    let json = serde_json::to_string(
+        &resolved
+            .iter()
+            .map(|keybind| {
+                serde_json::json!({
+                    "trigger": keybind.trigger,
+                    "action": keybind.action.config_name(),
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .unwrap_or_else(|_| "[]".to_string());
+
+    unsafe {
+        *out_json = ffi_bytes_from_string(json);
     }
     TermyFfiStatus::Ok
 }
@@ -845,17 +1028,30 @@ pub unsafe extern "C" fn termy_config_render_config(
     config: *const TermyFfiConfig,
     out_render_config: *mut TermyFfiRenderConfig,
 ) -> TermyFfiStatus {
+    unsafe { termy_config_render_config_for_appearance(config, 1, out_render_config) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_render_config_for_appearance(
+    config: *const TermyFfiConfig,
+    system_appearance: u32,
+    out_render_config: *mut TermyFfiRenderConfig,
+) -> TermyFfiStatus {
     if config.is_null() || out_render_config.is_null() {
         return TermyFfiStatus::Null;
     }
 
     let loaded = unsafe { &(*config).loaded };
+    let system_appearance = match system_appearance {
+        0 => termy_core::SystemAppearance::Light,
+        _ => termy_core::SystemAppearance::Dark,
+    };
     let app_config = &loaded.app_config;
     let cell_metrics = termy_core::measure_cell_from_config(app_config);
     let theme_colors = termy_core::resolve_theme_colors_from_app_config(
         app_config,
         loaded.path.as_deref(),
-        termy_core::SystemAppearance::Dark,
+        system_appearance,
     );
     unsafe {
         *out_render_config = TermyFfiRenderConfig {
@@ -877,6 +1073,28 @@ pub unsafe extern "C" fn termy_config_render_config(
             },
             cell_width: cell_metrics.cell_width,
             cell_height: cell_metrics.cell_height,
+            background_blur: app_config.background_blur,
+            mouse_scroll_multiplier: app_config.mouse_scroll_multiplier,
+            scrollbar_visibility: match app_config.terminal_scrollbar_visibility {
+                cfg::TerminalScrollbarVisibility::Off => 0,
+                cfg::TerminalScrollbarVisibility::Always => 1,
+                cfg::TerminalScrollbarVisibility::OnScroll => 2,
+            },
+            scrollbar_style: match app_config.terminal_scrollbar_style {
+                cfg::TerminalScrollbarStyle::Neutral => 0,
+                cfg::TerminalScrollbarStyle::MutedTheme => 1,
+                cfg::TerminalScrollbarStyle::Theme => 2,
+            },
+            copy_on_select: app_config.copy_on_select,
+            copy_on_select_toast: app_config.copy_on_select_toast,
+            pane_focus_effect: match app_config.pane_focus_effect {
+                cfg::PaneFocusEffect::Off => 0,
+                cfg::PaneFocusEffect::SoftSpotlight => 1,
+                cfg::PaneFocusEffect::Cinematic => 2,
+                cfg::PaneFocusEffect::Minimal => 3,
+            },
+            pane_focus_strength: app_config.pane_focus_strength,
+            chrome_contrast: app_config.chrome_contrast,
         };
     }
     TermyFfiStatus::Ok
@@ -1149,6 +1367,15 @@ fn settings_schema_json(loaded: &LoadedTermyConfig) -> String {
                     if spec.section != section || matches!(spec.id, cfg::RootSettingId::Keybind) {
                         continue;
                     }
+                    if matches!(
+                        spec.id,
+                        cfg::RootSettingId::TmuxEnabled
+                            | cfg::RootSettingId::TmuxPersistence
+                            | cfg::RootSettingId::TmuxBinary
+                            | cfg::RootSettingId::TmuxShowActivePaneBorder
+                    ) {
+                        continue;
+                    }
 
                     let kind = match spec.value_kind {
                         cfg::RootSettingValueKind::Text => "text",
@@ -1321,6 +1548,16 @@ pub unsafe extern "C" fn termy_settings_set_keybinds(
     text_len: usize,
 ) -> TermyFfiStatus {
     match unsafe { settings_set_keybinds_inner(text_ptr, text_len) } {
+        Ok(()) => TermyFfiStatus::Ok,
+        Err(status) => status,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_settings_prettify_config() -> TermyFfiStatus {
+    let contents = settings_read_contents();
+    let prettified = cfg::prettify_config_contents(&contents);
+    match settings_write_contents(&prettified) {
         Ok(()) => TermyFfiStatus::Ok,
         Err(status) => status,
     }
@@ -1873,7 +2110,7 @@ mod tests {
 
     #[test]
     fn settings_schema_json_covers_sections_and_values() {
-        let contents = b"font_size = 18\ncursor_style = line\n[colors]\nforeground = #abcdef\n";
+        let contents = b"font_size = 18\ncursor_style = line\ntmux_enabled = true\n[colors]\nforeground = #abcdef\n";
         let mut config = ptr::null_mut();
         assert_eq!(
             unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) },
@@ -1937,6 +2174,17 @@ mod tests {
                 .iter()
                 .any(|choice| choice["value"] == "tokyo-night")
         );
+        assert!(
+            sections
+                .iter()
+                .flat_map(|section| section["groups"].as_array().into_iter().flatten())
+                .flat_map(|group| group["settings"].as_array().into_iter().flatten())
+                .all(|setting| {
+                    !setting["key"]
+                        .as_str()
+                        .is_some_and(|key| key.starts_with("tmux_"))
+                })
+        );
 
         // Colors section reflects the override hex.
         let colors = &sections[4]["colors"].as_array().unwrap();
@@ -1948,6 +2196,108 @@ mod tests {
 
         assert_eq!(unsafe { termy_buffer_free(bytes) }, TermyFfiStatus::Ok);
         assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
+    fn config_from_contents_exposes_safety_config() {
+        let contents = b"warn_on_quit = true\nwarn_on_quit_with_running_process = false\nsimple_mode = true\nnative_tab_persistence = true\nnative_layout_autosave = true\nnative_buffer_persistence = true\nchrome_contrast = true\ncommand_palette_show_keybinds = false\napp_icon = old\nshell_integration_enabled = false\nprogress_indicator_enabled = false\nvertical_tabs = true\nvertical_tabs_width = 260\nvertical_tabs_minimized = true\nauto_hide_tabbar = false\nshow_termy_in_titlebar = false\n";
+        let mut config = ptr::null_mut();
+        assert_eq!(
+            unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) },
+            TermyFfiStatus::Ok
+        );
+
+        let mut safety = TermyFfiSafetyConfig::default();
+        assert_eq!(
+            unsafe { termy_config_safety(config, &mut safety) },
+            TermyFfiStatus::Ok
+        );
+        assert!(safety.warn_on_quit);
+        assert!(!safety.warn_on_quit_with_running_process);
+
+        let mut native = TermyFfiNativeConfig::default();
+        assert_eq!(
+            unsafe { termy_config_native(config, &mut native) },
+            TermyFfiStatus::Ok
+        );
+        assert!(native.simple_mode);
+        assert!(native.native_tab_persistence);
+        assert!(native.native_layout_autosave);
+        assert!(native.native_buffer_persistence);
+        assert!(native.chrome_contrast);
+        assert!(!native.command_palette_show_keybinds);
+        assert_eq!(native.app_icon, 1);
+        assert!(!native.shell_integration_enabled);
+        assert!(!native.progress_indicator_enabled);
+        assert!(native.vertical_tabs);
+        assert_eq!(native.vertical_tabs_width, 260.0);
+        assert!(native.vertical_tabs_minimized);
+        assert!(!native.auto_hide_tabbar);
+        assert!(!native.show_termy_in_titlebar);
+
+        assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
+    fn config_from_contents_exposes_tasks_json() {
+        let contents = b"task.build.command = cargo build\ntask.build.working_dir = crates/cli\ntask.dev.layout = dashboard\ntask.dev.command = cargo run\n";
+        let mut config = ptr::null_mut();
+        assert_eq!(
+            unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) },
+            TermyFfiStatus::Ok
+        );
+
+        let mut bytes = TermyFfiBytes::default();
+        assert_eq!(
+            unsafe { termy_config_tasks_json(config, &mut bytes) },
+            TermyFfiStatus::Ok
+        );
+        let json = unsafe {
+            str::from_utf8(slice::from_raw_parts(bytes.ptr, bytes.len)).expect("tasks json utf8")
+        };
+        let tasks: serde_json::Value = serde_json::from_str(json).expect("valid tasks json");
+        assert_eq!(tasks[0]["name"], "build");
+        assert_eq!(tasks[0]["command"], "cargo build");
+        assert_eq!(tasks[0]["working_dir"], "crates/cli");
+        assert_eq!(tasks[0]["layout"], serde_json::Value::Null);
+        assert_eq!(tasks[1]["name"], "dev");
+        assert_eq!(tasks[1]["layout"], "dashboard");
+
+        assert_eq!(unsafe { termy_buffer_free(bytes) }, TermyFfiStatus::Ok);
+        assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
+    fn config_from_contents_exposes_resolved_keybinds_json() {
+        let contents = b"keybind = clear\nkeybind = cmd-p=toggle_command_palette\nkeybind = cmd-d=split_pane_vertical\n";
+        let mut config = ptr::null_mut();
+        assert_eq!(
+            unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) },
+            TermyFfiStatus::Ok
+        );
+
+        let mut bytes = TermyFfiBytes::default();
+        assert_eq!(
+            unsafe { termy_config_keybinds_json(config, &mut bytes) },
+            TermyFfiStatus::Ok
+        );
+        let json = unsafe {
+            str::from_utf8(slice::from_raw_parts(bytes.ptr, bytes.len)).expect("keybind json utf8")
+        };
+        let keybinds: serde_json::Value = serde_json::from_str(json).expect("valid keybind json");
+        assert_eq!(keybinds.as_array().map(Vec::len), Some(2));
+        assert_eq!(keybinds[0]["trigger"], "cmd-p");
+        assert_eq!(keybinds[0]["action"], "toggle_command_palette");
+        assert_eq!(keybinds[1]["trigger"], "cmd-d");
+        assert_eq!(keybinds[1]["action"], "split_pane_vertical");
+
+        assert_eq!(unsafe { termy_buffer_free(bytes) }, TermyFfiStatus::Ok);
+        assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
+    fn settings_prettify_config_function_is_exported() {
+        let _function: unsafe extern "C" fn() -> TermyFfiStatus = termy_settings_prettify_config;
     }
 
     #[test]
@@ -2013,7 +2363,7 @@ mod tests {
 
     #[test]
     fn config_from_contents_exposes_render_config() {
-        let contents = b"theme = nord\nfont_family = Example Mono\nfont_size = 18\nline_height = 1.25\npadding_x = 3\npadding_y = 5\nbackground_opacity = 0.5\nbackground_opacity_cells = true\ncursor_blink = false\ncursor_style = line\n[colors]\nbackground = #010203\ncursor = #040506\n";
+        let contents = b"theme = nord\nfont_family = Example Mono\nfont_size = 18\nline_height = 1.25\npadding_x = 3\npadding_y = 5\nbackground_opacity = 0.5\nbackground_opacity_cells = true\nbackground_blur = true\nmouse_scroll_multiplier = 4.5\nscrollbar_visibility = always\nscrollbar_style = theme\ncopy_on_select = true\ncopy_on_select_toast = false\npane_focus_effect = cinematic\npane_focus_strength = 1.25\nchrome_contrast = true\ncursor_blink = false\ncursor_style = line\n[colors]\nbackground = #010203\ncursor = #040506\n";
         let mut config = ptr::null_mut();
 
         let status =
@@ -2071,9 +2421,68 @@ mod tests {
         assert_eq!(render_config.cursor_style, 1);
         assert!(render_config.cell_width >= 1.0);
         assert_eq!(render_config.cell_height, 22.5);
+        assert!(render_config.background_blur);
+        assert_eq!(render_config.mouse_scroll_multiplier, 4.5);
+        assert_eq!(render_config.scrollbar_visibility, 1);
+        assert_eq!(render_config.scrollbar_style, 2);
+        assert!(render_config.copy_on_select);
+        assert!(!render_config.copy_on_select_toast);
+        assert_eq!(render_config.pane_focus_effect, 2);
+        assert_eq!(render_config.pane_focus_strength, 1.25);
+        assert!(render_config.chrome_contrast);
 
         assert_eq!(
             unsafe { termy_render_config_free(&mut render_config) },
+            TermyFfiStatus::Ok
+        );
+        assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
+    fn render_config_respects_requested_system_appearance() {
+        let contents = b"theme_mode = system\ntheme_light = nord\ntheme_dark = termy\n";
+        let mut config = ptr::null_mut();
+
+        let status =
+            unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) };
+        assert_eq!(status, TermyFfiStatus::Ok);
+        assert!(!config.is_null());
+
+        let mut light = TermyFfiRenderConfig::default();
+        let mut dark = TermyFfiRenderConfig::default();
+        assert_eq!(
+            unsafe { termy_config_render_config_for_appearance(config, 0, &mut light) },
+            TermyFfiStatus::Ok
+        );
+        assert_eq!(
+            unsafe { termy_config_render_config_for_appearance(config, 1, &mut dark) },
+            TermyFfiStatus::Ok
+        );
+
+        let light_theme = unsafe {
+            str::from_utf8(slice::from_raw_parts(
+                light.active_theme.ptr,
+                light.active_theme.len,
+            ))
+            .expect("light theme utf8")
+        };
+        let dark_theme = unsafe {
+            str::from_utf8(slice::from_raw_parts(
+                dark.active_theme.ptr,
+                dark.active_theme.len,
+            ))
+            .expect("dark theme utf8")
+        };
+
+        assert_eq!(light_theme, "nord");
+        assert_eq!(dark_theme, "termy");
+
+        assert_eq!(
+            unsafe { termy_render_config_free(&mut light) },
+            TermyFfiStatus::Ok
+        );
+        assert_eq!(
+            unsafe { termy_render_config_free(&mut dark) },
             TermyFfiStatus::Ok
         );
         assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);

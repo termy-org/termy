@@ -13,4 +13,5 @@ workspace = true
 [dependencies]
 termy_core = { path = "../core" }
 termy_config_core = { path = "../config_core" }
+termy_command_core = { path = "../command_core" }
 serde_json = "1.0"

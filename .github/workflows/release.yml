@@ -63,47 +63,6 @@ jobs:
           path: target/release/Termy-${{ env.VERSION }}-macos-${{ matrix.arch }}.dmg
           if-no-files-found: error
 
-  build-native-preview-dmg:
-    name: Build ${{ matrix.arch }} Native Preview DMG
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            target: aarch64-apple-darwin
-            runner: macos-26
-          - arch: x86_64
-            target: x86_64-apple-darwin
-            runner: macos-26
-    env:
-      VERSION: ${{ github.event.release.tag_name }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: stable
-          targets: ${{ matrix.target }}
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-
-      - name: Build native preview DMG
-        run: ./scripts/build-native-preview-dmg.sh --version "$VERSION" --arch "${{ matrix.arch }}" --target "${{ matrix.target }}" --no-layout
-
-      - name: Upload native preview DMG artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: termy-native-preview-dmg-${{ matrix.arch }}
-          path: target/release/Termy-${{ env.VERSION }}-macos-${{ matrix.arch }}-native-preview.dmg
-          if-no-files-found: error
-
   build-windows-setup:
     name: Build Windows x64 Setup
     runs-on: windows-latest
@@ -218,7 +177,6 @@ jobs:
     timeout-minutes: 10
     needs:
       - build-dmg
-      - build-native-preview-dmg
       - build-windows-setup
       - build-linux
     permissions:

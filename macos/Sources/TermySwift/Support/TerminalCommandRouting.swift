@@ -21,6 +21,7 @@ enum TerminalHostCommand {
     case toggleSearchRegex
     case clearScrollback
     case sendInterrupt
+    case toggleCommandPalette
 }
 
 @MainActor
@@ -46,6 +47,27 @@ final class TerminalCommandRouter {
     func closeFocusedPaneIfSplit(for event: NSEvent? = nil) -> Bool {
         store(for: event?.window ?? NSApp.keyWindow ?? NSApp.mainWindow)?
             .closeFocusedPaneIfSplit() ?? false
+    }
+
+    func splitFocused(_ axis: TerminalSplitAxis, for window: NSWindow? = nil) -> Bool {
+        guard let store = store(for: window ?? NSApp.keyWindow ?? NSApp.mainWindow) else {
+            return false
+        }
+
+        store.splitFocused(axis)
+        return true
+    }
+
+    func focusedStore(for event: NSEvent? = nil) -> TerminalWorkspaceStore? {
+        store(for: event?.window ?? NSApp.keyWindow ?? NSApp.mainWindow)
+    }
+
+    func hasRunningTerminalProcess() -> Bool {
+        cleanupReleasedStores()
+        if activeStore?.hasRunningTerminalProcess == true {
+            return true
+        }
+        return storesByWindow.values.contains { $0.store?.hasRunningTerminalProcess == true }
     }
 
     private func store(for window: NSWindow?) -> TerminalWorkspaceStore? {
@@ -92,6 +114,7 @@ struct TerminalCommandSet {
     var toggleSearchCaseSensitive: () -> Void = {}
     var toggleSearchRegex: () -> Void = {}
     var sendInterrupt: () -> Void
+    var toggleCommandPalette: () -> Void = {}
 
     func execute(_ command: TerminalHostCommand) {
         switch command {
@@ -135,6 +158,8 @@ struct TerminalCommandSet {
             clearScrollback()
         case .sendInterrupt:
             sendInterrupt()
+        case .toggleCommandPalette:
+            toggleCommandPalette()
         }
     }
 }

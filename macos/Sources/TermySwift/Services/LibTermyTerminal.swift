@@ -21,28 +21,42 @@ final class LibTermyTerminal {
 
     let renderConfig: TerminalRenderConfig
 
-    init(cols: UInt16 = 96, rows: UInt16 = 28, loadUserConfig: Bool = true) throws {
+    init(
+        cols: UInt16 = 96,
+        rows: UInt16 = 28,
+        loadUserConfig: Bool = true,
+        workingDirectoryOverride: String? = nil,
+        startupCommand: String? = nil
+    ) throws {
         var size = termy_size_default()
         size.cols = cols
         size.rows = rows
         let config = try loadUserConfig ? Self.loadDefaultConfig() : nil
         configHandle = config
         renderConfig = try Self.renderConfig(for: config)
-        let workingDirectory = try Self.workingDirectory(for: config)
+        let workingDirectory: String?
+        if let override = Self.normalizedWorkingDirectory(workingDirectoryOverride) {
+            workingDirectory = override
+        } else {
+            workingDirectory = try Self.workingDirectory(for: config)
+        }
 
         var terminal: OpaquePointer?
         let workingDirectoryBytes = workingDirectory.map { Array($0.utf8) } ?? []
+        let startupCommandBytes = startupCommand.map { Array($0.utf8) } ?? []
         let status = workingDirectoryBytes.withUnsafeBufferPointer { workingDirectoryBuffer in
-            var options = TermyFfiTerminalOptions(
-                config: config,
-                working_directory_ptr: workingDirectoryBuffer.baseAddress,
-                working_directory_len: workingDirectoryBuffer.count,
-                startup_command_ptr: nil,
-                startup_command_len: 0,
-                env_vars_ptr: nil,
-                env_vars_len: 0
-            )
-            return termy_terminal_new_with_options(size, &options, &terminal)
+            startupCommandBytes.withUnsafeBufferPointer { startupCommandBuffer in
+                var options = TermyFfiTerminalOptions(
+                    config: config,
+                    working_directory_ptr: workingDirectoryBuffer.baseAddress,
+                    working_directory_len: workingDirectoryBuffer.count,
+                    startup_command_ptr: startupCommandBuffer.baseAddress,
+                    startup_command_len: startupCommandBuffer.count,
+                    env_vars_ptr: nil,
+                    env_vars_len: 0
+                )
+                return termy_terminal_new_with_options(size, &options, &terminal)
+            }
         }
         try TermyFfiBridge.requireOK("termy_terminal_new_with_options", status)
 
@@ -316,13 +330,21 @@ final class LibTermyTerminal {
 
         var renderConfig = TermyFfiRenderConfig()
         try TermyFfiBridge.requireOK(
-            "termy_config_render_config",
-            termy_config_render_config(config, &renderConfig)
+            "termy_config_render_config_for_appearance",
+            termy_config_render_config_for_appearance(
+                config,
+                Self.currentSystemAppearanceRawValue(),
+                &renderConfig
+            )
         )
         defer {
             _ = termy_render_config_free(&renderConfig)
         }
         return TerminalRenderConfig(renderConfig)
+    }
+
+    private static func currentSystemAppearanceRawValue() -> UInt32 {
+        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" ? 1 : 0
     }
 
     private static func workingDirectory(for config: OpaquePointer?) throws -> String? {
@@ -346,6 +368,15 @@ final class LibTermyTerminal {
         }
         let value = TermyFfiBridge.string(from: bytes, trimmingWhitespaceAndNewlines: true) ?? ""
         return value.isEmpty ? nil : value
+    }
+
+    private static func normalizedWorkingDirectory(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func event(from event: TermyFfiEvent) -> TerminalRuntimeEvent? {

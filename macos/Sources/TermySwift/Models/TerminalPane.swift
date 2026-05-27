@@ -15,10 +15,11 @@ enum TerminalPaneDirection: Equatable {
 @MainActor
 final class TerminalPane: ObservableObject, Identifiable {
     let id: UUID
-    let terminal = TerminalViewModel()
+    let terminal: TerminalViewModel
 
-    init(id: UUID = UUID()) {
+    init(id: UUID = UUID(), workingDirectory: String? = nil, startupCommand: String? = nil) {
         self.id = id
+        terminal = TerminalViewModel(workingDirectory: workingDirectory, startupCommand: startupCommand)
     }
 }
 
@@ -58,9 +59,13 @@ final class TerminalWorkspaceStore: ObservableObject {
     @Published var isSearchVisible = false
     @Published var searchOptions = TerminalSearchOptions()
     @Published private(set) var zoomedPaneID: UUID?
+    @Published var isCommandPaletteVisible = false
 
-    init() {
-        let firstPane = TerminalPane()
+    init(initialTask: TermyTaskConfiguration? = nil) {
+        let firstPane = TerminalPane(
+            workingDirectory: initialTask?.workingDirectory,
+            startupCommand: initialTask?.command
+        )
         root = TerminalPaneNode.leaf(firstPane)
         focusedPaneID = firstPane.id
     }
@@ -123,6 +128,10 @@ final class TerminalWorkspaceStore: ObservableObject {
         leaves().count
     }
 
+    var hasRunningTerminalProcess: Bool {
+        leaves().contains { !$0.terminal.isExited }
+    }
+
     var panesInStableOrder: [TerminalPane] {
         leaves()
     }
@@ -152,7 +161,7 @@ final class TerminalWorkspaceStore: ObservableObject {
         }
 
         let existingNode = TerminalPaneNode.leaf(focusedPane)
-        let newPane = TerminalPane()
+        let newPane = TerminalPane(workingDirectory: focusedPane.terminal.currentWorkingDirectory)
         let newNode = TerminalPaneNode.leaf(newPane)
         if replaceLeaf(
             paneID: focusedPane.id,
@@ -278,6 +287,21 @@ final class TerminalWorkspaceStore: ObservableObject {
 
     func toggleSearchRegex() {
         searchOptions.usesRegex.toggle()
+    }
+
+    func showCommandPalette() {
+        guard !TermyAppConfiguration.current.native.simpleMode else {
+            return
+        }
+        isCommandPaletteVisible = true
+    }
+
+    func hideCommandPalette() {
+        isCommandPaletteVisible = false
+    }
+
+    func toggleCommandPalette() {
+        isCommandPaletteVisible ? hideCommandPalette() : showCommandPalette()
     }
 
     private func pane(with id: UUID) -> TerminalPane? {

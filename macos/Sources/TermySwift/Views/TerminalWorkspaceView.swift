@@ -2,14 +2,86 @@ import AppKit
 import SwiftUI
 
 struct TerminalWorkspaceView: View {
-    @StateObject private var store = TerminalWorkspaceStore()
+    @StateObject private var store: TerminalWorkspaceStore
     @State private var appConfigurationError = TermyAppConfiguration.loadErrorMessage
     @State private var workspacePersistenceError: String?
     @State private var didRestoreWorkspace = false
     @State private var persistenceSaveTask: Task<Void, Never>?
+    @State private var nativeTabWindow: NSWindow?
+    @State private var nativeTabItems: [NativeTabSidebarItem] = []
+    @State private var selectedNativeTabID: NativeTabSidebarItem.ID?
     private let workspacePersistence = TerminalWorkspacePersistence()
+    private let shouldRestorePersistedWorkspace: Bool
+
+    init(initialTask: TermyTaskConfiguration? = nil) {
+        _store = StateObject(wrappedValue: TerminalWorkspaceStore(initialTask: initialTask))
+        shouldRestorePersistedWorkspace = initialTask == nil
+    }
 
     var body: some View {
+        workspaceLayout
+            .background(TerminalWorkspaceRoutingView(
+                store: store,
+                onWindowChanged: { window in
+                    nativeTabWindow = window
+                    refreshNativeTabSidebar()
+                }
+            ))
+            .focusedValue(\.terminalCommands, commandSet)
+            .onAppear {
+                TerminalCommandRouter.shared.activate(store)
+                restoreWorkspaceIfNeeded()
+                refreshNativeTabSidebar()
+            }
+            .onDisappear {
+                persistWorkspace()
+            }
+            .onReceive(store.objectWillChange) { _ in
+                scheduleWorkspacePersistence()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .termyNativeTabsChanged)) { _ in
+                refreshNativeTabSidebar()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+                refreshNativeTabSidebar()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                persistWorkspace()
+            }
+    }
+
+    @ViewBuilder
+    private var workspaceLayout: some View {
+        if TermyAppConfiguration.current.native.verticalTabs {
+            HStack(spacing: 0) {
+                TerminalNativeTabSidebar(
+                    items: nativeTabItems,
+                    selectedID: $selectedNativeTabID,
+                    minimized: TermyAppConfiguration.current.native.verticalTabsMinimized,
+                    onSelect: { id in
+                        NativeTabWindowManager.shared.selectNativeTab(id: id)
+                    },
+                    onNewTab: {
+                        NativeTabWindowManager.shared.openNativeTab()
+                    },
+                    onClose: { id in
+                        NativeTabWindowManager.shared.closeNativeTab(id: id)
+                    }
+                )
+                .frame(width: TermyAppConfiguration.current.native.verticalTabsMinimized
+                    ? 54
+                    : TermyAppConfiguration.current.native.verticalTabsWidth)
+
+                Divider()
+
+                workspaceContent
+            }
+        } else {
+            workspaceContent
+        }
+    }
+
+    private var workspaceContent: some View {
         ZStack(alignment: .topTrailing) {
             if let zoomedPane = store.zoomedPane {
                 TerminalPaneLeafView(pane: zoomedPane, store: store)
@@ -64,21 +136,15 @@ struct TerminalWorkspaceView: View {
                 .padding(10)
                 .zIndex(10)
             }
-        }
-        .background(TerminalWorkspaceRoutingView(store: store))
-        .focusedValue(\.terminalCommands, commandSet)
-        .onAppear {
-            TerminalCommandRouter.shared.activate(store)
-            restoreWorkspaceIfNeeded()
-        }
-        .onDisappear {
-            persistWorkspace()
-        }
-        .onReceive(store.objectWillChange) { _ in
-            scheduleWorkspacePersistence()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
-            persistWorkspace()
+
+            if store.isCommandPaletteVisible {
+                TerminalCommandPalette(
+                    commandSet: commandSet,
+                    onClose: store.hideCommandPalette
+                )
+                .padding(.top, 48)
+                .zIndex(12)
+            }
         }
     }
 
@@ -142,7 +208,8 @@ struct TerminalWorkspaceView: View {
             toggleSearchRegex: {
                 store.toggleSearchRegex()
             },
-            sendInterrupt: { store.focusedTerminal?.sendControlC() }
+            sendInterrupt: { store.focusedTerminal?.sendControlC() },
+            toggleCommandPalette: store.toggleCommandPalette
         )
     }
 
@@ -151,6 +218,14 @@ struct TerminalWorkspaceView: View {
             return
         }
         didRestoreWorkspace = true
+        guard TermyAppConfiguration.current.native.nativeTabPersistence else {
+            workspacePersistenceError = nil
+            return
+        }
+        guard shouldRestorePersistedWorkspace else {
+            workspacePersistenceError = nil
+            return
+        }
 
         do {
             let snapshot = try workspacePersistence.loadLastSession()
@@ -165,7 +240,9 @@ struct TerminalWorkspaceView: View {
     }
 
     private func scheduleWorkspacePersistence() {
-        guard didRestoreWorkspace else {
+        guard didRestoreWorkspace,
+              TermyAppConfiguration.current.native.nativeTabPersistence
+        else {
             return
         }
         persistenceSaveTask?.cancel()
@@ -181,7 +258,9 @@ struct TerminalWorkspaceView: View {
     }
 
     private func persistWorkspace() {
-        guard didRestoreWorkspace else {
+        guard didRestoreWorkspace,
+              TermyAppConfiguration.current.native.nativeTabPersistence
+        else {
             return
         }
         do {
@@ -191,17 +270,194 @@ struct TerminalWorkspaceView: View {
             workspacePersistenceError = "Could not save workspace: \(error)"
         }
     }
+
+    private func refreshNativeTabSidebar() {
+        let items = NativeTabWindowManager.shared.sidebarItems(for: nativeTabWindow)
+        nativeTabItems = items
+        selectedNativeTabID = items.first(where: \.isSelected)?.id ?? items.first?.id
+    }
+}
+
+private struct TerminalCommandPalette: View {
+    let commandSet: TerminalCommandSet
+    let onClose: () -> Void
+
+    @State private var query = ""
+    @FocusState private var isSearchFocused: Bool
+
+    private var filteredCommands: [PaletteCommand] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else {
+            return paletteCommands
+        }
+        return paletteCommands.filter { command in
+            command.title.lowercased().contains(needle)
+                || command.action.lowercased().contains(needle)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "command")
+                    .foregroundStyle(.secondary)
+                TextField("Command", text: $query)
+                    .textFieldStyle(.plain)
+                    .focused($isSearchFocused)
+                    .onSubmit {
+                        execute(filteredCommands.first)
+                    }
+                Button {
+                    onClose()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(filteredCommands) { command in
+                        Button {
+                            execute(command)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: command.systemImage)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 18)
+
+                                Text(command.title)
+                                    .lineLimit(1)
+
+                                Spacer()
+
+                                if TermyAppConfiguration.current.native.commandPaletteShowKeybinds,
+                                   let shortcut = shortcutLabel(for: command.action) {
+                                    Text(shortcut)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 320)
+        }
+        .frame(width: 430)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(.separator.opacity(0.8), lineWidth: 1)
+        }
+        .shadow(radius: 18)
+        .onAppear {
+            isSearchFocused = true
+        }
+    }
+
+    private func execute(_ command: PaletteCommand?) {
+        guard let command else {
+            return
+        }
+        onClose()
+        command.execute(commandSet)
+    }
+
+    private func shortcutLabel(for action: String) -> String? {
+        guard let keybind = TermyAppConfiguration.current.keybinds.first(where: { $0.action == action }) else {
+            return nil
+        }
+        return keybind.trigger
+            .replacingOccurrences(of: "secondary", with: "cmd")
+            .replacingOccurrences(of: "cmd", with: "⌘")
+            .replacingOccurrences(of: "ctrl", with: "⌃")
+            .replacingOccurrences(of: "alt", with: "⌥")
+            .replacingOccurrences(of: "shift", with: "⇧")
+            .replacingOccurrences(of: "-", with: " ")
+    }
+
+    private var paletteCommands: [PaletteCommand] {
+        [
+            PaletteCommand(title: "New Tab", action: "new_tab", systemImage: "plus") { $0.execute(.newTab) },
+            PaletteCommand(title: "Switch Tab Left", action: "switch_tab_left", systemImage: "chevron.left") { _ in
+                NativeTabWindowManager.shared.selectRelativeNativeTab(offset: -1)
+            },
+            PaletteCommand(title: "Switch Tab Right", action: "switch_tab_right", systemImage: "chevron.right") { _ in
+                NativeTabWindowManager.shared.selectRelativeNativeTab(offset: 1)
+            },
+            PaletteCommand(title: "Move Tab Left", action: "move_tab_left", systemImage: "arrow.left.to.line") { _ in
+                NativeTabWindowManager.shared.moveSelectedNativeTab(offset: -1)
+            },
+            PaletteCommand(title: "Move Tab Right", action: "move_tab_right", systemImage: "arrow.right.to.line") { _ in
+                NativeTabWindowManager.shared.moveSelectedNativeTab(offset: 1)
+            },
+            PaletteCommand(title: "Split Right", action: "split_pane_vertical", systemImage: "rectangle.split.2x1") { $0.execute(.splitPaneVertical) },
+            PaletteCommand(title: "Split Down", action: "split_pane_horizontal", systemImage: "rectangle.split.1x2") { $0.execute(.splitPaneHorizontal) },
+            PaletteCommand(title: "Close Pane or Tab", action: "close_pane_or_tab", systemImage: "xmark") { $0.execute(.closePaneOrTab) },
+            PaletteCommand(title: "Close Pane", action: "close_pane", systemImage: "rectangle.badge.xmark") { $0.execute(.closePane) },
+            PaletteCommand(title: "Next Pane", action: "focus_pane_next", systemImage: "arrow.right") { $0.execute(.focusPaneNext) },
+            PaletteCommand(title: "Previous Pane", action: "focus_pane_previous", systemImage: "arrow.left") { $0.execute(.focusPanePrevious) },
+            PaletteCommand(title: "Toggle Pane Zoom", action: "toggle_pane_zoom", systemImage: "arrow.up.left.and.arrow.down.right") { $0.execute(.togglePaneZoom) },
+            PaletteCommand(title: "Find", action: "open_search", systemImage: "magnifyingglass") { $0.execute(.openSearch) },
+            PaletteCommand(title: "Find Next", action: "search_next", systemImage: "chevron.down") { $0.execute(.searchNext) },
+            PaletteCommand(title: "Find Previous", action: "search_previous", systemImage: "chevron.up") { $0.execute(.searchPrevious) },
+            PaletteCommand(title: "Toggle Case Sensitive Search", action: "toggle_search_case_sensitive", systemImage: "textformat") { $0.execute(.toggleSearchCaseSensitive) },
+            PaletteCommand(title: "Toggle Regex Search", action: "toggle_search_regex", systemImage: "asterisk") { $0.execute(.toggleSearchRegex) },
+            PaletteCommand(title: "Copy", action: "copy", systemImage: "doc.on.doc") { $0.execute(.copy) },
+            PaletteCommand(title: "Paste", action: "paste", systemImage: "doc.on.clipboard") { $0.execute(.paste) },
+            PaletteCommand(title: "Clear Scrollback", action: "clear_buffer", systemImage: "trash") { $0.execute(.clearScrollback) },
+            PaletteCommand(title: "Send Interrupt", action: "send_interrupt", systemImage: "exclamationmark.octagon") { $0.execute(.sendInterrupt) },
+            PaletteCommand(title: "Open Config", action: "open_config", systemImage: "doc.text") { _ in
+                _ = TermyNativeAppActions.openConfigFileInEditor()
+            },
+            PaletteCommand(title: "Prettify Config", action: "prettify_config", systemImage: "wand.and.stars") { _ in
+                _ = TermyNativeAppActions.prettifyConfig()
+            },
+            PaletteCommand(title: "Toggle Native Tab Bar", action: "toggle_tab_bar_visibility", systemImage: "sidebar.left") { _ in
+                _ = TermyNativeAppActions.toggleNativeTabBarVisibility(for: NSApp.keyWindow)
+            },
+            PaletteCommand(title: "App Info", action: "app_info", systemImage: "info.circle") { _ in
+                TermyNativeAppActions.showAppInfo()
+            },
+            PaletteCommand(title: "Restart App", action: "restart_app", systemImage: "arrow.clockwise") { _ in
+                TermyNativeAppActions.restartApp()
+            },
+        ] + TermyAppConfiguration.current.tasks.map { task in
+            PaletteCommand(title: "Run \(task.name)", action: "run_task", systemImage: "play") { _ in
+                NativeTabWindowManager.shared.openNativeTab(startupTask: task)
+            }
+        }
+    }
+}
+
+private struct PaletteCommand: Identifiable {
+    let id = UUID()
+    let title: String
+    let action: String
+    let systemImage: String
+    let execute: (TerminalCommandSet) -> Void
 }
 
 private struct TerminalWorkspaceRoutingView: NSViewRepresentable {
     @ObservedObject var store: TerminalWorkspaceStore
+    let onWindowChanged: (NSWindow?) -> Void
 
     func makeNSView(context: Context) -> RoutingRegistrationView {
-        RoutingRegistrationView(store: store)
+        RoutingRegistrationView(store: store, onWindowChanged: onWindowChanged)
     }
 
     func updateNSView(_ view: RoutingRegistrationView, context: Context) {
         view.store = store
+        view.onWindowChanged = onWindowChanged
         view.registerCurrentWindow()
     }
 }
@@ -209,9 +465,11 @@ private struct TerminalWorkspaceRoutingView: NSViewRepresentable {
 private final class RoutingRegistrationView: NSView {
     weak var store: TerminalWorkspaceStore?
     private weak var registeredWindow: NSWindow?
+    var onWindowChanged: (NSWindow?) -> Void
 
-    init(store: TerminalWorkspaceStore) {
+    init(store: TerminalWorkspaceStore, onWindowChanged: @escaping (NSWindow?) -> Void) {
         self.store = store
+        self.onWindowChanged = onWindowChanged
         super.init(frame: .zero)
     }
 
@@ -222,6 +480,7 @@ private final class RoutingRegistrationView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        onWindowChanged(window)
         registerCurrentWindow()
     }
 
@@ -232,10 +491,94 @@ private final class RoutingRegistrationView: NSView {
         }
 
         guard let window, let store else {
+            onWindowChanged(window)
             return
         }
         registeredWindow = window
         TerminalCommandRouter.shared.register(store, for: window)
+        onWindowChanged(window)
+    }
+}
+
+private struct TerminalNativeTabSidebar: View {
+    let items: [NativeTabSidebarItem]
+    @Binding var selectedID: NativeTabSidebarItem.ID?
+    let minimized: Bool
+    let onSelect: (NativeTabSidebarItem.ID) -> Void
+    let onNewTab: () -> Void
+    let onClose: (NativeTabSidebarItem.ID) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            List(selection: $selectedID) {
+                ForEach(items) { item in
+                    NativeTabSidebarRow(item: item, minimized: minimized)
+                        .tag(item.id)
+                        .contextMenu {
+                            Button("Close Tab") {
+                                onClose(item.id)
+                            }
+                        }
+                }
+            }
+            .listStyle(.sidebar)
+            .onChange(of: selectedID) { _, id in
+                guard let id else {
+                    return
+                }
+                onSelect(id)
+            }
+
+            Divider()
+
+            Button {
+                onNewTab()
+            } label: {
+                if minimized {
+                    Label("New Tab", systemImage: "plus")
+                        .labelStyle(.iconOnly)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else {
+                    Label("New Tab", systemImage: "plus")
+                        .labelStyle(.titleAndIcon)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, minimized ? 8 : 12)
+            .padding(.vertical, 8)
+        }
+    }
+}
+
+private struct NativeTabSidebarRow: View {
+    let item: NativeTabSidebarItem
+    let minimized: Bool
+
+    var body: some View {
+        if minimized {
+            Image(systemName: item.isSelected ? "terminal.fill" : "terminal")
+                .frame(maxWidth: .infinity)
+                .help(item.title)
+        } else {
+            HStack(spacing: 10) {
+                Image(systemName: item.isSelected ? "terminal.fill" : "terminal")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .lineLimit(1)
+
+                    if let subtitle = item.subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
     }
 }
 

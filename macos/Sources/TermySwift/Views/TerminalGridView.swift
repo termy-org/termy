@@ -83,13 +83,25 @@ struct TerminalGridView: View {
 
     private func drawSearch(in context: inout GraphicsContext) {
         for match in searchMatches {
+            guard let row = visibleSearchRow(for: match) else {
+                continue
+            }
             let rect = pixelAlignedCellRect(
                 col: match.startCol,
-                row: match.row,
+                row: row,
                 cols: max(1, match.endCol - match.startCol + 1)
             )
             context.fill(Path(rect), with: .color(searchColor(for: match)))
         }
+    }
+
+    private func visibleSearchRow(for match: TerminalSearchMatch) -> Int? {
+        let visibleTop = frame.historySize - frame.displayOffset
+        let row = match.row - visibleTop
+        guard row >= 0, row < frame.rows else {
+            return nil
+        }
+        return row
     }
 
     private func searchColor(for match: TerminalSearchMatch) -> Color {

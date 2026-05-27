@@ -29,6 +29,24 @@ pub fn search_frame_with_options(
         return Vec::new();
     }
 
+    let cols = usize::from(frame.cols);
+    let rows = usize::from(frame.rows);
+    search_lines(
+        (0..rows).map(|row| (row, line_text(frame, row, cols))),
+        query,
+        options,
+    )
+}
+
+pub(crate) fn search_lines(
+    lines: impl IntoIterator<Item = (usize, String)>,
+    query: &str,
+    options: TermySearchOptions,
+) -> Vec<TermySearchMatch> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+
     let mut engine = SearchEngine::new(SearchConfig {
         case_sensitive: options.case_sensitive,
         mode: if options.regex {
@@ -41,12 +59,8 @@ pub fn search_frame_with_options(
         return Vec::new();
     }
 
-    let cols = usize::from(frame.cols);
-    let rows = usize::from(frame.rows);
     let mut matches = Vec::new();
-
-    for row in 0..rows {
-        let line = line_text(frame, row, cols);
+    for (row, line) in lines {
         for search_match in engine.search_line(row as i32, &line) {
             if search_match.end_col <= search_match.start_col {
                 continue;

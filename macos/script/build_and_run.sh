@@ -2,10 +2,10 @@
 set -euo pipefail
 
 MODE="${1:-run}"
-APP_NAME="Termy Native Preview"
-EXECUTABLE_NAME="TermyNativePreview"
+APP_NAME="TermyAlpha"
+EXECUTABLE_NAME="TermyAlpha"
 PRODUCT_NAME="TermySwift"
-BUNDLE_ID="com.lassevestergaard.TermyNativePreview"
+BUNDLE_ID="com.lassevestergaard.TermyAlpha"
 MIN_SYSTEM_VERSION="14.0"
 
 MACOS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

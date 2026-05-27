@@ -338,13 +338,13 @@ final class KeyboardCaptureView: NSView {
         onFocus()
 
         let deltaLines = scrollLines(
-            delta: event.scrollingDeltaY,
+            delta: scaledScrollDelta(event.scrollingDeltaY),
             unit: renderConfig.cellHeight,
             precise: event.hasPreciseScrollingDeltas,
             remainder: &preciseScrollRemainder
         )
         let horizontalDeltaLines = scrollLines(
-            delta: event.scrollingDeltaX,
+            delta: scaledScrollDelta(event.scrollingDeltaX),
             unit: renderConfig.cellWidth,
             precise: event.hasPreciseScrollingDeltas,
             remainder: &preciseHorizontalScrollRemainder
@@ -388,6 +388,10 @@ final class KeyboardCaptureView: NSView {
             return Int(wholeLines)
         }
         return Int(delta.rounded())
+    }
+
+    private func scaledScrollDelta(_ delta: CGFloat) -> CGFloat {
+        delta * max(0.0, renderConfig.mouseScrollMultiplier)
     }
 
     private func sendWheelEvents(vertical: Int, horizontal: Int, event: NSEvent) -> Bool {

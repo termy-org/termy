@@ -101,16 +101,13 @@ struct TerminalSurfaceView: View {
                 }
             }
             .overlay {
-                if isFocused && showsFocusBorder {
-                    Rectangle()
-                        .stroke(Color.accentColor.opacity(0.6), lineWidth: 1)
-                        .allowsHitTesting(false)
-                }
+                focusEffectOverlay
             }
             .overlay(alignment: .trailing) {
-                if isScrollBarVisible, terminal.frame.historySize > 0 {
+                if shouldShowScrollBar {
                     TerminalScrollBar(
                         frame: terminal.frame,
+                        renderConfig: terminal.renderConfig,
                         onInteraction: revealScrollBar,
                         onScrollToOffset: { offset in
                             revealScrollBar()
@@ -126,9 +123,17 @@ struct TerminalSurfaceView: View {
                 terminal.renderConfig.background.swiftUIColor
                     .opacity(terminal.renderConfig.backgroundOpacity)
             )
+            .background {
+                if terminal.renderConfig.backgroundBlur,
+                   terminal.renderConfig.backgroundOpacity < 1.0 {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                }
+            }
             .background(TerminalWindowChromeSyncView(
                 title: terminal.title,
                 background: terminal.renderConfig.background,
+                chromeContrast: terminal.renderConfig.chromeContrast,
                 isFocused: isFocused
             ))
             .onTapGesture {
@@ -172,11 +177,16 @@ struct TerminalSurfaceView: View {
     }
 
     private func revealScrollBar() {
-        guard terminal.frame.historySize > 0 else {
+        guard terminal.frame.historySize > 0,
+              terminal.renderConfig.scrollbarVisibility != .off
+        else {
             return
         }
 
         isScrollBarVisible = true
+        guard terminal.renderConfig.scrollbarVisibility == .onScroll else {
+            return
+        }
         scrollBarHideTask?.cancel()
         scrollBarHideTask = Task {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
@@ -186,6 +196,20 @@ struct TerminalSurfaceView: View {
             await MainActor.run {
                 isScrollBarVisible = false
             }
+        }
+    }
+
+    private var shouldShowScrollBar: Bool {
+        guard terminal.frame.historySize > 0 else {
+            return false
+        }
+        switch terminal.renderConfig.scrollbarVisibility {
+        case .off:
+            return false
+        case .always:
+            return true
+        case .onScroll:
+            return isScrollBarVisible
         }
     }
 
@@ -201,20 +225,68 @@ struct TerminalSurfaceView: View {
             cell.renderText && cell.character != " "
         }
     }
+
+    private var focusStrength: Double {
+        Double(terminal.renderConfig.paneFocusStrength)
+    }
+
+    @ViewBuilder
+    private var focusEffectOverlay: some View {
+        if showsFocusBorder {
+            switch terminal.renderConfig.paneFocusEffect {
+            case .off:
+                EmptyView()
+            case .minimal:
+                if isFocused {
+                    Rectangle()
+                        .stroke(Color.accentColor.opacity(0.35 + (0.15 * focusStrength)), lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+            case .softSpotlight:
+                if isFocused {
+                    Rectangle()
+                        .stroke(Color.accentColor.opacity(0.45 + (0.12 * focusStrength)), lineWidth: 1)
+                        .allowsHitTesting(false)
+                } else {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.08 * focusStrength))
+                        .allowsHitTesting(false)
+                }
+            case .cinematic:
+                if isFocused {
+                    Rectangle()
+                        .stroke(Color.accentColor.opacity(0.55 + (0.12 * focusStrength)), lineWidth: 1.25)
+                        .shadow(color: Color.accentColor.opacity(0.16 * focusStrength), radius: 5)
+                        .allowsHitTesting(false)
+                } else {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.14 * focusStrength))
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+    }
 }
 
 private struct TerminalWindowChromeSyncView: NSViewRepresentable {
     let title: String
     let background: TerminalRGBA
+    let chromeContrast: Bool
     let isFocused: Bool
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+    func makeNSView(context: Context) -> TerminalWindowChromeSyncNSView {
+        let view = TerminalWindowChromeSyncNSView(frame: .zero)
+        view.onWindowAttached = { attachedView in
+            syncChrome(from: attachedView)
+        }
         syncChrome(from: view)
         return view
     }
 
-    func updateNSView(_ view: NSView, context: Context) {
+    func updateNSView(_ view: TerminalWindowChromeSyncNSView, context: Context) {
+        view.onWindowAttached = { attachedView in
+            syncChrome(from: attachedView)
+        }
         syncChrome(from: view)
     }
 
@@ -224,7 +296,7 @@ private struct TerminalWindowChromeSyncView: NSViewRepresentable {
         }
         let nextTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedTitle = nextTitle.isEmpty ? "Shell" : nextTitle
-        let resolvedBackground = background.nsTitlebarColor
+        let resolvedBackground = background.nsTitlebarColor(chromeContrast: chromeContrast)
         let resolvedAppearance = background.prefersDarkTitlebarAppearance
             ? NSAppearance(named: .darkAqua)
             : NSAppearance(named: .aqua)
@@ -242,12 +314,22 @@ private struct TerminalWindowChromeSyncView: NSViewRepresentable {
     }
 }
 
+private final class TerminalWindowChromeSyncNSView: NSView {
+    var onWindowAttached: ((NSView) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowAttached?(self)
+    }
+}
+
 private extension TerminalRGBA {
-    var nsTitlebarColor: NSColor {
-        NSColor(
-            srgbRed: red,
-            green: green,
-            blue: blue,
+    func nsTitlebarColor(chromeContrast: Bool) -> NSColor {
+        let contrastMultiplier = chromeContrast ? 0.78 : 1.0
+        return NSColor(
+            srgbRed: red * contrastMultiplier,
+            green: green * contrastMultiplier,
+            blue: blue * contrastMultiplier,
             alpha: 1.0
         )
     }
@@ -270,6 +352,7 @@ private extension TerminalRGBA {
 
 private struct TerminalScrollBar: View {
     let frame: TerminalFrame
+    let renderConfig: TerminalRenderConfig
     let onInteraction: () -> Void
     let onScrollToOffset: (Int) -> Void
 
@@ -278,11 +361,11 @@ private struct TerminalScrollBar: View {
             if metrics(for: proxy.size).isVisible {
                 ZStack(alignment: .top) {
                     Capsule()
-                        .fill(Color.primary.opacity(0.10))
+                        .fill(trackColor)
                         .frame(width: 7)
 
                     Capsule()
-                        .fill(Color.primary.opacity(frame.displayOffset == 0 ? 0.34 : 0.58))
+                        .fill(thumbColor)
                         .frame(width: 7, height: metrics(for: proxy.size).thumbHeight)
                         .offset(y: metrics(for: proxy.size).thumbY)
                         .gesture(
@@ -309,6 +392,29 @@ private struct TerminalScrollBar: View {
 
     private var framePaddingY: CGFloat {
         8
+    }
+
+    private var trackColor: Color {
+        switch renderConfig.scrollbarStyle {
+        case .neutral:
+            return Color.primary.opacity(0.10)
+        case .mutedTheme:
+            return renderConfig.foreground.swiftUIColor.opacity(0.08)
+        case .theme:
+            return renderConfig.cursor.swiftUIColor.opacity(0.16)
+        }
+    }
+
+    private var thumbColor: Color {
+        let opacity = frame.displayOffset == 0 ? 0.34 : 0.58
+        switch renderConfig.scrollbarStyle {
+        case .neutral:
+            return Color.primary.opacity(opacity)
+        case .mutedTheme:
+            return renderConfig.foreground.swiftUIColor.opacity(opacity * 0.75)
+        case .theme:
+            return renderConfig.cursor.swiftUIColor.opacity(max(0.45, opacity))
+        }
     }
 
     private func metrics(for size: CGSize) -> ScrollBarMetrics {

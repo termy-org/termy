@@ -7,47 +7,17 @@ struct SettingsRootView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
-                ForEach(store.schema?.sections ?? []) { section in
-                    Label(section.label, systemImage: section.systemImage)
-                        .tag(section.id as String?)
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 214, max: 260)
-            .listStyle(.sidebar)
-            .safeAreaInset(edge: .bottom) {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.yellow)
-                    Text("Some settings may require a new terminal or app restart to take effect.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.bar)
-            }
+            SettingsSidebarView(sections: supportedSections, selection: $selection)
         } detail: {
-            Group {
-                if let section = store.section(id: selection) {
-                    SettingsSectionView(section: section, store: store)
-                } else {
-                    ContentUnavailableView(
-                        "Settings",
-                        systemImage: "gearshape",
-                        description: Text("Select a category.")
-                    )
-                }
-            }
-            .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+            SettingsDetailView(section: selectedSection, store: store)
         }
         .frame(minWidth: 760, minHeight: 520)
         .onAppear {
             store.load()
-            if selection == nil {
-                selection = store.schema?.sections.first?.id
-            }
+            selectDefaultSectionIfNeeded()
+        }
+        .onChange(of: store.schema?.sections.map(\.id) ?? []) { _, _ in
+            selectDefaultSectionIfNeeded()
         }
         .alert(
             "Settings Error",
@@ -60,6 +30,72 @@ struct SettingsRootView: View {
         } message: {
             Text(store.errorMessage ?? "")
         }
+    }
+
+    private var supportedSections: [SettingsSectionModel] {
+        store.schema?.sections.filter(\.hasSupportedSettings) ?? []
+    }
+
+    private var selectedSection: SettingsSectionModel? {
+        supportedSections.first { $0.id == selection }
+    }
+
+    private func selectDefaultSectionIfNeeded() {
+        let sections = supportedSections
+        guard !sections.isEmpty else {
+            selection = nil
+            return
+        }
+        if selection == nil || !sections.contains(where: { $0.id == selection }) {
+            selection = sections[0].id
+        }
+    }
+}
+
+private struct SettingsSidebarView: View {
+    let sections: [SettingsSectionModel]
+    @Binding var selection: String?
+
+    var body: some View {
+        List(selection: $selection) {
+            Section {
+                ForEach(sections) { section in
+                    SettingsSidebarRow(section: section)
+                        .tag(section.id as String?)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+        .navigationSplitViewColumnWidth(min: 176, ideal: 192, max: 230)
+    }
+}
+
+private struct SettingsSidebarRow: View {
+    let section: SettingsSectionModel
+
+    var body: some View {
+        Label(section.label, systemImage: section.systemImage)
+            .lineLimit(1)
+    }
+}
+
+private struct SettingsDetailView: View {
+    let section: SettingsSectionModel?
+    @ObservedObject var store: SettingsStore
+
+    var body: some View {
+        Group {
+            if let section {
+                SettingsSectionView(section: section, store: store)
+            } else {
+                ContentUnavailableView(
+                    "Settings",
+                    systemImage: "gearshape",
+                    description: Text("No supported settings are available.")
+                )
+            }
+        }
+        .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -85,6 +121,26 @@ private struct SettingsSectionView: View {
         }
         .formStyle(.grouped)
         .navigationTitle(section.label)
+    }
+}
+
+private extension SettingsSectionModel {
+    var hasSupportedSettings: Bool {
+        !(groups?.flatMap(\.settings).isEmpty ?? true)
+            || !(colors?.isEmpty ?? true)
+            || keybinds != nil
+    }
+
+    var supportedSettingCount: Int {
+        if let colors {
+            return colors.count
+        }
+        if keybinds != nil {
+            return 1
+        }
+        return groups?.reduce(0) { count, group in
+            count + group.settings.count
+        } ?? 0
     }
 }
 

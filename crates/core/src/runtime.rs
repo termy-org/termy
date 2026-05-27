@@ -7,15 +7,14 @@ use crate::osc_intercept::{OscEvent, OscInterceptor};
 use crate::path_env::normalized_path_env;
 use crate::protocol::{TerminalQueryColors, TerminalReplyHost, reply_bytes_for_event};
 use crate::render_metrics::increment_runtime_wakeup_count;
-use crate::search::{
-    TermySearchMatch, TermySearchOptions, search_frame, search_frame_with_options,
-};
+use crate::search::{TermySearchMatch, TermySearchOptions, search_lines};
 use crate::shell_integration::ProgressState;
 use alacritty_terminal::{
     event::{Event as AlacEvent, EventListener, OnResize, WindowSize},
     grid::{Dimensions, Scroll},
+    index::{Column, Line},
     sync::FairMutex,
-    term::{Config as TermConfig, LineDamageBounds, Term, TermDamage, TermMode},
+    term::{Config as TermConfig, LineDamageBounds, Term, TermDamage, TermMode, cell::Flags},
     thread,
     tty::{self, EventedPty, EventedReadWrite, Options as PtyOptions, Shell},
     vte::ansi::{self, CursorShape, CursorStyle as AlacrittyCursorStyle},
@@ -741,6 +740,41 @@ fn normalized_dirty_span(
     })
 }
 
+fn search_term_buffer<T: EventListener>(
+    term: &Term<T>,
+    query: &str,
+    options: TermySearchOptions,
+) -> Vec<TermySearchMatch> {
+    let grid = term.grid();
+    let cols = grid.columns();
+    let history_size = grid.history_size();
+    let total_lines = grid.total_lines();
+    if cols == 0 || total_lines == 0 {
+        return Vec::new();
+    }
+
+    let lines = (0..total_lines).map(|absolute_row| {
+        let line = Line(absolute_row as i32 - history_size as i32);
+        (absolute_row, searchable_grid_line(term, line, cols))
+    });
+    search_lines(lines, query, options)
+}
+
+fn searchable_grid_line<T: EventListener>(term: &Term<T>, line: Line, cols: usize) -> String {
+    let grid = term.grid();
+    let mut text = String::with_capacity(cols);
+    for col in 0..cols {
+        let cell = &grid[line][Column(col)];
+        let render_text = !cell
+            .flags
+            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::HIDDEN)
+            && cell.c != '\0'
+            && !cell.c.is_control();
+        text.push(if render_text { cell.c } else { ' ' });
+    }
+    text.trim_end().to_string()
+}
+
 pub(crate) fn take_term_damage_snapshot<T: EventListener>(
     term: &mut Term<T>,
 ) -> TerminalDamageSnapshot {
@@ -1414,18 +1448,18 @@ impl Terminal {
         self.with_term(|term| snapshot_from_term(term, self.size, self.query_colors))
     }
 
-    /// Search the visible terminal frame and return match ranges in cell coordinates.
+    /// Search the full terminal buffer and return match ranges in scrollback-relative rows.
     pub fn search(&self, query: &str) -> Vec<TermySearchMatch> {
-        search_frame(&self.snapshot(), query)
+        self.search_with_options(query, TermySearchOptions::default())
     }
 
-    /// Search the visible terminal frame with explicit matching options.
+    /// Search the full terminal buffer with explicit matching options.
     pub fn search_with_options(
         &self,
         query: &str,
         options: TermySearchOptions,
     ) -> Vec<TermySearchMatch> {
-        search_frame_with_options(&self.snapshot(), query, options)
+        self.with_term(|term| search_term_buffer(term, query, options))
     }
 
     /// Access the terminal for reading cell content
@@ -1657,13 +1691,14 @@ mod tests {
         TerminalSize, WindowsShell, WorkingDirFallback, cursor_position_from_term,
         cursor_state_from_term, default_shell_launch, drain_runtime_events,
         normalize_working_directory_candidate, pty_env_overrides, resolve_launch_working_directory,
-        resolve_shell_path, take_term_damage_snapshot, terminal_event_from_osc,
+        resolve_shell_path, search_term_buffer, take_term_damage_snapshot, terminal_event_from_osc,
         termmode_to_terminal_mouse_mode, user_home_dir,
     };
     use crate::keyboard::{
         Keystroke, Modifiers, TerminalKeyEventKind, TerminalKeyboardMode, keystroke_to_input,
     };
     use crate::protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
+    use crate::search::TermySearchOptions;
     use alacritty_terminal::{
         event::{EventListener, VoidListener},
         grid::{Dimensions, Scroll},
@@ -1699,6 +1734,31 @@ mod tests {
         let mut parser: ansi::Processor = ansi::Processor::new();
         parser.advance(&mut term, input);
         term
+    }
+
+    #[test]
+    fn search_term_buffer_includes_scrollback_rows() {
+        let size = TerminalSize {
+            cols: 16,
+            rows: 2,
+            cell_width: 9.0,
+            cell_height: 18.0,
+        };
+        let config = TermConfig {
+            scrolling_history: 8,
+            ..TermConfig::default()
+        };
+        let mut term: Term<VoidListener> = Term::new(config, &size, VoidListener);
+        let mut parser: ansi::Processor = ansi::Processor::new();
+        parser.advance(&mut term, b"alpha\r\nbeta\r\ngamma");
+
+        let matches = search_term_buffer(&term, "alpha", TermySearchOptions::default());
+
+        assert_eq!(term.grid().history_size(), 1);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].row, 0);
+        assert_eq!(matches[0].start_col, 0);
+        assert_eq!(matches[0].end_col, 4);
     }
 
     fn cursor_state_after_bytes(

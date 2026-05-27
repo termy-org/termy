@@ -168,7 +168,38 @@ typedef struct {
   uint32_t cursor_style;
   float cell_width;
   float cell_height;
+  bool background_blur;
+  float mouse_scroll_multiplier;
+  uint32_t scrollbar_visibility;
+  uint32_t scrollbar_style;
+  bool copy_on_select;
+  bool copy_on_select_toast;
+  uint32_t pane_focus_effect;
+  float pane_focus_strength;
+  bool chrome_contrast;
 } TermyFfiRenderConfig;
+
+typedef struct {
+  bool warn_on_quit;
+  bool warn_on_quit_with_running_process;
+} TermyFfiSafetyConfig;
+
+typedef struct {
+  bool simple_mode;
+  bool native_tab_persistence;
+  bool native_layout_autosave;
+  bool native_buffer_persistence;
+  bool chrome_contrast;
+  bool command_palette_show_keybinds;
+  uint32_t app_icon;
+  bool shell_integration_enabled;
+  bool progress_indicator_enabled;
+  bool vertical_tabs;
+  float vertical_tabs_width;
+  bool vertical_tabs_minimized;
+  bool auto_hide_tabbar;
+  bool show_termy_in_titlebar;
+} TermyFfiNativeConfig;
 
 typedef struct {
   const uint8_t *key_ptr;
@@ -246,15 +277,31 @@ TermyFfiStatus termy_config_window_size(
 TermyFfiStatus termy_config_working_directory(
     const TermyFfiConfig *config,
     TermyFfiBytes *out_working_directory);
+TermyFfiStatus termy_config_safety(
+    const TermyFfiConfig *config,
+    TermyFfiSafetyConfig *out_safety);
+TermyFfiStatus termy_config_native(
+    const TermyFfiConfig *config,
+    TermyFfiNativeConfig *out_native);
 TermyFfiStatus termy_config_path(
     const TermyFfiConfig *config,
     TermyFfiBytes *out_path);
+TermyFfiStatus termy_config_tasks_json(
+    const TermyFfiConfig *config,
+    TermyFfiBytes *out_json);
+TermyFfiStatus termy_config_keybinds_json(
+    const TermyFfiConfig *config,
+    TermyFfiBytes *out_json);
 TermyFfiStatus termy_config_diagnostics(
     const TermyFfiConfig *config,
     TermyFfiConfigDiagnosticBatch *out_batch);
 TermyFfiStatus termy_config_diagnostics_free(TermyFfiConfigDiagnosticBatch *batch);
 TermyFfiStatus termy_config_render_config(
     const TermyFfiConfig *config,
+    TermyFfiRenderConfig *out_render_config);
+TermyFfiStatus termy_config_render_config_for_appearance(
+    const TermyFfiConfig *config,
+    uint32_t system_appearance,
     TermyFfiRenderConfig *out_render_config);
 TermyFfiStatus termy_render_config_free(TermyFfiRenderConfig *render_config);
 TermyFfiStatus termy_settings_schema_json(
@@ -276,6 +323,7 @@ TermyFfiStatus termy_settings_set_color(
 TermyFfiStatus termy_settings_set_keybinds(
     const uint8_t *text_ptr,
     size_t text_len);
+TermyFfiStatus termy_settings_prettify_config(void);
 TermyFfiStatus termy_terminal_reload_default_config_colors(TermyFfiTerminal *terminal);
 TermyFfiStatus termy_terminal_free(TermyFfiTerminal *terminal);
 TermyFfiStatus termy_terminal_write(

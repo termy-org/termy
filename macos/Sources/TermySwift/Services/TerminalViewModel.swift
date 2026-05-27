@@ -9,6 +9,7 @@ final class TerminalViewModel: ObservableObject {
     @Published private(set) var title = "Shell"
     @Published private(set) var progress = TerminalProgress.clear
     @Published private(set) var isExited = false
+    @Published private(set) var currentWorkingDirectory: String?
     @Published private(set) var searchMatches: [TerminalSearchMatch] = []
     @Published private(set) var activeSearchMatchIndex = 0
     @Published var selection: TerminalSelection?
@@ -17,7 +18,18 @@ final class TerminalViewModel: ObservableObject {
     private var timer: Timer?
     private var lastResize: TerminalResize?
     private var settingsObserver: NSObjectProtocol?
+    private var appearanceObserver: NSObjectProtocol?
     private var startupRefreshUntil: Date?
+    private let initialWorkingDirectory: String?
+    private let startupCommand: String?
+    private var activeSearchQuery = ""
+    private var activeSearchOptions = TerminalSearchOptions()
+    private var lastAutoCopiedSelectionText: String?
+
+    init(workingDirectory: String? = nil, startupCommand: String? = nil) {
+        initialWorkingDirectory = TerminalViewModel.normalizedWorkingDirectory(workingDirectory)
+        self.startupCommand = TerminalViewModel.normalizedStartupCommand(startupCommand)
+    }
 
     func start() {
         guard terminal == nil else {
@@ -25,9 +37,13 @@ final class TerminalViewModel: ObservableObject {
         }
 
         do {
-            let terminal = try LibTermyTerminal()
+            let terminal = try LibTermyTerminal(
+                workingDirectoryOverride: initialWorkingDirectory,
+                startupCommand: startupCommand
+            )
             self.terminal = terminal
             renderConfig = terminal.renderConfig
+            currentWorkingDirectory = initialWorkingDirectory
             isExited = false
             startupRefreshUntil = Date().addingTimeInterval(2)
             refresh(force: true)
@@ -46,6 +62,15 @@ final class TerminalViewModel: ObservableObject {
                     self?.reloadAppearance()
                 }
             }
+            appearanceObserver = DistributedNotificationCenter.default().addObserver(
+                forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.reloadAppearance()
+                }
+            }
         } catch {
             report(error)
         }
@@ -57,6 +82,10 @@ final class TerminalViewModel: ObservableObject {
         if let settingsObserver {
             NotificationCenter.default.removeObserver(settingsObserver)
             self.settingsObserver = nil
+        }
+        if let appearanceObserver {
+            DistributedNotificationCenter.default().removeObserver(appearanceObserver)
+            self.appearanceObserver = nil
         }
         terminal = nil
         isExited = true
@@ -156,6 +185,18 @@ final class TerminalViewModel: ObservableObject {
 
     func updateSelection(_ selection: TerminalSelection?) {
         self.selection = selection
+        guard renderConfig.copyOnSelect,
+              let text = frame.selectedText(for: selection),
+              !text.isEmpty
+        else {
+            lastAutoCopiedSelectionText = nil
+            return
+        }
+        guard text != lastAutoCopiedSelectionText else {
+            return
+        }
+        copy(text)
+        lastAutoCopiedSelectionText = text
     }
 
     func copySelection() -> Bool {
@@ -163,8 +204,7 @@ final class TerminalViewModel: ObservableObject {
             return false
         }
 
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        copy(text)
         return true
     }
 
@@ -186,14 +226,17 @@ final class TerminalViewModel: ObservableObject {
     ) {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
+            activeSearchQuery = ""
+            activeSearchOptions = options
             searchMatches = []
             activeSearchMatchIndex = 0
             return
         }
 
-        let matches = search(trimmedQuery, options: options)
-        searchMatches = matches
-        activeSearchMatchIndex = matches.isEmpty ? 0 : min(activeSearchMatchIndex, matches.count - 1)
+        let shouldResetActiveMatch = trimmedQuery != activeSearchQuery || options != activeSearchOptions
+        activeSearchQuery = trimmedQuery
+        activeSearchOptions = options
+        refreshSearchMatches(resetActive: shouldResetActiveMatch, revealActive: true)
     }
 
     func selectNextSearchMatch() {
@@ -201,6 +244,7 @@ final class TerminalViewModel: ObservableObject {
             return
         }
         activeSearchMatchIndex = (activeSearchMatchIndex + 1) % searchMatches.count
+        revealActiveSearchMatch()
     }
 
     func selectPreviousSearchMatch() {
@@ -208,6 +252,7 @@ final class TerminalViewModel: ObservableObject {
             return
         }
         activeSearchMatchIndex = (activeSearchMatchIndex + searchMatches.count - 1) % searchMatches.count
+        revealActiveSearchMatch()
     }
 
     func resize(cols: Int, rows: Int, cellWidth: CGFloat, cellHeight: CGFloat) {
@@ -251,6 +296,7 @@ final class TerminalViewModel: ObservableObject {
             if let nextFrame = try terminal?.snapshot() {
                 frame = nextFrame
                 errorMessage = nil
+                refreshSearchMatches(resetActive: false, revealActive: false)
             }
         } catch {
             report(error)
@@ -282,6 +328,52 @@ final class TerminalViewModel: ObservableObject {
         errorMessage = String(describing: error)
     }
 
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func refreshSearchMatches(resetActive: Bool, revealActive: Bool) {
+        guard !activeSearchQuery.isEmpty else {
+            searchMatches = []
+            activeSearchMatchIndex = 0
+            return
+        }
+
+        let matches = search(activeSearchQuery, options: activeSearchOptions)
+        searchMatches = matches
+        if matches.isEmpty {
+            activeSearchMatchIndex = 0
+            return
+        }
+
+        activeSearchMatchIndex = resetActive ? 0 : min(activeSearchMatchIndex, matches.count - 1)
+        if revealActive {
+            revealActiveSearchMatch()
+        }
+    }
+
+    private func revealActiveSearchMatch() {
+        guard searchMatches.indices.contains(activeSearchMatchIndex), frame.rows > 0 else {
+            return
+        }
+
+        let match = searchMatches[activeSearchMatchIndex]
+        let visibleTop = frame.historySize - frame.displayOffset
+        let visibleBottom = visibleTop + frame.rows - 1
+        let targetOffset: Int
+        if match.row < visibleTop {
+            targetOffset = frame.historySize - match.row
+        } else if match.row > visibleBottom {
+            targetOffset = frame.historySize - (match.row - frame.rows + 1)
+        } else {
+            return
+        }
+
+        let clampedOffset = max(0, min(frame.historySize, targetOffset))
+        scrollDisplay(deltaLines: clampedOffset - frame.displayOffset)
+    }
+
     private func handle(_ events: [TerminalRuntimeEvent]) {
         guard !events.isEmpty else {
             return
@@ -299,18 +391,46 @@ final class TerminalViewModel: ObservableObject {
                 isExited = true
                 progress = .clear
             case .progress(let progress):
-                self.progress = progress
+                if TermyAppConfiguration.current.native.progressIndicatorEnabled {
+                    self.progress = progress
+                }
+            case .workingDirectory(let path):
+                currentWorkingDirectory = TerminalViewModel.normalizedWorkingDirectory(path)
             case .wakeup,
                  .bell,
                  .clipboardStore(_),
                  .shellPromptStart,
                  .shellCommandStart,
                  .shellCommandExecuting,
-                 .shellCommandFinished(_),
-                 .workingDirectory(_):
+                 .shellCommandFinished(_):
+                guard TermyAppConfiguration.current.native.shellIntegrationEnabled else {
+                    break
+                }
                 break
             }
         }
+    }
+
+    private static func normalizedWorkingDirectory(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) {
+            return nil
+        }
+
+        return trimmed
+    }
+
+    private static func normalizedStartupCommand(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
 }

@@ -56,6 +56,14 @@ enum SettingsBridge {
         try TermyFfiBridge.requireOK("termy_settings_set_root", status)
     }
 
+    static func resetRoot(key: String) throws {
+        let keyBytes = Array(key.utf8)
+        let status = keyBytes.withUnsafeBufferPointer { keyBuffer in
+            termy_settings_reset_root(keyBuffer.baseAddress, keyBuffer.count)
+        }
+        try TermyFfiBridge.requireOK("termy_settings_reset_root", status)
+    }
+
     /// Pass `hex == nil` to clear the override and inherit the theme color.
     static func setColor(key: String, hex: String?) throws {
         let keyBytes = Array(key.utf8)
@@ -79,5 +87,9 @@ enum SettingsBridge {
             termy_settings_set_keybinds(textBuffer.baseAddress, textBuffer.count)
         }
         try TermyFfiBridge.requireOK("termy_settings_set_keybinds", status)
+    }
+
+    static func prettifyConfig() throws {
+        try TermyFfiBridge.requireOK("termy_settings_prettify_config", termy_settings_prettify_config())
     }
 }
