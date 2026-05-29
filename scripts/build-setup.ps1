@@ -111,12 +111,12 @@ function Arch-FromTarget {
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
-$cargoToml = Join-Path $repoRoot "Cargo.toml"
+$cargoToml = Join-Path $repoRoot "crates\desktop_app\Cargo.toml"
 $issPath = Join-Path $repoRoot "installer\termy.iss"
 $iconPath = Join-Path $repoRoot "assets\termy.ico"
 
 if (-not (Test-Path $cargoToml)) {
-    throw "Cargo.toml not found at $cargoToml"
+    throw "Desktop app Cargo.toml not found at $cargoToml"
 }
 
 if (-not (Test-Path $issPath)) {
@@ -147,7 +147,7 @@ $exePath = Join-Path $repoRoot "target\$Target\release\termy.exe"
 
 if (-not $NoBuild) {
     Write-Host "Building termy.exe for target '$Target'..."
-    & cargo build --release --target $Target
+    & cargo build --release --target $Target -p termy
     if ($LASTEXITCODE -ne 0) {
         throw "cargo build failed with exit code $LASTEXITCODE"
     }

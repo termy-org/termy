@@ -59,13 +59,6 @@ enum TermyNativeAppActions {
     }
 }
 
-struct NativeTabSidebarItem: Identifiable, Equatable {
-    var id: ObjectIdentifier
-    var title: String
-    var subtitle: String?
-    var isSelected: Bool
-}
-
 @main
 struct TermySwiftApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -638,7 +631,6 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         }
         window.setContentSize(TermyAppConfiguration.current.windowSize)
         window.center()
-        postTabsChanged()
     }
 
     func openNativeTab(startupTask: TermyTaskConfiguration? = nil) {
@@ -652,7 +644,6 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        postTabsChanged()
     }
 
     func selectNativeTab(number: Int) {
@@ -674,7 +665,6 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         }
         targetWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        postTabsChanged()
     }
 
     func selectRelativeNativeTab(offset: Int) {
@@ -698,31 +688,6 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         }
         targetWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        postTabsChanged()
-    }
-
-    func selectNativeTab(id: ObjectIdentifier) {
-        guard let sourceWindow = nativeTabSourceWindow(),
-              let targetWindow = nativeTabWindows(for: sourceWindow).first(where: { ObjectIdentifier($0) == id })
-        else {
-            return
-        }
-        if targetWindow.isMiniaturized {
-            targetWindow.deminiaturize(nil)
-        }
-        targetWindow.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        postTabsChanged()
-    }
-
-    func closeNativeTab(id: ObjectIdentifier) {
-        guard let sourceWindow = nativeTabSourceWindow(),
-              let targetWindow = nativeTabWindows(for: sourceWindow).first(where: { ObjectIdentifier($0) == id })
-        else {
-            return
-        }
-        targetWindow.performClose(nil)
-        postTabsChanged()
     }
 
     func moveSelectedNativeTab(offset: Int) {
@@ -750,29 +715,6 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         let anchorWindow = tabbedWindows[targetIndex]
         anchorWindow.addTabbedWindow(movingWindow, ordered: offset < 0 ? .below : .above)
         movingWindow.makeKeyAndOrderFront(nil)
-        postTabsChanged()
-    }
-
-    func sidebarItems(for window: NSWindow?) -> [NativeTabSidebarItem] {
-        guard let sourceWindow = window.flatMap({ isNativeTerminalTabWindow($0) ? $0 : nil })
-            ?? nativeTabSourceWindow()
-        else {
-            return []
-        }
-
-        let selectedWindow = NSApp.keyWindow ?? NSApp.mainWindow
-        return nativeTabWindows(for: sourceWindow).enumerated().map { index, window in
-            let rawTitle = window.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            let title = rawTitle.isEmpty || rawTitle == AppMetadata.displayName
-                ? "Shell"
-                : rawTitle
-            return NativeTabSidebarItem(
-                id: ObjectIdentifier(window),
-                title: title,
-                subtitle: "Tab \(index + 1)",
-                isSelected: window === selectedWindow
-            )
-        }
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -781,7 +723,6 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         }
         retainedWindows.removeAll { $0 === window }
         configuredWindowIDs.remove(ObjectIdentifier(window))
-        postTabsChanged()
     }
 
     private func makeWindow(startupTask: TermyTaskConfiguration? = nil) -> NSWindow {
@@ -819,7 +760,4 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         window.tabbingIdentifier == tabbingIdentifier
     }
 
-    private func postTabsChanged() {
-        NotificationCenter.default.post(name: .termyNativeTabsChanged, object: nil)
-    }
 }

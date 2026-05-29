@@ -61,12 +61,6 @@ tab_close_visibility = hover
 tab_width_mode = uniform
 # Show secondary+1..9 number badges on the first nine tabs while the secondary modifier is held
 tab_switch_modifier_hints = true
-# Move the tab strip into a left sidebar like cmux
-vertical_tabs = false
-# Saved width for the vertical tab sidebar in pixels
-vertical_tabs_width = 220
-# Start vertical tabs in the collapsed state
-vertical_tabs_minimized = false
 # Hide the tab bar when only one tab is open
 auto_hide_tabbar = true
 # Show or hide the termy branding in the titlebar

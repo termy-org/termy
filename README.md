@@ -9,7 +9,7 @@ A fast, minimal terminal emulator built with [GPUI](https://gpui.rs) and [alacri
 - GPU-accelerated rendering with dirty-span cell caching
 - Tabs, splits, and search
 - Configurable keybinds and themes
-- Out-of-process plugin system (stdio JSON protocol)
+- Tasks, layouts, and optional tmux sessions
 - Native OS integrations on macOS
 
 ## Install

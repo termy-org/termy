@@ -13,7 +13,6 @@ concurrency:
 
 env:
   VERSION: ${{ github.event.release.tag_name }}
-  CARGO_BUNDLE_VERSION: 0.10.0
   INNOSETUP_VERSION: 6.7.1
   APPIMAGETOOL_VERSION: 1.9.1
   APPIMAGETOOL_X86_64_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
@@ -50,17 +49,14 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
-      - name: Install cargo-bundle
-        run: cargo install cargo-bundle --version "$CARGO_BUNDLE_VERSION" --locked
-
       - name: Build DMG
-        run: ./scripts/build-dmg.sh --version "$VERSION" --arch "${{ matrix.arch }}" --target "${{ matrix.target }}" --no-layout
+        run: ./macos/scripts/build-dmg.sh --version "$VERSION" --arch "${{ matrix.arch }}" --target "${{ matrix.target }}" --no-layout
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: termy-dmg-${{ matrix.arch }}
-          path: target/release/Termy-${{ env.VERSION }}-macos-${{ matrix.arch }}.dmg
+          path: macos/dist/TermyAlpha-${{ env.VERSION }}-macos-${{ matrix.arch }}.dmg
           if-no-files-found: error
 
   build-windows-setup:

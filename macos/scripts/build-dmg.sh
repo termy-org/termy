@@ -12,7 +12,7 @@ Usage: $0 [--version VERSION] [--arch ARCH] [--target TARGET] [--no-layout]
 Build the native macOS SwiftUI app as a drag-to-Applications DMG.
 
 Options:
-  --version VERSION   Set version (default: read from Cargo.toml)
+  --version VERSION   Set version (default: read from crates/desktop_app/Cargo.toml)
   --arch ARCH         Set architecture (arm64 or x86_64, default: host)
   --target TARGET     Set target triple (aarch64-apple-darwin or x86_64-apple-darwin)
   --no-layout         Skip Finder layout customization
@@ -45,7 +45,7 @@ read_version_from_cargo_toml() {
       print $3
       exit
     }
-  ' "$REPO_ROOT/Cargo.toml"
+  ' "$REPO_ROOT/crates/desktop_app/Cargo.toml"
 }
 
 arch_to_target() {
@@ -110,7 +110,7 @@ done
 
 if [[ -z "$VERSION" ]]; then
   VERSION="$(read_version_from_cargo_toml)"
-  [[ -n "$VERSION" ]] || die "Could not read version from Cargo.toml"
+  [[ -n "$VERSION" ]] || die "Could not read version from crates/desktop_app/Cargo.toml"
 fi
 
 if [[ -z "$ARCH" && -z "$TARGET" ]]; then

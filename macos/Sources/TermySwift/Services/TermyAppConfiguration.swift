@@ -175,9 +175,6 @@ struct TermyNativeConfiguration {
     var appIcon: TermyAppIcon
     var shellIntegrationEnabled: Bool
     var progressIndicatorEnabled: Bool
-    var verticalTabs: Bool
-    var verticalTabsWidth: CGFloat
-    var verticalTabsMinimized: Bool
     var autoHideTabbar: Bool
     var showTermyInTitlebar: Bool
 
@@ -191,9 +188,6 @@ struct TermyNativeConfiguration {
         appIcon: .default,
         shellIntegrationEnabled: true,
         progressIndicatorEnabled: true,
-        verticalTabs: false,
-        verticalTabsWidth: 220,
-        verticalTabsMinimized: false,
         autoHideTabbar: true,
         showTermyInTitlebar: true
     )
@@ -208,9 +202,6 @@ struct TermyNativeConfiguration {
         appIcon: TermyAppIcon,
         shellIntegrationEnabled: Bool,
         progressIndicatorEnabled: Bool,
-        verticalTabs: Bool,
-        verticalTabsWidth: CGFloat,
-        verticalTabsMinimized: Bool,
         autoHideTabbar: Bool,
         showTermyInTitlebar: Bool
     ) {
@@ -223,9 +214,6 @@ struct TermyNativeConfiguration {
         self.appIcon = appIcon
         self.shellIntegrationEnabled = shellIntegrationEnabled
         self.progressIndicatorEnabled = progressIndicatorEnabled
-        self.verticalTabs = verticalTabs
-        self.verticalTabsWidth = max(120, min(360, verticalTabsWidth))
-        self.verticalTabsMinimized = verticalTabsMinimized
         self.autoHideTabbar = autoHideTabbar
         self.showTermyInTitlebar = showTermyInTitlebar
     }
@@ -240,9 +228,6 @@ struct TermyNativeConfiguration {
         appIcon = TermyAppIcon(rawValue: ffiConfig.app_icon) ?? .default
         shellIntegrationEnabled = ffiConfig.shell_integration_enabled
         progressIndicatorEnabled = ffiConfig.progress_indicator_enabled
-        verticalTabs = ffiConfig.vertical_tabs
-        verticalTabsWidth = CGFloat(max(120, min(360, ffiConfig.vertical_tabs_width)))
-        verticalTabsMinimized = ffiConfig.vertical_tabs_minimized
         autoHideTabbar = ffiConfig.auto_hide_tabbar
         showTermyInTitlebar = ffiConfig.show_termy_in_titlebar
     }

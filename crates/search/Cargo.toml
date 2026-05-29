@@ -8,6 +8,6 @@ workspace = true
 
 [dependencies]
 regex = "1"
-unicode-width = "0.2"
+unicode-width = { workspace = true }
 
 [dev-dependencies]

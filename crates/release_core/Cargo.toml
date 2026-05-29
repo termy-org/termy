@@ -7,7 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-anyhow = "1"
-ureq = { version = "2", features = ["json"] }
-serde = { version = "1", features = ["derive"] }
-semver = "1"
+anyhow = { workspace = true }
+ureq = { workspace = true }
+serde = { workspace = true }
+semver = { workspace = true }

@@ -7,8 +7,7 @@
     "search",
     "command-palette",
     "tmux-sessions",
-    "tasks-layouts",
-    "plugins"
+    "tasks-layouts"
   ],
   "defaultOpen": true
 }

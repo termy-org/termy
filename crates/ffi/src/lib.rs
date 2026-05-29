@@ -213,9 +213,6 @@ pub struct TermyFfiNativeConfig {
     pub app_icon: u32,
     pub shell_integration_enabled: bool,
     pub progress_indicator_enabled: bool,
-    pub vertical_tabs: bool,
-    pub vertical_tabs_width: f32,
-    pub vertical_tabs_minimized: bool,
     pub auto_hide_tabbar: bool,
     pub show_termy_in_titlebar: bool,
 }
@@ -865,9 +862,6 @@ pub unsafe extern "C" fn termy_config_native(
             },
             shell_integration_enabled: app_config.shell_integration_enabled,
             progress_indicator_enabled: app_config.progress_indicator_enabled,
-            vertical_tabs: app_config.vertical_tabs,
-            vertical_tabs_width: app_config.vertical_tabs_width,
-            vertical_tabs_minimized: app_config.vertical_tabs_minimized,
             auto_hide_tabbar: app_config.auto_hide_tabbar,
             show_termy_in_titlebar: app_config.show_termy_in_titlebar,
         };
@@ -2200,7 +2194,7 @@ mod tests {
 
     #[test]
     fn config_from_contents_exposes_safety_config() {
-        let contents = b"warn_on_quit = true\nwarn_on_quit_with_running_process = false\nsimple_mode = true\nnative_tab_persistence = true\nnative_layout_autosave = true\nnative_buffer_persistence = true\nchrome_contrast = true\ncommand_palette_show_keybinds = false\napp_icon = old\nshell_integration_enabled = false\nprogress_indicator_enabled = false\nvertical_tabs = true\nvertical_tabs_width = 260\nvertical_tabs_minimized = true\nauto_hide_tabbar = false\nshow_termy_in_titlebar = false\n";
+        let contents = b"warn_on_quit = true\nwarn_on_quit_with_running_process = false\nsimple_mode = true\nnative_tab_persistence = true\nnative_layout_autosave = true\nnative_buffer_persistence = true\nchrome_contrast = true\ncommand_palette_show_keybinds = false\napp_icon = old\nshell_integration_enabled = false\nprogress_indicator_enabled = false\nauto_hide_tabbar = false\nshow_termy_in_titlebar = false\n";
         let mut config = ptr::null_mut();
         assert_eq!(
             unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) },
@@ -2229,9 +2223,6 @@ mod tests {
         assert_eq!(native.app_icon, 1);
         assert!(!native.shell_integration_enabled);
         assert!(!native.progress_indicator_enabled);
-        assert!(native.vertical_tabs);
-        assert_eq!(native.vertical_tabs_width, 260.0);
-        assert!(native.vertical_tabs_minimized);
         assert!(!native.auto_hide_tabbar);
         assert!(!native.show_termy_in_titlebar);
 

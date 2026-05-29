@@ -7,7 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-dirs = "6.0"
+dirs = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

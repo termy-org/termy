@@ -194,9 +194,6 @@ typedef struct {
   uint32_t app_icon;
   bool shell_integration_enabled;
   bool progress_indicator_enabled;
-  bool vertical_tabs;
-  float vertical_tabs_width;
-  bool vertical_tabs_minimized;
   bool auto_hide_tabbar;
   bool show_termy_in_titlebar;
 } TermyFfiNativeConfig;

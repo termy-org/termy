@@ -5,19 +5,19 @@ set shell := ["bash", "-cu"]
     just --list
 
 run:
-    cargo run --release
+    cargo run -p termy --release
 
 run-macos:
     cd macos && ./script/build_and_run.sh
 
 test:
-    cargo test --release
+    cargo test -p termy --release
 
 dev:
-    cargo watch -x "run --release"
+    cargo watch -x "run -p termy --release"
 
 build:
-    cargo build --release
+    cargo build -p termy --release
 
 check:
     cargo check --workspace
@@ -36,16 +36,7 @@ generate-icon:
 build-dmg *args:
     set -- {{ args }}; \
     if [ "${1-}" = "--" ]; then shift; fi; \
-    ./scripts/build-dmg.sh "$@"
-
-# Build signed/notarized macOS DMG
-# Example:
-
-# just build-dmg-signed -- --sign-identity "Developer ID Application: Your Name (TEAMID)" --notary-profile TERMY_NOTARY
-build-dmg-signed *args:
-    set -- {{ args }}; \
-    if [ "${1-}" = "--" ]; then shift; fi; \
-    ./scripts/build-dmg-signed.sh "$@"
+    ./macos/scripts/build-dmg.sh "$@"
 
 # Build Windows Setup.exe via Inno Setup
 # Example:
@@ -83,12 +74,12 @@ check-boundaries:
 test-tmux-integration:
     cargo test -p termy_terminal_ui --test tmux_split_integration -- --ignored --nocapture --test-threads=1
 
-# Bump version in root + cli Cargo.toml. Kind: major | minor | patch
+# Bump version in desktop app + cli Cargo.toml. Kind: major | minor | patch
 bump kind:
     #!/usr/bin/env bash
     set -euo pipefail
     KIND="{{ kind }}"
-    CURRENT=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+    CURRENT=$(grep -m1 '^version = ' crates/desktop_app/Cargo.toml | sed -E 's/version = "(.*)"/\1/')
     IFS=. read -r MAJOR MINOR PATCH <<<"$CURRENT"
     case "$KIND" in
       major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
@@ -98,6 +89,6 @@ bump kind:
     esac
     NEW="$MAJOR.$MINOR.$PATCH"
     export NEW
-    perl -i -pe 's/^version = ".*"/version = "$ENV{NEW}"/ if !$done++' Cargo.toml
+    perl -i -pe 's/^version = ".*"/version = "$ENV{NEW}"/ if !$done++' crates/desktop_app/Cargo.toml
     perl -i -pe 's/^version = ".*"/version = "$ENV{NEW}"/ if !$done++' crates/cli/Cargo.toml
     echo "Bumped $CURRENT -> $NEW"

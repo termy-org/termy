@@ -374,8 +374,6 @@ fn bool_root_setting_value(config: &AppConfig, setting: RootSettingId) -> Option
         }
         RootSettingId::TabTitleShellIntegration => Some(config.tab_title.shell_integration),
         RootSettingId::TabSwitchModifierHints => Some(config.tab_switch_modifier_hints),
-        RootSettingId::VerticalTabs => Some(config.vertical_tabs),
-        RootSettingId::VerticalTabsMinimized => Some(config.vertical_tabs_minimized),
         RootSettingId::AutoHideTabbar => Some(config.auto_hide_tabbar),
         RootSettingId::ShowTermyInTitlebar => Some(config.show_termy_in_titlebar),
         RootSettingId::CursorBlink => Some(config.cursor_blink),
@@ -437,7 +435,6 @@ fn numeric_keys_parse_table_driven() {
     let defaults = parse("");
 
     let positive_float_cases = [
-        ("vertical_tabs_width", 260.0, defaults.vertical_tabs_width),
         ("window_width", 1100.0, defaults.window_width),
         ("window_height", 700.0, defaults.window_height),
         ("font_size", 16.0, defaults.font_size),
@@ -445,7 +442,6 @@ fn numeric_keys_parse_table_driven() {
     for (key, expected, fallback) in positive_float_cases {
         let valid = parse(&format!("{key} = {expected}\n"));
         let parsed = match key {
-            "vertical_tabs_width" => valid.vertical_tabs_width,
             "window_width" => valid.window_width,
             "window_height" => valid.window_height,
             "font_size" => valid.font_size,
@@ -455,7 +451,6 @@ fn numeric_keys_parse_table_driven() {
 
         let invalid = parse(&format!("{key} = -1\n"));
         let parsed = match key {
-            "vertical_tabs_width" => invalid.vertical_tabs_width,
             "window_width" => invalid.window_width,
             "window_height" => invalid.window_height,
             "font_size" => invalid.font_size,

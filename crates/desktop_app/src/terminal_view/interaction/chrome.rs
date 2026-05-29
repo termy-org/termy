@@ -1,0 +1,103 @@
+use super::*;
+use crate::terminal_view::tab_strip::state::TabStripOrientation;
+
+impl TerminalView {
+    pub(in super::super) fn tab_strip_orientation(&self) -> TabStripOrientation {
+        TabStripOrientation::Horizontal
+    }
+
+    pub(in super::super) fn terminal_content_position(
+        &self,
+        position: gpui::Point<Pixels>,
+    ) -> (f32, f32) {
+        let x: f32 = position.x.into();
+        let y: f32 = position.y.into();
+        (
+            x,
+            Self::window_y_to_terminal_content_y(y, self.terminal_content_top_inset()),
+        )
+    }
+
+    pub(in super::super) fn window_y_to_terminal_content_y(
+        window_y: f32,
+        chrome_height: f32,
+    ) -> f32 {
+        window_y - chrome_height
+    }
+
+    pub(in super::super) const fn titlebar_height() -> f32 {
+        if TITLEBAR_HEIGHT > TABBAR_HEIGHT {
+            TITLEBAR_HEIGHT
+        } else {
+            TABBAR_HEIGHT
+        }
+    }
+
+    pub(in super::super) fn window_titlebar_height_for(
+        _sidebar_tabs: bool,
+        _show_tab_strip_chrome: bool,
+    ) -> f32 {
+        Self::titlebar_height()
+    }
+
+    fn terminal_content_top_inset_for(
+        sidebar_tabs: bool,
+        show_tab_strip_chrome: bool,
+        _show_update_banner: bool,
+    ) -> f32 {
+        Self::window_titlebar_height_for(sidebar_tabs, show_tab_strip_chrome)
+    }
+
+    pub(in super::super) fn terminal_content_top_inset(&self) -> f32 {
+        Self::terminal_content_top_inset_for(
+            false,
+            self.should_render_tab_strip_chrome(),
+            self.update_banner_visible(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_y_to_terminal_content_y_subtracts_non_zero_chrome() {
+        assert_eq!(
+            TerminalView::window_y_to_terminal_content_y(120.0, 34.0),
+            86.0
+        );
+    }
+
+    #[test]
+    fn window_y_to_terminal_content_y_is_identity_when_chrome_is_zero() {
+        assert_eq!(
+            TerminalView::window_y_to_terminal_content_y(120.0, 0.0),
+            120.0
+        );
+    }
+
+    #[test]
+    fn window_y_to_terminal_content_y_can_be_negative_when_cursor_is_above_chrome() {
+        assert_eq!(
+            TerminalView::window_y_to_terminal_content_y(20.0, 40.0),
+            -20.0
+        );
+    }
+
+    #[test]
+    fn window_titlebar_height_keeps_horizontal_strip_height() {
+        assert_eq!(
+            TerminalView::window_titlebar_height_for(false, true),
+            TerminalView::titlebar_height()
+        );
+    }
+
+    #[test]
+    fn terminal_content_top_inset_ignores_floating_update_panel_for_horizontal_tabs() {
+        assert_eq!(
+            TerminalView::terminal_content_top_inset_for(false, true, true),
+            TerminalView::titlebar_height()
+        );
+    }
+}

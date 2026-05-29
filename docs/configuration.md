@@ -250,21 +250,6 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 - Show secondary+1..9 number badges on the first nine tabs while the secondary modifier is held
 - Group: `TAB STRIP`
 
-`vertical_tabs`
-- Default: `false`
-- Move the tab strip into a left sidebar like cmux
-- Group: `TAB STRIP`
-
-`vertical_tabs_width`
-- Default: `220`
-- Saved width for the vertical tab sidebar in pixels
-- Group: `TAB STRIP`
-
-`vertical_tabs_minimized`
-- Default: `false`
-- Start vertical tabs in the collapsed state
-- Group: `TAB STRIP`
-
 `auto_hide_tabbar`
 - Default: `true`
 - Hide the tab bar when only one tab is open

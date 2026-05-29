@@ -9,7 +9,7 @@ usage() {
 Usage: $0 [--version VERSION] [--arch ARCH] [--target TARGET] [--format FORMAT]
 
 Options:
-  --version VERSION   Set version (default: read from Cargo.toml)
+  --version VERSION   Set version (default: read from crates/desktop_app/Cargo.toml)
   --arch ARCH         Set architecture (x86_64 or aarch64)
   --target TARGET     Set target triple (x86_64-unknown-linux-gnu or aarch64-unknown-linux-gnu)
   --format FORMAT     Output format: tarball (default) or appimage
@@ -44,7 +44,7 @@ read_version_from_cargo_toml() {
       print $3
       exit
     }
-  ' "$REPO_ROOT/Cargo.toml"
+  ' "$REPO_ROOT/crates/desktop_app/Cargo.toml"
 }
 
 arch_to_target() {
@@ -102,7 +102,7 @@ done
 
 if [[ -z "$VERSION" ]]; then
   VERSION="$(read_version_from_cargo_toml)"
-  [[ -n "$VERSION" ]] || die "Could not read version from Cargo.toml"
+  [[ -n "$VERSION" ]] || die "Could not read version from crates/desktop_app/Cargo.toml"
 fi
 
 if [[ -z "$ARCH" && -z "$TARGET" ]]; then
@@ -140,7 +140,7 @@ if [[ "$FORMAT" == "appimage" ]]; then
 fi
 
 log "Building $APP_NAME v$VERSION for $ARCH ($TARGET)"
-(cd "$REPO_ROOT" && cargo build --release --target "$TARGET")
+(cd "$REPO_ROOT" && cargo build --release --target "$TARGET" -p termy)
 
 [[ -f "$BINARY_PATH" ]] || die "Binary not found at $BINARY_PATH"
 

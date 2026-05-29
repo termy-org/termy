@@ -136,9 +136,6 @@ fn render_keybindings_doc() -> String {
     }
 
     output.push_str("`secondary` maps to `cmd` on macOS and `ctrl` on non-macOS platforms.\n\n");
-    output.push_str("Notes:\n\n");
-    output.push_str("- `toggle_vertical_tab_sidebar` only works when `vertical_tabs = true`; enable it in Settings > Tabs or in `~/.config/termy/config.txt`.\n\n");
-
     output.push_str("## Config Syntax\n\n");
     output.push_str("Supported forms:\n\n");
     output.push_str("- `keybind = clear`\n");
@@ -379,12 +376,6 @@ mod tests {
         assert!(out.contains("resize_pane_left`"));
         assert!(!out.contains("resize_pane_left` (tmux required)"));
         assert!(out.contains("toggle_command_palette`"));
-    }
-
-    #[test]
-    fn keybindings_doc_notes_disabled_sidebar_shortcuts() {
-        let out = render_keybindings_doc();
-        assert!(out.contains("vertical_tabs = true"));
     }
 
     #[test]

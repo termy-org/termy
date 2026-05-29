@@ -42,7 +42,6 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-f` -> `open_search`
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
-- `secondary-b` -> `toggle_vertical_tab_sidebar`
 - `secondary-m` -> `minimize_window`
 - `secondary-c` -> `copy`
 - `secondary-v` -> `paste`
@@ -83,7 +82,6 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-f` -> `open_search`
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
-- `secondary-b` -> `toggle_vertical_tab_sidebar`
 - `secondary-c` -> `copy`
 - `secondary-v` -> `paste`
 
@@ -123,7 +121,6 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-f` -> `open_search`
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
-- `secondary-b` -> `toggle_vertical_tab_sidebar`
 - `ctrl-shift-c` -> `copy`
 - `ctrl-shift-v` -> `paste`
 
@@ -163,15 +160,10 @@ Termy keybindings use Ghostty-style trigger overrides via repeated `keybind` lin
 - `secondary-f` -> `open_search`
 - `secondary-g` -> `search_next`
 - `secondary-shift-g` -> `search_previous`
-- `secondary-b` -> `toggle_vertical_tab_sidebar`
 - `ctrl-shift-c` -> `copy`
 - `ctrl-shift-v` -> `paste`
 
 `secondary` maps to `cmd` on macOS and `ctrl` on non-macOS platforms.
-
-Notes:
-
-- `toggle_vertical_tab_sidebar` only works when `vertical_tabs = true`; enable it in Settings > Tabs or in `~/.config/termy/config.txt`.
 
 ## Config Syntax
 
@@ -254,7 +246,6 @@ Related UI option:
 - `toggle_search_regex`
 - `install_cli`
 - `toggle_tab_bar_visibility`
-- `toggle_vertical_tab_sidebar`
 
 ## Customization Examples
 

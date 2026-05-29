@@ -7,9 +7,6 @@ struct TerminalWorkspaceView: View {
     @State private var workspacePersistenceError: String?
     @State private var didRestoreWorkspace = false
     @State private var persistenceSaveTask: Task<Void, Never>?
-    @State private var nativeTabWindow: NSWindow?
-    @State private var nativeTabItems: [NativeTabSidebarItem] = []
-    @State private var selectedNativeTabID: NativeTabSidebarItem.ID?
     private let workspacePersistence = TerminalWorkspacePersistence()
     private let shouldRestorePersistedWorkspace: Bool
 
@@ -19,19 +16,15 @@ struct TerminalWorkspaceView: View {
     }
 
     var body: some View {
-        workspaceLayout
+        workspaceContent
             .background(TerminalWorkspaceRoutingView(
                 store: store,
-                onWindowChanged: { window in
-                    nativeTabWindow = window
-                    refreshNativeTabSidebar()
-                }
+                onWindowChanged: { _ in }
             ))
             .focusedValue(\.terminalCommands, commandSet)
             .onAppear {
                 TerminalCommandRouter.shared.activate(store)
                 restoreWorkspaceIfNeeded()
-                refreshNativeTabSidebar()
             }
             .onDisappear {
                 persistWorkspace()
@@ -39,50 +32,13 @@ struct TerminalWorkspaceView: View {
             .onReceive(store.objectWillChange) { _ in
                 scheduleWorkspacePersistence()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .termyNativeTabsChanged)) { _ in
-                refreshNativeTabSidebar()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-                refreshNativeTabSidebar()
-            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                 persistWorkspace()
             }
     }
 
-    @ViewBuilder
-    private var workspaceLayout: some View {
-        if TermyAppConfiguration.current.native.verticalTabs {
-            HStack(spacing: 0) {
-                TerminalNativeTabSidebar(
-                    items: nativeTabItems,
-                    selectedID: $selectedNativeTabID,
-                    minimized: TermyAppConfiguration.current.native.verticalTabsMinimized,
-                    onSelect: { id in
-                        NativeTabWindowManager.shared.selectNativeTab(id: id)
-                    },
-                    onNewTab: {
-                        NativeTabWindowManager.shared.openNativeTab()
-                    },
-                    onClose: { id in
-                        NativeTabWindowManager.shared.closeNativeTab(id: id)
-                    }
-                )
-                .frame(width: TermyAppConfiguration.current.native.verticalTabsMinimized
-                    ? 54
-                    : TermyAppConfiguration.current.native.verticalTabsWidth)
-
-                Divider()
-
-                workspaceContent
-            }
-        } else {
-            workspaceContent
-        }
-    }
-
     private var workspaceContent: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             if let zoomedPane = store.zoomedPane {
                 TerminalPaneLeafView(pane: zoomedPane, store: store)
             } else {
@@ -134,17 +90,34 @@ struct TerminalWorkspaceView: View {
                     onClose: store.hideSearch
                 )
                 .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .zIndex(10)
             }
 
             if store.isCommandPaletteVisible {
+                commandPaletteOverlay
+                    .zIndex(12)
+            }
+        }
+    }
+
+    private var commandPaletteOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.12)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    store.hideCommandPalette()
+                }
+
+            VStack(spacing: 0) {
                 TerminalCommandPalette(
                     commandSet: commandSet,
                     onClose: store.hideCommandPalette
                 )
-                .padding(.top, 48)
-                .zIndex(12)
+                Spacer(minLength: 0)
             }
+            .padding(.top, 60)
         }
     }
 
@@ -271,11 +244,6 @@ struct TerminalWorkspaceView: View {
         }
     }
 
-    private func refreshNativeTabSidebar() {
-        let items = NativeTabWindowManager.shared.sidebarItems(for: nativeTabWindow)
-        nativeTabItems = items
-        selectedNativeTabID = items.first(where: \.isSelected)?.id ?? items.first?.id
-    }
 }
 
 private struct TerminalCommandPalette: View {
@@ -497,88 +465,6 @@ private final class RoutingRegistrationView: NSView {
         registeredWindow = window
         TerminalCommandRouter.shared.register(store, for: window)
         onWindowChanged(window)
-    }
-}
-
-private struct TerminalNativeTabSidebar: View {
-    let items: [NativeTabSidebarItem]
-    @Binding var selectedID: NativeTabSidebarItem.ID?
-    let minimized: Bool
-    let onSelect: (NativeTabSidebarItem.ID) -> Void
-    let onNewTab: () -> Void
-    let onClose: (NativeTabSidebarItem.ID) -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            List(selection: $selectedID) {
-                ForEach(items) { item in
-                    NativeTabSidebarRow(item: item, minimized: minimized)
-                        .tag(item.id)
-                        .contextMenu {
-                            Button("Close Tab") {
-                                onClose(item.id)
-                            }
-                        }
-                }
-            }
-            .listStyle(.sidebar)
-            .onChange(of: selectedID) { _, id in
-                guard let id else {
-                    return
-                }
-                onSelect(id)
-            }
-
-            Divider()
-
-            Button {
-                onNewTab()
-            } label: {
-                if minimized {
-                    Label("New Tab", systemImage: "plus")
-                        .labelStyle(.iconOnly)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                } else {
-                    Label("New Tab", systemImage: "plus")
-                        .labelStyle(.titleAndIcon)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, minimized ? 8 : 12)
-            .padding(.vertical, 8)
-        }
-    }
-}
-
-private struct NativeTabSidebarRow: View {
-    let item: NativeTabSidebarItem
-    let minimized: Bool
-
-    var body: some View {
-        if minimized {
-            Image(systemName: item.isSelected ? "terminal.fill" : "terminal")
-                .frame(maxWidth: .infinity)
-                .help(item.title)
-        } else {
-            HStack(spacing: 10) {
-                Image(systemName: item.isSelected ? "terminal.fill" : "terminal")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
-                        .lineLimit(1)
-
-                    if let subtitle = item.subtitle {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-            }
-        }
     }
 }
 
