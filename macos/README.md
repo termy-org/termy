@@ -1,5 +1,12 @@
 # TermyAlpha
 
+:::warning
+This project has been paused for now. We're not sure where we gonna go with it from here. Feel free to fork and experiment.
+:::
+
+
+Higly experimental not ready for daily use. 
+
 Native macOS 14+ SwiftUI terminal host backed by the repo-local `libtermy`.
 
 ## Run
