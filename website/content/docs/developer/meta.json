@@ -1,5 +1,5 @@
 {
   "title": "Developer",
-  "pages": ["index", "command-boundary", "render-metrics", "libtermy", "libtermy-js"],
+  "pages": ["index", "command-boundary", "render-metrics", "libtermy"],
   "defaultOpen": false
 }

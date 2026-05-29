@@ -11,11 +11,5 @@ AGENT_PROMPT_RENDER_PERF.md
 .claude/settings.local.json
 .build
 
-examples/libtermy-swift/.build
-packages/libtermy-js/dist
-packages/libtermy-js/wasm
-packages/libtermy-js/node_modules
-packages/libtermy-js/src/generated
-
 # DMG build output
 /dist
