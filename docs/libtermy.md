@@ -48,8 +48,6 @@ Use `termy_core::measure_cell(font_family, font_size, line_height)` or
 `TerminalSize` cell width and height from Termy's font metrics instead of
 guessing a monospace ratio in the host app.
 
-See `examples/libtermy-rust/` for a minimal Rust embedding.
-
 ## C ABI
 
 Use `termy_ffi` as an opaque-handle API:
@@ -137,5 +135,4 @@ Cursor style values:
 Search returns visible-frame matches only. Each `TermyFfiSearchMatch` reports the
 row, inclusive start and end columns, and the visible line text that matched.
 
-See `examples/libtermy-c/` and `examples/libtermy-swift/` for C and Swift
-embedding examples.
+The C ABI header is at `crates/ffi/include/termy.h`.

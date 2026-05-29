@@ -14,7 +14,6 @@ members = [
   "crates/themes",
   "crates/terminal_ui",
   "crates/toast_sdk",
-  "crates/wasm",
   "crates/search",
   "crates/xtask",
   "crates/cli",

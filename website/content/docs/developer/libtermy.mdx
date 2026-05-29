@@ -15,10 +15,6 @@ into:
 - `termy_core` — Rust API for a single headless terminal surface.
 - `termy_ffi` — C ABI wrapper over `termy_core`.
 
-For browser embeddings, use [libtermy.js](/docs/developer/libtermy-js), the
-npm package that wraps the same headless model in WASM and includes an xterm.js
-adapter.
-
 The core API owns PTY startup, terminal parsing, input writes, resize, event
 draining, damage snapshots, and renderer-neutral frame snapshots. It does not
 depend on GPUI and does not expose Termy's app chrome, tabs, panes, or tmux
@@ -61,8 +57,6 @@ Use `termy_core::measure_cell(font_family, font_size, line_height)` or
 `termy_core::measure_cell_from_config(&app_config)` to derive the
 `TerminalSize` cell width and height from Termy's font metrics instead of
 guessing a monospace ratio in the host app.
-
-See `examples/libtermy-rust/` for a minimal Rust embedding.
 
 ## C ABI
 
@@ -159,7 +153,4 @@ Search returns visible-frame matches only. Each `TermyFfiSearchMatch` reports
 the row, inclusive start and end columns, and the visible line text that
 matched.
 
-## Examples
-
-See `examples/libtermy-c/` and `examples/libtermy-swift/` for C and Swift
-embedding examples.
+The C ABI header is at `crates/ffi/include/termy.h`.

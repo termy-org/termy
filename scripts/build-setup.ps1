@@ -112,7 +112,7 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
 $cargoToml = Join-Path $repoRoot "crates\desktop_app\Cargo.toml"
-$issPath = Join-Path $repoRoot "installer\termy.iss"
+$issPath = Join-Path $repoRoot "scripts\installer\termy.iss"
 $iconPath = Join-Path $repoRoot "assets\termy.ico"
 
 if (-not (Test-Path $cargoToml)) {

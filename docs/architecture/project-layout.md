@@ -9,18 +9,16 @@ Termy is a single repository with several product surfaces. Keep changes in the 
 - `crates/core/` owns the reusable headless libtermy runtime/API used by embedders. It must stay independent of GPUI and app UI code.
 - `crates/terminal_ui/` owns the GPUI-facing terminal grid/runtime adapter, native pane model, and tmux support used by the desktop app.
 - `crates/config_core/`, `crates/command_core/`, `crates/theme_core/`, and `crates/search/` own pure domain logic shared by the app, CLI, docs generation, and embedding surfaces.
-- `crates/ffi/` and `crates/wasm/` expose libtermy to C-compatible hosts and WebAssembly consumers.
-- `packages/libtermy-js/` owns the JavaScript package around the WASM build and browser renderer helpers.
-- `examples/` contains consumer-facing examples for Rust, C, Swift, and browser integrations.
+- `crates/ffi/` exposes libtermy to C-compatible hosts.
 - `website/` owns the public website and user-facing docs.
 - `docs/` owns contributor and architecture docs inside the repo.
-- `scripts/`, `installer/`, and `macos/` own packaging, platform, and release support.
+- `scripts/` owns packaging, platform, and release support.
 
 ## Boundary Rules
 
 - Keep `termy_core` headless. Do not add GPUI, app chrome, command palette, or desktop-window concerns there.
 - Keep pure domain crates free of GPUI and app-specific presentation code.
-- Keep `termy_ffi`, `termy_wasm`, and `libtermy.js` aligned with the reusable core contract rather than copying desktop app behavior.
+- Keep `termy_ffi` aligned with the reusable core contract rather than copying desktop app behavior.
 - Put user-visible app behavior in `crates/desktop_app/`; extract to sibling crates only when the behavior is shared by multiple surfaces or needs isolated tests.
 - Update repo docs and public website docs together when a public behavior or embedding contract changes.
 

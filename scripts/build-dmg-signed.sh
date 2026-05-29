@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cat >&2 <<'EOF'
-Error: signed native Swift DMG packaging is not wired yet.
+# Convenience wrapper around build-dmg.sh that requires a signing identity,
+# so a missing identity fails loudly instead of silently producing an
+# unsigned DMG. All build-dmg.sh options are forwarded.
 
-Use macos/scripts/build-dmg.sh for the current unsigned native DMG path.
-The previous cargo-bundle GPUI signing script is archived at:
-  macos/scripts/experiments/build-gpui-dmg-signed.sh
-EOF
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-exit 2
+if [[ "$*" != *"--sign-identity"* && -z "${TERMY_SIGN_IDENTITY:-}" ]]; then
+  echo "Error: signed build requires --sign-identity NAME or TERMY_SIGN_IDENTITY." >&2
+  echo "       For an unsigned DMG use scripts/build-dmg.sh instead." >&2
+  exit 2
+fi
+
+exec "$SCRIPT_DIR/build-dmg.sh" "$@"

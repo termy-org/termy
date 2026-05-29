@@ -7,9 +7,6 @@ set shell := ["bash", "-cu"]
 run:
     cargo run -p termy --release
 
-run-macos:
-    cd macos && ./script/build_and_run.sh
-
 test:
     cargo test -p termy --release
 
@@ -29,14 +26,14 @@ clean:
 generate-icon:
     ./scripts/generate-icon.sh
 
-# Build macOS app bundle and DMG
+# Build the GPUI Termy app bundle and DMG (unsigned by default)
 # Example:
 
-# just build-dmg -- --version 0.1.0 --arch arm64 --target aarch64-apple-darwin
+# just build-dmg -- --version 0.1.0 --arch arm64 --sign-identity "Developer ID Application: ..."
 build-dmg *args:
     set -- {{ args }}; \
     if [ "${1-}" = "--" ]; then shift; fi; \
-    ./macos/scripts/build-dmg.sh "$@"
+    ./scripts/build-dmg.sh "$@"
 
 # Build Windows Setup.exe via Inno Setup
 # Example:

@@ -34,9 +34,9 @@ AppSupportURL=https://github.com/lassejlv/termy/issues
 AppUpdatesURL=https://github.com/lassejlv/termy/releases
 DefaultDirName={autopf}\Termy
 DefaultGroupName=Termy
-OutputDir=..\target\dist
+OutputDir=..\..\target\dist
 OutputBaseFilename=Termy-{#MyAppVersion}-windows-{#MyArch}-Setup
-SetupIconFile=..\assets\termy.ico
+SetupIconFile=..\..\assets\termy.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -48,7 +48,7 @@ CloseApplications=yes
 RestartApplications=no
 
 [Files]
-Source: "..\target\{#MyTarget}\release\{#MyExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\target\{#MyTarget}\release\{#MyExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Termy"; Filename: "{app}\{#MyExeName}"
