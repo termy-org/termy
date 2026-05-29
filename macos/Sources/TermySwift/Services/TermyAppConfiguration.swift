@@ -185,7 +185,7 @@ struct TermyNativeConfiguration {
         nativeBufferPersistence: false,
         chromeContrast: false,
         commandPaletteShowKeybinds: true,
-        appIcon: .default,
+        appIcon: .old,
         shellIntegrationEnabled: true,
         progressIndicatorEnabled: true,
         autoHideTabbar: true,
@@ -225,7 +225,7 @@ struct TermyNativeConfiguration {
         nativeBufferPersistence = ffiConfig.native_buffer_persistence
         chromeContrast = ffiConfig.chrome_contrast
         commandPaletteShowKeybinds = ffiConfig.command_palette_show_keybinds
-        appIcon = TermyAppIcon(rawValue: ffiConfig.app_icon) ?? .default
+        appIcon = TermyAppIcon(rawValue: ffiConfig.app_icon) ?? .old
         shellIntegrationEnabled = ffiConfig.shell_integration_enabled
         progressIndicatorEnabled = ffiConfig.progress_indicator_enabled
         autoHideTabbar = ffiConfig.auto_hide_tabbar

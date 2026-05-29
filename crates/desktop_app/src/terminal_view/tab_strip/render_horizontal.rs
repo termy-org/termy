@@ -257,7 +257,13 @@ impl TerminalView {
             } else {
                 0.0
             };
-            let available_text_px = Self::tab_title_text_area_width(tab_width, close_slot_width);
+            let icon_slot_width = if is_renaming {
+                0.0
+            } else {
+                TAB_LEADING_ICON_SLOT_WIDTH
+            };
+            let available_text_px =
+                Self::tab_title_text_area_width(tab_width, close_slot_width + icon_slot_width);
             let label = Self::format_tab_label_for_render_measured(
                 &tab_title,
                 available_text_px,
@@ -287,7 +293,7 @@ impl TerminalView {
                     show_tab_pin,
                     close_slot_width,
                     text_padding_x: TAB_TEXT_PADDING_X,
-                    label_centered: true,
+                    label_centered: false,
                     trailing_divider_cover: None,
                     drop_marker_side: self.tab_drop_marker_side(index),
                     open_anim_progress: anim_progress,
@@ -310,19 +316,61 @@ impl TerminalView {
     fn render_action_rail(
         &mut self,
         state: &TabStripRenderState,
-        _palette: &TabStripPalette,
+        palette: &TabStripPalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let mut button_bg = palette.hovered_tab_bg;
+        button_bg.a *= 0.65;
+        let mut button_hover_bg = palette.hovered_tab_bg;
+        button_hover_bg.a = (button_hover_bg.a * 1.45).min(1.0);
+        let mut icon_color = palette.inactive_tab_text;
+        icon_color.a = icon_color.a.max(0.70);
+
         div()
             .id("tabbar-action-rail")
             .relative()
             .flex_none()
             .w(px(state.geometry.action_rail_width))
             .h_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .border_l_1()
+            .border_color(palette.tab_stroke_color)
             .on_scroll_wheel(cx.listener(Self::handle_tab_strip_action_rail_scroll_wheel))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.on_action_rail_mouse_move(event, window, cx);
             }))
+            .child(
+                div()
+                    .id("tabbar-new-tab-button")
+                    .w(px(
+                        TABBAR_NEW_TAB_BUTTON_SIZE.min(state.geometry.action_rail_width)
+                    ))
+                    .h(px(TABBAR_NEW_TAB_BUTTON_SIZE.min(TABBAR_HEIGHT)))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(6.0))
+                    .bg(button_bg)
+                    .text_color(icon_color)
+                    .hover(move |style| style.bg(button_hover_bg))
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _event: &MouseDownEvent, window, cx| {
+                            window.prevent_default();
+                            this.add_tab(cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .child(
+                        gpui::svg()
+                            .path(gpui::SharedString::from("icons/tab_strip/plus.svg"))
+                            .size(px(13.0))
+                            .text_color(icon_color),
+                    ),
+            )
             .into_any_element()
     }
 
@@ -385,6 +433,8 @@ impl TerminalView {
             .w_full()
             .h(px(TABBAR_HEIGHT))
             .flex()
+            .border_b_1()
+            .border_color(palette.tab_stroke_color)
             .children((state.geometry.left_inset_width > 0.0).then(|| {
                 Self::render_left_inset_lane(
                     state.geometry.left_inset_width,

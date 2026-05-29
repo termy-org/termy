@@ -35,6 +35,15 @@ macro_rules! sidebar_icon {
     };
 }
 
+macro_rules! tab_strip_icon {
+    ($name:literal) => {
+        (
+            concat!("icons/tab_strip/", $name, ".svg"),
+            include_bytes!(concat!("../../../assets/icons/tab_strip/", $name, ".svg")) as &[u8],
+        )
+    };
+}
+
 const SETTINGS_ICONS: &[(&str, &[u8])] = &[
     settings_icon!("appearance"),
     settings_icon!("terminal"),
@@ -81,7 +90,18 @@ const COMMAND_PALETTE_ICONS: &[(&str, &[u8])] = &[
 
 const SIDEBAR_ICONS: &[(&str, &[u8])] = &[sidebar_icon!("collapse"), sidebar_icon!("expand")];
 
-const ICON_BUNDLES: &[&[(&str, &[u8])]] = &[SETTINGS_ICONS, COMMAND_PALETTE_ICONS, SIDEBAR_ICONS];
+const TAB_STRIP_ICONS: &[(&str, &[u8])] = &[
+    tab_strip_icon!("plus"),
+    tab_strip_icon!("terminal"),
+    tab_strip_icon!("x"),
+];
+
+const ICON_BUNDLES: &[&[(&str, &[u8])]] = &[
+    SETTINGS_ICONS,
+    COMMAND_PALETTE_ICONS,
+    SIDEBAR_ICONS,
+    TAB_STRIP_ICONS,
+];
 
 impl AssetSource for EmbeddedAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {

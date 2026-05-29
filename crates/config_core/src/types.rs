@@ -116,8 +116,8 @@ impl AppearanceMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AppIcon {
-    #[default]
     TermyDefault,
+    #[default]
     TermyOld,
 }
 

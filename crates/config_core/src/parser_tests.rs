@@ -51,7 +51,7 @@ fn simple_mode_parses_as_boolean_and_defaults_off() {
 
 #[test]
 fn app_icon_parses_default_and_old_values() {
-    assert_eq!(parse("").app_icon, AppIcon::TermyDefault);
+    assert_eq!(parse("").app_icon, AppIcon::TermyOld);
     assert_eq!(
         parse("app_icon = default\n").app_icon,
         AppIcon::TermyDefault
@@ -64,7 +64,7 @@ fn app_icon_parses_default_and_old_values() {
 fn invalid_app_icon_keeps_default_and_reports_diagnostic() {
     let report = parse_report("app_icon = neon\n");
 
-    assert_eq!(report.config.app_icon, AppIcon::TermyDefault);
+    assert_eq!(report.config.app_icon, AppIcon::TermyOld);
     assert_eq!(report.diagnostics.len(), 1);
     assert_eq!(
         report.diagnostics[0].kind,

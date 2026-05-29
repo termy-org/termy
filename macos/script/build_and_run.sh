@@ -17,7 +17,7 @@ APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$EXECUTABLE_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
-ICON_SOURCE="$ROOT_DIR/assets/TermyIcon.png"
+ICON_SOURCE="$ROOT_DIR/assets/termy_old_icon.png"
 ICON_NAME="TermyIcon"
 
 pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true

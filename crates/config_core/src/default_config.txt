@@ -8,7 +8,7 @@ theme_light = termy
 # Theme applied when system appearance is dark
 theme_dark = termy
 # macOS app icon shown in the Dock and app switcher
-app_icon = default
+app_icon = old
 # Increase contrast of non-terminal UI surfaces
 chrome_contrast = false
 # Enable automatic update checks

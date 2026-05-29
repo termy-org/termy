@@ -37,9 +37,9 @@ impl TerminalView {
         let mut inactive_tab_bg = colors.foreground;
         inactive_tab_bg.a = 0.0;
         let mut active_tab_bg = colors.foreground;
-        active_tab_bg.a = self.scaled_chrome_surface_alpha(0.10);
+        active_tab_bg.a = self.scaled_chrome_surface_alpha(0.07);
         let mut hovered_tab_bg = colors.foreground;
-        hovered_tab_bg.a = self.scaled_chrome_surface_alpha(0.05);
+        hovered_tab_bg.a = self.scaled_chrome_surface_alpha(0.045);
         let mut active_tab_text = colors.foreground;
         active_tab_text.a = 0.95;
         let mut inactive_tab_text = colors.foreground;

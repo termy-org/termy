@@ -204,7 +204,10 @@ impl TerminalView {
         } else {
             0.0
         };
-        let base_width = (TAB_TEXT_PADDING_X * 2.0) + text_width + close_slot_width;
+        let base_width = (TAB_TEXT_PADDING_X * 2.0)
+            + TAB_LEADING_ICON_SLOT_WIDTH
+            + text_width
+            + close_slot_width;
         let slack_start = TAB_MIN_WIDTH - TAB_TITLE_LAYOUT_SLACK_PX;
         let slack_end = TAB_MIN_WIDTH + TAB_TITLE_LAYOUT_SLACK_PX;
         let slack_span = (slack_end - slack_start).max(f32::EPSILON);
@@ -437,15 +440,21 @@ mod tests {
             long_text_width,
             TAB_MAX_WIDTH * 2.0,
         );
-        let expected_long = (TAB_TEXT_PADDING_X * 2.0) + long_text_width + TAB_CLOSE_SLOT_WIDTH;
+        let expected_long = (TAB_TEXT_PADDING_X * 2.0)
+            + TAB_LEADING_ICON_SLOT_WIDTH
+            + long_text_width
+            + TAB_CLOSE_SLOT_WIDTH;
         assert_eq!(long_width, expected_long);
 
-        let short_text_width = 64.0;
+        let short_text_width = 34.0;
         let short_width = TerminalView::tab_display_width_for_text_px_with_max(
             short_text_width,
             TAB_MAX_WIDTH * 2.0,
         );
-        let short_base = (TAB_TEXT_PADDING_X * 2.0) + short_text_width + TAB_CLOSE_SLOT_WIDTH;
+        let short_base = (TAB_TEXT_PADDING_X * 2.0)
+            + TAB_LEADING_ICON_SLOT_WIDTH
+            + short_text_width
+            + TAB_CLOSE_SLOT_WIDTH;
         assert!(short_width > short_base);
         assert!(short_width < short_base + TAB_TITLE_LAYOUT_SLACK_PX);
     }

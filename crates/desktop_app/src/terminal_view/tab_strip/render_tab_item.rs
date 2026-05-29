@@ -169,7 +169,12 @@ impl TerminalView {
                     ))
                     .hover(move |style| style.text_color(palette.close_button_hover_text))
                     .cursor_pointer()
-                    .child(div().mt(px(-1.0)).child("×")),
+                    .child(
+                        gpui::svg()
+                            .path(gpui::SharedString::from("icons/tab_strip/x.svg"))
+                            .size(px(10.0))
+                            .text_color(close_text_color),
+                    ),
             )
             .into_any_element()
     }
@@ -328,58 +333,45 @@ impl TerminalView {
             }
         });
 
-        let centered_horizontal =
-            input.label_centered && orientation == TabStripOrientation::Horizontal;
-        let title_leading_padding = if input.is_renaming {
-            0.0
-        } else if centered_horizontal {
-            TAB_CLOSE_SLOT_WIDTH
+        let leading_icon = if !input.is_renaming && orientation == TabStripOrientation::Horizontal {
+            Some(
+                div()
+                    .flex_none()
+                    .w(px(TAB_LEADING_ICON_SLOT_WIDTH))
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .justify_start()
+                    .child(
+                        gpui::svg()
+                            .path(gpui::SharedString::from("icons/tab_strip/terminal.svg"))
+                            .size(px(TAB_LEADING_ICON_SIZE))
+                            .text_color(rename_text_color),
+                    )
+                    .into_any_element(),
+            )
         } else {
-            input.close_slot_width
+            None
         };
-        let title_trailing_padding = if !input.is_renaming && centered_horizontal {
-            TAB_CLOSE_SLOT_WIDTH
-        } else {
-            0.0
-        };
-        let leading_accessory = if Self::tab_accessory_visible(&input) {
-            let accessory = self.render_tab_accessory(
+
+        let trailing_accessory = if Self::tab_accessory_visible(&input) {
+            Some(self.render_tab_accessory(
                 &input,
                 palette,
                 close_text_color,
                 hover_tab_index,
                 close_tab_index,
                 cx,
-            );
-            Some(if orientation == TabStripOrientation::Horizontal {
-                div()
-                    .absolute()
-                    .left(px(input.text_padding_x))
-                    .top_0()
-                    .bottom_0()
-                    .w(px(input.close_slot_width))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(accessory)
-                    .into_any_element()
-            } else {
-                accessory
-            })
+            ))
         } else {
             None
         };
 
-        let tab_shell = tab_shell
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .h_full()
-                    .relative()
-                    .pl(px(title_leading_padding))
-                    .pr(px(title_trailing_padding))
-                    .child(if input.is_renaming {
+        let tab_shell =
+            tab_shell
+                .children(leading_icon)
+                .child(div().flex_1().min_w(px(0.0)).h_full().relative().child(
+                    if input.is_renaming {
                         let rename_alignment = if justify_label_center {
                             InlineInputAlignment::Center
                         } else {
@@ -412,20 +404,29 @@ impl TerminalView {
                             title_text = title_text.justify_center();
                         }
                         title_text.child(input.label).into_any_element()
-                    }),
-            )
-            .children(leading_accessory)
-            .children(trailing_divider_cover.map(|cover_color| {
-                div()
-                    .absolute()
-                    .right_0()
-                    .top_0()
-                    .bottom_0()
-                    .w(px(TAB_STROKE_THICKNESS))
-                    .bg(cover_color)
-            }))
-            .children(drop_marker)
-            .children(Self::render_progress_badge(&input.progress_state, anim));
+                    },
+                ))
+                .children(trailing_accessory)
+                .child(
+                    div()
+                        .absolute()
+                        .right_0()
+                        .top(px(6.0))
+                        .bottom(px(6.0))
+                        .w(px(TAB_STROKE_THICKNESS))
+                        .bg(palette.tab_stroke_color),
+                )
+                .children(trailing_divider_cover.map(|cover_color| {
+                    div()
+                        .absolute()
+                        .right_0()
+                        .top_0()
+                        .bottom_0()
+                        .w(px(TAB_STROKE_THICKNESS))
+                        .bg(cover_color)
+                }))
+                .children(drop_marker)
+                .children(Self::render_progress_badge(&input.progress_state, anim));
 
         if orientation == TabStripOrientation::Horizontal {
             return div()
