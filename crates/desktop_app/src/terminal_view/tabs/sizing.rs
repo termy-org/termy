@@ -483,8 +483,8 @@ mod tests {
 
     #[test]
     fn effective_tab_max_width_shrinks_for_crowded_tabs() {
-        let effective = TerminalView::effective_tab_max_width_for_viewport(1600.0, 8);
-        let expected = (1600.0 - (TAB_HORIZONTAL_PADDING * 2.0) - (TAB_ITEM_GAP * 7.0)) / 8.0;
+        let effective = TerminalView::effective_tab_max_width_for_viewport(1600.0, 10);
+        let expected = (1600.0 - (TAB_HORIZONTAL_PADDING * 2.0) - (TAB_ITEM_GAP * 9.0)) / 10.0;
         assert_float_eq(effective, expected);
         assert!(effective < TAB_MAX_WIDTH);
     }

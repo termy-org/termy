@@ -726,7 +726,7 @@ impl IntoElement for InlineInputElement {
                     let view = prepaint_view.read(cx);
                     let focused = prepaint_focus_handle.is_focused(window);
                     let cursor_visible = view.cursor_visible_for_focus(focused);
-                    let cursor_style = view.cursor_style;
+                    let cursor_style = AppCursorStyle::Line;
                     view.active_inline_input_state().map_or_else(
                         || (String::new(), 0..0, 0, None, focused, false, cursor_style),
                         |state| {

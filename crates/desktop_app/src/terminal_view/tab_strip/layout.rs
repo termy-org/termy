@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::terminal_view::tab_strip::state::TabStripOrientation;
 
-pub(crate) const TAB_STRIP_RAIL_GUTTER_WIDTH: f32 = 2.0;
+pub(crate) const TAB_STRIP_RAIL_GUTTER_WIDTH: f32 = 0.0;
 const TAB_STRIP_LAYOUT_EPSILON: f32 = 0.001;
 #[cfg(target_os = "windows")]
 const WINDOWS_CAPTION_BUTTONS_RESERVED_WIDTH: f32 = 140.0;
@@ -131,16 +131,10 @@ impl TerminalView {
             0.0
         };
         let max_tabs_viewport_width = (max_row_width - action_rail_width - gutter_width).max(0.0);
-        #[cfg(target_os = "windows")]
         let tabs_viewport_width = input
             .content_width
             .map(|width| width.max(0.0).min(max_tabs_viewport_width))
             .unwrap_or(max_tabs_viewport_width);
-        #[cfg(not(target_os = "windows"))]
-        let tabs_viewport_width = {
-            let _ = input.content_width;
-            max_tabs_viewport_width
-        };
         let row_width = (tabs_viewport_width + gutter_width + action_rail_width)
             .min(remaining_after_left)
             .max(0.0);
@@ -150,14 +144,7 @@ impl TerminalView {
         let gutter_start_x = row_start_x + tabs_viewport_width;
         let action_rail_start_x = gutter_start_x + gutter_width;
         let button_size = TABBAR_NEW_TAB_BUTTON_SIZE.min(action_rail_width);
-        // Optical balance: center the button against the terminal edge lane (rail + trailing inset),
-        // then clamp to keep the button fully inside the interactive action rail.
-        let button_center_x =
-            action_rail_start_x + (action_rail_width * 0.5) + (right_inset_width * 0.5);
-        let max_button_start_x =
-            (action_rail_start_x + action_rail_width - button_size).max(action_rail_start_x);
-        let button_start_x =
-            (button_center_x - (button_size * 0.5)).clamp(action_rail_start_x, max_button_start_x);
+        let button_start_x = action_rail_start_x;
         let button_start_y =
             TOP_STRIP_CONTENT_OFFSET_Y + ((TABBAR_HEIGHT - button_size) * 0.5).max(0.0);
         let button_end_x = button_start_x + button_size;

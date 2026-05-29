@@ -1,4 +1,4 @@
-pub(crate) const TABBAR_HEIGHT: f32 = 38.0;
+pub(crate) const TABBAR_HEIGHT: f32 = 32.0;
 pub(crate) const TOP_STRIP_SIDE_PADDING: f32 = 8.0;
 #[cfg(macos_sdk_26)]
 pub(crate) const TOP_STRIP_MACOS_TRAFFIC_LIGHT_PADDING: f32 = 78.0;
@@ -10,7 +10,7 @@ pub(crate) const TOP_STRIP_TERMY_BRANDING_FONT_SIZE: f32 = 12.0;
 pub(crate) const TOP_STRIP_TERMY_BRANDING_SIDE_PADDING: f32 = 10.0;
 pub(crate) const TOP_STRIP_TERMY_BRANDING_TAB_GAP: f32 = 8.0;
 pub(crate) const TAB_HORIZONTAL_PADDING: f32 = 0.0;
-pub(crate) const TAB_ITEM_HEIGHT: f32 = TABBAR_HEIGHT;
+pub(crate) const TAB_ITEM_HEIGHT: f32 = 28.0;
 pub(crate) const TAB_ITEM_GAP: f32 = 0.0;
 pub(crate) const TAB_ITEM_RADIUS: f32 = 0.0;
 pub(crate) const TAB_TEXT_PADDING_X: f32 = 10.0;
@@ -20,8 +20,8 @@ pub(crate) const TAB_HORIZONTAL_TITLE_FONT_SIZE: f32 = 12.0;
 pub(crate) const TAB_TITLE_FONT_SIZE: f32 = 12.0;
 // Adds a small cushion to avoid early clipping from glyph/metrics variance.
 pub(crate) const TAB_TITLE_LAYOUT_SLACK_PX: f32 = 18.0;
-pub(crate) const TAB_MIN_WIDTH: f32 = 104.0;
-pub(crate) const TAB_MAX_WIDTH: f32 = 220.0;
+pub(crate) const TAB_MIN_WIDTH: f32 = 96.0;
+pub(crate) const TAB_MAX_WIDTH: f32 = 180.0;
 pub(crate) const TAB_ADAPTIVE_GROWTH_FACTOR: f32 = 0.85;
 pub(crate) const TAB_ADAPTIVE_HARD_CAP_RATIO: f32 = 0.60;
 pub(crate) const TAB_CLOSE_SLOT_WIDTH: f32 = 22.0;
@@ -37,8 +37,8 @@ pub(crate) const TAB_DROP_MARKER_INSET_Y: f32 = 3.0;
 pub(crate) const TAB_DRAG_AUTOSCROLL_EDGE_WIDTH: f32 = 32.0;
 pub(crate) const TAB_DRAG_AUTOSCROLL_MAX_STEP: f32 = 24.0;
 #[cfg(not(target_os = "windows"))]
-pub(crate) const TABBAR_ACTION_RAIL_WIDTH: f32 = 38.0;
-pub(crate) const TABBAR_NEW_TAB_BUTTON_SIZE: f32 = 28.0;
+pub(crate) const TABBAR_ACTION_RAIL_WIDTH: f32 = 28.0;
+pub(crate) const TABBAR_NEW_TAB_BUTTON_SIZE: f32 = TAB_ITEM_HEIGHT;
 pub(crate) const TAB_STRIP_SCROLL_EPSILON: f32 = 0.5;
 pub(crate) const TAB_STRIP_WHEEL_DELTA_LINE_REFERENCE_PX: f32 = 16.0;
 pub(crate) const TAB_PROGRESS_BADGE_SIZE: f32 = 8.0;

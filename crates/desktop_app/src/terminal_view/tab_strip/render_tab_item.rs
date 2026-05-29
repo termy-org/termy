@@ -407,15 +407,6 @@ impl TerminalView {
                     },
                 ))
                 .children(trailing_accessory)
-                .child(
-                    div()
-                        .absolute()
-                        .right_0()
-                        .top(px(6.0))
-                        .bottom(px(6.0))
-                        .w(px(TAB_STROKE_THICKNESS))
-                        .bg(palette.tab_stroke_color),
-                )
                 .children(trailing_divider_cover.map(|cover_color| {
                     div()
                         .absolute()

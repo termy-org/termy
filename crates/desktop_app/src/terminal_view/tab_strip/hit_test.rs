@@ -162,14 +162,14 @@ mod tests {
 
     #[cfg(not(target_os = "windows"))]
     #[test]
-    fn interactive_hit_test_excludes_action_rail_empty_space() {
+    fn interactive_hit_test_treats_action_rail_as_new_tab_button() {
         let geometry = TerminalView::tab_strip_geometry_for_viewport_width(1280.0);
         let x = geometry.action_rail_start_x + 1.0;
         let y = (geometry.button_start_y + geometry.button_end_y) * 0.5;
-        assert!(!geometry.new_tab_button_contains(x, y));
+        assert!(geometry.new_tab_button_contains(x, y));
         assert!(geometry.contains_action_rail_x(x));
         assert!(
-            !TerminalView::unified_titlebar_top_chrome_interactive_hit_test_for_geometry(
+            TerminalView::unified_titlebar_top_chrome_interactive_hit_test_for_geometry(
                 x,
                 y,
                 true,
@@ -182,20 +182,10 @@ mod tests {
 
     #[cfg(not(target_os = "windows"))]
     #[test]
-    fn interactive_hit_test_excludes_gutter() {
+    fn interactive_hit_test_has_no_gutter_gap_between_tabs_and_new_tab_button() {
         let geometry = TerminalView::tab_strip_geometry_for_viewport_width(1280.0);
-        let x = geometry.gutter_start_x + (geometry.gutter_width * 0.5);
-        assert!(geometry.contains_gutter_x(x));
-        assert!(
-            !TerminalView::unified_titlebar_top_chrome_interactive_hit_test_for_geometry(
-                x,
-                tab_hit_test_y(),
-                true,
-                geometry,
-                [120.0, 120.0],
-                0.0,
-            )
-        );
+        assert_eq!(geometry.gutter_width, 0.0);
+        assert_eq!(geometry.tabs_viewport_end_x(), geometry.action_rail_start_x);
     }
 
     #[test]

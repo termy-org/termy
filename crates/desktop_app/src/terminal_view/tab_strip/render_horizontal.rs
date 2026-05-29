@@ -320,7 +320,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let mut button_bg = palette.hovered_tab_bg;
-        button_bg.a *= 0.65;
+        button_bg.a = 0.0;
         let mut button_hover_bg = palette.hovered_tab_bg;
         button_hover_bg.a = (button_hover_bg.a * 1.45).min(1.0);
         let mut icon_color = palette.inactive_tab_text;
@@ -335,8 +335,6 @@ impl TerminalView {
             .flex()
             .items_center()
             .justify_center()
-            .border_l_1()
-            .border_color(palette.tab_stroke_color)
             .on_scroll_wheel(cx.listener(Self::handle_tab_strip_action_rail_scroll_wheel))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 this.on_action_rail_mouse_move(event, window, cx);
@@ -344,14 +342,12 @@ impl TerminalView {
             .child(
                 div()
                     .id("tabbar-new-tab-button")
-                    .w(px(
-                        TABBAR_NEW_TAB_BUTTON_SIZE.min(state.geometry.action_rail_width)
-                    ))
+                    .w_full()
                     .h(px(TABBAR_NEW_TAB_BUTTON_SIZE.min(TABBAR_HEIGHT)))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(6.0))
+                    .rounded(px(0.0))
                     .bg(button_bg)
                     .text_color(icon_color)
                     .hover(move |style| style.bg(button_hover_bg))

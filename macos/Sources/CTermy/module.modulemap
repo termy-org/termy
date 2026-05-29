@@ -1,4 +1,0 @@
-module CTermy [system] {
-  header "CTermy.h"
-  export *
-}
