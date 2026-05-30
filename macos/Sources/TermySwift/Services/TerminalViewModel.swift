@@ -16,6 +16,9 @@ final class TerminalViewModel: ObservableObject {
 
     private var terminal: LibTermyTerminal?
     private var timer: Timer?
+    private var cadence: RefreshCadence = .active
+    private var lastActivityAt = Date()
+    private static let idleCadenceThreshold: TimeInterval = 0.4
     private var lastResize: TerminalResize?
     private var settingsObserver: NSObjectProtocol?
     private var appearanceObserver: NSObjectProtocol?
@@ -47,12 +50,7 @@ final class TerminalViewModel: ObservableObject {
             isExited = false
             startupRefreshUntil = Date().addingTimeInterval(2)
             refresh(force: true)
-            timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) {
-                [weak self] _ in
-                Task { @MainActor in
-                    self?.refresh()
-                }
-            }
+            startRefreshTimer(.active)
             settingsObserver = NotificationCenter.default.addObserver(
                 forName: .termySettingsChanged,
                 object: nil,
@@ -74,6 +72,37 @@ final class TerminalViewModel: ObservableObject {
         } catch {
             report(error)
         }
+    }
+
+    /// Drives the polling cadence: 60 Hz while the terminal is actively producing
+    /// output or receiving input (snappy), backing off to 15 Hz once idle to save
+    /// CPU/battery. The expensive frame snapshot is still damage-gated in
+    /// `refresh()`, so this only changes how often we poll the FFI for activity.
+    private func startRefreshTimer(_ cadence: RefreshCadence) {
+        self.cadence = cadence
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: cadence.interval, repeats: true) {
+            [weak self] _ in
+            Task { @MainActor in
+                self?.refresh()
+            }
+        }
+    }
+
+    private func noteActivity() {
+        lastActivityAt = Date()
+        if cadence != .active {
+            startRefreshTimer(.active)
+        }
+    }
+
+    private func adaptCadenceWhenIdle() {
+        guard cadence == .active,
+              Date().timeIntervalSince(lastActivityAt) > Self.idleCadenceThreshold
+        else {
+            return
+        }
+        startRefreshTimer(.idle)
     }
 
     func stop() {
@@ -145,6 +174,7 @@ final class TerminalViewModel: ObservableObject {
         }
         do {
             try terminal?.write(bytes)
+            noteActivity()
             refresh(force: true)
         } catch {
             report(error)
@@ -303,6 +333,13 @@ final class TerminalViewModel: ObservableObject {
             let hasEvents = !events.isEmpty
             let hasDamage = try terminal?.takeDamage() ?? false
             let isStartupRefresh = shouldForceStartupRefresh()
+
+            if hasEvents || hasDamage {
+                noteActivity()
+            } else {
+                adaptCadenceWhenIdle()
+            }
+
             guard force || isStartupRefresh || hasEvents || hasDamage else {
                 return
             }
@@ -459,4 +496,18 @@ private struct TerminalResize: Equatable {
     var rows: UInt16
     var cellWidth: Float
     var cellHeight: Float
+}
+
+private enum RefreshCadence {
+    case active
+    case idle
+
+    var interval: TimeInterval {
+        switch self {
+        case .active:
+            return 1.0 / 60.0
+        case .idle:
+            return 1.0 / 15.0
+        }
+    }
 }
