@@ -7,6 +7,9 @@ const TERMY_TABBING_IDENTIFIER: &str = "com.lassevestergaard.termy.terminal";
 pub type NativeWindowTabCallback = unsafe extern "C" fn(context: *mut c_void);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeWindowHandle(*mut c_void);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeAppKitError {
     WindowHandle,
     NonAppKitHandle,
@@ -57,9 +60,22 @@ pub fn add_window_to_tab_group(
     anchor_window: &gpui::Window,
     window: &gpui::Window,
 ) -> Result<(), NativeAppKitError> {
-    let anchor_view = appkit_ns_view(anchor_window)?;
-    let window_view = appkit_ns_view(window)?;
-    add_window_to_tab_group_for_ns_views(anchor_view, window_view)
+    let anchor_handle = native_window_handle(anchor_window)?;
+    let window_handle = native_window_handle(window)?;
+    add_window_handles_to_tab_group(anchor_handle, window_handle)
+}
+
+pub fn native_window_handle(
+    window: &gpui::Window,
+) -> Result<NativeWindowHandle, NativeAppKitError> {
+    appkit_ns_view(window).map(NativeWindowHandle)
+}
+
+pub fn add_window_handles_to_tab_group(
+    anchor_window: NativeWindowHandle,
+    window: NativeWindowHandle,
+) -> Result<(), NativeAppKitError> {
+    add_window_to_tab_group_for_ns_views(anchor_window.0, window.0)
 }
 
 fn appkit_ns_view(window: &gpui::Window) -> Result<*mut c_void, NativeAppKitError> {

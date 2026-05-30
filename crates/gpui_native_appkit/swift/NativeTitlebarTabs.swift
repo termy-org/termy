@@ -53,6 +53,29 @@ private func windowFromView(_ nsViewRaw: UnsafeMutableRawPointer?) -> NSWindow? 
     return view.window
 }
 
+private func addWindowToTabGroup(anchorWindow: NSWindow, window: NSWindow) {
+    if window.tabbingIdentifier.isEmpty {
+        window.tabbingIdentifier = anchorWindow.tabbingIdentifier
+    }
+    anchorWindow.addTabbedWindow(window, ordered: .above)
+    anchorWindow.tabGroup?.selectedWindow = window
+    showTabBarIfHidden(on: anchorWindow)
+    showTabBarIfHidden(on: window)
+}
+
+private func showTabBarIfHidden(on window: NSWindow) {
+    if window.tabGroup?.isTabBarVisible == true {
+        return
+    }
+    window.toggleTabBar(nil)
+}
+
+private func scheduleShowTabBarIfHidden(on window: NSWindow) {
+    DispatchQueue.main.async {
+        showTabBarIfHidden(on: window)
+    }
+}
+
 private func installNewWindowForTabResponder(
     on window: NSWindow,
     callback: GPUIAppKitNewWindowTabCallback?,
@@ -98,12 +121,14 @@ public func gpui_native_appkit_configure_window_tabbing(
             return -3
         }
 
+        NSWindow.allowsAutomaticWindowTabbing = true
         window.tabbingMode = .preferred
         window.tabbingIdentifier = NSWindow.TabbingIdentifier(String(cString: identifierRaw))
         window.tab.title = titleRaw.map { String(cString: $0) } ?? window.title
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
+        scheduleShowTabBarIfHidden(on: window)
         installNewWindowForTabResponder(
             on: window,
             callback: newWindowTabCallback,
@@ -126,8 +151,14 @@ public func gpui_native_appkit_add_window_to_tab_group(
             return -2
         }
 
-        anchorWindow.addTabbedWindow(window, ordered: .above)
-        anchorWindow.tabGroup?.selectedWindow = window
+        // `addTabbedWindow` can synchronously drive AppKit layout/display. When
+        // invoked from a GPUI action callback, that reenters GPUI while its app
+        // state is already mutably borrowed and aborts with "RefCell already
+        // borrowed". Queue the imperative AppKit mutation onto the next main
+        // turn so GPUI has returned from the current dispatch first.
+        DispatchQueue.main.async {
+            addWindowToTabGroup(anchorWindow: anchorWindow, window: window)
+        }
         return 0
     }
 }

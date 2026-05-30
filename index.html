@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="A fast, minimal terminal emulator built with GPUI." />
+    <title>Termy — Fast, minimal terminal</title>
+    <link rel="icon" href="./assets/termy-mascot-icon.svg" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme {
+        --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+        --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+        --color-ink: #11161c;
+        --color-paper: #ffffff;
+        --color-panel: #f7fafc;
+        --color-line: #e9eef3;
+        --color-muted: #687585;
+        --color-accent: #3ba6e0;
+        --color-accent-strong: #1f7bab;
+
+        --color-shell: #1b212b;
+        --color-shell-line: #2b333f;
+        --color-prompt: #7fd99a;
+        --color-cyan: #5cc4ee;
+      }
+
+      @keyframes blink {
+        0%, 49% { opacity: 1; }
+        50%, 100% { opacity: 0; }
+      }
+      .cursor {
+        animation: blink 1.1s steps(1) infinite;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .cursor { animation: none; }
+      }
+    </style>
+  </head>
+
+  <body class="bg-paper text-ink antialiased selection:bg-accent/20">
+    <!-- soft ambient backdrop -->
+    <div
+      class="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(60rem_40rem_at_70%_-10%,#e9f6ff_0%,transparent_60%)]"
+    ></div>
+
+    <div class="mx-auto w-full max-w-5xl px-5 sm:px-8">
+      <!-- Header -->
+      <header class="flex items-center justify-between py-5">
+        <a href="#" class="flex items-center gap-2.5" aria-label="Termy home">
+          <img src="./assets/termy-mascot-icon.svg" alt="" class="size-8" />
+          <span class="font-mono text-sm font-semibold tracking-tight">termy</span>
+        </a>
+        <nav class="flex items-center gap-1 text-sm">
+          <a
+            class="rounded-md px-3 py-1.5 text-muted transition hover:bg-panel hover:text-ink"
+            href="./docs/configuration.md"
+            >Config</a
+          >
+          <a
+            class="rounded-md px-3 py-1.5 text-muted transition hover:bg-panel hover:text-ink"
+            href="./docs/keybindings.md"
+            >Keybinds</a
+          >
+          <a
+            class="ml-1 inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 font-medium transition hover:border-ink/30 hover:bg-panel"
+            href="https://github.com/termy-org/termy"
+          >
+            <svg viewBox="0 0 16 16" class="size-4" fill="currentColor" aria-hidden="true">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+            </svg>
+            GitHub
+          </a>
+        </nav>
+      </header>
+
+      <!-- Hero -->
+      <section class="pt-12 pb-16 text-center sm:pt-20 sm:pb-24">
+        <a
+          href="https://github.com/termy-org/termy"
+          class="inline-flex items-center gap-2 rounded-full border border-line bg-panel/60 px-3.5 py-1.5 font-mono text-xs text-muted transition hover:border-ink/20 hover:text-ink"
+        >
+          <span class="size-1.5 rounded-full bg-prompt"></span>
+          Built with GPUI &amp; alacritty_terminal
+        </a>
+
+        <h1
+          class="mx-auto mt-7 max-w-3xl text-5xl font-semibold tracking-[-0.03em] text-balance sm:text-6xl lg:text-7xl"
+        >
+          A friendly terminal with
+          <span class="text-accent-strong">native speed.</span>
+        </h1>
+
+        <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-muted text-pretty">
+          Termy is a fast, minimal terminal emulator. Tabs, splits, search,
+          themes, and optional tmux sessions — in one clean native app.
+        </p>
+
+        <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <a
+            href="#install"
+            class="inline-flex h-11 items-center justify-center rounded-lg bg-ink px-6 text-sm font-semibold text-paper shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+          >
+            Install Termy
+          </a>
+          <a
+            href="https://github.com/termy-org/termy"
+            class="inline-flex h-11 items-center justify-center rounded-lg border border-line bg-paper px-6 text-sm font-semibold transition hover:border-ink/30 hover:bg-panel"
+          >
+            View source
+          </a>
+        </div>
+
+        <!-- Terminal window mockup -->
+        <div class="relative mx-auto mt-16 max-w-3xl text-left">
+          <div
+            class="absolute -inset-x-6 -top-4 bottom-0 -z-10 rounded-[2.5rem] bg-[radial-gradient(40rem_20rem_at_50%_0%,#dcefff_0%,transparent_70%)] blur-2xl"
+          ></div>
+          <div
+            class="overflow-hidden rounded-xl border border-shell-line/60 bg-shell shadow-[0_30px_80px_-20px_rgba(27,56,80,0.45)] ring-1 ring-black/5"
+          >
+            <!-- title bar -->
+            <div class="flex items-center gap-4 border-b border-shell-line/70 bg-shell px-4 py-3">
+              <div class="flex items-center gap-2">
+                <span class="size-3 rounded-full bg-[#ff5f57]"></span>
+                <span class="size-3 rounded-full bg-[#febc2e]"></span>
+                <span class="size-3 rounded-full bg-[#28c840]"></span>
+              </div>
+              <!-- tabs -->
+              <div class="flex items-end gap-1 text-xs font-medium">
+                <span class="rounded-md bg-shell-line/80 px-3 py-1 font-mono text-slate-100">main</span>
+                <span class="rounded-md px-3 py-1 font-mono text-slate-400">server</span>
+                <span class="rounded-md px-2 py-1 font-mono text-slate-500">＋</span>
+              </div>
+            </div>
+
+            <!-- terminal body -->
+            <div class="grid grid-cols-1 font-mono text-[13px] leading-relaxed sm:grid-cols-[1.5fr_1fr]">
+              <!-- left pane -->
+              <div class="space-y-1.5 p-5 sm:border-r sm:border-shell-line/50">
+                <p>
+                  <span class="text-cyan">~/dev/termy</span>
+                  <span class="text-prompt"> ❯</span>
+                  <span class="text-slate-200"> cargo run --release</span>
+                </p>
+                <p class="text-slate-400">   Compiling termy v0.4.0</p>
+                <p class="text-slate-400">    Finished `release` in 8.21s</p>
+                <p class="text-prompt">     Running `target/release/termy`</p>
+                <p class="pt-2">
+                  <span class="text-cyan">~/dev/termy</span>
+                  <span class="text-prompt"> ❯</span>
+                  <span class="text-slate-200"> git status</span>
+                </p>
+                <p class="text-slate-400">On branch <span class="text-slate-200">main</span></p>
+                <p class="text-prompt">nothing to commit, working tree clean</p>
+                <p class="pt-2">
+                  <span class="text-cyan">~/dev/termy</span>
+                  <span class="text-prompt"> ❯</span>
+                  <span class="cursor ml-1 inline-block h-4 w-[7px] translate-y-0.5 bg-slate-200"></span>
+                </p>
+              </div>
+              <!-- right pane (split) -->
+              <div class="hidden space-y-1.5 bg-shell/60 p-5 sm:block">
+                <p class="text-slate-500"># split pane · tmux</p>
+                <p><span class="text-prompt">▮</span> <span class="text-slate-300">top — 4 procs</span></p>
+                <p class="text-slate-400">cpu  <span class="text-cyan">12%</span></p>
+                <p class="text-slate-400">mem  <span class="text-cyan">3.1G</span></p>
+                <p class="text-slate-400">net  <span class="text-cyan">↓ 40kb/s</span></p>
+                <p class="pt-2 text-slate-500"># search · ⌘F</p>
+                <p class="text-slate-300">3 matches</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section class="border-t border-line py-16 sm:py-20">
+        <div class="grid gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
+          <article class="bg-paper p-6">
+            <h2 class="text-base font-semibold">GPU rendering</h2>
+            <p class="mt-2 text-sm leading-6 text-muted">
+              Dirty-span cell caching keeps the terminal responsive under heavy output.
+            </p>
+          </article>
+          <article class="bg-paper p-6">
+            <h2 class="text-base font-semibold">Tabs &amp; splits</h2>
+            <p class="mt-2 text-sm leading-6 text-muted">
+              Pin, reorder, split, resize, and zoom panes without leaving the keyboard.
+            </p>
+          </article>
+          <article class="bg-paper p-6">
+            <h2 class="text-base font-semibold">Search</h2>
+            <p class="mt-2 text-sm leading-6 text-muted">
+              Find across scrollback instantly, with match highlighting as you type.
+            </p>
+          </article>
+          <article class="bg-paper p-6">
+            <h2 class="text-base font-semibold">Themes</h2>
+            <p class="mt-2 text-sm leading-6 text-muted">
+              Built-in themes with config diagnostics and live reload on save.
+            </p>
+          </article>
+          <article class="bg-paper p-6">
+            <h2 class="text-base font-semibold">tmux, optional</h2>
+            <p class="mt-2 text-sm leading-6 text-muted">
+              Attach, switch, and manage sessions when you need persistence.
+            </p>
+          </article>
+          <article class="bg-paper p-6">
+            <h2 class="text-base font-semibold">Native on macOS</h2>
+            <p class="mt-2 text-sm leading-6 text-muted">
+              Context menus, window controls, and OS integrations that feel right.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Install -->
+      <section id="install" class="border-t border-line py-16 sm:py-20">
+        <div class="grid gap-8 md:grid-cols-[0.9fr_1.1fr] md:items-center">
+          <div>
+            <h2 class="text-3xl font-semibold tracking-[-0.02em]">Build it locally.</h2>
+            <p class="mt-4 max-w-md text-base leading-7 text-muted">
+              Termy is Rust-first. Clone the repo and run the release build —
+              configuration lives in your platform config directory.
+            </p>
+            <a
+              href="./README.md"
+              class="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-accent-strong transition hover:gap-2.5"
+            >
+              Read the docs
+              <span aria-hidden="true">→</span>
+            </a>
+          </div>
+
+          <div
+            class="overflow-hidden rounded-xl border border-shell-line/60 bg-shell shadow-[0_24px_60px_-24px_rgba(27,56,80,0.5)]"
+          >
+            <div class="flex items-center justify-between border-b border-shell-line/70 px-4 py-2.5">
+              <span class="font-mono text-xs text-slate-400">terminal</span>
+              <button
+                id="copyBtn"
+                class="rounded-md px-2 py-1 font-mono text-xs text-slate-300 transition hover:bg-shell-line/80 hover:text-white"
+              >
+                Copy
+              </button>
+            </div>
+            <div class="p-5 font-mono text-[13px] leading-relaxed">
+              <p class="text-slate-500"># from the repository root</p>
+              <p class="mt-2">
+                <span class="text-prompt">❯</span>
+                <code id="cmd" class="text-slate-100">cargo run --release -p termy</code>
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="flex flex-col items-center justify-between gap-4 border-t border-line py-8 text-sm text-muted sm:flex-row">
+        <div class="flex items-center gap-2.5">
+          <img src="./assets/termy-mascot-icon.svg" alt="" class="size-6" />
+          <span>© 2026 Termy · MIT License</span>
+        </div>
+        <div class="flex items-center gap-5">
+          <a class="transition hover:text-ink" href="./docs/configuration.md">Config</a>
+          <a class="transition hover:text-ink" href="./docs/keybindings.md">Keybinds</a>
+          <a class="transition hover:text-ink" href="https://github.com/termy-org/termy">GitHub</a>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      const btn = document.getElementById("copyBtn");
+      btn?.addEventListener("click", async () => {
+        const cmd = document.getElementById("cmd")?.textContent ?? "";
+        try {
+          await navigator.clipboard.writeText(cmd);
+          btn.textContent = "Copied ✓";
+          setTimeout(() => (btn.textContent = "Copy"), 1600);
+        } catch {
+          btn.textContent = "Copy failed";
+          setTimeout(() => (btn.textContent = "Copy"), 1600);
+        }
+      });
+    </script>
+  </body>
+</html>
