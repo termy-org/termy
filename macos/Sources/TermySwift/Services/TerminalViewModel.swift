@@ -26,6 +26,7 @@ final class TerminalViewModel: ObservableObject {
     private var startupRefreshUntil: Date?
     private let initialWorkingDirectory: String?
     private let startupCommand: String?
+    private let tmuxSessionHint = String(UUID().uuidString.prefix(8))
     private var activeSearchQuery = ""
     private var activeSearchOptions = TerminalSearchOptions()
     private var lastAutoCopiedSelectionText: String?
@@ -41,9 +42,13 @@ final class TerminalViewModel: ObservableObject {
         }
 
         do {
+            // An explicit startup command (deeplink/task) wins; otherwise launch
+            // inside tmux when the integration is enabled.
+            let effectiveStartupCommand = startupCommand
+                ?? TmuxIntegration.startupCommand(sessionHint: tmuxSessionHint)
             let terminal = try LibTermyTerminal(
                 workingDirectoryOverride: initialWorkingDirectory,
-                startupCommand: startupCommand
+                startupCommand: effectiveStartupCommand
             )
             self.terminal = terminal
             renderConfig = terminal.renderConfig

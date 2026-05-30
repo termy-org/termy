@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsRootView: View {
     static let appearanceSectionID = "appearance"
+    static let shellSectionID = "shell"
 
     @StateObject private var store = SettingsStore()
     @State private var selection: String?
@@ -13,6 +14,16 @@ struct SettingsRootView: View {
         id: SettingsRootView.appearanceSectionID,
         label: "Appearance",
         systemImage: "paintbrush",
+        groups: nil,
+        colors: nil,
+        keybinds: nil
+    )
+
+    /// Native-only section for shell/runtime options like the tmux integration.
+    private let shellSection = SettingsSectionModel(
+        id: SettingsRootView.shellSectionID,
+        label: "Shell",
+        systemImage: "terminal",
         groups: nil,
         colors: nil,
         keybinds: nil
@@ -47,7 +58,7 @@ struct SettingsRootView: View {
 
     private var supportedSections: [SettingsSectionModel] {
         let schemaSections = store.schema?.sections.filter(\.hasSupportedSettings) ?? []
-        return schemaSections + [appearanceSection]
+        return schemaSections + [appearanceSection, shellSection]
     }
 
     private var selectedSection: SettingsSectionModel? {
@@ -102,6 +113,8 @@ private struct SettingsDetailView: View {
             if let section {
                 if section.id == SettingsRootView.appearanceSectionID {
                     LogoSettingsView()
+                } else if section.id == SettingsRootView.shellSectionID {
+                    ShellSettingsView()
                 } else {
                     SettingsSectionView(section: section, store: store)
                 }
@@ -159,6 +172,38 @@ private extension SettingsSectionModel {
         return groups?.reduce(0) { count, group in
             count + group.settings.count
         } ?? 0
+    }
+}
+
+// MARK: - Shell / tmux
+
+private struct ShellSettingsView: View {
+    @State private var tmuxEnabled = TmuxIntegration.isEnabled
+
+    var body: some View {
+        Form {
+            Section("tmux") {
+                Toggle(isOn: $tmuxEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Launch new terminals inside tmux")
+                        Text("Each new tab/window execs into its own tmux session for persistence, splits, and copy-mode. Applies to terminals opened after this is changed.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .onChange(of: tmuxEnabled) { _, newValue in
+                    TmuxIntegration.isEnabled = newValue
+                }
+
+                if !TmuxIntegration.isAvailable {
+                    Label("tmux was not found in /opt/homebrew/bin, /usr/local/bin, or /usr/bin. Install it to use this option.", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Shell")
     }
 }
 
