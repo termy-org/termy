@@ -26,7 +26,8 @@ use commands::{OpenConfig, OpenSettings};
 use deeplink::{DeepLinkArgument, DeepLinkRoute};
 use flume::Receiver;
 use gpui::{
-    App, Application, AsyncApp, Bounds, Pixels, WindowBounds, WindowOptions, prelude::*, px, size,
+    App, Application, AsyncApp, Bounds, Pixels, WindowBounds, WindowHandle, WindowOptions,
+    prelude::*, px, size,
 };
 use startup::StartupBlocker;
 use terminal_view::{TerminalView, initial_window_background_appearance};
@@ -143,7 +144,10 @@ fn should_apply_windows_startup_resize(
         || (f32::from(current.height) - f32::from(desired.height)).abs() > WINDOW_SIZE_EPSILON
 }
 
-fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(), String> {
+fn open_main_window(
+    cx: &mut App,
+    startup_config: config::AppConfig,
+) -> Result<WindowHandle<TerminalView>, String> {
     let window_background = initial_window_background_appearance(&startup_config);
     let startup_window_size = normalized_startup_window_size(&startup_config);
     let bounds = Bounds::centered(None, startup_window_size, cx);
@@ -208,6 +212,9 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
                 {
                     log::error!("Failed to disable automatic macOS titlebar dragging: {error}");
                 }
+                view.update(cx, |view, _cx| {
+                    view.configure_native_window_tabbing(window);
+                });
 
                 let (native_drop_tx, native_drop_rx) = flume::unbounded();
                 match terminal_view::install_native_file_drop(window, native_drop_tx) {
@@ -249,7 +256,6 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
             view
         },
     )
-    .map(|_| ())
     .map_err(|error| format!("Failed to open main window: {error}"))
 }
 
@@ -266,11 +272,23 @@ fn reopen_main_window(cx: &mut App) {
     let _ = open_main_window_with_runtime_config(cx);
 }
 
-pub(crate) fn open_main_window_with_runtime_config(cx: &mut App) -> Result<(), String> {
+pub(crate) fn open_main_window_with_runtime_config(
+    cx: &mut App,
+) -> Result<WindowHandle<TerminalView>, String> {
+    open_main_window_with_runtime_config_overrides(cx, None)
+}
+
+pub(crate) fn open_main_window_with_runtime_config_overrides(
+    cx: &mut App,
+    working_dir: Option<String>,
+) -> Result<WindowHandle<TerminalView>, String> {
     let mut reopen_config_error = None;
     let reopen_load =
         config::load_runtime_config(&mut reopen_config_error, "Failed to load config");
-    let reopen_config = reopen_load.config;
+    let mut reopen_config = reopen_load.config;
+    if let Some(working_dir) = working_dir {
+        reopen_config.working_dir = Some(working_dir);
+    }
     if let Err(blocker) = preflight_tmux_runtime(&reopen_config) {
         let message = blocker.message();
         log::error!("Failed to reopen main window: {message}");
@@ -278,12 +296,10 @@ pub(crate) fn open_main_window_with_runtime_config(cx: &mut App) -> Result<(), S
         return Err(message);
     }
 
-    if let Err(error) = open_main_window(cx, reopen_config) {
+    open_main_window(cx, reopen_config).inspect_err(|error| {
         log::error!("{error}");
         termy_toast::error(error.clone());
-        return Err(error);
-    }
-    Ok(())
+    })
 }
 
 fn focus_or_open_main_window<V: 'static>(

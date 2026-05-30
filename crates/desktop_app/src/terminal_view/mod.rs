@@ -10,6 +10,8 @@ use crate::config::{
 use crate::keybindings;
 use crate::ui::scrollbar::{ScrollbarVisibilityController, ScrollbarVisibilityMode};
 use alacritty_terminal::term::cell::Flags;
+#[cfg(target_os = "macos")]
+use flume::{Receiver, unbounded};
 use flume::{Sender, bounded};
 use gpui::AppContext;
 use gpui::{
@@ -62,6 +64,8 @@ mod inline_input;
 mod interaction;
 #[cfg(target_os = "macos")]
 mod macos_file_drop;
+#[cfg(target_os = "macos")]
+mod native_window_tabs;
 mod overlay_view;
 mod persistence;
 mod render;
@@ -1627,6 +1631,10 @@ pub struct TerminalView {
     update_check_toast_id: Option<u64>,
     #[cfg(target_os = "macos")]
     native_file_drop_enabled: bool,
+    #[cfg(target_os = "macos")]
+    native_window_tab_action_rx: Receiver<native_window_tabs::NativeWindowTabRequest>,
+    #[cfg(target_os = "macos")]
+    native_window_tab_callback_context: usize,
 }
 
 impl TerminalView {
@@ -3636,6 +3644,13 @@ impl TerminalView {
         let focus_handle = cx.focus_handle();
         let blur_focus_handle = focus_handle.clone();
         let (event_wakeup_tx, event_wakeup_rx) = bounded(1);
+        #[cfg(target_os = "macos")]
+        let (native_window_tab_action_tx, native_window_tab_action_rx) = unbounded();
+        #[cfg(target_os = "macos")]
+        let native_window_tab_callback_context = native_window_tabs::leak_callback_context(
+            native_window_tab_action_tx,
+            event_wakeup_tx.clone(),
+        );
         let config_change_rx = config::subscribe_config_changes();
         let background_opacity_preview_rx = config::subscribe_background_opacity_preview();
         #[cfg(test)]
@@ -3683,7 +3698,12 @@ impl TerminalView {
                         window.on_next_frame(move |_window, cx| {
                             terminal_frame_drain_scheduled.store(false, Ordering::Release);
                             let _ = this.update(cx, |view, cx| {
-                                if view.process_terminal_events(cx) {
+                                #[cfg(target_os = "macos")]
+                                let native_tabs_changed =
+                                    view.process_native_window_tab_actions(_window, cx);
+                                #[cfg(not(target_os = "macos"))]
+                                let native_tabs_changed = false;
+                                if view.process_terminal_events(cx) || native_tabs_changed {
                                     cx.notify();
                                 }
                             });
@@ -3987,6 +4007,10 @@ impl TerminalView {
             update_check_toast_id: None,
             #[cfg(target_os = "macos")]
             native_file_drop_enabled: false,
+            #[cfg(target_os = "macos")]
+            native_window_tab_action_rx,
+            #[cfg(target_os = "macos")]
+            native_window_tab_callback_context,
         };
         #[cfg(target_os = "windows")]
         if config.tmux_enabled {

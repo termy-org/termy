@@ -1,17 +1,10 @@
 use std::{error::Error, ffi::CString, fmt, os::raw::c_void};
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use serde::Serialize;
 
-#[repr(i32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NativeTitlebarTabAction {
-    Select = 1,
-    New = 2,
-}
+const TERMY_TABBING_IDENTIFIER: &str = "com.lassevestergaard.termy.terminal";
 
-pub type NativeTitlebarTabCallback =
-    unsafe extern "C" fn(context: *mut c_void, action: i32, tab_id: *const i8);
+pub type NativeWindowTabCallback = unsafe extern "C" fn(context: *mut c_void);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NativeAppKitError {
@@ -19,7 +12,7 @@ pub enum NativeAppKitError {
     NonAppKitHandle,
     MissingView,
     UnsupportedPlatform,
-    InvalidPayload,
+    InvalidString,
     MissingWindow,
     BridgeFailed(i32),
 }
@@ -30,129 +23,43 @@ impl fmt::Display for NativeAppKitError {
             Self::WindowHandle => write!(f, "failed to access the GPUI window handle"),
             Self::NonAppKitHandle => write!(f, "expected a macOS AppKit window handle"),
             Self::MissingView => write!(f, "AppKit window handle did not contain an NSView"),
-            Self::UnsupportedPlatform => write!(f, "native AppKit titlebar tabs require macOS"),
-            Self::InvalidPayload => write!(f, "failed to serialize native titlebar tabs payload"),
+            Self::UnsupportedPlatform => write!(f, "native AppKit tabs require macOS"),
+            Self::InvalidString => write!(f, "failed to pass native tab string to AppKit"),
             Self::MissingWindow => write!(f, "NSView is not attached to an NSWindow"),
-            Self::BridgeFailed(code) => {
-                write!(f, "native AppKit SwiftUI bridge failed with code {code}")
-            }
+            Self::BridgeFailed(code) => write!(f, "native AppKit bridge failed with code {code}"),
         }
     }
 }
 
 impl Error for NativeAppKitError {}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NativeTitlebarTab<'a> {
-    pub id: &'a str,
-    pub title: &'a str,
-    pub is_selected: bool,
-    pub is_pinned: bool,
-    pub is_loading: bool,
-}
-
-impl<'a> NativeTitlebarTab<'a> {
-    pub fn new(id: &'a str, title: &'a str) -> Self {
-        Self {
-            id,
-            title,
-            is_selected: false,
-            is_pinned: false,
-            is_loading: false,
-        }
-    }
-
-    pub fn selected(mut self, selected: bool) -> Self {
-        self.is_selected = selected;
-        self
-    }
-
-    pub fn pinned(mut self, pinned: bool) -> Self {
-        self.is_pinned = pinned;
-        self
-    }
-
-    pub fn loading(mut self, loading: bool) -> Self {
-        self.is_loading = loading;
-        self
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct NativeTitlebarTabsOptions<'a> {
-    pub tabs: &'a [NativeTitlebarTab<'a>],
-    pub selected_id: Option<&'a str>,
-    pub height: f64,
-    pub shows_add_button: bool,
-    pub callback: Option<NativeTitlebarTabCallback>,
-    pub callback_context: *mut c_void,
-}
-
-impl<'a> NativeTitlebarTabsOptions<'a> {
-    pub fn new(tabs: &'a [NativeTitlebarTab<'a>]) -> Self {
-        Self {
-            tabs,
-            selected_id: None,
-            height: 30.0,
-            shows_add_button: true,
-            callback: None,
-            callback_context: std::ptr::null_mut(),
-        }
-    }
-
-    pub fn selected_id(mut self, selected_id: &'a str) -> Self {
-        self.selected_id = Some(selected_id);
-        self
-    }
-
-    pub fn height(mut self, height: f64) -> Self {
-        self.height = height;
-        self
-    }
-
-    pub fn shows_add_button(mut self, shows_add_button: bool) -> Self {
-        self.shows_add_button = shows_add_button;
-        self
-    }
-
-    pub fn callback(mut self, callback: NativeTitlebarTabCallback, context: *mut c_void) -> Self {
-        self.callback = Some(callback);
-        self.callback_context = context;
-        self
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NativeTitlebarTabsPayload<'a> {
-    tabs: Vec<NativeTitlebarTabPayload<'a>>,
-    selected_id: Option<&'a str>,
-    height: f64,
-    shows_add_button: bool,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NativeTitlebarTabPayload<'a> {
-    id: &'a str,
-    title: &'a str,
-    is_selected: bool,
-    is_pinned: bool,
-    is_loading: bool,
-}
-
-pub fn install_or_update_titlebar_tabs(
+pub fn configure_window_tabbing(
     window: &gpui::Window,
-    options: NativeTitlebarTabsOptions<'_>,
+    title: &str,
+) -> Result<(), NativeAppKitError> {
+    configure_window_tabbing_with_callback(window, title, None, std::ptr::null_mut())
+}
+
+pub fn configure_window_tabbing_with_callback(
+    window: &gpui::Window,
+    title: &str,
+    callback: Option<NativeWindowTabCallback>,
+    callback_context: *mut c_void,
 ) -> Result<(), NativeAppKitError> {
     let ns_view = appkit_ns_view(window)?;
-    let payload = payload_json(options)?;
-    install_or_update_titlebar_tabs_for_ns_view(ns_view, &payload, options)
+    let identifier =
+        CString::new(TERMY_TABBING_IDENTIFIER).map_err(|_| NativeAppKitError::InvalidString)?;
+    let title = CString::new(title).map_err(|_| NativeAppKitError::InvalidString)?;
+    configure_window_tabbing_for_ns_view(ns_view, &identifier, &title, callback, callback_context)
 }
 
-pub fn remove_titlebar_tabs(window: &gpui::Window) -> Result<(), NativeAppKitError> {
-    let ns_view = appkit_ns_view(window)?;
-    remove_titlebar_tabs_for_ns_view(ns_view)
+pub fn add_window_to_tab_group(
+    anchor_window: &gpui::Window,
+    window: &gpui::Window,
+) -> Result<(), NativeAppKitError> {
+    let anchor_view = appkit_ns_view(anchor_window)?;
+    let window_view = appkit_ns_view(window)?;
+    add_window_to_tab_group_for_ns_views(anchor_view, window_view)
 }
 
 fn appkit_ns_view(window: &gpui::Window) -> Result<*mut c_void, NativeAppKitError> {
@@ -177,60 +84,46 @@ fn appkit_ns_view(window: &gpui::Window) -> Result<*mut c_void, NativeAppKitErro
     }
 }
 
-fn payload_json(options: NativeTitlebarTabsOptions<'_>) -> Result<CString, NativeAppKitError> {
-    let payload = NativeTitlebarTabsPayload {
-        tabs: options
-            .tabs
-            .iter()
-            .map(|tab| NativeTitlebarTabPayload {
-                id: tab.id,
-                title: tab.title,
-                is_selected: tab.is_selected,
-                is_pinned: tab.is_pinned,
-                is_loading: tab.is_loading,
-            })
-            .collect(),
-        selected_id: options.selected_id,
-        height: options.height,
-        shows_add_button: options.shows_add_button,
-    };
-    let payload = serde_json::to_string(&payload).map_err(|_| NativeAppKitError::InvalidPayload)?;
-    CString::new(payload).map_err(|_| NativeAppKitError::InvalidPayload)
-}
-
-fn install_or_update_titlebar_tabs_for_ns_view(
+fn configure_window_tabbing_for_ns_view(
     ns_view: *mut c_void,
-    payload: &CString,
-    options: NativeTitlebarTabsOptions<'_>,
+    identifier: &CString,
+    title: &CString,
+    callback: Option<NativeWindowTabCallback>,
+    callback_context: *mut c_void,
 ) -> Result<(), NativeAppKitError> {
     #[cfg(target_os = "macos")]
     {
         let status = unsafe {
-            gpui_native_appkit_install_or_update_titlebar_tabs(
+            gpui_native_appkit_configure_window_tabbing(
                 ns_view,
-                payload.as_ptr(),
-                options.callback,
-                options.callback_context,
+                identifier.as_ptr(),
+                title.as_ptr(),
+                callback,
+                callback_context,
             )
         };
         bridge_status(status)
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (ns_view, payload, options);
+        let _ = (ns_view, identifier, title, callback, callback_context);
         Err(NativeAppKitError::UnsupportedPlatform)
     }
 }
 
-fn remove_titlebar_tabs_for_ns_view(ns_view: *mut c_void) -> Result<(), NativeAppKitError> {
+fn add_window_to_tab_group_for_ns_views(
+    anchor_view: *mut c_void,
+    window_view: *mut c_void,
+) -> Result<(), NativeAppKitError> {
     #[cfg(target_os = "macos")]
     {
-        let status = unsafe { gpui_native_appkit_remove_titlebar_tabs(ns_view) };
+        let status =
+            unsafe { gpui_native_appkit_add_window_to_tab_group(anchor_view, window_view) };
         bridge_status(status)
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = ns_view;
+        let _ = (anchor_view, window_view);
         Err(NativeAppKitError::UnsupportedPlatform)
     }
 }
@@ -241,21 +134,25 @@ fn bridge_status(status: i32) -> Result<(), NativeAppKitError> {
         0 => Ok(()),
         -1 => Err(NativeAppKitError::MissingView),
         -2 => Err(NativeAppKitError::MissingWindow),
-        -3 => Err(NativeAppKitError::InvalidPayload),
+        -3 => Err(NativeAppKitError::InvalidString),
         code => Err(NativeAppKitError::BridgeFailed(code)),
     }
 }
 
 #[cfg(target_os = "macos")]
 unsafe extern "C" {
-    fn gpui_native_appkit_install_or_update_titlebar_tabs(
+    fn gpui_native_appkit_configure_window_tabbing(
         ns_view: *mut c_void,
-        payload_json: *const i8,
-        callback: Option<NativeTitlebarTabCallback>,
+        identifier: *const i8,
+        title: *const i8,
+        callback: Option<NativeWindowTabCallback>,
         callback_context: *mut c_void,
     ) -> i32;
 
-    fn gpui_native_appkit_remove_titlebar_tabs(ns_view: *mut c_void) -> i32;
+    fn gpui_native_appkit_add_window_to_tab_group(
+        anchor_view: *mut c_void,
+        window_view: *mut c_void,
+    ) -> i32;
 }
 
 #[cfg(test)]
@@ -263,25 +160,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn payload_uses_selected_id_and_tab_flags() {
-        let tabs = [
-            NativeTitlebarTab::new("one", "One").pinned(true),
-            NativeTitlebarTab::new("two", "Two")
-                .selected(true)
-                .loading(true),
-        ];
-        let options = NativeTitlebarTabsOptions::new(&tabs)
-            .selected_id("two")
-            .height(32.0)
-            .shows_add_button(false);
-
-        let payload = payload_json(options).expect("payload should serialize");
-        let payload = payload.to_str().expect("payload is utf-8");
-
-        assert!(payload.contains(r#""selectedId":"two""#));
-        assert!(payload.contains(r#""height":32.0"#));
-        assert!(payload.contains(r#""showsAddButton":false"#));
-        assert!(payload.contains(r#""isPinned":true"#));
-        assert!(payload.contains(r#""isLoading":true"#));
+    fn tabbing_identifier_is_stable() {
+        assert_eq!(
+            CString::new(TERMY_TABBING_IDENTIFIER)
+                .expect("identifier should be C-compatible")
+                .to_str()
+                .expect("identifier should be UTF-8"),
+            "com.lassevestergaard.termy.terminal"
+        );
     }
 }

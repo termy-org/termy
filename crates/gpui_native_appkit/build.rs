@@ -34,7 +34,5 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=static=gpui_native_appkit_swift");
     println!("cargo:rustc-link-lib=framework=AppKit");
-    println!("cargo:rustc-link-lib=framework=Combine");
     println!("cargo:rustc-link-lib=framework=Foundation");
-    println!("cargo:rustc-link-lib=framework=SwiftUI");
 }

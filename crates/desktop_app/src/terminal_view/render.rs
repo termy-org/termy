@@ -2811,17 +2811,26 @@ impl Render for TerminalView {
         let titlebar_height = Self::window_titlebar_height_for(false, show_tab_strip_chrome);
         let vertical_tabs = self.tab_strip_orientation()
             == crate::terminal_view::tab_strip::state::TabStripOrientation::Vertical;
-        let show_horizontal_tabbar = show_tab_strip_chrome && !vertical_tabs;
+        #[cfg(target_os = "macos")]
+        let native_window_tabs = self.uses_native_window_tabs(show_tab_strip_chrome, vertical_tabs);
+        #[cfg(not(target_os = "macos"))]
+        let native_window_tabs = false;
+        #[cfg(target_os = "macos")]
+        if native_window_tabs {
+            self.configure_native_window_tabbing(window);
+        }
+        let show_horizontal_tabbar = show_tab_strip_chrome && !vertical_tabs && !native_window_tabs;
         let tabs_row = show_horizontal_tabbar
             .then(|| self.render_tab_strip(window, &colors, &ui_font_family, tabbar_bg, cx));
         let tab_sidebar = (vertical_tabs && show_tab_strip_chrome)
             .then(|| self.render_tab_sidebar(window, &colors, &ui_font_family, tabbar_bg, cx));
-        let hidden_titlebar_branding = Self::should_render_hidden_titlebar_branding(
-            self.auto_hide_tabbar,
-            self.tabs.len(),
-            self.effective_tab_bar_visibility(),
-            self.show_termy_in_titlebar,
-        )
+        let hidden_titlebar_branding = (!native_window_tabs
+            && Self::should_render_hidden_titlebar_branding(
+                self.auto_hide_tabbar,
+                self.tabs.len(),
+                self.effective_tab_bar_visibility(),
+                self.show_termy_in_titlebar,
+            ))
         .then(|| {
             self.render_titlebar_branding(window, &colors, &ui_font_family, tabbar_bg, false, cx)
         })

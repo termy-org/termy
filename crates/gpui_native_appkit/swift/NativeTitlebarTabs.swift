@@ -1,170 +1,30 @@
 import AppKit
-import Combine
 import Dispatch
 import Foundation
 import ObjectiveC
-import SwiftUI
 
-private let actionSelect: Int32 = 1
-private let actionNew: Int32 = 2
-
-public typealias GPUIAppKitNativeTabsCallback = @convention(c) (
-    UnsafeMutableRawPointer?,
-    Int32,
-    UnsafePointer<CChar>?
+public typealias GPUIAppKitNewWindowTabCallback = @convention(c) (
+    UnsafeMutableRawPointer?
 ) -> Void
 
-private struct NativeTitlebarTabsPayload: Decodable {
-    let tabs: [NativeTitlebarTabPayload]
-    let selectedId: String?
-    let height: Double?
-    let showsAddButton: Bool?
-}
-
-private struct NativeTitlebarTabPayload: Decodable {
-    let id: String
-    let title: String
-    let isSelected: Bool?
-    let isPinned: Bool?
-    let isLoading: Bool?
-}
-
-private struct NativeTitlebarTabItem: Identifiable, Equatable {
-    let id: String
-    let title: String
-    let isPinned: Bool
-    let isLoading: Bool
-}
-
-private final class NativeTitlebarTabsModel: ObservableObject {
-    @Published var tabs: [NativeTitlebarTabItem] = []
-    @Published var selectedId: String = ""
-    @Published var height: CGFloat = 30
-    @Published var showsAddButton: Bool = true
-
-    private var callback: GPUIAppKitNativeTabsCallback?
-    private var callbackContext: UnsafeMutableRawPointer?
+private final class NativeWindowTabResponder: NSResponder {
+    var callback: GPUIAppKitNewWindowTabCallback?
+    var callbackContext: UnsafeMutableRawPointer?
 
     func update(
-        payload: NativeTitlebarTabsPayload,
-        callback: GPUIAppKitNativeTabsCallback?,
+        callback: GPUIAppKitNewWindowTabCallback?,
         context: UnsafeMutableRawPointer?
     ) {
-        self.tabs = payload.tabs.map {
-            NativeTitlebarTabItem(
-                id: $0.id,
-                title: $0.title,
-                isPinned: $0.isPinned ?? false,
-                isLoading: $0.isLoading ?? false
-            )
-        }
-        self.selectedId = payload.selectedId
-            ?? payload.tabs.first(where: { $0.isSelected == true })?.id
-            ?? payload.tabs.first?.id
-            ?? ""
-        self.height = CGFloat(payload.height ?? 30)
-        self.showsAddButton = payload.showsAddButton ?? true
         self.callback = callback
         self.callbackContext = context
     }
 
-    func selectTab(id: String) {
-        selectedId = id
-        send(actionSelect, tabId: id)
-    }
-
-    func createTab() {
-        send(actionNew, tabId: nil)
-    }
-
-    private func send(_ action: Int32, tabId: String?) {
-        guard let callback else {
-            return
-        }
-
-        if let tabId {
-            tabId.withCString { callback(callbackContext, action, $0) }
-        } else {
-            callback(callbackContext, action, nil)
-        }
+    @IBAction override func newWindowForTab(_ sender: Any?) {
+        callback?(callbackContext)
     }
 }
 
-private struct NativeTitlebarTabsView: View {
-    @ObservedObject var model: NativeTitlebarTabsModel
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if !model.tabs.isEmpty {
-                Picker(
-                    "",
-                    selection: Binding(
-                        get: { model.selectedId },
-                        set: { model.selectTab(id: $0) }
-                    )
-                ) {
-                    ForEach(model.tabs) { tab in
-                        Text(tab.title)
-                            .lineLimit(1)
-                            .tag(tab.id)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(minWidth: 160)
-            }
-
-            if model.showsAddButton {
-                Button(action: model.createTab) {
-                    Image(systemName: "plus")
-                        .imageScale(.small)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("New Tab")
-            }
-        }
-        .padding(.horizontal, 8)
-        .frame(height: model.height)
-    }
-}
-
-private final class NativeTitlebarTabsAttachment: NSObject {
-    let model: NativeTitlebarTabsModel
-    let controller: NSTitlebarAccessoryViewController
-
-    init(
-        payload: NativeTitlebarTabsPayload,
-        callback: GPUIAppKitNativeTabsCallback?,
-        context: UnsafeMutableRawPointer?
-    ) {
-        self.model = NativeTitlebarTabsModel()
-        self.controller = NSTitlebarAccessoryViewController()
-        super.init()
-
-        model.update(payload: payload, callback: callback, context: context)
-
-        let hostingView = NSHostingView(rootView: NativeTitlebarTabsView(model: model))
-        hostingView.frame = NSRect(x: 0, y: 0, width: 360, height: model.height)
-        hostingView.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        hostingView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        controller.view = hostingView
-        controller.layoutAttribute = .bottom
-        controller.fullScreenMinHeight = model.height
-    }
-
-    func update(
-        payload: NativeTitlebarTabsPayload,
-        callback: GPUIAppKitNativeTabsCallback?,
-        context: UnsafeMutableRawPointer?
-    ) {
-        model.update(payload: payload, callback: callback, context: context)
-        controller.fullScreenMinHeight = model.height
-        controller.view.frame.size.height = model.height
-    }
-}
-
-private var attachmentAssociationKey: UInt8 = 0
+private var nativeWindowTabResponderAssociationKey: UInt8 = 0
 
 private func runOnMain(_ body: @escaping () -> Int32) -> Int32 {
     if Thread.isMainThread {
@@ -178,87 +38,90 @@ private func runOnMain(_ body: @escaping () -> Int32) -> Int32 {
     return result
 }
 
-private func decodePayload(_ payloadJson: UnsafePointer<CChar>?) -> NativeTitlebarTabsPayload? {
-    guard let payloadJson else {
+private func windowFromView(_ nsViewRaw: UnsafeMutableRawPointer?) -> NSWindow? {
+    guard let nsViewRaw else {
         return nil
     }
 
-    let json = String(cString: payloadJson)
-    guard let data = json.data(using: .utf8) else {
-        return nil
-    }
-
-    return try? JSONDecoder().decode(NativeTitlebarTabsPayload.self, from: data)
+    let view = Unmanaged<NSView>.fromOpaque(nsViewRaw).takeUnretainedValue()
+    return view.window
 }
 
-@_cdecl("gpui_native_appkit_install_or_update_titlebar_tabs")
-public func gpui_native_appkit_install_or_update_titlebar_tabs(
+private func installNewWindowForTabResponder(
+    on window: NSWindow,
+    callback: GPUIAppKitNewWindowTabCallback?,
+    context: UnsafeMutableRawPointer?
+) {
+    guard callback != nil else {
+        return
+    }
+
+    if let responder = objc_getAssociatedObject(
+        window,
+        &nativeWindowTabResponderAssociationKey
+    ) as? NativeWindowTabResponder {
+        responder.update(callback: callback, context: context)
+        return
+    }
+
+    let responder = NativeWindowTabResponder()
+    responder.update(callback: callback, context: context)
+    responder.nextResponder = window.nextResponder
+    window.nextResponder = responder
+    objc_setAssociatedObject(
+        window,
+        &nativeWindowTabResponderAssociationKey,
+        responder,
+        .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+    )
+}
+
+@_cdecl("gpui_native_appkit_configure_window_tabbing")
+public func gpui_native_appkit_configure_window_tabbing(
     _ nsViewRaw: UnsafeMutableRawPointer?,
-    _ payloadJson: UnsafePointer<CChar>?,
-    _ callback: GPUIAppKitNativeTabsCallback?,
-    _ callbackContext: UnsafeMutableRawPointer?
+    _ identifierRaw: UnsafePointer<CChar>?,
+    _ titleRaw: UnsafePointer<CChar>?,
+    _ newWindowTabCallback: GPUIAppKitNewWindowTabCallback?,
+    _ newWindowTabCallbackContext: UnsafeMutableRawPointer?
 ) -> Int32 {
     runOnMain {
-        guard let nsViewRaw else {
-            return -1
+        guard let window = windowFromView(nsViewRaw) else {
+            return -2
         }
-        guard let payload = decodePayload(payloadJson) else {
+        guard let identifierRaw else {
             return -3
         }
 
-        let view = Unmanaged<NSView>.fromOpaque(nsViewRaw).takeUnretainedValue()
-        guard let window = view.window else {
-            return -2
-        }
-
-        if let existing = objc_getAssociatedObject(window, &attachmentAssociationKey)
-            as? NativeTitlebarTabsAttachment
-        {
-            existing.update(payload: payload, callback: callback, context: callbackContext)
-        } else {
-            let attachment = NativeTitlebarTabsAttachment(
-                payload: payload,
-                callback: callback,
-                context: callbackContext
-            )
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = true
-            window.addTitlebarAccessoryViewController(attachment.controller)
-            objc_setAssociatedObject(
-                window,
-                &attachmentAssociationKey,
-                attachment,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
+        window.tabbingMode = .preferred
+        window.tabbingIdentifier = NSWindow.TabbingIdentifier(String(cString: identifierRaw))
+        window.tab.title = titleRaw.map { String(cString: $0) } ?? window.title
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        installNewWindowForTabResponder(
+            on: window,
+            callback: newWindowTabCallback,
+            context: newWindowTabCallbackContext
+        )
 
         return 0
     }
 }
 
-@_cdecl("gpui_native_appkit_remove_titlebar_tabs")
-public func gpui_native_appkit_remove_titlebar_tabs(
-    _ nsViewRaw: UnsafeMutableRawPointer?
+@_cdecl("gpui_native_appkit_add_window_to_tab_group")
+public func gpui_native_appkit_add_window_to_tab_group(
+    _ anchorViewRaw: UnsafeMutableRawPointer?,
+    _ windowViewRaw: UnsafeMutableRawPointer?
 ) -> Int32 {
     runOnMain {
-        guard let nsViewRaw else {
-            return -1
-        }
-
-        let view = Unmanaged<NSView>.fromOpaque(nsViewRaw).takeUnretainedValue()
-        guard let window = view.window else {
+        guard let anchorWindow = windowFromView(anchorViewRaw),
+              let window = windowFromView(windowViewRaw)
+        else {
             return -2
         }
 
-        if let existing = objc_getAssociatedObject(window, &attachmentAssociationKey)
-            as? NativeTitlebarTabsAttachment
-        {
-            if let index = window.titlebarAccessoryViewControllers.firstIndex(of: existing.controller) {
-                window.removeTitlebarAccessoryViewController(at: index)
-            }
-            objc_setAssociatedObject(window, &attachmentAssociationKey, nil, .OBJC_ASSOCIATION_ASSIGN)
-        }
-
+        anchorWindow.addTabbedWindow(window, ordered: .above)
+        anchorWindow.tabGroup?.selectedWindow = window
         return 0
     }
 }

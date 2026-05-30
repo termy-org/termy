@@ -2536,8 +2536,6 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "raw-window-handle",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -5699,6 +5697,7 @@ dependencies = [
  "fs4",
  "futures",
  "gpui",
+ "gpui-native-appkit",
  "libsqlite3-sys",
  "log",
  "objc",

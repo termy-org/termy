@@ -68,6 +68,7 @@ libsqlite3-sys = "0.30.1"
 # Pin core-text to 21.0.0 to avoid core-graphics version conflict on macOS.
 core-text = "=21.0.0"
 cocoa = "0.26"
+gpui-native-appkit = { path = "../gpui_native_appkit" }
 objc = "0.2"
 raw-window-handle = "0.6"
 

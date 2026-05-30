@@ -59,6 +59,10 @@ impl TerminalView {
                 true
             }
             CommandAction::NewTab => {
+                #[cfg(target_os = "macos")]
+                if self.open_native_window_tab(window, cx) {
+                    return true;
+                }
                 self.add_tab(cx);
                 true
             }
