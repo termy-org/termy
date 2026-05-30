@@ -292,6 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSWindow.allowsAutomaticWindowTabbing = true
         AppLogoManager.shared.applyToDock()
+        OnboardingPresenter.shared.presentIfNeeded()
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
             if ConfiguredKeybindRouter.shared.handle(event) {
                 return nil
