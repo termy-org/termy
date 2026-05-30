@@ -29,6 +29,7 @@ struct TerminalSurfaceView: View {
                     renderConfig: terminal.renderConfig,
                     searchMatches: terminal.searchMatches,
                     activeSearchMatch: terminal.searchMatches[safe: terminal.activeSearchMatchIndex],
+                    hoveredLink: terminal.hoveredLink,
                     isFocused: isFocused
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -79,6 +80,12 @@ struct TerminalSurfaceView: View {
                     },
                     onSelectLine: { position in
                         terminal.selectLine(at: position)
+                    },
+                    onHoverProbe: { position in
+                        terminal.updateHoveredLink(at: position)
+                    },
+                    onOpenLink: { position in
+                        terminal.openLink(at: position)
                     },
                     onCopy: {
                         terminal.copySelection()

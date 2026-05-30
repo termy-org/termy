@@ -25,6 +25,8 @@ struct TerminalKeyboardInputView: NSViewRepresentable {
     var onSelectionChanged: (TerminalSelection?) -> Void
     var onSelectWord: (TerminalGridPosition) -> Void
     var onSelectLine: (TerminalGridPosition) -> Void
+    var onHoverProbe: (TerminalGridPosition?) -> Bool
+    var onOpenLink: (TerminalGridPosition) -> Bool
     var onCopy: () -> Bool
 
     func makeNSView(context: Context) -> KeyboardCaptureView {
@@ -68,6 +70,8 @@ final class KeyboardCaptureView: NSView {
     var onSelectionChanged: (TerminalSelection?) -> Void = { _ in }
     var onSelectWord: (TerminalGridPosition) -> Void = { _ in }
     var onSelectLine: (TerminalGridPosition) -> Void = { _ in }
+    var onHoverProbe: (TerminalGridPosition?) -> Bool = { _ in false }
+    var onOpenLink: (TerminalGridPosition) -> Bool = { _ in false }
     var onCopy: () -> Bool = { false }
 
     private var selectionAnchor: TerminalGridPosition?
@@ -159,6 +163,13 @@ final class KeyboardCaptureView: NSView {
         onFocus()
         focus()
         didDragSelection = false
+
+        // ⌘-click opens a URL under the pointer.
+        if button == .left,
+           event.modifierFlags.contains(.command),
+           onOpenLink(gridPosition(for: event)) {
+            return
+        }
 
         if sendMouse(kind: .press, button: button, event: event) {
             activeMouseButton = button
@@ -283,7 +294,13 @@ final class KeyboardCaptureView: NSView {
             super.mouseMoved(with: event)
             return
         }
-        _ = sendMouse(kind: .move, button: .none, event: event)
+        let consumed = sendMouse(kind: .move, button: .none, event: event)
+        let position = consumed ? nil : gridPosition(for: event)
+        if onHoverProbe(position) {
+            NSCursor.pointingHand.set()
+        } else {
+            NSCursor.iBeam.set()
+        }
     }
 
     override func keyDown(with event: NSEvent) {
@@ -708,6 +725,8 @@ private extension KeyboardCaptureView {
         onSelectionChanged = configuration.onSelectionChanged
         onSelectWord = configuration.onSelectWord
         onSelectLine = configuration.onSelectLine
+        onHoverProbe = configuration.onHoverProbe
+        onOpenLink = configuration.onOpenLink
         onCopy = configuration.onCopy
     }
 }

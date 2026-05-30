@@ -12,6 +12,7 @@ final class TerminalViewModel: ObservableObject {
     @Published private(set) var currentWorkingDirectory: String?
     @Published private(set) var searchMatches: [TerminalSearchMatch] = []
     @Published private(set) var activeSearchMatchIndex = 0
+    @Published private(set) var hoveredLink: TerminalFrameLink?
     @Published var selection: TerminalSelection?
 
     private var terminal: LibTermyTerminal?
@@ -241,6 +242,25 @@ final class TerminalViewModel: ObservableObject {
     /// Triple-click: select the whole line under the cursor.
     func selectLine(at position: TerminalGridPosition) {
         updateSelection(frame.lineSelection(at: position))
+    }
+
+    /// Updates the link highlighted under the pointer. Returns true when a link
+    /// is present so the view can show the pointing-hand cursor.
+    @discardableResult
+    func updateHoveredLink(at position: TerminalGridPosition?) -> Bool {
+        let link = position.flatMap { frame.link(at: $0) }
+        if link != hoveredLink {
+            hoveredLink = link
+        }
+        return link != nil
+    }
+
+    /// Opens the link under `position` (⌘-click). Returns true if one was opened.
+    func openLink(at position: TerminalGridPosition) -> Bool {
+        guard let link = frame.link(at: position), let url = URL(string: link.target) else {
+            return false
+        }
+        return NSWorkspace.shared.open(url)
     }
 
     func copySelection() -> Bool {

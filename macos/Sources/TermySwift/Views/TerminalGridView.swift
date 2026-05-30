@@ -8,6 +8,7 @@ struct TerminalGridView: View {
     let renderConfig: TerminalRenderConfig
     let searchMatches: [TerminalSearchMatch]
     let activeSearchMatch: TerminalSearchMatch?
+    var hoveredLink: TerminalFrameLink?
     let isFocused: Bool
 
     var body: some View {
@@ -24,6 +25,27 @@ struct TerminalGridView: View {
         drawSelection(in: &context)
         drawCursor(in: &context)
         drawText(in: &context)
+        drawHoveredLink(in: &context)
+    }
+
+    private func drawHoveredLink(in context: inout GraphicsContext) {
+        guard let link = hoveredLink, link.row >= 0, link.row < frame.rows else {
+            return
+        }
+        let rect = cellRect(
+            col: link.startCol,
+            row: link.row,
+            cols: max(1, link.endCol - link.startCol + 1)
+        )
+        let y = rect.maxY - 1
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: y))
+        path.addLine(to: CGPoint(x: rect.maxX, y: y))
+        context.stroke(
+            path,
+            with: .color(renderConfig.foreground.swiftUIColor.opacity(0.85)),
+            lineWidth: 1
+        )
     }
 
     private func cellRect(col: Int, row: Int, cols: Int = 1) -> CGRect {
