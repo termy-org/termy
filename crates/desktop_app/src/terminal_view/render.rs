@@ -2815,10 +2815,6 @@ impl Render for TerminalView {
         let native_window_tabs = self.uses_native_window_tabs(show_tab_strip_chrome, vertical_tabs);
         #[cfg(not(target_os = "macos"))]
         let native_window_tabs = false;
-        #[cfg(target_os = "macos")]
-        if native_window_tabs {
-            self.configure_native_window_tabbing(window);
-        }
         let show_horizontal_tabbar = show_tab_strip_chrome && !vertical_tabs && !native_window_tabs;
         let tabs_row = show_horizontal_tabbar
             .then(|| self.render_tab_strip(window, &colors, &ui_font_family, tabbar_bg, cx));

@@ -20,7 +20,13 @@ private final class NativeWindowTabResponder: NSResponder {
     }
 
     @IBAction override func newWindowForTab(_ sender: Any?) {
-        callback?(callbackContext)
+        guard let callback else {
+            return
+        }
+        let context = callbackContext
+        DispatchQueue.main.async {
+            callback(context)
+        }
     }
 }
 
