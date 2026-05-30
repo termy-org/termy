@@ -54,6 +54,16 @@ private func windowFromView(_ nsViewRaw: UnsafeMutableRawPointer?) -> NSWindow? 
 }
 
 private func addWindowToTabGroup(anchorWindow: NSWindow, window: NSWindow) {
+    if window === anchorWindow {
+        return
+    }
+    // Already in the same tab group: only re-select. Re-adding an already
+    // grouped window makes AppKit re-parent it and can flicker the bar.
+    if let group = window.tabGroup, group === anchorWindow.tabGroup {
+        group.selectedWindow = window
+        showTabBarIfHidden(on: anchorWindow)
+        return
+    }
     if window.tabbingIdentifier.isEmpty {
         window.tabbingIdentifier = anchorWindow.tabbingIdentifier
     }
@@ -63,17 +73,17 @@ private func addWindowToTabGroup(anchorWindow: NSWindow, window: NSWindow) {
     showTabBarIfHidden(on: window)
 }
 
+// Only show the tab bar once a real group of 2+ windows exists. AppKit will not
+// keep an empty tab bar up for a lone window, so toggling it there just produces
+// the "appears then disappears" flicker the user reported.
 private func showTabBarIfHidden(on window: NSWindow) {
-    if window.tabGroup?.isTabBarVisible == true {
+    guard let group = window.tabGroup, group.windows.count > 1 else {
+        return
+    }
+    if group.isTabBarVisible {
         return
     }
     window.toggleTabBar(nil)
-}
-
-private func scheduleShowTabBarIfHidden(on window: NSWindow) {
-    DispatchQueue.main.async {
-        showTabBarIfHidden(on: window)
-    }
 }
 
 private func installNewWindowForTabResponder(
@@ -128,7 +138,10 @@ public func gpui_native_appkit_configure_window_tabbing(
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        scheduleShowTabBarIfHidden(on: window)
+        // Do not toggle the tab bar here: a freshly configured window is not yet
+        // part of a 2+ window group, so AppKit would show an empty bar (or
+        // nothing) and the custom in-app strip is what should render until a
+        // real native group is formed via add_window_to_tab_group.
         installNewWindowForTabResponder(
             on: window,
             callback: newWindowTabCallback,
@@ -159,6 +172,35 @@ public func gpui_native_appkit_add_window_to_tab_group(
         DispatchQueue.main.async {
             addWindowToTabGroup(anchorWindow: anchorWindow, window: window)
         }
+        return 0
+    }
+}
+
+@_cdecl("gpui_native_appkit_window_tab_group_count")
+public func gpui_native_appkit_window_tab_group_count(
+    _ nsViewRaw: UnsafeMutableRawPointer?
+) -> Int32 {
+    runOnMain {
+        guard let window = windowFromView(nsViewRaw) else {
+            return -2
+        }
+        return Int32(window.tabGroup?.windows.count ?? 0)
+    }
+}
+
+@_cdecl("gpui_native_appkit_set_window_tab_title")
+public func gpui_native_appkit_set_window_tab_title(
+    _ nsViewRaw: UnsafeMutableRawPointer?,
+    _ titleRaw: UnsafePointer<CChar>?
+) -> Int32 {
+    runOnMain {
+        guard let window = windowFromView(nsViewRaw) else {
+            return -2
+        }
+        guard let titleRaw else {
+            return -3
+        }
+        window.tab.title = String(cString: titleRaw)
         return 0
     }
 }

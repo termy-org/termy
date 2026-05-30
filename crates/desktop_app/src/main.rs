@@ -215,7 +215,7 @@ fn open_main_window(
                 let view_for_tabbing = view.clone();
                 window.defer(cx, move |window, cx| {
                     let _ = view_for_tabbing.update(cx, |view, _cx| {
-                        view.configure_native_window_tabbing(window);
+                        view.ensure_native_window_tabbing_configured(window);
                     });
                 });
 

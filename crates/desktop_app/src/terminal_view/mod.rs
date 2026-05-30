@@ -1635,6 +1635,15 @@ pub struct TerminalView {
     native_window_tab_action_rx: Receiver<native_window_tabs::NativeWindowTabRequest>,
     #[cfg(target_os = "macos")]
     native_window_tab_callback_context: usize,
+    /// True only while this window is part of a real 2+ window native tab group
+    /// (i.e. the macOS tab bar is actually showing). Drives whether the custom
+    /// in-app tab strip is suppressed in favour of the native bar.
+    #[cfg(target_os = "macos")]
+    native_tab_group_active: bool,
+    #[cfg(target_os = "macos")]
+    native_window_tabbing_configured: bool,
+    #[cfg(target_os = "macos")]
+    last_synced_native_tab_title: Option<String>,
 }
 
 impl TerminalView {
@@ -4011,6 +4020,12 @@ impl TerminalView {
             native_window_tab_action_rx,
             #[cfg(target_os = "macos")]
             native_window_tab_callback_context,
+            #[cfg(target_os = "macos")]
+            native_tab_group_active: false,
+            #[cfg(target_os = "macos")]
+            native_window_tabbing_configured: false,
+            #[cfg(target_os = "macos")]
+            last_synced_native_tab_title: None,
         };
         #[cfg(target_os = "windows")]
         if config.tmux_enabled {

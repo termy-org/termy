@@ -2812,6 +2812,15 @@ impl Render for TerminalView {
         let vertical_tabs = self.tab_strip_orientation()
             == crate::terminal_view::tab_strip::state::TabStripOrientation::Vertical;
         #[cfg(target_os = "macos")]
+        {
+            // Make sure tabbing is configured even if the startup defer lost the
+            // race, and reconcile `native_tab_group_active` with AppKit's real
+            // tab-group membership so the gate below reflects whether a native
+            // bar is actually on screen.
+            self.ensure_native_window_tabbing_configured(window);
+            self.refresh_native_tab_group_state(window);
+        }
+        #[cfg(target_os = "macos")]
         let native_window_tabs = self.uses_native_window_tabs(show_tab_strip_chrome, vertical_tabs);
         #[cfg(not(target_os = "macos"))]
         let native_window_tabs = false;
