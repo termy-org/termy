@@ -486,6 +486,8 @@ impl TerminalView {
         self.rename_input.set_text(self.tabs[index].title.clone());
         self.reset_cursor_blink_phase();
         self.inline_input_selecting = false;
+        // Recompute tab widths so the renamed tab expands to its editing width.
+        self.mark_tab_strip_layout_dirty();
         cx.notify();
     }
 

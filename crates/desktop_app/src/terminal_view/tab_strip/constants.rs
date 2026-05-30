@@ -22,6 +22,10 @@ pub(crate) const TAB_TITLE_FONT_SIZE: f32 = 12.0;
 pub(crate) const TAB_TITLE_LAYOUT_SLACK_PX: f32 = 18.0;
 pub(crate) const TAB_MIN_WIDTH: f32 = 96.0;
 pub(crate) const TAB_MAX_WIDTH: f32 = 180.0;
+// Width a tab expands to while its title is being renamed, to give the inline
+// editor room to type. Exceeds TAB_MAX_WIDTH on purpose; clamped to the
+// available viewport width so it never overflows the strip.
+pub(crate) const TAB_RENAME_MIN_WIDTH: f32 = 260.0;
 pub(crate) const TAB_CLOSE_SLOT_WIDTH: f32 = 22.0;
 pub(crate) const TAB_CLOSE_HITBOX: f32 = TAB_CLOSE_SLOT_WIDTH;
 pub(crate) const TAB_CLOSE_CHIP_WIDTH: f32 = 16.0;

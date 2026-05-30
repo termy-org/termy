@@ -38,6 +38,8 @@ impl TerminalView {
         );
         if changed {
             self.reset_cursor_blink_phase();
+            // Recompute tab widths so the formerly-renamed tab shrinks back.
+            self.mark_tab_strip_layout_dirty();
         }
         changed
     }

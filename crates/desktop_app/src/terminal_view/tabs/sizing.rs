@@ -324,6 +324,10 @@ impl TerminalView {
         let mut changed = false;
         let tab_width_mode = self.tab_width_mode;
         let tab_close_visibility = self.tab_close_visibility;
+        let renaming_tab = self.renaming_tab;
+        // A tab being renamed expands past the normal cap so the inline editor
+        // has room, bounded by the available viewport width.
+        let rename_target_width = TAB_RENAME_MIN_WIDTH.min(viewport_width.max(TAB_MIN_WIDTH));
 
         for (index, tab) in self.tabs.iter_mut().enumerate() {
             let is_active = index == self.active_tab;
@@ -341,6 +345,11 @@ impl TerminalView {
                 tab.sticky_title_width,
             );
             let next_width = next_width.max(TAB_MIN_WIDTH);
+            let next_width = if renaming_tab == Some(index) {
+                next_width.max(rename_target_width)
+            } else {
+                next_width
+            };
             let next_sticky_width = next_sticky_width.max(TAB_MIN_WIDTH);
             tab.sticky_title_width = next_sticky_width;
             if (tab.display_width - next_width).abs() <= f32::EPSILON {
