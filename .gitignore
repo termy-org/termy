@@ -9,6 +9,7 @@ termy-bench-v2.md
 termy-bench-v1.md
 AGENT_PROMPT_RENDER_PERF.md
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .build
 
 # DMG build output
