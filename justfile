@@ -7,6 +7,10 @@ set shell := ["bash", "-cu"]
 run:
     cargo run -p termy --release
 
+# Build and run the experimental native macOS SwiftUI host (macos/)
+run-macos *args:
+    ./macos/script/build_and_run.sh {{ args }}
+
 test:
     cargo test -p termy --release
 
