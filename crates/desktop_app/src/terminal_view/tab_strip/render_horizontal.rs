@@ -262,8 +262,27 @@ impl TerminalView {
             } else {
                 TAB_LEADING_ICON_SLOT_WIDTH
             };
-            let available_text_px =
-                Self::tab_title_text_area_width(tab_width, close_slot_width + icon_slot_width);
+            // Reserve the close-slot width in the TEXT area whenever the layout
+            // already reserved it (Uniform/Stable modes / pinned), independent of
+            // hover. Otherwise the title re-truncates and visibly shifts when the
+            // close button fades in on hover even though the tab width is fixed.
+            let reserves_close_slot = Self::tab_reserves_close_slot_for_layout(
+                self.tab_width_mode,
+                self.tab_close_visibility,
+                is_active,
+                pinned,
+            );
+            let text_reserve_slot_width = if is_renaming {
+                0.0
+            } else if reserves_close_slot {
+                TAB_CLOSE_SLOT_WIDTH
+            } else {
+                close_slot_width
+            };
+            let available_text_px = Self::tab_title_text_area_width(
+                tab_width,
+                text_reserve_slot_width + icon_slot_width,
+            );
             let label = Self::format_tab_label_for_render_measured(
                 &tab_title,
                 available_text_px,
@@ -459,11 +478,15 @@ impl TerminalView {
                             .top_0()
                             .right_0()
                             .bottom_0()
+                            // Native overflow scrolling drives the shared scroll
+                            // handle (and maps vertical wheel -> horizontal). Do NOT
+                            // also attach a manual on_scroll_wheel here: it would
+                            // double-apply the delta against the same handle and the
+                            // opposing sign conventions cancel out, making the strip
+                            // appear unscrollable. The "+" action rail keeps its own
+                            // manual handler since it sits outside this viewport.
                             .overflow_x_scroll()
                             .track_scroll(&self.tab_strip.horizontal_scroll_handle)
-                            .on_scroll_wheel(
-                                cx.listener(Self::handle_tab_strip_action_rail_scroll_wheel),
-                            )
                             .child(tabs_scroll_content),
                     )
                     .children(show_left_inset_divider.then(|| {

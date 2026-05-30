@@ -172,7 +172,11 @@ fn open_main_window(cx: &mut App, startup_config: config::AppConfig) -> Result<(
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar,
             window_background,
-            is_movable: true,
+            // The tab strip lives in the titlebar region. A movable NSWindow
+            // lets AppKit auto-drag the window from that whole region, stealing
+            // tab-reorder drags. We drive window moves manually instead (see
+            // maybe_start_titlebar_window_move -> start_window_move).
+            is_movable: false,
             is_resizable: true,
             window_min_size: Some(size(px(MIN_WINDOW_WIDTH), px(MIN_WINDOW_HEIGHT))),
             ..Default::default()

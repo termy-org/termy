@@ -215,6 +215,10 @@ impl TerminalView {
         })
     }
 
+    // Runtime always lays out the tabs viewport at full width (content_width =
+    // None) so the action rail stays right-anchored; only the Windows tests
+    // exercise the content-width-clamped path.
+    #[cfg(all(test, target_os = "windows"))]
     pub(crate) fn tab_strip_layout_for_viewport_with_left_inset_and_content_width(
         viewport_width: f32,
         left_inset_width: f32,

@@ -222,15 +222,17 @@ impl TerminalView {
         let _ = self.sync_tab_display_widths_for_viewport_if_needed(tab_strip_viewport_width);
         self.scroll_active_tab_into_view(TabStripOrientation::Horizontal);
         let fixed_content_width = self.tab_strip_fixed_content_width();
-        let layout = Self::tab_strip_layout_for_viewport_with_left_inset_and_content_width(
-            viewport_width,
-            left_inset_width,
-            fixed_content_width,
-        );
+        // Keep the tabs viewport spanning the full available width so the action
+        // rail (the "+" button) stays anchored to the right edge even when the
+        // tabs do not fill the strip. Tabs render left-aligned inside the viewport
+        // at their own widths, leaving empty (window-draggable) space before the
+        // "+" button. Overflow scrolling still kicks in when the tabs are wider
+        // than the viewport because content_width then exceeds tabs_viewport_width.
+        let layout = provisional_layout;
         self.set_tab_strip_layout_snapshot(layout);
 
         let geometry = layout.geometry;
-        let content_width = fixed_content_width.max(geometry.tabs_viewport_width);
+        let content_width = fixed_content_width;
         let overflow_state = self.tab_strip_overflow_state();
         let active_tab_index = (self.active_tab < self.tabs.len()).then_some(self.active_tab);
         let chrome_layout = chrome::compute_tab_chrome_layout(

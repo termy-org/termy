@@ -178,15 +178,10 @@ impl TerminalView {
             (viewport_width - (TAB_HORIZONTAL_PADDING * 2.0) - gap_width).max(TAB_MIN_WIDTH);
         let share = content_width / tab_count as f32;
 
-        if share < TAB_MAX_WIDTH {
-            return share.max(TAB_MIN_WIDTH);
-        }
-
-        let elastic_growth = (share - TAB_MAX_WIDTH).max(0.0) * TAB_ADAPTIVE_GROWTH_FACTOR;
-        let elastic = TAB_MAX_WIDTH + elastic_growth;
-        let hard_cap = (content_width * TAB_ADAPTIVE_HARD_CAP_RATIO).max(TAB_MAX_WIDTH);
-
-        elastic.min(hard_cap)
+        // Tabs never grow past TAB_MAX_WIDTH: with plenty of room each tab caps
+        // at the max instead of stretching to fill the strip; when the strip is
+        // crowded the equal share shrinks them down toward TAB_MIN_WIDTH.
+        share.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH)
     }
 
     fn tab_display_width_for_text_px_with_close_policy(
@@ -262,7 +257,7 @@ impl TerminalView {
         changed
     }
 
-    fn tab_reserves_close_slot_for_layout(
+    pub(crate) fn tab_reserves_close_slot_for_layout(
         tab_width_mode: TabWidthMode,
         tab_close_visibility: TabCloseVisibility,
         _is_active: bool,
@@ -476,9 +471,9 @@ mod tests {
     }
 
     #[test]
-    fn effective_tab_max_width_grows_for_sparse_tabs() {
+    fn effective_tab_max_width_caps_at_max_for_sparse_tabs() {
         let effective = TerminalView::effective_tab_max_width_for_viewport(1600.0, 1);
-        assert!(effective > TAB_MAX_WIDTH);
+        assert_float_eq(effective, TAB_MAX_WIDTH);
     }
 
     #[test]
@@ -496,12 +491,9 @@ mod tests {
     }
 
     #[test]
-    fn effective_tab_max_width_respects_hard_cap_ratio() {
-        let viewport_width = 4000.0;
-        let content_width = (viewport_width - (TAB_HORIZONTAL_PADDING * 2.0)).max(TAB_MAX_WIDTH);
-        let expected_hard_cap = (content_width * TAB_ADAPTIVE_HARD_CAP_RATIO).max(TAB_MAX_WIDTH);
-        let effective = TerminalView::effective_tab_max_width_for_viewport(viewport_width, 1);
-        assert_float_eq(effective, expected_hard_cap);
+    fn effective_tab_max_width_caps_at_max_for_very_wide_viewport() {
+        let effective = TerminalView::effective_tab_max_width_for_viewport(4000.0, 1);
+        assert_float_eq(effective, TAB_MAX_WIDTH);
     }
 
     #[test]
