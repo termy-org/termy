@@ -11,6 +11,63 @@ check_forbidden_dep() {
   fi
 }
 
+require_path() {
+  local path="$1"
+
+  if [[ ! -e "$path" ]]; then
+    echo "Boundary check failed: required project path is missing: $path" >&2
+    exit 1
+  fi
+}
+
+forbid_pattern() {
+  local pattern="$1"
+  local path="$2"
+  local message="$3"
+
+  if rg -n "$pattern" "$path" >/dev/null; then
+    echo "Boundary check failed: $message" >&2
+    rg -n "$pattern" "$path" >&2
+    exit 1
+  fi
+}
+
+require_pattern() {
+  local pattern="$1"
+  local path="$2"
+  local message="$3"
+
+  if ! rg -n "$pattern" "$path" >/dev/null; then
+    echo "Boundary check failed: $message" >&2
+    exit 1
+  fi
+}
+
+require_path "crates/desktop_app/Cargo.toml"
+require_path "scripts/build-dmg.sh"
+require_path "scripts/build-setup.ps1"
+require_path "scripts/build-linux.sh"
+require_path "crates/README.md"
+require_path "scripts/README.md"
+require_path "docs/architecture/project-layout.md"
+require_path "docs/architecture/release-packaging.md"
+
+while IFS= read -r manifest; do
+  crate_dir="$(dirname "$manifest")"
+  require_path "$crate_dir/README.md"
+done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml | sort)
+
+forbid_pattern 'macos/scripts|macos/dist|TermyAlpha' \
+  ".github/workflows/release.yml" \
+  "release workflow must use the current scripts/ packaging paths and Termy artifact names"
+
+require_pattern './scripts/build-dmg\.sh' \
+  ".github/workflows/release.yml" \
+  "release workflow must call scripts/build-dmg.sh"
+require_pattern 'dist/Termy-\$\{\{ env.VERSION \}\}-macos-\$\{\{ matrix.arch \}\}\.dmg' \
+  ".github/workflows/release.yml" \
+  "release workflow must upload the documented macOS DMG path"
+
 check_forbidden_dep "termy_command_core" "gpui"
 check_forbidden_dep "termy_command_core" "termy_config_core"
 check_forbidden_dep "termy_config_core" "termy_themes"

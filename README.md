@@ -26,6 +26,10 @@ cargo run --release -p termy
 
 Config and keybinds live under your platform config dir. See [docs/configuration.md](docs/configuration.md) and [docs/keybindings.md](docs/keybindings.md).
 
+## Architecture
+
+Termy is a Rust workspace with a GPUI desktop app, reusable headless runtime, CLI, FFI, website, and platform packaging scripts. See [Project Layout](docs/architecture/project-layout.md) for ownership boundaries and [Release Packaging](docs/architecture/release-packaging.md) for release artifact flow.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, build, and validation commands.

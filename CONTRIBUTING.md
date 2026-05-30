@@ -12,13 +12,15 @@ This guide focuses on the current Termy workflow so you can get a change from cl
 
 ## Project layout
 
-- `src/`: main desktop app built with Rust + GPUI
-- `crates/`: shared workspace crates such as config, command catalog, plugin host, search, terminal UI, and CLI helpers
+- `crates/desktop_app/`: main desktop app built with Rust + GPUI
+- `crates/`: workspace crates for config, command catalog, terminal runtime, search, terminal UI, packaging helpers, CLI, FFI, and embedding surfaces
 - `docs/`: repository docs used by contributors
 - `website/`: website and public docs
+- `assets/`: app icons, shell completions, UI icons, and media used by the app and website
+- `scripts/`: local and CI packaging entrypoints
 - `.github/`: issue templates, PR template, and CI workflows
 
-See [Project Layout](docs/architecture/project-layout.md) for ownership boundaries between the app, reusable crates, embedding surfaces, and docs.
+See [Project Layout](docs/architecture/project-layout.md) for ownership boundaries between the app, reusable crates, embedding surfaces, and docs. See [Release Packaging](docs/architecture/release-packaging.md) before changing packaging scripts or release workflow artifacts.
 
 ## Local setup
 
@@ -107,7 +109,7 @@ If you change config keys:
 If you change commands or keybind-facing actions:
 
 - update the command catalog in `crates/command_core`
-- wire the action through the app in `src/`
+- wire the action through the app in `crates/desktop_app/src/`
 - regenerate keybinding docs if defaults or public command names changed
 
 ## Documentation changes
