@@ -14,6 +14,7 @@ const TAB_INTERACTION_ANIMATION_DURATION: Duration = Duration::from_millis(200);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TabStripOrientation {
     Horizontal,
+    Vertical,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -185,6 +186,9 @@ impl TabStripTitlebarState {
 
 pub(crate) struct TabStripState {
     pub(crate) horizontal_scroll_handle: ScrollHandle,
+    // Separate handle for the vertical sidebar; never shares offset with the
+    // horizontal handle to avoid cross-axis contamination.
+    pub(crate) vertical_scroll_handle: ScrollHandle,
     pub(crate) switch_hints: TabSwitchHintState,
     pub(crate) hovered_tab: Option<usize>,
     pub(crate) hovered_tab_close: Option<usize>,
@@ -199,6 +203,9 @@ pub(crate) struct TabStripState {
     pub(crate) horizontal_layout_last_synced_revision: u64,
     pub(crate) horizontal_layout_last_synced_viewport_width: f32,
     pub(crate) horizontal_layout_snapshot: Option<TabStripLayoutSnapshot>,
+    // Last rendered height of the vertical sidebar's scrollable tabs region,
+    // used by vertical scroll-into-view / autoscroll math. NaN until first render.
+    pub(crate) vertical_layout_last_synced_viewport_height: f32,
     pub(crate) title_width_cache: TabTitleWidthCache,
     pub(crate) titlebar: TabStripTitlebarState,
 }
@@ -207,6 +214,7 @@ impl TabStripState {
     pub(crate) fn new(show_tab_switch_modifier_hints: bool) -> Self {
         Self {
             horizontal_scroll_handle: ScrollHandle::new(),
+            vertical_scroll_handle: ScrollHandle::new(),
             switch_hints: TabSwitchHintState::new(show_tab_switch_modifier_hints),
             hovered_tab: None,
             hovered_tab_close: None,
@@ -221,6 +229,7 @@ impl TabStripState {
             horizontal_layout_last_synced_revision: 0,
             horizontal_layout_last_synced_viewport_width: f32::NAN,
             horizontal_layout_snapshot: None,
+            vertical_layout_last_synced_viewport_height: f32::NAN,
             title_width_cache: TabTitleWidthCache::default(),
             titlebar: TabStripTitlebarState::default(),
         }

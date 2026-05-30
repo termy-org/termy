@@ -8,8 +8,9 @@ use crate::constants::{
 use crate::diagnostics::{ConfigDiagnostic, ConfigDiagnosticKind, ConfigParseReport};
 use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
 use crate::types::{
-    AppConfig, AppearanceMode, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabCloseVisibility,
-    TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
+    AppConfig, AppearanceMode, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabBarPosition,
+    TabCloseVisibility, TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig,
+    TerminalScrollbarStyle,
     TerminalScrollbarVisibility, ThemeId, WindowsShell, WorkingDirFallback,
 };
 
@@ -488,6 +489,19 @@ impl AppConfig {
                             key,
                             value,
                             "one of: uniform, stable, active_grow, active_grow_sticky",
+                        );
+                    }
+                }
+                RootSettingId::TabBarPosition => {
+                    if let Some(parsed) = TabBarPosition::from_str(value) {
+                        config.tab_bar_position = parsed;
+                    } else {
+                        push_invalid_value(
+                            &mut diagnostics,
+                            line_number,
+                            key,
+                            value,
+                            "one of: top, right",
                         );
                     }
                 }

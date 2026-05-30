@@ -3,7 +3,26 @@ use crate::terminal_view::tab_strip::state::TabStripOrientation;
 
 impl TerminalView {
     pub(in super::super) fn tab_strip_orientation(&self) -> TabStripOrientation {
-        TabStripOrientation::Horizontal
+        match self.tab_bar_position {
+            TabBarPosition::Right => TabStripOrientation::Vertical,
+            TabBarPosition::Top => TabStripOrientation::Horizontal,
+        }
+    }
+
+    /// Width reserved on the right for the vertical tab sidebar. Zero unless the
+    /// sidebar is active and the tab-strip chrome is visible; the collapsed rail
+    /// width otherwise. Feeds the terminal grid sizer and content bounds so the
+    /// terminal shrinks to the left of the sidebar.
+    pub(in super::super) fn effective_sidebar_width(&self) -> f32 {
+        if self.tab_bar_position != TabBarPosition::Right || !self.should_render_tab_strip_chrome()
+        {
+            return 0.0;
+        }
+        if self.sidebar_collapsed {
+            SIDEBAR_COLLAPSED_WIDTH
+        } else {
+            SIDEBAR_WIDTH
+        }
     }
 
     pub(in super::super) fn terminal_content_position(

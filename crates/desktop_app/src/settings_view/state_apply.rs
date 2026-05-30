@@ -40,7 +40,8 @@ impl SettingsWindow {
             | EditableField::TabTitlePromptFormat
             | EditableField::TabTitleCommandFormat
             | EditableField::TabCloseVisibility
-            | EditableField::TabWidthMode => self.apply_tabs_field(field, value),
+            | EditableField::TabWidthMode
+            | EditableField::TabBarPosition => self.apply_tabs_field(field, value),
             EditableField::WorkingDirectory
             | EditableField::WorkingDirFallback
             | EditableField::WindowWidth
@@ -551,6 +552,24 @@ impl SettingsWindow {
                     termy_config_core::TabWidthMode::Uniform => "uniform",
                 };
                 config::set_root_setting(termy_config_core::RootSettingId::TabWidthMode, canonical)
+            }
+            EditableField::TabBarPosition => {
+                let parsed = match value.to_ascii_lowercase().as_str() {
+                    "top" => termy_config_core::TabBarPosition::Top,
+                    "right" => termy_config_core::TabBarPosition::Right,
+                    _ => {
+                        return Err("Tab bar position must be top or right".to_string());
+                    }
+                };
+                self.config.tab_bar_position = parsed;
+                let canonical = match parsed {
+                    termy_config_core::TabBarPosition::Top => "top",
+                    termy_config_core::TabBarPosition::Right => "right",
+                };
+                config::set_root_setting(
+                    termy_config_core::RootSettingId::TabBarPosition,
+                    canonical,
+                )
             }
             _ => unreachable!("invalid tabs field"),
         }

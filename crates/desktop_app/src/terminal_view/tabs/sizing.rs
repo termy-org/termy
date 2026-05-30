@@ -107,7 +107,76 @@ impl TerminalView {
                     tab_left = tab_right + TAB_ITEM_GAP;
                 }
             }
+            TabStripOrientation::Vertical => {
+                let viewport_height = self
+                    .tab_strip
+                    .vertical_layout_last_synced_viewport_height
+                    .max(0.0);
+                if viewport_height <= f32::EPSILON {
+                    return;
+                }
+
+                let max_scroll = self.tab_strip_scroll_max_y();
+                let mut tab_top = 0.0;
+                for index in 0..self.tabs.len() {
+                    let tab_bottom = tab_top + SIDEBAR_TAB_ROW_HEIGHT;
+                    if index == self.active_tab {
+                        let offset = self.tab_strip.vertical_scroll_handle.offset();
+                        let current_scroll = -Into::<f32>::into(offset.y);
+                        // target_scroll_for_active_tab_bounds is axis-agnostic.
+                        let target_scroll = Self::target_scroll_for_active_tab_bounds(
+                            current_scroll,
+                            viewport_height,
+                            tab_top,
+                            tab_bottom,
+                        );
+                        let clamped_scroll = target_scroll.clamp(0.0, max_scroll);
+                        let next_offset_y = -clamped_scroll;
+                        let current_offset_y: f32 = offset.y.into();
+                        if (next_offset_y - current_offset_y).abs() > f32::EPSILON {
+                            self.tab_strip
+                                .vertical_scroll_handle
+                                .set_offset(point(offset.x, px(next_offset_y)));
+                        }
+                        return;
+                    }
+                    tab_top = tab_bottom + SIDEBAR_TAB_ROW_GAP;
+                }
+            }
         }
+    }
+
+    pub(crate) fn tab_strip_vertical_content_height(&self) -> f32 {
+        let rows = self.tabs.len();
+        if rows == 0 {
+            return 0.0;
+        }
+        (rows as f32 * SIDEBAR_TAB_ROW_HEIGHT) + (SIDEBAR_TAB_ROW_GAP * (rows - 1) as f32)
+    }
+
+    pub(crate) fn tab_strip_scroll_max_y(&self) -> f32 {
+        let viewport_height = self
+            .tab_strip
+            .vertical_layout_last_synced_viewport_height
+            .max(0.0);
+        (self.tab_strip_vertical_content_height() - viewport_height).max(0.0)
+    }
+
+    pub(crate) fn scroll_tab_strip_vertically_by(&mut self, delta_y: f32) -> bool {
+        let max_scroll = self.tab_strip_scroll_max_y();
+        let offset = self.tab_strip.vertical_scroll_handle.offset();
+        let current_offset_y: f32 = offset.y.into();
+        // tab_strip_offset_x_for_delta is axis-agnostic (1D clamp).
+        let Some(next_offset_y) =
+            Self::tab_strip_offset_x_for_delta(current_offset_y, delta_y, max_scroll)
+        else {
+            return false;
+        };
+
+        self.tab_strip
+            .vertical_scroll_handle
+            .set_offset(point(offset.x, px(next_offset_y)));
+        true
     }
 
     fn tab_strip_overflow_state_for_scroll(

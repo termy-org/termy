@@ -99,6 +99,10 @@ impl TerminalView {
                     HorizontalTitlebarPointerTarget::DragSurface => false,
                 }
             }
+            // In vertical/sidebar mode the titlebar holds no tabs, so the whole
+            // top strip is a window-drag surface. (This handler is only ever
+            // invoked with Horizontal today; arm kept for exhaustiveness.)
+            TabStripOrientation::Vertical => false,
         };
         let outcome = self
             .tab_strip

@@ -9,5 +9,6 @@ pub(super) mod render_palette;
 pub(super) mod render_shared;
 pub(super) mod render_tab_item;
 pub(super) mod render_text_measure;
+pub(super) mod render_vertical;
 pub(super) mod state;
 pub(super) mod titlebar_drag;

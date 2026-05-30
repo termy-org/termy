@@ -278,7 +278,7 @@ impl TerminalView {
             return;
         }
 
-        let sidebar_width = 0.0;
+        let sidebar_width = self.effective_sidebar_width();
         let content_top_inset = self.terminal_content_top_inset();
         let backend_mode = self.runtime_kind();
         let runtime_uses_tmux = matches!(backend_mode, RuntimeKind::Tmux);

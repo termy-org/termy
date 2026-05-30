@@ -40,6 +40,7 @@ pub(super) enum EditableField {
     TabTitleCommandFormat,
     TabCloseVisibility,
     TabWidthMode,
+    TabBarPosition,
     WorkingDirectory,
     WorkingDirFallback,
     WindowWidth,
@@ -434,7 +435,8 @@ impl SettingsWindow {
             | EditableField::TabTitlePromptFormat
             | EditableField::TabTitleCommandFormat
             | EditableField::TabCloseVisibility
-            | EditableField::TabWidthMode => Self::tabs_field_spec(field),
+            | EditableField::TabWidthMode
+            | EditableField::TabBarPosition => Self::tabs_field_spec(field),
             EditableField::WorkingDirectory
             | EditableField::WorkingDirFallback
             | EditableField::WindowWidth
@@ -607,6 +609,9 @@ impl SettingsWindow {
                 Self::enum_field_spec(RootSettingId::TabCloseVisibility)
             }
             EditableField::TabWidthMode => Self::enum_field_spec(RootSettingId::TabWidthMode),
+            EditableField::TabBarPosition => {
+                Self::enum_field_spec(RootSettingId::TabBarPosition)
+            }
             _ => unreachable!("invalid tabs field"),
         }
     }
@@ -966,6 +971,11 @@ impl SettingsWindow {
                 termy_config_core::TabWidthMode::Uniform => "uniform",
             }
             .to_string(),
+            EditableField::TabBarPosition => match self.config.tab_bar_position {
+                termy_config_core::TabBarPosition::Top => "top",
+                termy_config_core::TabBarPosition::Right => "right",
+            }
+            .to_string(),
             EditableField::WorkingDirectory => self.config.working_dir.clone().unwrap_or_default(),
             EditableField::WorkingDirFallback => match self.config.working_dir_fallback {
                 termy_config_core::WorkingDirFallback::Home => "home",
@@ -1271,6 +1281,7 @@ mod tests {
             EditableField::TabTitleCommandFormat,
             EditableField::TabCloseVisibility,
             EditableField::TabWidthMode,
+            EditableField::TabBarPosition,
             EditableField::WorkingDirectory,
             EditableField::WorkingDirFallback,
             EditableField::WindowWidth,
@@ -1301,6 +1312,7 @@ mod tests {
             EditableField::TabTitleMode,
             EditableField::TabCloseVisibility,
             EditableField::TabWidthMode,
+            EditableField::TabBarPosition,
             EditableField::WorkingDirFallback,
         ];
 

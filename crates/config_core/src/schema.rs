@@ -1,7 +1,7 @@
 use crate::types::{
-    AppConfig, AppIcon, AppearanceMode, CursorStyle, PaneFocusEffect, TabCloseVisibility,
-    TabTitleMode, TabWidthMode, TerminalScrollbarStyle, TerminalScrollbarVisibility, WindowsShell,
-    WorkingDirFallback,
+    AppConfig, AppIcon, AppearanceMode, CursorStyle, PaneFocusEffect, TabBarPosition,
+    TabCloseVisibility, TabTitleMode, TabWidthMode, TerminalScrollbarStyle,
+    TerminalScrollbarVisibility, WindowsShell, WorkingDirFallback,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -292,6 +292,17 @@ pub const TAB_WIDTH_MODE_ENUM_CHOICES: &[EnumChoice] = &[
     },
 ];
 
+pub const TAB_BAR_POSITION_ENUM_CHOICES: &[EnumChoice] = &[
+    EnumChoice {
+        value: "top",
+        label: "Top",
+    },
+    EnumChoice {
+        value: "right",
+        label: "Right (Sidebar)",
+    },
+];
+
 pub const WORKING_DIR_FALLBACK_ENUM_CHOICES: &[EnumChoice] = &[
     EnumChoice {
         value: "home",
@@ -372,6 +383,7 @@ define_root_settings! {
     (TabTitleCommandFormat, "tab_title_command_format", [], Tabs, "TAB TITLES", "Command Format", "Template for command-derived tab titles", ["tab", "title", "command", "format"], RootSettingValueKind::Text, false),
     (TabCloseVisibility, "tab_close_visibility", [], Tabs, "TAB STRIP", "Close Button Visibility", "When tab close buttons are visible", ["tab", "close", "visibility", "hover"], RootSettingValueKind::Enum, false),
     (TabWidthMode, "tab_width_mode", [], Tabs, "TAB STRIP", "Tab Width Mode", "How tab widths react to active state", ["tab", "width", "layout", "active"], RootSettingValueKind::Enum, false),
+    (TabBarPosition, "tab_bar_position", [], Tabs, "TAB STRIP", "Tab Bar Position", "Where the tab bar is rendered: top strip or right sidebar", ["tab", "bar", "position", "sidebar", "vertical", "right", "top"], RootSettingValueKind::Enum, false),
     (TabSwitchModifierHints, "tab_switch_modifier_hints", [], Tabs, "TAB STRIP", "Show Tab Switch Hints", "Show secondary+1..9 number badges on the first nine tabs while the secondary modifier is held", ["tab", "switch", "hints", "modifier", "secondary", "shortcuts"], RootSettingValueKind::Boolean, false),
     (AutoHideTabbar, "auto_hide_tabbar", [], Tabs, "TAB STRIP", "Auto-hide Tab Bar", "Hide the tab bar when only one tab is open", ["tab", "tabs", "hide", "auto", "single", "tabbar"], RootSettingValueKind::Boolean, false),
     (ShowTermyInTitlebar, "show_termy_in_titlebar", [], Tabs, "TITLE BAR", "Show Termy In Titlebar", "Show or hide the termy branding in the titlebar", ["titlebar", "branding", "tabs"], RootSettingValueKind::Boolean, false),
@@ -447,6 +459,7 @@ pub fn root_setting_enum_choices(id: RootSettingId) -> Option<&'static [EnumChoi
         RootSettingId::TabTitleMode => Some(TAB_TITLE_MODE_ENUM_CHOICES),
         RootSettingId::TabCloseVisibility => Some(TAB_CLOSE_VISIBILITY_ENUM_CHOICES),
         RootSettingId::TabWidthMode => Some(TAB_WIDTH_MODE_ENUM_CHOICES),
+        RootSettingId::TabBarPosition => Some(TAB_BAR_POSITION_ENUM_CHOICES),
         RootSettingId::ThemeMode => Some(THEME_MODE_ENUM_CHOICES),
         RootSettingId::AppIcon => Some(APP_ICON_ENUM_CHOICES),
         RootSettingId::WindowsShell => Some(WINDOWS_SHELL_ENUM_CHOICES),
@@ -534,6 +547,10 @@ pub fn root_setting_default_value(config: &AppConfig, id: RootSettingId) -> Opti
             TabWidthMode::ActiveGrow => "active_grow".to_string(),
             TabWidthMode::ActiveGrowSticky => "active_grow_sticky".to_string(),
             TabWidthMode::Uniform => "uniform".to_string(),
+        }),
+        RootSettingId::TabBarPosition => Some(match config.tab_bar_position {
+            TabBarPosition::Top => "top".to_string(),
+            TabBarPosition::Right => "right".to_string(),
         }),
         RootSettingId::TabSwitchModifierHints => Some(config.tab_switch_modifier_hints.to_string()),
         RootSettingId::AutoHideTabbar => Some(config.auto_hide_tabbar.to_string()),

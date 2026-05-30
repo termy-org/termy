@@ -41,6 +41,15 @@ pub(crate) const TAB_DRAG_AUTOSCROLL_MAX_STEP: f32 = 24.0;
 #[cfg(not(target_os = "windows"))]
 pub(crate) const TABBAR_ACTION_RAIL_WIDTH: f32 = 28.0;
 pub(crate) const TABBAR_NEW_TAB_BUTTON_SIZE: f32 = TAB_ITEM_HEIGHT;
+
+// Vertical tab sidebar (tab_bar_position = right).
+pub(crate) const SIDEBAR_WIDTH: f32 = 200.0;
+pub(crate) const SIDEBAR_COLLAPSED_WIDTH: f32 = 28.0;
+pub(crate) const SIDEBAR_HEADER_HEIGHT: f32 = 32.0;
+pub(crate) const SIDEBAR_TAB_ROW_HEIGHT: f32 = 34.0;
+// Kept at 0 so the shared 1D drop-slot / hit-test helpers (which use
+// TAB_ITEM_GAP between items) work unchanged for the vertical axis.
+pub(crate) const SIDEBAR_TAB_ROW_GAP: f32 = 0.0;
 pub(crate) const TAB_STRIP_SCROLL_EPSILON: f32 = 0.5;
 pub(crate) const TAB_STRIP_WHEEL_DELTA_LINE_REFERENCE_PX: f32 = 16.0;
 pub(crate) const TAB_PROGRESS_BADGE_SIZE: f32 = 8.0;

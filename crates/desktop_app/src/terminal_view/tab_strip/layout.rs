@@ -303,6 +303,20 @@ impl TerminalView {
                     viewport_extent,
                 }
             }
+            TabStripOrientation::Vertical => {
+                // The sidebar's scrollable tab list begins below the titlebar +
+                // sidebar header; map the window Y into that content space (the
+                // drop-slot helper adds the scroll offset itself).
+                let window_y: f32 = position.y.into();
+                let tabs_top = self.terminal_content_top_inset() + SIDEBAR_HEADER_HEIGHT;
+                TabStripDragPreview {
+                    pointer_primary_axis: window_y - tabs_top,
+                    viewport_extent: self
+                        .tab_strip
+                        .vertical_layout_last_synced_viewport_height
+                        .max(0.0),
+                }
+            }
         }
     }
 }

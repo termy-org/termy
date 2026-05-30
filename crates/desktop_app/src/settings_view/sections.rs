@@ -686,11 +686,21 @@ impl SettingsWindow {
     pub(super) fn render_tabs_strip_group(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let close_visibility = self.editable_field_value(EditableField::TabCloseVisibility);
         let width_mode = self.editable_field_value(EditableField::TabWidthMode);
+        let bar_position = self.editable_field_value(EditableField::TabBarPosition);
         let show_switch_hints = self.config.tab_switch_modifier_hints;
         let auto_hide_tabbar = self.config.auto_hide_tabbar;
         let close_visibility_meta = Self::setting_metadata_or_fallback("tab_close_visibility");
         let width_mode_meta = Self::setting_metadata_or_fallback("tab_width_mode");
+        let bar_position_meta = Self::setting_metadata_or_fallback("tab_bar_position");
         let mut rows = vec![
+            self.render_editable_row(
+                "tab_bar_position",
+                EditableField::TabBarPosition,
+                bar_position_meta.title,
+                bar_position_meta.description,
+                bar_position,
+                cx,
+            ),
             self.render_editable_row(
                 "tab_close_visibility",
                 EditableField::TabCloseVisibility,

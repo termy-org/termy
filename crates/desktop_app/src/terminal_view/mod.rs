@@ -3,7 +3,7 @@ use crate::colors::TerminalColors;
 use crate::commands::{self, CommandAction};
 use crate::config::{
     self, AppConfig, CursorStyle as AppCursorStyle, PaneFocusEffect, SystemAppearance,
-    TabCloseVisibility, TabTitleConfig, TabTitleSource, TabWidthMode, TaskConfig,
+    TabBarPosition, TabCloseVisibility, TabTitleConfig, TabTitleSource, TabWidthMode, TaskConfig,
     TerminalScrollbarStyle, TerminalScrollbarVisibility, resolve_active_theme,
     system_appearance_from_window,
 };
@@ -1499,6 +1499,8 @@ pub struct TerminalView {
     tab_title: TabTitleConfig,
     tab_close_visibility: TabCloseVisibility,
     tab_width_mode: TabWidthMode,
+    tab_bar_position: TabBarPosition,
+    sidebar_collapsed: bool,
     last_viewport_width: f32,
     auto_hide_tabbar: bool,
     tab_bar_visibility: TabBarVisibility,
@@ -3169,10 +3171,12 @@ impl TerminalView {
         let viewport = window.viewport_size();
         let viewport_width: f32 = viewport.width.into();
         let viewport_height: f32 = viewport.height.into();
+        // The right-side sidebar (if any) shortens the terminal content width;
+        // its origin stays at x=0 because the sidebar sits to the right.
         TerminalContentRect::new(
             0.0,
             0.0,
-            viewport_width,
+            (viewport_width - self.effective_sidebar_width()).max(0.0),
             viewport_height - self.terminal_content_top_inset(),
         )
     }
@@ -3859,6 +3863,8 @@ impl TerminalView {
             tab_title,
             tab_close_visibility: config.tab_close_visibility,
             tab_width_mode: config.tab_width_mode,
+            tab_bar_position: config.tab_bar_position,
+            sidebar_collapsed: false,
             last_viewport_width: 1280.0,
             auto_hide_tabbar: config.auto_hide_tabbar,
             tab_bar_visibility: TabBarVisibility::FollowConfig,
@@ -4165,6 +4171,7 @@ impl TerminalView {
         self.tab_title = config.tab_title.clone();
         let tab_close_visibility_changed = self.tab_close_visibility != config.tab_close_visibility;
         let tab_width_mode_changed = self.tab_width_mode != config.tab_width_mode;
+        let tab_bar_position_changed = self.tab_bar_position != config.tab_bar_position;
         let tab_switch_modifier_hints_changed = self
             .tab_strip
             .switch_hints
@@ -4176,6 +4183,7 @@ impl TerminalView {
         let auto_hide_tabbar_changed = self.auto_hide_tabbar != config.auto_hide_tabbar;
         self.tab_close_visibility = config.tab_close_visibility;
         self.tab_width_mode = config.tab_width_mode;
+        self.tab_bar_position = config.tab_bar_position;
         self.auto_hide_tabbar = config.auto_hide_tabbar;
         self.show_termy_in_titlebar = config.show_termy_in_titlebar;
         self.show_debug_overlay = config.show_debug_overlay;
@@ -4326,13 +4334,18 @@ impl TerminalView {
         }
         if tab_close_visibility_changed
             || tab_width_mode_changed
+            || tab_bar_position_changed
             || show_termy_in_titlebar_changed
             || simple_mode_changed
             || auto_hide_tabbar_changed
         {
             self.mark_tab_strip_layout_dirty();
         }
-        if tab_switch_modifier_hints_changed || auto_hide_tabbar_changed || simple_mode_changed {
+        if tab_switch_modifier_hints_changed
+            || tab_bar_position_changed
+            || auto_hide_tabbar_changed
+            || simple_mode_changed
+        {
             cx.notify();
         }
 

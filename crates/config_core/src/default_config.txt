@@ -59,6 +59,8 @@ tab_title_command_format = {command}
 tab_close_visibility = hover
 # How tab widths react to active state
 tab_width_mode = uniform
+# Where the tab bar is rendered: top strip or right sidebar
+tab_bar_position = top
 # Show secondary+1..9 number badges on the first nine tabs while the secondary modifier is held
 tab_switch_modifier_hints = true
 # Hide the tab bar when only one tab is open

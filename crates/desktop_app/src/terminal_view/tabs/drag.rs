@@ -89,6 +89,11 @@ impl TerminalView {
         marker_was_visible
     }
 
+    // Axis-agnostic 1D drop-slot mapping: given each tab's extent along the
+    // primary axis (widths for horizontal, row heights for vertical), the
+    // pointer position on that axis, and the scroll offset, return the insertion
+    // slot. The leading inset (TAB_HORIZONTAL_PADDING) and inter-tab gap
+    // (TAB_ITEM_GAP) are both 0, so the same math serves both orientations.
     fn tab_drop_slot_from_pointer_primary_axis_for_horizontal_widths(
         tab_widths: impl IntoIterator<Item = f32>,
         pointer_primary_axis: f32,
@@ -123,6 +128,14 @@ impl TerminalView {
                     self.tabs.iter().map(|tab| tab.display_width),
                     pointer_primary_axis,
                     scroll_offset_x,
+                )
+            }
+            TabStripOrientation::Vertical => {
+                let scroll_offset_y: f32 = self.tab_strip.vertical_scroll_handle.offset().y.into();
+                Self::tab_drop_slot_from_pointer_primary_axis_for_horizontal_widths(
+                    std::iter::repeat(SIDEBAR_TAB_ROW_HEIGHT).take(self.tabs.len()),
+                    pointer_primary_axis,
+                    scroll_offset_y,
                 )
             }
         }
@@ -208,6 +221,7 @@ impl TerminalView {
 
         match orientation {
             TabStripOrientation::Horizontal => self.scroll_tab_strip_by(-delta),
+            TabStripOrientation::Vertical => self.scroll_tab_strip_vertically_by(-delta),
         }
     }
 
@@ -228,6 +242,8 @@ impl TerminalView {
             TabStripOrientation::Horizontal => self.sync_tab_display_widths_for_viewport_if_needed(
                 self.tab_strip.drag_preview.viewport_extent(),
             ),
+            // Vertical tabs have a fixed row height; no width fitting.
+            TabStripOrientation::Vertical => false,
         };
 
         let scrolled = self.auto_scroll_tab_strip_during_drag(

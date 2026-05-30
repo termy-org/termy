@@ -2809,9 +2809,13 @@ impl Render for TerminalView {
         let tabbar_bg = terminal_surface_bg;
         let show_tab_strip_chrome = self.should_render_tab_strip_chrome();
         let titlebar_height = Self::window_titlebar_height_for(false, show_tab_strip_chrome);
-        let show_horizontal_tabbar = show_tab_strip_chrome;
+        let vertical_tabs = self.tab_strip_orientation()
+            == crate::terminal_view::tab_strip::state::TabStripOrientation::Vertical;
+        let show_horizontal_tabbar = show_tab_strip_chrome && !vertical_tabs;
         let tabs_row = show_horizontal_tabbar
             .then(|| self.render_tab_strip(window, &colors, &ui_font_family, tabbar_bg, cx));
+        let tab_sidebar = (vertical_tabs && show_tab_strip_chrome)
+            .then(|| self.render_tab_sidebar(window, &colors, &ui_font_family, tabbar_bg, cx));
         let hidden_titlebar_branding = Self::should_render_hidden_titlebar_branding(
             self.auto_hide_tabbar,
             self.tabs.len(),
@@ -3118,7 +3122,8 @@ impl Render for TerminalView {
                                         .children(terminal_scrollbar_overlay)
                                         .children(terminal_progress_loader),
                                 ),
-                        ),
+                        )
+                        .children(tab_sidebar),
                     ),
             )
             .child(overlay_view);

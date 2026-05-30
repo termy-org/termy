@@ -245,6 +245,11 @@ Platform note: the Agent Sidebar/Workspace is currently unavailable on Windows b
 - How tab widths react to active state
 - Group: `TAB STRIP`
 
+`tab_bar_position`
+- Default: `top`
+- Where the tab bar is rendered: top strip or right sidebar
+- Group: `TAB STRIP`
+
 `tab_switch_modifier_hints`
 - Default: `true`
 - Show secondary+1..9 number badges on the first nine tabs while the secondary modifier is held

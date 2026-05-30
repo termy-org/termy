@@ -331,9 +331,28 @@ impl TerminalView {
                     .rounded_full()
                     .bg(palette.tab_drop_marker_color)
             }
+            TabStripOrientation::Vertical => {
+                // Horizontal bar at the top (Leading) or bottom (Trailing) edge.
+                let marker_y = match side {
+                    TabDropMarkerSide::Leading => 0.0,
+                    TabDropMarkerSide::Trailing => input.tab_primary_extent - TAB_DROP_MARKER_WIDTH,
+                }
+                .max(0.0);
+                let marker_width =
+                    (input.tab_cross_extent - (TAB_DROP_MARKER_INSET_Y * 2.0)).max(0.0);
+
+                div()
+                    .absolute()
+                    .top(px(marker_y))
+                    .left(px(TAB_DROP_MARKER_INSET_Y))
+                    .h(px(TAB_DROP_MARKER_WIDTH))
+                    .w(px(marker_width))
+                    .rounded_full()
+                    .bg(palette.tab_drop_marker_color)
+            }
         });
 
-        let leading_icon = if !input.is_renaming && orientation == TabStripOrientation::Horizontal {
+        let leading_icon = if !input.is_renaming {
             Some(
                 div()
                     .flex_none()

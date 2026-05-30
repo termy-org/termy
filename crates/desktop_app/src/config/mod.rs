@@ -26,8 +26,9 @@ pub use preview::{
 };
 pub use termy_config_core::{
     AppConfig, AppearanceMode, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors,
-    PaneFocusEffect, SHELL_DECIDE_THEME_ID, SystemAppearance, TabCloseVisibility, TabTitleConfig,
-    TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle, TerminalScrollbarVisibility,
+    PaneFocusEffect, SHELL_DECIDE_THEME_ID, SystemAppearance, TabBarPosition, TabCloseVisibility,
+    TabTitleConfig, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
+    TerminalScrollbarVisibility,
     WindowsShell, WorkingDirFallback, resolve_active_theme,
 };
 
