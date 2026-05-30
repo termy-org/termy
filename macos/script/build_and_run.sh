@@ -17,8 +17,11 @@ APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$EXECUTABLE_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
-ICON_SOURCE="$ROOT_DIR/assets/termy_old_icon.png"
+ICON_SOURCE="$ROOT_DIR/assets/ToykoTermy.png"
 ICON_NAME="TermyIcon"
+# Logos selectable from Settings → Appearance. Bundled into Resources so the app
+# can swap the Dock icon at runtime via AppLogoManager.
+LOGO_SOURCES=(ToykoTermy termy_old_icon TermyIcon)
 
 pkill -x "$EXECUTABLE_NAME" >/dev/null 2>&1 || true
 pkill -x "Termy" >/dev/null 2>&1 || true
@@ -54,6 +57,15 @@ build_icon() {
 }
 
 build_icon
+
+# Bundle the selectable logos so the in-app switcher can load them at runtime.
+for logo in "${LOGO_SOURCES[@]}"; do
+  if [ -f "$ROOT_DIR/assets/$logo.png" ]; then
+    cp "$ROOT_DIR/assets/$logo.png" "$APP_RESOURCES/$logo.png"
+  else
+    echo "warning: logo asset not found: assets/$logo.png" >&2
+  fi
+done
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

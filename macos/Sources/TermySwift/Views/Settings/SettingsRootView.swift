@@ -2,8 +2,21 @@ import AppKit
 import SwiftUI
 
 struct SettingsRootView: View {
+    static let appearanceSectionID = "appearance"
+
     @StateObject private var store = SettingsStore()
     @State private var selection: String?
+
+    /// Native-only section (not part of the FFI settings schema) that hosts the
+    /// app logo switcher.
+    private let appearanceSection = SettingsSectionModel(
+        id: SettingsRootView.appearanceSectionID,
+        label: "Appearance",
+        systemImage: "paintbrush",
+        groups: nil,
+        colors: nil,
+        keybinds: nil
+    )
 
     var body: some View {
         NavigationSplitView {
@@ -33,7 +46,8 @@ struct SettingsRootView: View {
     }
 
     private var supportedSections: [SettingsSectionModel] {
-        store.schema?.sections.filter(\.hasSupportedSettings) ?? []
+        let schemaSections = store.schema?.sections.filter(\.hasSupportedSettings) ?? []
+        return schemaSections + [appearanceSection]
     }
 
     private var selectedSection: SettingsSectionModel? {
@@ -86,7 +100,11 @@ private struct SettingsDetailView: View {
     var body: some View {
         Group {
             if let section {
-                SettingsSectionView(section: section, store: store)
+                if section.id == SettingsRootView.appearanceSectionID {
+                    LogoSettingsView()
+                } else {
+                    SettingsSectionView(section: section, store: store)
+                }
             } else {
                 ContentUnavailableView(
                     "Settings",
@@ -141,6 +159,61 @@ private extension SettingsSectionModel {
         return groups?.reduce(0) { count, group in
             count + group.settings.count
         } ?? 0
+    }
+}
+
+// MARK: - Appearance / logo switcher
+
+private struct LogoSettingsView: View {
+    @ObservedObject private var logos = AppLogoManager.shared
+
+    var body: some View {
+        Form {
+            Section("App Logo") {
+                Picker(selection: $logos.selectedID) {
+                    ForEach(AppLogo.all) { logo in
+                        Text(logo.label).tag(logo.id)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Logo")
+                        Text("Sets the Dock and Cmd-Tab icon. Remembered across launches.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                LabeledContent("Preview") {
+                    LogoPreview(image: logos.image(for: logos.selected))
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Appearance")
+    }
+}
+
+private struct LogoPreview: View {
+    let image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.secondary.opacity(0.15))
+                    .overlay(
+                        Image(systemName: "questionmark")
+                            .foregroundStyle(.secondary)
+                    )
+            }
+        }
+        .frame(width: 96, height: 96)
     }
 }
 
