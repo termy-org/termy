@@ -23,6 +23,8 @@ struct TerminalKeyboardInputView: NSViewRepresentable {
     var onFocusNextPane: () -> Void
     var onShowSearch: () -> Void
     var onSelectionChanged: (TerminalSelection?) -> Void
+    var onSelectWord: (TerminalGridPosition) -> Void
+    var onSelectLine: (TerminalGridPosition) -> Void
     var onCopy: () -> Bool
 
     func makeNSView(context: Context) -> KeyboardCaptureView {
@@ -64,6 +66,8 @@ final class KeyboardCaptureView: NSView {
     var onFocusNextPane: () -> Void = {}
     var onShowSearch: () -> Void = {}
     var onSelectionChanged: (TerminalSelection?) -> Void = { _ in }
+    var onSelectWord: (TerminalGridPosition) -> Void = { _ in }
+    var onSelectLine: (TerminalGridPosition) -> Void = { _ in }
     var onCopy: () -> Bool = { false }
 
     private var selectionAnchor: TerminalGridPosition?
@@ -167,6 +171,21 @@ final class KeyboardCaptureView: NSView {
         guard button == .left else {
             return
         }
+
+        // Double-click selects the word, triple-click selects the line.
+        switch event.clickCount {
+        case 2:
+            selectionAnchor = nil
+            onSelectWord(gridPosition(for: event))
+            return
+        case let count where count >= 3:
+            selectionAnchor = nil
+            onSelectLine(gridPosition(for: event))
+            return
+        default:
+            break
+        }
+
         selectionAnchor = gridPosition(for: event)
         onSelectionChanged(nil)
     }
@@ -687,6 +706,8 @@ private extension KeyboardCaptureView {
         onFocusNextPane = configuration.onFocusNextPane
         onShowSearch = configuration.onShowSearch
         onSelectionChanged = configuration.onSelectionChanged
+        onSelectWord = configuration.onSelectWord
+        onSelectLine = configuration.onSelectLine
         onCopy = configuration.onCopy
     }
 }

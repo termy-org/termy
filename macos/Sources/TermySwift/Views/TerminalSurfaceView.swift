@@ -74,6 +74,12 @@ struct TerminalSurfaceView: View {
                     onSelectionChanged: { selection in
                         terminal.updateSelection(selection)
                     },
+                    onSelectWord: { position in
+                        terminal.selectWord(at: position)
+                    },
+                    onSelectLine: { position in
+                        terminal.selectLine(at: position)
+                    },
                     onCopy: {
                         terminal.copySelection()
                     }

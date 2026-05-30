@@ -337,6 +337,70 @@ struct TerminalFrame: Equatable {
         }
         return lines.joined(separator: "\n")
     }
+
+    /// Word selection for double-click: expands from `position` over a contiguous
+    /// run of same-class characters (word vs. non-word punctuation), stopping at
+    /// whitespace. Word characters include path/URL-friendly punctuation so file
+    /// paths and URLs select as a single token. Returns nil over whitespace.
+    func wordSelection(at position: TerminalGridPosition) -> TerminalSelection? {
+        guard cols > 0, rows > 0,
+              position.row >= 0, position.row < rows,
+              position.col >= 0, position.col < cols
+        else {
+            return nil
+        }
+
+        func character(at col: Int) -> Character {
+            guard let cell = cell(row: position.row, col: col), cell.renderText else {
+                return " "
+            }
+            return cell.character
+        }
+
+        let target = character(at: position.col)
+        guard !target.isWhitespace else {
+            return nil
+        }
+        let targetIsWord = TerminalFrame.isWordCharacter(target)
+
+        func matches(_ col: Int) -> Bool {
+            let c = character(at: col)
+            return !c.isWhitespace && TerminalFrame.isWordCharacter(c) == targetIsWord
+        }
+
+        var startCol = position.col
+        while startCol > 0, matches(startCol - 1) {
+            startCol -= 1
+        }
+        var endCol = position.col
+        while endCol < cols - 1, matches(endCol + 1) {
+            endCol += 1
+        }
+
+        return TerminalSelection(
+            anchor: TerminalGridPosition(col: startCol, row: position.row),
+            active: TerminalGridPosition(col: endCol, row: position.row)
+        )
+    }
+
+    /// Line selection for triple-click: selects the full visible row. Trailing
+    /// blanks are trimmed when the text is copied.
+    func lineSelection(at position: TerminalGridPosition) -> TerminalSelection? {
+        guard cols > 0, rows > 0, position.row >= 0, position.row < rows else {
+            return nil
+        }
+        return TerminalSelection(
+            anchor: TerminalGridPosition(col: 0, row: position.row),
+            active: TerminalGridPosition(col: cols - 1, row: position.row)
+        )
+    }
+
+    static func isWordCharacter(_ character: Character) -> Bool {
+        if character.isLetter || character.isNumber {
+            return true
+        }
+        return "_./-~:@%+=?&#".contains(character)
+    }
 }
 
 private extension String {

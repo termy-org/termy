@@ -199,6 +199,20 @@ final class TerminalViewModel: ObservableObject {
         lastAutoCopiedSelectionText = text
     }
 
+    /// Double-click: select the word under the cursor.
+    func selectWord(at position: TerminalGridPosition) {
+        guard let selection = frame.wordSelection(at: position) else {
+            updateSelection(nil)
+            return
+        }
+        updateSelection(selection)
+    }
+
+    /// Triple-click: select the whole line under the cursor.
+    func selectLine(at position: TerminalGridPosition) {
+        updateSelection(frame.lineSelection(at: position))
+    }
+
     func copySelection() -> Bool {
         guard let text = frame.selectedText(for: selection), !text.isEmpty else {
             return false
@@ -396,9 +410,14 @@ final class TerminalViewModel: ObservableObject {
                 }
             case .workingDirectory(let path):
                 currentWorkingDirectory = TerminalViewModel.normalizedWorkingDirectory(path)
+            case .clipboardStore(let text):
+                // OSC 52: an app (tmux, vim, ssh) asked to set the system
+                // clipboard. The Rust side already base64-decodes the payload.
+                if !text.isEmpty {
+                    copy(text)
+                }
             case .wakeup,
                  .bell,
-                 .clipboardStore(_),
                  .shellPromptStart,
                  .shellCommandStart,
                  .shellCommandExecuting,
