@@ -438,16 +438,50 @@ private struct ColorRow: View {
 
 private struct KeybindSettingsContent: View {
     @ObservedObject var store: SettingsStore
+    @State private var search = ""
+
+    private var bindings: [TermyKeybindConfiguration] {
+        let all = TermyAppConfiguration.current.keybinds
+            .sorted { $0.action < $1.action }
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else {
+            return all
+        }
+        return all.filter {
+            $0.action.lowercased().contains(query) || $0.trigger.lowercased().contains(query)
+        }
+    }
 
     var body: some View {
-        Section("Keybind Directives") {
-            Text("One directive per line, e.g. `cmd-k=clear_buffer`. These are written verbatim as `keybind = …` lines.")
+        Section("Active Keybindings") {
+            TextField("Filter actions or keys", text: $search)
+                .textFieldStyle(.roundedBorder)
+
+            if bindings.isEmpty {
+                Text("No keybindings match.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(bindings, id: \.self) { binding in
+                    LabeledContent {
+                        Text(binding.trigger)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    } label: {
+                        Text(Self.humanize(binding.action))
+                    }
+                }
+            }
+        }
+
+        Section("Edit Directives") {
+            Text("One directive per line, e.g. `cmd-k=clear_buffer`. Changes take effect after restarting Termy.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             TextEditor(text: $store.keybindsText)
                 .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 220)
+                .frame(minHeight: 180)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
@@ -461,6 +495,13 @@ private struct KeybindSettingsContent: View {
                 .keyboardShortcut("s", modifiers: [.command])
             }
         }
+    }
+
+    private static func humanize(_ action: String) -> String {
+        action
+            .split(separator: "_")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
     }
 }
 
