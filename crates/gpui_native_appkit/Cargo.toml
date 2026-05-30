@@ -1,0 +1,14 @@
+[package]
+name = "gpui-native-appkit"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+gpui = { workspace = true }
+raw-window-handle = "0.6"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }

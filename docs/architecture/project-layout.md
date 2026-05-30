@@ -19,6 +19,7 @@ Termy is a single repository with several product surfaces. Keep changes in the 
 
 - `termy` (`crates/desktop_app/`) is the product app and the only crate that should own complete user-facing desktop workflows.
 - `termy_core` (`crates/core/`) is the headless runtime/API for embedders.
+- `gpui-native-appkit` (`crates/gpui_native_appkit/`) is the reusable AppKit/SwiftUI titlebar bridge for GPUI-hosted macOS windows.
 - `termy_terminal_ui` (`crates/terminal_ui/`) is the GPUI-facing terminal adapter used by the desktop app.
 - `termy_command_core`, `termy_config_core`, `termy_theme_core`, `termy_search`, and `termy_themes` are pure domain crates.
 - `termy_ffi` and `termy_native_sdk` are embedding/native-integration surfaces.

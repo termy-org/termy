@@ -7,6 +7,7 @@ members = [
   "crates/command_core",
   "crates/config_core",
   "crates/release_core",
+  "crates/gpui_native_appkit",
   "crates/native_sdk",
   "crates/auto_update",
   "crates/auto_update_ui",
