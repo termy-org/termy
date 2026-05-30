@@ -71,6 +71,12 @@ struct TermySwiftApp: App {
                 .background(WindowConfigurator())
         }
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    Task { await AppUpdater.shared.checkForUpdates(userInitiated: true) }
+                }
+            }
+
             CommandGroup(replacing: .appSettings) {
                 OpenSettingsButton()
             }
@@ -293,6 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWindow.allowsAutomaticWindowTabbing = true
         AppLogoManager.shared.applyToDock()
         OnboardingPresenter.shared.presentIfNeeded()
+        Task { await AppUpdater.shared.checkForUpdates(userInitiated: false) }
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
             if ConfiguredKeybindRouter.shared.handle(event) {
                 return nil

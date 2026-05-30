@@ -7,6 +7,8 @@ EXECUTABLE_NAME="TermyAlpha"
 PRODUCT_NAME="TermySwift"
 BUNDLE_ID="com.lassevestergaard.TermyAlpha"
 MIN_SYSTEM_VERSION="14.0"
+APP_VERSION="$(grep -m1 '^version = ' "$(dirname "${BASH_SOURCE[0]}")/../../crates/desktop_app/Cargo.toml" 2>/dev/null | sed -E 's/version = "(.*)"/\1/')"
+APP_VERSION="${APP_VERSION:-0.0.0}"
 
 MACOS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROOT_DIR="$(cd "$MACOS_DIR/.." && pwd)"
@@ -82,6 +84,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$ICON_NAME</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$APP_VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$APP_VERSION</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
