@@ -204,10 +204,20 @@ pub struct TermyFfiSafetyConfig {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TermyFfiNativeConfig {
+    pub auto_update: bool,
+    pub tmux_enabled: bool,
+    pub tmux_persistence: bool,
+    pub tmux_show_active_pane_border: bool,
     pub simple_mode: bool,
     pub native_tab_persistence: bool,
     pub native_layout_autosave: bool,
     pub native_buffer_persistence: bool,
+    pub show_debug_overlay: bool,
+    pub onboarding_complete: bool,
+    pub tab_close_visibility: u32,
+    pub tab_width_mode: u32,
+    pub tab_bar_position: u32,
+    pub tab_switch_modifier_hints: bool,
     pub chrome_contrast: bool,
     pub command_palette_show_keybinds: bool,
     pub app_icon: u32,
@@ -850,10 +860,32 @@ pub unsafe extern "C" fn termy_config_native(
     let app_config = unsafe { &(*config).loaded.app_config };
     unsafe {
         *out_native = TermyFfiNativeConfig {
+            auto_update: app_config.auto_update,
+            tmux_enabled: app_config.tmux_enabled,
+            tmux_persistence: app_config.tmux_persistence,
+            tmux_show_active_pane_border: app_config.tmux_show_active_pane_border,
             simple_mode: app_config.simple_mode,
             native_tab_persistence: app_config.native_tab_persistence,
             native_layout_autosave: app_config.native_layout_autosave,
             native_buffer_persistence: app_config.native_buffer_persistence,
+            show_debug_overlay: app_config.show_debug_overlay,
+            onboarding_complete: app_config.onboarding_complete,
+            tab_close_visibility: match app_config.tab_close_visibility {
+                cfg::TabCloseVisibility::ActiveHover => 0,
+                cfg::TabCloseVisibility::Hover => 1,
+                cfg::TabCloseVisibility::Always => 2,
+            },
+            tab_width_mode: match app_config.tab_width_mode {
+                cfg::TabWidthMode::Stable => 0,
+                cfg::TabWidthMode::ActiveGrow => 1,
+                cfg::TabWidthMode::ActiveGrowSticky => 2,
+                cfg::TabWidthMode::Uniform => 3,
+            },
+            tab_bar_position: match app_config.tab_bar_position {
+                cfg::TabBarPosition::Top => 0,
+                cfg::TabBarPosition::Right => 1,
+            },
+            tab_switch_modifier_hints: app_config.tab_switch_modifier_hints,
             chrome_contrast: app_config.chrome_contrast,
             command_palette_show_keybinds: app_config.command_palette_show_keybinds,
             app_icon: match app_config.app_icon {
@@ -865,6 +897,38 @@ pub unsafe extern "C" fn termy_config_native(
             auto_hide_tabbar: app_config.auto_hide_tabbar,
             show_termy_in_titlebar: app_config.show_termy_in_titlebar,
         };
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_tmux_binary(
+    config: *const TermyFfiConfig,
+    out_binary: *mut TermyFfiBytes,
+) -> TermyFfiStatus {
+    if config.is_null() || out_binary.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let binary = unsafe { (*config).loaded.app_config.tmux_binary.clone() };
+    unsafe {
+        *out_binary = ffi_bytes_from_string(binary);
+    }
+    TermyFfiStatus::Ok
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termy_config_ui_font_family(
+    config: *const TermyFfiConfig,
+    out_font_family: *mut TermyFfiBytes,
+) -> TermyFfiStatus {
+    if config.is_null() || out_font_family.is_null() {
+        return TermyFfiStatus::Null;
+    }
+
+    let font_family = unsafe { (*config).loaded.app_config.ui_font_family.clone() };
+    unsafe {
+        *out_font_family = ffi_bytes_from_string(font_family);
     }
     TermyFfiStatus::Ok
 }
@@ -1361,16 +1425,6 @@ fn settings_schema_json(loaded: &LoadedTermyConfig) -> String {
                     if spec.section != section || matches!(spec.id, cfg::RootSettingId::Keybind) {
                         continue;
                     }
-                    if matches!(
-                        spec.id,
-                        cfg::RootSettingId::TmuxEnabled
-                            | cfg::RootSettingId::TmuxPersistence
-                            | cfg::RootSettingId::TmuxBinary
-                            | cfg::RootSettingId::TmuxShowActivePaneBorder
-                    ) {
-                        continue;
-                    }
-
                     let kind = match spec.value_kind {
                         cfg::RootSettingValueKind::Text => "text",
                         cfg::RootSettingValueKind::Numeric => "numeric",
@@ -2173,11 +2227,7 @@ mod tests {
                 .iter()
                 .flat_map(|section| section["groups"].as_array().into_iter().flatten())
                 .flat_map(|group| group["settings"].as_array().into_iter().flatten())
-                .all(|setting| {
-                    !setting["key"]
-                        .as_str()
-                        .is_some_and(|key| key.starts_with("tmux_"))
-                })
+                .any(|setting| setting["key"] == "tmux_enabled")
         );
 
         // Colors section reflects the override hex.
@@ -2193,8 +2243,49 @@ mod tests {
     }
 
     #[test]
+    fn settings_schema_json_exposes_all_shared_root_settings() {
+        let mut config = ptr::null_mut();
+        assert_eq!(
+            unsafe { termy_config_from_contents(b"".as_ptr(), 0, &mut config) },
+            TermyFfiStatus::Ok
+        );
+
+        let mut bytes = TermyFfiBytes::default();
+        assert_eq!(
+            unsafe { termy_settings_schema_json(config, &mut bytes) },
+            TermyFfiStatus::Ok
+        );
+        let json = unsafe {
+            str::from_utf8(slice::from_raw_parts(bytes.ptr, bytes.len)).expect("schema json utf8")
+        };
+        let value: serde_json::Value = serde_json::from_str(json).expect("valid schema json");
+        let exposed_keys = value["sections"]
+            .as_array()
+            .expect("sections array")
+            .iter()
+            .flat_map(|section| section["groups"].as_array().into_iter().flatten())
+            .flat_map(|group| group["settings"].as_array().into_iter().flatten())
+            .filter_map(|setting| setting["key"].as_str())
+            .collect::<std::collections::HashSet<_>>();
+
+        for spec in cfg::ROOT_SETTING_SPECS {
+            if matches!(spec.id, cfg::RootSettingId::Keybind) {
+                continue;
+            }
+            assert!(
+                exposed_keys.contains(spec.key),
+                "settings schema omitted shared config key {}",
+                spec.key
+            );
+        }
+
+        assert_eq!(unsafe { termy_buffer_free(bytes) }, TermyFfiStatus::Ok);
+        assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
+    }
+
+    #[test]
     fn config_from_contents_exposes_safety_config() {
-        let contents = b"warn_on_quit = true\nwarn_on_quit_with_running_process = false\nsimple_mode = true\nnative_tab_persistence = true\nnative_layout_autosave = true\nnative_buffer_persistence = true\nchrome_contrast = true\ncommand_palette_show_keybinds = false\napp_icon = old\nshell_integration_enabled = false\nprogress_indicator_enabled = false\nauto_hide_tabbar = false\nshow_termy_in_titlebar = false\n";
+        let contents = b"warn_on_quit = true\nwarn_on_quit_with_running_process = false\nauto_update = false\ntmux_enabled = true\ntmux_persistence = false\ntmux_binary = /opt/homebrew/bin/tmux\ntmux_show_active_pane_border = false\nsimple_mode = true\nnative_tab_persistence = true\nnative_layout_autosave = true\nnative_buffer_persistence = true\nshow_debug_overlay = true\nonboarding_complete = false\ntab_close_visibility = always\ntab_width_mode = active_grow_sticky\ntab_bar_position = right\ntab_switch_modifier_hints = false\nui_font_family = Avenir Next\nchrome_contrast = true\ncommand_palette_show_keybinds = false\napp_icon = old\nshell_integration_enabled = false\nprogress_indicator_enabled = false\nauto_hide_tabbar = false\nshow_termy_in_titlebar = false\n";
         let mut config = ptr::null_mut();
         assert_eq!(
             unsafe { termy_config_from_contents(contents.as_ptr(), contents.len(), &mut config) },
@@ -2214,10 +2305,20 @@ mod tests {
             unsafe { termy_config_native(config, &mut native) },
             TermyFfiStatus::Ok
         );
+        assert!(!native.auto_update);
+        assert!(native.tmux_enabled);
+        assert!(!native.tmux_persistence);
+        assert!(!native.tmux_show_active_pane_border);
         assert!(native.simple_mode);
         assert!(native.native_tab_persistence);
         assert!(native.native_layout_autosave);
         assert!(native.native_buffer_persistence);
+        assert!(native.show_debug_overlay);
+        assert!(!native.onboarding_complete);
+        assert_eq!(native.tab_close_visibility, 2);
+        assert_eq!(native.tab_width_mode, 2);
+        assert_eq!(native.tab_bar_position, 1);
+        assert!(!native.tab_switch_modifier_hints);
         assert!(native.chrome_contrast);
         assert!(!native.command_palette_show_keybinds);
         assert_eq!(native.app_icon, 1);
@@ -2225,6 +2326,39 @@ mod tests {
         assert!(!native.progress_indicator_enabled);
         assert!(!native.auto_hide_tabbar);
         assert!(!native.show_termy_in_titlebar);
+
+        let mut tmux_binary = TermyFfiBytes::default();
+        assert_eq!(
+            unsafe { termy_config_tmux_binary(config, &mut tmux_binary) },
+            TermyFfiStatus::Ok
+        );
+        let tmux_binary_value = unsafe {
+            str::from_utf8(slice::from_raw_parts(tmux_binary.ptr, tmux_binary.len))
+                .expect("tmux binary utf8")
+        };
+        assert_eq!(tmux_binary_value, "/opt/homebrew/bin/tmux");
+        assert_eq!(
+            unsafe { termy_buffer_free(tmux_binary) },
+            TermyFfiStatus::Ok
+        );
+
+        let mut ui_font_family = TermyFfiBytes::default();
+        assert_eq!(
+            unsafe { termy_config_ui_font_family(config, &mut ui_font_family) },
+            TermyFfiStatus::Ok
+        );
+        let ui_font_family_value = unsafe {
+            str::from_utf8(slice::from_raw_parts(
+                ui_font_family.ptr,
+                ui_font_family.len,
+            ))
+            .expect("ui font utf8")
+        };
+        assert_eq!(ui_font_family_value, "Avenir Next");
+        assert_eq!(
+            unsafe { termy_buffer_free(ui_font_family) },
+            TermyFfiStatus::Ok
+        );
 
         assert_eq!(unsafe { termy_config_free(config) }, TermyFfiStatus::Ok);
     }

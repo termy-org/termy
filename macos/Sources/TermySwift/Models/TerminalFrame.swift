@@ -301,6 +301,44 @@ struct TerminalFrame: Equatable {
         historySize: 0
     )
 
+    static func plainTextPreview(_ text: String, cols: Int = 96, rows: Int = 28) -> TerminalFrame {
+        let cols = max(2, cols)
+        let rows = max(2, rows)
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .suffix(rows)
+            .map(String.init)
+        let topPadding = max(0, rows - lines.count)
+        var cells: [TerminalCell] = []
+        cells.reserveCapacity(cols * rows)
+
+        for row in 0..<rows {
+            let lineIndex = row - topPadding
+            let characters = lineIndex >= 0 ? Array(lines[lineIndex].prefix(cols)) : []
+            for col in 0..<cols {
+                let character = characters.indices.contains(col) ? characters[col] : " "
+                cells.append(TerminalCell(
+                    col: col,
+                    row: row,
+                    character: character,
+                    foreground: .termyForeground,
+                    background: .termyBackground,
+                    usesTerminalDefaultBackground: true,
+                    renderText: character != " ",
+                    bold: false
+                ))
+            }
+        }
+
+        return TerminalFrame(
+            cols: cols,
+            rows: rows,
+            cells: cells,
+            cursor: nil,
+            displayOffset: 0,
+            historySize: 0
+        )
+    }
+
     func cells(inRow row: Int) -> ArraySlice<TerminalCell> {
         let start = row * cols
         let end = start + cols
@@ -311,6 +349,9 @@ struct TerminalFrame: Equatable {
     }
 
     func cell(row: Int, col: Int) -> TerminalCell? {
+        guard row >= 0, row < rows, col >= 0, col < cols else {
+            return nil
+        }
         let index = (row * cols) + col
         guard index >= 0, index < cells.count else {
             return nil
@@ -336,6 +377,19 @@ struct TerminalFrame: Equatable {
             return nil
         }
         return lines.joined(separator: "\n")
+    }
+
+    func visibleTextSnapshot() -> String {
+        guard cols > 0, rows > 0 else {
+            return ""
+        }
+        return (0..<rows)
+            .map { row in
+                String(cells(inRow: row).map { $0.renderText ? $0.character : " " })
+                    .trimmingTrailingSpaces()
+            }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Word selection for double-click: expands from `position` over a contiguous

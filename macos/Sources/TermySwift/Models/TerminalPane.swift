@@ -17,9 +17,19 @@ final class TerminalPane: ObservableObject, Identifiable {
     let id: UUID
     let terminal: TerminalViewModel
 
-    init(id: UUID = UUID(), workingDirectory: String? = nil, startupCommand: String? = nil) {
+    init(
+        id: UUID = UUID(),
+        workingDirectory: String? = nil,
+        startupCommand: String? = nil,
+        restoredBufferText: String? = nil
+    ) {
         self.id = id
-        terminal = TerminalViewModel(workingDirectory: workingDirectory, startupCommand: startupCommand)
+        terminal = TerminalViewModel(
+            workingDirectory: workingDirectory,
+            startupCommand: startupCommand,
+            tmuxSessionHint: id.uuidString,
+            restoredBufferText: restoredBufferText
+        )
     }
 }
 
@@ -70,7 +80,7 @@ final class TerminalWorkspaceStore: ObservableObject {
         focusedPaneID = firstPane.id
     }
 
-    func snapshot() -> TerminalWorkspaceSnapshot {
+    func snapshot(includeBuffers: Bool = false) -> TerminalWorkspaceSnapshot {
         let panes = leaves()
         let paneIndices = Dictionary(uniqueKeysWithValues: panes.enumerated().map { index, pane in
             (pane.id, index)
@@ -78,7 +88,11 @@ final class TerminalWorkspaceStore: ObservableObject {
         let activePane = panes.firstIndex { $0.id == focusedPaneID } ?? 0
         let tab = TerminalWorkspaceTabSnapshot(
             panes: panes.map { pane in
-                TerminalWorkspacePaneSnapshot(id: pane.id, title: pane.terminal.title)
+                TerminalWorkspacePaneSnapshot(
+                    id: pane.id,
+                    title: pane.terminal.title,
+                    bufferText: includeBuffers ? pane.terminal.visibleTextSnapshot() : nil
+                )
             },
             layoutTree: layoutSnapshot(from: root, paneIndices: paneIndices),
             activePane: activePane,
@@ -100,7 +114,9 @@ final class TerminalWorkspaceStore: ObservableObject {
             return false
         }
 
-        let restoredPanes = tab.panes.map { TerminalPane(id: $0.id) }
+        let restoredPanes = tab.panes.map { snapshot in
+            TerminalPane(id: snapshot.id, restoredBufferText: snapshot.bufferText)
+        }
         let restoredRoot = tab.layoutTree.flatMap { nodeSnapshot in
             node(from: nodeSnapshot, panes: restoredPanes)
         } ?? fallbackNode(for: restoredPanes)
@@ -290,7 +306,7 @@ final class TerminalWorkspaceStore: ObservableObject {
     }
 
     func showCommandPalette() {
-        guard !TermyAppConfiguration.current.native.simpleMode else {
+        guard !TermyConfigurationStore.shared.configuration.native.simpleMode else {
             return
         }
         isCommandPaletteVisible = true

@@ -20,11 +20,12 @@ struct TerminalGridView: View {
     }
 
     private func draw(in context: inout GraphicsContext) {
-        drawBackgrounds(in: &context)
+        let renderPlan = TerminalGridRenderPlan(frame: frame, renderConfig: renderConfig)
+        drawBackgrounds(renderPlan.backgroundRuns, in: &context)
         drawSearch(in: &context)
         drawSelection(in: &context)
         drawCursor(in: &context)
-        drawText(in: &context)
+        drawText(renderPlan.textSegments, in: &context)
         drawHoveredLink(in: &context)
     }
 
@@ -70,22 +71,14 @@ struct TerminalGridView: View {
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    private func drawBackgrounds(in context: inout GraphicsContext) {
-        for run in backgroundRuns {
+    private func drawBackgrounds(_ runs: [TerminalBackgroundRun], in context: inout GraphicsContext) {
+        for run in runs {
             let rect = pixelAlignedCellRect(col: run.startCol, row: run.row, cols: run.cols)
             context.fill(
                 Path(rect),
                 with: .color(run.color.swiftUIColor.opacity(run.opacity))
             )
         }
-    }
-
-    private func shouldPaintBackground(_ cell: TerminalCell) -> Bool {
-        !cell.usesTerminalDefaultBackground || renderConfig.backgroundOpacityCells
-    }
-
-    private func backgroundOpacity(for cell: TerminalCell) -> Double {
-        cell.usesTerminalDefaultBackground ? renderConfig.backgroundOpacity : 1.0
     }
 
     private func drawSelection(in context: inout GraphicsContext) {
@@ -141,9 +134,9 @@ struct TerminalGridView: View {
         context.fill(Path(rect), with: .color(renderConfig.cursor.swiftUIColor))
     }
 
-    private func drawText(in context: inout GraphicsContext) {
+    private func drawText(_ segments: [TerminalTextSegment], in context: inout GraphicsContext) {
         let centerY = renderConfig.cellHeight / 2
-        for segment in textSegments {
+        for segment in segments {
             var text = Text(verbatim: segment.text)
                 .font(terminalFont(weight: segment.bold ? .semibold : .regular))
             text = text.foregroundColor(segment.foreground.swiftUIColor)
@@ -157,34 +150,68 @@ struct TerminalGridView: View {
         }
     }
 
-    private var backgroundRuns: [TerminalBackgroundRun] {
-        var runs: [TerminalBackgroundRun] = []
+    private func terminalFont(weight: Font.Weight) -> Font {
+        let fontFamily = renderConfig.fontFamily.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fontFamily.isEmpty else {
+            return .system(size: renderConfig.fontSize, weight: weight, design: .monospaced)
+        }
+        return .custom(fontFamily, size: renderConfig.fontSize).weight(weight)
+    }
+}
 
+private struct TerminalGridRenderPlan {
+    var backgroundRuns: [TerminalBackgroundRun] = []
+    var textSegments: [TerminalTextSegment] = []
+
+    init(frame: TerminalFrame, renderConfig: TerminalRenderConfig) {
         for row in 0..<frame.rows {
-            var activeRun: TerminalBackgroundRun?
+            appendRow(row, frame: frame, renderConfig: renderConfig)
+        }
+    }
 
-            func flush() {
-                guard let run = activeRun else {
-                    return
-                }
-                runs.append(run)
-                activeRun = nil
+    private mutating func appendRow(
+        _ row: Int,
+        frame: TerminalFrame,
+        renderConfig: TerminalRenderConfig
+    ) {
+        var activeBackgroundRun: TerminalBackgroundRun?
+        var text = ""
+        var textForeground: TerminalRGBA?
+        var textBold = false
+        var textStartCol = 0
+
+        func flushBackgroundRun() {
+            guard let run = activeBackgroundRun else {
+                return
             }
+            backgroundRuns.append(run)
+            activeBackgroundRun = nil
+        }
 
-            for cell in frame.cells(inRow: row) {
-                guard shouldPaintBackground(cell) else {
-                    flush()
-                    continue
-                }
+        func flushTextSegment() {
+            guard let foreground = textForeground, !text.isEmpty else {
+                return
+            }
+            textSegments.append(TerminalTextSegment(
+                row: row,
+                startCol: textStartCol,
+                text: text,
+                foreground: foreground,
+                bold: textBold
+            ))
+            text = ""
+        }
 
-                let opacity = backgroundOpacity(for: cell)
-                if var run = activeRun,
+        for cell in frame.cells(inRow: row) {
+            if shouldPaintBackground(cell, renderConfig: renderConfig) {
+                let opacity = backgroundOpacity(for: cell, renderConfig: renderConfig)
+                if var run = activeBackgroundRun,
                    run.canAppend(cell: cell, opacity: opacity) {
                     run.cols += 1
-                    activeRun = run
+                    activeBackgroundRun = run
                 } else {
-                    flush()
-                    activeRun = TerminalBackgroundRun(
+                    flushBackgroundRun()
+                    activeBackgroundRun = TerminalBackgroundRun(
                         row: row,
                         startCol: cell.col,
                         cols: 1,
@@ -192,73 +219,44 @@ struct TerminalGridView: View {
                         opacity: opacity
                     )
                 }
+            } else {
+                flushBackgroundRun()
             }
 
-            flush()
-        }
-
-        return runs
-    }
-
-    private var textSegments: [TerminalTextSegment] {
-        var segments: [TerminalTextSegment] = []
-        for row in 0..<frame.rows {
-            segments.append(contentsOf: textSegments(in: row))
-        }
-        return segments
-    }
-
-    private func textSegments(in row: Int) -> [TerminalTextSegment] {
-        var segments: [TerminalTextSegment] = []
-        var segment = ""
-        var segmentForeground: TerminalRGBA?
-        var segmentBold = false
-        var segmentStartCol = 0
-
-        func flush() {
-            guard let foreground = segmentForeground, !segment.isEmpty else {
-                return
-            }
-
-            segments.append(TerminalTextSegment(
-                row: row,
-                startCol: segmentStartCol,
-                text: segment,
-                foreground: foreground,
-                bold: segmentBold
-            ))
-            segment = ""
-        }
-
-        for cell in frame.cells(inRow: row) {
             guard cell.renderText else {
-                flush()
-                segmentForeground = nil
-                segmentBold = false
+                flushTextSegment()
+                textForeground = nil
+                textBold = false
                 continue
             }
 
             let foreground = cell.foreground
             let bold = cell.bold
-            if segmentForeground != foreground || segmentBold != bold {
-                flush()
-                segmentForeground = foreground
-                segmentBold = bold
-                segmentStartCol = cell.col
+            if textForeground != foreground || textBold != bold {
+                flushTextSegment()
+                textForeground = foreground
+                textBold = bold
+                textStartCol = cell.col
             }
-            segment.append(cell.character)
+            text.append(cell.character)
         }
 
-        flush()
-        return segments
+        flushBackgroundRun()
+        flushTextSegment()
     }
 
-    private func terminalFont(weight: Font.Weight) -> Font {
-        let fontFamily = renderConfig.fontFamily.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !fontFamily.isEmpty else {
-            return .system(size: renderConfig.fontSize, weight: weight, design: .monospaced)
-        }
-        return .custom(fontFamily, size: renderConfig.fontSize).weight(weight)
+    private func shouldPaintBackground(
+        _ cell: TerminalCell,
+        renderConfig: TerminalRenderConfig
+    ) -> Bool {
+        !cell.usesTerminalDefaultBackground || renderConfig.backgroundOpacityCells
+    }
+
+    private func backgroundOpacity(
+        for cell: TerminalCell,
+        renderConfig: TerminalRenderConfig
+    ) -> Double {
+        cell.usesTerminalDefaultBackground ? renderConfig.backgroundOpacity : 1.0
     }
 }
 

@@ -61,6 +61,13 @@ struct TerminalWorkspaceTabSnapshot: Codable, Equatable {
 struct TerminalWorkspacePaneSnapshot: Codable, Equatable {
     var id: UUID
     var title: String?
+    var bufferText: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case bufferText = "buffer_text"
+    }
 }
 
 indirect enum TerminalWorkspaceLayoutNode: Codable, Equatable {
@@ -143,6 +150,7 @@ extension TerminalSplitAxis: Codable {
 
 struct TerminalWorkspacePersistence {
     var fileURL: URL
+    private static let autosavedLayoutName = "swift-autosave"
 
     init(fileURL: URL = Self.defaultFileURL()) {
         self.fileURL = fileURL
@@ -183,6 +191,13 @@ struct TerminalWorkspacePersistence {
         return lastSession
     }
 
+    func loadAutosavedLayout() throws -> TerminalWorkspaceSnapshot {
+        guard let layout = try loadState().layouts.first(where: { $0.name == Self.autosavedLayoutName }) else {
+            throw TerminalWorkspacePersistenceError.missingLastSession
+        }
+        return layout.workspace
+    }
+
     func saveLastSession(_ snapshot: TerminalWorkspaceSnapshot?) throws {
         var state = try loadState()
         state.lastSession = snapshot
@@ -191,6 +206,18 @@ struct TerminalWorkspacePersistence {
 
     func clearLastSession() throws {
         try saveLastSession(nil)
+    }
+
+    func saveAutosavedLayout(_ snapshot: TerminalWorkspaceSnapshot?) throws {
+        var state = try loadState()
+        state.layouts.removeAll { $0.name == Self.autosavedLayoutName }
+        if let snapshot {
+            state.layouts.append(TerminalWorkspaceNamedLayout(
+                name: Self.autosavedLayoutName,
+                workspace: snapshot
+            ))
+        }
+        try saveState(state)
     }
 
     func saveState(_ state: TerminalWorkspacePersistenceState) throws {

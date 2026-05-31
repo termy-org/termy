@@ -3,10 +3,12 @@ import SwiftUI
 
 struct TerminalWorkspaceView: View {
     @StateObject private var store: TerminalWorkspaceStore
+    @ObservedObject private var configurationStore = TermyConfigurationStore.shared
     @State private var appConfigurationError = TermyAppConfiguration.loadErrorMessage
     @State private var workspacePersistenceError: String?
     @State private var didRestoreWorkspace = false
     @State private var persistenceSaveTask: Task<Void, Never>?
+    @State private var currentWindow: NSWindow?
     private let workspacePersistence = TerminalWorkspacePersistence()
     private let shouldRestorePersistedWorkspace: Bool
 
@@ -16,10 +18,12 @@ struct TerminalWorkspaceView: View {
     }
 
     var body: some View {
-        workspaceContent
+        tabbedWorkspaceContent
             .background(TerminalWorkspaceRoutingView(
                 store: store,
-                onWindowChanged: { _ in }
+                onWindowChanged: { window in
+                    currentWindow = window
+                }
             ))
             .focusedValue(\.terminalCommands, commandSet)
             .onAppear {
@@ -35,6 +39,26 @@ struct TerminalWorkspaceView: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                 persistWorkspace()
             }
+            .onReceive(configurationStore.$loadErrorMessage) { message in
+                appConfigurationError = message
+            }
+    }
+
+    @ViewBuilder
+    private var tabbedWorkspaceContent: some View {
+        let configuration = configurationStore.configuration
+        switch configuration.native.tabBarPosition {
+        case .top:
+            VStack(spacing: 0) {
+                NativeTabChromeView(window: currentWindow, configuration: configuration)
+                workspaceContent
+            }
+        case .right:
+            HStack(spacing: 0) {
+                workspaceContent
+                NativeTabChromeView(window: currentWindow, configuration: configuration)
+            }
+        }
     }
 
     private var workspaceContent: some View {
@@ -113,6 +137,7 @@ struct TerminalWorkspaceView: View {
             VStack(spacing: 0) {
                 TerminalCommandPalette(
                     commandSet: commandSet,
+                    configuration: configurationStore.configuration,
                     onClose: store.hideCommandPalette
                 )
                 Spacer(minLength: 0)
@@ -191,7 +216,8 @@ struct TerminalWorkspaceView: View {
             return
         }
         didRestoreWorkspace = true
-        guard TermyAppConfiguration.current.native.nativeTabPersistence else {
+        let native = configurationStore.configuration.native
+        guard native.nativeTabPersistence || native.nativeLayoutAutosave else {
             workspacePersistenceError = nil
             return
         }
@@ -201,7 +227,9 @@ struct TerminalWorkspaceView: View {
         }
 
         do {
-            let snapshot = try workspacePersistence.loadLastSession()
+            let snapshot = try native.nativeTabPersistence
+                ? workspacePersistence.loadLastSession()
+                : workspacePersistence.loadAutosavedLayout()
             if store.restore(from: snapshot) {
                 workspacePersistenceError = nil
             }
@@ -214,7 +242,7 @@ struct TerminalWorkspaceView: View {
 
     private func scheduleWorkspacePersistence() {
         guard didRestoreWorkspace,
-              TermyAppConfiguration.current.native.nativeTabPersistence
+              shouldPersistWorkspace
         else {
             return
         }
@@ -232,22 +260,35 @@ struct TerminalWorkspaceView: View {
 
     private func persistWorkspace() {
         guard didRestoreWorkspace,
-              TermyAppConfiguration.current.native.nativeTabPersistence
+              shouldPersistWorkspace
         else {
             return
         }
         do {
-            try workspacePersistence.saveLastSession(store.snapshot())
+            let native = configurationStore.configuration.native
+            let snapshot = store.snapshot(includeBuffers: native.nativeBufferPersistence)
+            if native.nativeTabPersistence {
+                try workspacePersistence.saveLastSession(snapshot)
+            }
+            if native.nativeLayoutAutosave {
+                try workspacePersistence.saveAutosavedLayout(snapshot)
+            }
             workspacePersistenceError = nil
         } catch {
             workspacePersistenceError = "Could not save workspace: \(error)"
         }
     }
 
+    private var shouldPersistWorkspace: Bool {
+        let native = configurationStore.configuration.native
+        return native.nativeTabPersistence || native.nativeLayoutAutosave
+    }
+
 }
 
 private struct TerminalCommandPalette: View {
     let commandSet: TerminalCommandSet
+    let configuration: TermyAppConfiguration
     let onClose: () -> Void
 
     @State private var query = ""
@@ -303,7 +344,7 @@ private struct TerminalCommandPalette: View {
 
                                 Spacer()
 
-                                if TermyAppConfiguration.current.native.commandPaletteShowKeybinds,
+                                if configuration.native.commandPaletteShowKeybinds,
                                    let shortcut = shortcutLabel(for: command.action) {
                                     Text(shortcut)
                                         .font(.caption.monospaced())
@@ -341,7 +382,7 @@ private struct TerminalCommandPalette: View {
     }
 
     private func shortcutLabel(for action: String) -> String? {
-        guard let keybind = TermyAppConfiguration.current.keybinds.first(where: { $0.action == action }) else {
+        guard let keybind = configuration.keybinds.first(where: { $0.action == action }) else {
             return nil
         }
         return keybind.trigger
@@ -399,7 +440,7 @@ private struct TerminalCommandPalette: View {
             PaletteCommand(title: "Restart App", action: "restart_app", systemImage: "arrow.clockwise") { _ in
                 TermyNativeAppActions.restartApp()
             },
-        ] + TermyAppConfiguration.current.tasks.map { task in
+        ] + configuration.tasks.map { task in
             PaletteCommand(title: "Run \(task.name)", action: "run_task", systemImage: "play") { _ in
                 NativeTabWindowManager.shared.openNativeTab(startupTask: task)
             }
@@ -597,39 +638,69 @@ private final class StableSplitViewController<First: View, Second: View>: NSSpli
 private struct TerminalPaneLeafView: View {
     @ObservedObject var pane: TerminalPane
     @ObservedObject var store: TerminalWorkspaceStore
+    @ObservedObject private var configurationStore = TermyConfigurationStore.shared
 
     var body: some View {
-        TerminalSurfaceView(
-            terminal: pane.terminal,
-            isFocused: store.focusedPaneID == pane.id,
-            showsFocusBorder: store.paneCount > 1,
-            isInputEnabled: !store.isSearchVisible,
-            isSearchVisible: store.isSearchVisible,
-            onFocus: {
-                store.focus(pane)
-            },
-            onSplitRight: {
-                store.focus(pane)
-                store.splitFocused(.horizontal)
-            },
-            onSplitDown: {
-                store.focus(pane)
-                store.splitFocused(.vertical)
-            },
-            onClosePane: {
-                store.focus(pane)
-                store.closeFocusedPane()
-            },
-            onClosePaneIfSplit: {
-                store.focus(pane)
-                return store.closeFocusedPaneIfSplit()
-            },
-            onFocusNextPane: store.focusNextPane,
-            onShowSearch: store.showSearch,
-            onDismissSearch: store.hideSearch
-        )
+        ZStack(alignment: .topTrailing) {
+            TerminalSurfaceView(
+                terminal: pane.terminal,
+                isFocused: store.focusedPaneID == pane.id,
+                showsFocusBorder: store.paneCount > 1,
+                isInputEnabled: !store.isSearchVisible,
+                isSearchVisible: store.isSearchVisible,
+                onFocus: {
+                    store.focus(pane)
+                },
+                onSplitRight: {
+                    store.focus(pane)
+                    store.splitFocused(.horizontal)
+                },
+                onSplitDown: {
+                    store.focus(pane)
+                    store.splitFocused(.vertical)
+                },
+                onClosePane: {
+                    store.focus(pane)
+                    store.closeFocusedPane()
+                },
+                onClosePaneIfSplit: {
+                    store.focus(pane)
+                    return store.closeFocusedPaneIfSplit()
+                },
+                onFocusNextPane: store.focusNextPane,
+                onShowSearch: store.showSearch,
+                onDismissSearch: store.hideSearch
+            )
+
+            if configurationStore.configuration.native.showDebugOverlay {
+                TerminalDebugOverlay(metrics: pane.terminal.debugMetrics)
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
+        }
         .id(pane.id)
         .frame(minWidth: 240, minHeight: 120)
+    }
+}
+
+private struct TerminalDebugOverlay: View {
+    let metrics: TerminalDebugMetrics
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text("\(metrics.framesPerSecond, specifier: "%.0f") FPS")
+            Text("\(metrics.cpuPercent, specifier: "%.0f")% CPU")
+            Text("\(metrics.memoryMegabytes, specifier: "%.0f") MB")
+        }
+        .font(.system(size: 11, weight: .medium, design: .monospaced))
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(.separator.opacity(0.6), lineWidth: 1)
+        }
     }
 }
 

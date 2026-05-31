@@ -4,4 +4,5 @@ import Foundation
 /// appearance changes.
 extension Notification.Name {
     static let termySettingsChanged = Notification.Name("TermySettingsChanged")
+    static let termyNativeTabsChanged = Notification.Name("TermyNativeTabsChanged")
 }

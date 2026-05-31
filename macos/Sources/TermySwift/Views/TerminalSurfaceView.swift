@@ -179,14 +179,21 @@ struct TerminalSurfaceView: View {
     }
 
     private func resizeTerminal(to size: CGSize) {
+        let availableWidth = size.width - (terminal.renderConfig.paddingX * 2)
+        let availableHeight = size.height - (terminal.renderConfig.paddingY * 2)
         terminal.resize(
-            cols: Int((size.width - (terminal.renderConfig.paddingX * 2))
-                / terminal.renderConfig.cellWidth),
-            rows: Int((size.height - (terminal.renderConfig.paddingY * 2))
-                / terminal.renderConfig.cellHeight),
+            cols: terminalGridCount(availableWidth, cellSize: terminal.renderConfig.cellWidth),
+            rows: terminalGridCount(availableHeight, cellSize: terminal.renderConfig.cellHeight),
             cellWidth: terminal.renderConfig.cellWidth,
             cellHeight: terminal.renderConfig.cellHeight
         )
+    }
+
+    private func terminalGridCount(_ availableSize: CGFloat, cellSize: CGFloat) -> Int {
+        guard availableSize.isFinite, cellSize.isFinite, cellSize > 0 else {
+            return 2
+        }
+        return max(2, Int(floor(max(0, availableSize) / cellSize)))
     }
 
     private func revealScrollBar() {
@@ -289,50 +296,63 @@ private struct TerminalWindowChromeSyncView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> TerminalWindowChromeSyncNSView {
         let view = TerminalWindowChromeSyncNSView(frame: .zero)
-        view.onWindowAttached = { attachedView in
-            syncChrome(from: attachedView)
-        }
-        syncChrome(from: view)
+        view.syncChrome(chromeState)
         return view
     }
 
     func updateNSView(_ view: TerminalWindowChromeSyncNSView, context: Context) {
-        view.onWindowAttached = { attachedView in
-            syncChrome(from: attachedView)
-        }
-        syncChrome(from: view)
+        view.syncChrome(chromeState)
     }
 
-    private func syncChrome(from view: NSView) {
-        guard isFocused else {
-            return
-        }
+    private var chromeState: TerminalWindowChromeState {
         let nextTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedTitle = nextTitle.isEmpty ? "Shell" : nextTitle
-        let resolvedBackground = background.nsTitlebarColor(chromeContrast: chromeContrast)
-        let resolvedAppearance = background.prefersDarkTitlebarAppearance
-            ? NSAppearance(named: .darkAqua)
-            : NSAppearance(named: .aqua)
-        DispatchQueue.main.async {
-            guard let window = view.window else {
-                return
-            }
-            if window.title != resolvedTitle {
-                window.title = resolvedTitle
-            }
-            window.titlebarAppearsTransparent = true
-            window.backgroundColor = resolvedBackground
-            window.appearance = resolvedAppearance
-        }
+        return TerminalWindowChromeState(
+            title: nextTitle.isEmpty ? "Shell" : nextTitle,
+            background: background.nsTitlebarColor(chromeContrast: chromeContrast),
+            appearanceName: background.prefersDarkTitlebarAppearance ? .darkAqua : .aqua,
+            isFocused: isFocused
+        )
     }
 }
 
+private struct TerminalWindowChromeState: Equatable {
+    var title: String
+    var background: NSColor
+    var appearanceName: NSAppearance.Name
+    var isFocused: Bool
+}
+
 private final class TerminalWindowChromeSyncNSView: NSView {
-    var onWindowAttached: ((NSView) -> Void)?
+    private var pendingState: TerminalWindowChromeState?
+    private var appliedState: TerminalWindowChromeState?
+
+    func syncChrome(_ state: TerminalWindowChromeState) {
+        pendingState = state
+        applyPendingChromeIfPossible()
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        onWindowAttached?(self)
+        applyPendingChromeIfPossible()
+    }
+
+    private func applyPendingChromeIfPossible() {
+        guard let state = pendingState, state.isFocused, let window else {
+            return
+        }
+        guard state != appliedState else {
+            return
+        }
+        if window.title != state.title {
+            window.title = state.title
+            NotificationCenter.default.post(name: .termyNativeTabsChanged, object: nil)
+        }
+        if !window.titlebarAppearsTransparent {
+            window.titlebarAppearsTransparent = true
+        }
+        window.backgroundColor = state.background
+        window.appearance = NSAppearance(named: state.appearanceName)
+        appliedState = state
     }
 }
 

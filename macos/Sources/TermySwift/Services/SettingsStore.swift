@@ -102,6 +102,7 @@ final class SettingsStore: ObservableObject {
     }
 
     private func notifyChanged() {
+        TermyConfigurationStore.shared.reload()
         NotificationCenter.default.post(name: .termySettingsChanged, object: nil)
     }
 

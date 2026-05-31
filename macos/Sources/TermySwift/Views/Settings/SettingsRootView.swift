@@ -2,32 +2,8 @@ import AppKit
 import SwiftUI
 
 struct SettingsRootView: View {
-    static let appearanceSectionID = "appearance"
-    static let shellSectionID = "shell"
-
     @StateObject private var store = SettingsStore()
     @State private var selection: String?
-
-    /// Native-only section (not part of the FFI settings schema) that hosts the
-    /// app logo switcher.
-    private let appearanceSection = SettingsSectionModel(
-        id: SettingsRootView.appearanceSectionID,
-        label: "Appearance",
-        systemImage: "paintbrush",
-        groups: nil,
-        colors: nil,
-        keybinds: nil
-    )
-
-    /// Native-only section for shell/runtime options like the tmux integration.
-    private let shellSection = SettingsSectionModel(
-        id: SettingsRootView.shellSectionID,
-        label: "Shell",
-        systemImage: "terminal",
-        groups: nil,
-        colors: nil,
-        keybinds: nil
-    )
 
     var body: some View {
         NavigationSplitView {
@@ -57,8 +33,7 @@ struct SettingsRootView: View {
     }
 
     private var supportedSections: [SettingsSectionModel] {
-        let schemaSections = store.schema?.sections.filter(\.hasSupportedSettings) ?? []
-        return schemaSections + [appearanceSection, shellSection]
+        store.schema?.sections.filter(\.hasSupportedSettings) ?? []
     }
 
     private var selectedSection: SettingsSectionModel? {
@@ -111,13 +86,7 @@ private struct SettingsDetailView: View {
     var body: some View {
         Group {
             if let section {
-                if section.id == SettingsRootView.appearanceSectionID {
-                    LogoSettingsView()
-                } else if section.id == SettingsRootView.shellSectionID {
-                    ShellSettingsView()
-                } else {
-                    SettingsSectionView(section: section, store: store)
-                }
+                SettingsSectionView(section: section, store: store)
             } else {
                 ContentUnavailableView(
                     "Settings",
@@ -172,93 +141,6 @@ private extension SettingsSectionModel {
         return groups?.reduce(0) { count, group in
             count + group.settings.count
         } ?? 0
-    }
-}
-
-// MARK: - Shell / tmux
-
-private struct ShellSettingsView: View {
-    @State private var tmuxEnabled = TmuxIntegration.isEnabled
-
-    var body: some View {
-        Form {
-            Section("tmux") {
-                Toggle(isOn: $tmuxEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Launch new terminals inside tmux")
-                        Text("Each new tab/window execs into its own tmux session for persistence, splits, and copy-mode. Applies to terminals opened after this is changed.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onChange(of: tmuxEnabled) { _, newValue in
-                    TmuxIntegration.isEnabled = newValue
-                }
-
-                if !TmuxIntegration.isAvailable {
-                    Label("tmux was not found in /opt/homebrew/bin, /usr/local/bin, or /usr/bin. Install it to use this option.", systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .navigationTitle("Shell")
-    }
-}
-
-// MARK: - Appearance / logo switcher
-
-private struct LogoSettingsView: View {
-    @ObservedObject private var logos = AppLogoManager.shared
-
-    var body: some View {
-        Form {
-            Section("App Logo") {
-                Picker(selection: $logos.selectedID) {
-                    ForEach(AppLogo.all) { logo in
-                        Text(logo.label).tag(logo.id)
-                    }
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Logo")
-                        Text("Sets the Dock and Cmd-Tab icon. Remembered across launches.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                LabeledContent("Preview") {
-                    LogoPreview(image: logos.image(for: logos.selected))
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .navigationTitle("Appearance")
-    }
-}
-
-private struct LogoPreview: View {
-    let image: NSImage?
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            } else {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.secondary.opacity(0.15))
-                    .overlay(
-                        Image(systemName: "questionmark")
-                            .foregroundStyle(.secondary)
-                    )
-            }
-        }
-        .frame(width: 96, height: 96)
     }
 }
 
@@ -483,10 +365,11 @@ private struct ColorRow: View {
 
 private struct KeybindSettingsContent: View {
     @ObservedObject var store: SettingsStore
+    @ObservedObject private var configurationStore = TermyConfigurationStore.shared
     @State private var search = ""
 
     private var bindings: [TermyKeybindConfiguration] {
-        let all = TermyAppConfiguration.current.keybinds
+        let all = configurationStore.configuration.keybinds
             .sorted { $0.action < $1.action }
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else {
@@ -520,7 +403,7 @@ private struct KeybindSettingsContent: View {
         }
 
         Section("Edit Directives") {
-            Text("One directive per line, e.g. `cmd-k=clear_buffer`. Changes take effect after restarting Termy.")
+            Text("One directive per line, e.g. `cmd-k=clear_buffer`. Changes apply after pressing Apply Keybinds.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

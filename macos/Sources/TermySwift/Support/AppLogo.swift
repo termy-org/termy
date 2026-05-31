@@ -9,35 +9,24 @@ struct AppLogo: Identifiable, Hashable {
     let resourceName: String
 
     static let all: [AppLogo] = [
-        AppLogo(id: "toyko", label: "ToykoTermy", resourceName: "ToykoTermy"),
-        AppLogo(id: "classic", label: "Classic", resourceName: "termy_old_icon"),
         AppLogo(id: "termy", label: "Termy Icon", resourceName: "TermyIcon"),
+        AppLogo(id: "classic", label: "Classic", resourceName: "termy_old_icon"),
     ]
 
-    /// ToykoTermy is the default logo.
-    static let `default` = all[0]
+    static let `default` = all[1]
 }
 
-/// Owns the currently selected app logo, persists it across launches, and pushes
-/// it to the live Dock icon (`NSApp.applicationIconImage`).
+/// Owns the currently selected app logo from shared config and pushes it to the
+/// live Dock icon (`NSApp.applicationIconImage`).
 @MainActor
 final class AppLogoManager: ObservableObject {
     static let shared = AppLogoManager()
 
-    private let defaultsKey = "selectedAppLogoID"
-
-    /// Setting this persists the choice and updates the Dock icon immediately.
-    @Published var selectedID: String {
-        didSet {
-            guard oldValue != selectedID else { return }
-            UserDefaults.standard.set(selectedID, forKey: defaultsKey)
-            applyToDock()
-        }
-    }
+    @Published private(set) var selectedID: String
+    private var imageCache: [String: NSImage] = [:]
 
     private init() {
-        let stored = UserDefaults.standard.string(forKey: defaultsKey)
-        selectedID = AppLogo.all.contains { $0.id == stored } ? stored! : AppLogo.default.id
+        selectedID = Self.logoID(for: TermyConfigurationStore.shared.configuration.native.appIcon)
     }
 
     var selected: AppLogo {
@@ -46,10 +35,21 @@ final class AppLogoManager: ObservableObject {
 
     /// Loads a logo image from the app bundle's Resources.
     func image(for logo: AppLogo) -> NSImage? {
-        guard let url = Bundle.main.url(forResource: logo.resourceName, withExtension: "png") else {
-            return nil
+        if let cached = imageCache[logo.id] {
+            return cached
         }
-        return NSImage(contentsOf: url)
+        let image: NSImage?
+        if let pngURL = Bundle.main.url(forResource: logo.resourceName, withExtension: "png") {
+            image = NSImage(contentsOf: pngURL)
+        } else if let icnsURL = Bundle.main.url(forResource: logo.resourceName, withExtension: "icns") {
+            image = NSImage(contentsOf: icnsURL)
+        } else {
+            image = nil
+        }
+        if let image {
+            imageCache[logo.id] = image
+        }
+        return image
     }
 
     /// Applies the selected logo to the running app's Dock / Cmd-Tab icon.
@@ -57,6 +57,24 @@ final class AppLogoManager: ObservableObject {
     func applyToDock() {
         if let image = image(for: selected) {
             NSApp.applicationIconImage = image
+        }
+    }
+
+    func reloadFromConfig() {
+        let nextID = Self.logoID(for: TermyConfigurationStore.shared.reload().native.appIcon)
+        guard nextID != selectedID else {
+            return
+        }
+        selectedID = nextID
+        applyToDock()
+    }
+
+    private static func logoID(for appIcon: TermyAppIcon) -> String {
+        switch appIcon {
+        case .default:
+            return "termy"
+        case .old:
+            return "classic"
         }
     }
 }

@@ -63,6 +63,9 @@ final class LibTermyTerminal {
         guard let terminal else {
             throw LibTermyError.missingTerminal
         }
+        // The Swift shell polls damage on its own cadence, so plain wakeup
+        // events only add queue churn. Metadata events still flow through.
+        _ = termy_terminal_set_wakeup_enabled(terminal, false)
         handle = terminal
     }
 

@@ -185,10 +185,20 @@ typedef struct {
 } TermyFfiSafetyConfig;
 
 typedef struct {
+  bool auto_update;
+  bool tmux_enabled;
+  bool tmux_persistence;
+  bool tmux_show_active_pane_border;
   bool simple_mode;
   bool native_tab_persistence;
   bool native_layout_autosave;
   bool native_buffer_persistence;
+  bool show_debug_overlay;
+  bool onboarding_complete;
+  uint32_t tab_close_visibility;
+  uint32_t tab_width_mode;
+  uint32_t tab_bar_position;
+  bool tab_switch_modifier_hints;
   bool chrome_contrast;
   bool command_palette_show_keybinds;
   uint32_t app_icon;
@@ -280,6 +290,12 @@ TermyFfiStatus termy_config_safety(
 TermyFfiStatus termy_config_native(
     const TermyFfiConfig *config,
     TermyFfiNativeConfig *out_native);
+TermyFfiStatus termy_config_tmux_binary(
+    const TermyFfiConfig *config,
+    TermyFfiBytes *out_binary);
+TermyFfiStatus termy_config_ui_font_family(
+    const TermyFfiConfig *config,
+    TermyFfiBytes *out_font_family);
 TermyFfiStatus termy_config_path(
     const TermyFfiConfig *config,
     TermyFfiBytes *out_path);

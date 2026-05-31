@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 enum TerminalTitlebarInteraction {
     static let trafficLightReservedWidth: CGFloat = 78
     static let fallbackTitlebarHeight: CGFloat = 52

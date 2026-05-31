@@ -138,6 +138,7 @@ BUNDLE_ID="com.lassevestergaard.TermyAlpha"
 MIN_SYSTEM_VERSION="14.0"
 ICON_SOURCE="$REPO_ROOT/assets/termy_old_icon.png"
 ICON_NAME="TermyIcon"
+LOGO_SOURCES=(termy_old_icon TermyIcon)
 OS_NAME="macos"
 DMG_NAME="${APP_NAME}-${VERSION}-${OS_NAME}-${ARCH}"
 VOLUME_NAME="${APP_NAME}-${VERSION}"
@@ -226,6 +227,11 @@ LINKED_FFI_PATH="$(otool -L "$APP_BINARY" | awk '/libtermy_ffi\.dylib/ {print $1
 install_name_tool -change "$LINKED_FFI_PATH" "@rpath/libtermy_ffi.dylib" "$APP_BINARY"
 
 build_icon
+for logo in "${LOGO_SOURCES[@]}"; do
+  if [[ -f "$REPO_ROOT/assets/$logo.png" ]]; then
+    cp "$REPO_ROOT/assets/$logo.png" "$APP_RESOURCES/$logo.png"
+  fi
+done
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

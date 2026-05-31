@@ -2,16 +2,15 @@ import AppKit
 import SwiftUI
 
 /// First-run window: welcomes the user and offers to import settings from other
-/// terminals. Shown once, gated by a UserDefaults flag.
+/// terminals. Shown when the shared config sets `onboarding_complete = false`.
 @MainActor
 final class OnboardingPresenter {
     static let shared = OnboardingPresenter()
 
     private var window: NSWindow?
-    private let defaultsKey = "onboardingComplete"
 
     func presentIfNeeded() {
-        guard !UserDefaults.standard.bool(forKey: defaultsKey) else {
+        guard !TermyConfigurationStore.shared.configuration.native.onboardingComplete else {
             return
         }
         present()
@@ -40,7 +39,9 @@ final class OnboardingPresenter {
     }
 
     private func finish() {
-        UserDefaults.standard.set(true, forKey: defaultsKey)
+        try? SettingsBridge.setRoot(key: "onboarding_complete", value: "true")
+        TermyConfigurationStore.shared.reload()
+        NotificationCenter.default.post(name: .termySettingsChanged, object: nil)
         window?.close()
         window = nil
     }
@@ -110,6 +111,7 @@ struct OnboardingView: View {
         }
         .padding(28)
         .frame(minWidth: 520, minHeight: 440)
+        .termyUIFont()
         .onAppear {
             detected = TerminalConfigImport.detected()
         }

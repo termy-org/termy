@@ -9,7 +9,7 @@ private enum AppMetadata {
 @MainActor
 enum TermyNativeAppActions {
     static func openConfigFileInEditor() -> Bool {
-        guard let configPath = TermyAppConfiguration.current.configPath, !configPath.isEmpty else {
+        guard let configPath = TermyConfigurationStore.shared.configuration.configPath, !configPath.isEmpty else {
             return false
         }
 
@@ -29,6 +29,7 @@ enum TermyNativeAppActions {
     static func prettifyConfig() -> Bool {
         do {
             try SettingsBridge.prettifyConfig()
+            TermyConfigurationStore.shared.reload()
             NotificationCenter.default.post(name: .termySettingsChanged, object: nil)
             return true
         } catch {
@@ -63,10 +64,12 @@ enum TermyNativeAppActions {
 struct TermySwiftApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @FocusedValue(\.terminalCommands) private var terminalCommands
+    @StateObject private var configurationStore = TermyConfigurationStore.shared
 
     var body: some Scene {
         WindowGroup(AppMetadata.displayName) {
             TerminalWorkspaceView()
+                .termyUIFont()
                 .frame(minWidth: 760, minHeight: 480)
                 .background(WindowConfigurator())
         }
@@ -204,9 +207,9 @@ struct TermySwiftApp: App {
 
                 Divider()
 
-                if !TermyAppConfiguration.current.tasks.isEmpty {
+                if !configurationStore.configuration.tasks.isEmpty {
                     Menu("Tasks") {
-                        ForEach(TermyAppConfiguration.current.tasks) { task in
+                        ForEach(configurationStore.configuration.tasks) { task in
                             Button(task.name) {
                                 NativeTabWindowManager.shared.openNativeTab(startupTask: task)
                             }
@@ -264,6 +267,7 @@ struct TermySwiftApp: App {
 
         Window("\(AppMetadata.displayName) Settings", id: Self.settingsWindowID) {
             SettingsRootView()
+                .termyUIFont()
         }
         .defaultSize(width: 860, height: 600)
         .windowResizability(.contentMinSize)
@@ -275,10 +279,11 @@ struct TermySwiftApp: App {
 /// Opens settings in a dedicated window while preserving the standard shortcut.
 private struct OpenSettingsButton: View {
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject private var configurationStore = TermyConfigurationStore.shared
 
     var body: some View {
         Button("Settings…") {
-            if TermyAppConfiguration.current.native.simpleMode,
+            if configurationStore.configuration.native.simpleMode,
                TermyNativeAppActions.openConfigFileInEditor() {
                 NSApp.activate(ignoringOtherApps: true)
             } else {
@@ -286,6 +291,7 @@ private struct OpenSettingsButton: View {
                 NSApp.activate(ignoringOtherApps: true)
             }
         }
+        .termyUIFont()
         .keyboardShortcut(",", modifiers: .command)
     }
 }
@@ -293,13 +299,25 @@ private struct OpenSettingsButton: View {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var closePaneEventMonitor: LocalEventMonitor?
+    private var settingsObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSWindow.allowsAutomaticWindowTabbing = true
         AppLogoManager.shared.applyToDock()
         OnboardingPresenter.shared.presentIfNeeded()
-        Task { await AppUpdater.shared.checkForUpdates(userInitiated: false) }
+        if TermyConfigurationStore.shared.configuration.native.autoUpdate {
+            Task { await AppUpdater.shared.checkForUpdates(userInitiated: false) }
+        }
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: .termySettingsChanged,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                AppLogoManager.shared.reloadFromConfig()
+            }
+        }
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
             if ConfiguredKeybindRouter.shared.handle(event) {
                 return nil
@@ -321,6 +339,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         closePaneEventMonitor?.invalidate()
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
+            self.settingsObserver = nil
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -350,10 +372,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 private final class ConfiguredKeybindRouter {
     static let shared = ConfiguredKeybindRouter()
 
+    private var configuration = TermyConfigurationStore.shared.configuration
+    private var settingsObserver: NSObjectProtocol?
+
+    private init() {
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: .termySettingsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.configuration = TermyConfigurationStore.shared.reload()
+            }
+        }
+    }
+
     func handle(_ event: NSEvent) -> Bool {
         let triggers = canonicalTriggers(for: event)
         guard !triggers.isEmpty,
-              let keybind = TermyAppConfiguration.current.keybinds.first(where: { triggers.contains($0.trigger) })
+              let keybind = configuration.keybinds.first(where: { triggers.contains($0.trigger) })
         else {
             return false
         }
@@ -389,7 +426,7 @@ private final class ConfiguredKeybindRouter {
             return true
         case "toggle_command_palette":
             guard let store = TerminalCommandRouter.shared.focusedStore(for: event),
-                  !TermyAppConfiguration.current.native.simpleMode
+                  !configuration.native.simpleMode
             else {
                 return false
             }
@@ -617,6 +654,15 @@ struct WindowConfigurator: NSViewRepresentable {
 }
 
 @MainActor
+struct NativeTabDescriptor: Identifiable {
+    var id: ObjectIdentifier
+    var index: Int
+    var title: String
+    var isSelected: Bool
+    fileprivate weak var window: NSWindow?
+}
+
+@MainActor
 final class NativeTabWindowManager: NSObject, NSWindowDelegate {
     static let shared = NativeTabWindowManager()
 
@@ -638,8 +684,10 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         if window.title.isEmpty || window.title == "Window" {
             window.title = AppMetadata.displayName
         }
-        window.setContentSize(TermyAppConfiguration.current.windowSize)
+        hideSystemTabBarIfNeeded(for: window)
+        window.setContentSize(TermyConfigurationStore.shared.configuration.windowSize)
         window.center()
+        postTabsChanged()
     }
 
     func openNativeTab(startupTask: TermyTaskConfiguration? = nil) {
@@ -653,6 +701,46 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        hideSystemTabBarIfNeeded(for: window)
+        postTabsChanged()
+    }
+
+    func tabDescriptors(for sourceWindow: NSWindow?) -> [NativeTabDescriptor] {
+        let sourceWindow = sourceWindow.flatMap { isNativeTerminalTabWindow($0) ? $0 : nil }
+            ?? nativeTabSourceWindow()
+        guard let sourceWindow else {
+            return []
+        }
+
+        let selectedWindow = NSApp.keyWindow ?? NSApp.mainWindow
+        return nativeTabWindows(for: sourceWindow).enumerated().map { index, window in
+            let trimmedTitle = window.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return NativeTabDescriptor(
+                id: ObjectIdentifier(window),
+                index: index,
+                title: trimmedTitle.isEmpty ? AppMetadata.displayName : trimmedTitle,
+                isSelected: window === selectedWindow,
+                window: window
+            )
+        }
+    }
+
+    func selectNativeTab(_ descriptor: NativeTabDescriptor) {
+        guard let window = descriptor.window else {
+            return
+        }
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        hideSystemTabBarIfNeeded(for: window)
+        postTabsChanged()
+    }
+
+    func closeNativeTab(_ descriptor: NativeTabDescriptor) {
+        descriptor.window?.performClose(nil)
+        postTabsChanged()
     }
 
     func selectNativeTab(number: Int) {
@@ -674,6 +762,8 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         }
         targetWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        hideSystemTabBarIfNeeded(for: targetWindow)
+        postTabsChanged()
     }
 
     func selectRelativeNativeTab(offset: Int) {
@@ -697,6 +787,8 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         }
         targetWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        hideSystemTabBarIfNeeded(for: targetWindow)
+        postTabsChanged()
     }
 
     func moveSelectedNativeTab(offset: Int) {
@@ -724,6 +816,8 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         let anchorWindow = tabbedWindows[targetIndex]
         anchorWindow.addTabbedWindow(movingWindow, ordered: offset < 0 ? .below : .above)
         movingWindow.makeKeyAndOrderFront(nil)
+        hideSystemTabBarIfNeeded(for: movingWindow)
+        postTabsChanged()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -732,10 +826,15 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         }
         retainedWindows.removeAll { $0 === window }
         configuredWindowIDs.remove(ObjectIdentifier(window))
+        postTabsChanged()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        postTabsChanged()
     }
 
     private func makeWindow(startupTask: TermyTaskConfiguration? = nil) -> NSWindow {
-        let windowSize = TermyAppConfiguration.current.windowSize
+        let windowSize = TermyConfigurationStore.shared.configuration.windowSize
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: windowSize.width, height: windowSize.height),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -769,4 +868,14 @@ final class NativeTabWindowManager: NSObject, NSWindowDelegate {
         window.tabbingIdentifier == tabbingIdentifier
     }
 
+    private func hideSystemTabBarIfNeeded(for window: NSWindow) {
+        guard window.tabGroup?.isTabBarVisible == true else {
+            return
+        }
+        window.toggleTabBar(nil)
+    }
+
+    private func postTabsChanged() {
+        NotificationCenter.default.post(name: .termyNativeTabsChanged, object: nil)
+    }
 }

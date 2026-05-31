@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 
 @MainActor
@@ -13,6 +14,7 @@ final class TerminalViewModel: ObservableObject {
     @Published private(set) var searchMatches: [TerminalSearchMatch] = []
     @Published private(set) var activeSearchMatchIndex = 0
     @Published private(set) var hoveredLink: TerminalFrameLink?
+    @Published private(set) var debugMetrics = TerminalDebugMetrics.empty
     @Published var selection: TerminalSelection?
 
     private var terminal: LibTermyTerminal?
@@ -20,20 +22,34 @@ final class TerminalViewModel: ObservableObject {
     private var cadence: RefreshCadence = .active
     private var lastActivityAt = Date()
     private static let idleCadenceThreshold: TimeInterval = 0.4
+    private static let liveSearchRefreshInterval: TimeInterval = 0.15
     private var lastResize: TerminalResize?
     private var settingsObserver: NSObjectProtocol?
     private var appearanceObserver: NSObjectProtocol?
     private var startupRefreshUntil: Date?
     private let initialWorkingDirectory: String?
     private let startupCommand: String?
-    private let tmuxSessionHint = String(UUID().uuidString.prefix(8))
+    private let tmuxSessionHint: String
+    private var configuration = TermyConfigurationStore.shared.configuration
     private var activeSearchQuery = ""
     private var activeSearchOptions = TerminalSearchOptions()
+    private var lastSearchRefreshAt: Date?
     private var lastAutoCopiedSelectionText: String?
+    private var renderedFrameCount = 0
+    private var lastDebugSample = ProcessUsageSample.capture()
 
-    init(workingDirectory: String? = nil, startupCommand: String? = nil) {
+    init(
+        workingDirectory: String? = nil,
+        startupCommand: String? = nil,
+        tmuxSessionHint: String = UUID().uuidString,
+        restoredBufferText: String? = nil
+    ) {
         initialWorkingDirectory = TerminalViewModel.normalizedWorkingDirectory(workingDirectory)
         self.startupCommand = TerminalViewModel.normalizedStartupCommand(startupCommand)
+        self.tmuxSessionHint = tmuxSessionHint
+        if let restoredBufferText = Self.normalizedRestoredBufferText(restoredBufferText) {
+            frame = TerminalFrame.plainTextPreview(restoredBufferText)
+        }
     }
 
     func start() {
@@ -63,7 +79,7 @@ final class TerminalViewModel: ObservableObject {
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor in
-                    self?.reloadAppearance()
+                    self?.reloadConfiguration()
                 }
             }
             appearanceObserver = DistributedNotificationCenter.default().addObserver(
@@ -87,12 +103,15 @@ final class TerminalViewModel: ObservableObject {
     private func startRefreshTimer(_ cadence: RefreshCadence) {
         self.cadence = cadence
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: cadence.interval, repeats: true) {
+        let timer = Timer(timeInterval: cadence.interval, repeats: true) {
             [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
             }
         }
+        timer.tolerance = cadence.interval * 0.2
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func noteActivity() {
@@ -139,6 +158,14 @@ final class TerminalViewModel: ObservableObject {
         } catch {
             report(error)
         }
+    }
+
+    private func reloadConfiguration() {
+        configuration = TermyConfigurationStore.shared.reload()
+        if !configuration.native.progressIndicatorEnabled {
+            progress = .clear
+        }
+        reloadAppearance()
     }
 
     func sendControlC() {
@@ -299,13 +326,14 @@ final class TerminalViewModel: ObservableObject {
             activeSearchOptions = options
             searchMatches = []
             activeSearchMatchIndex = 0
+            lastSearchRefreshAt = nil
             return
         }
 
         let shouldResetActiveMatch = trimmedQuery != activeSearchQuery || options != activeSearchOptions
         activeSearchQuery = trimmedQuery
         activeSearchOptions = options
-        refreshSearchMatches(resetActive: shouldResetActiveMatch, revealActive: true)
+        refreshSearchMatches(resetActive: shouldResetActiveMatch, revealActive: true, force: true)
     }
 
     func selectNextSearchMatch() {
@@ -366,13 +394,17 @@ final class TerminalViewModel: ObservableObject {
             }
 
             guard force || isStartupRefresh || hasEvents || hasDamage else {
+                updateDebugMetrics(renderedFrame: false)
                 return
             }
 
             if let nextFrame = try terminal?.snapshot() {
                 frame = nextFrame
                 errorMessage = nil
-                refreshSearchMatches(resetActive: false, revealActive: false)
+                updateDebugMetrics(renderedFrame: true)
+                refreshSearchMatches(resetActive: false, revealActive: false, force: false)
+            } else {
+                updateDebugMetrics(renderedFrame: false)
             }
         } catch {
             report(error)
@@ -409,14 +441,43 @@ final class TerminalViewModel: ObservableObject {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    private func refreshSearchMatches(resetActive: Bool, revealActive: Bool) {
+    private func updateDebugMetrics(renderedFrame: Bool) {
+        if renderedFrame {
+            renderedFrameCount += 1
+        }
+
+        let nextSample = ProcessUsageSample.capture()
+        let elapsed = nextSample.timestamp.timeIntervalSince(lastDebugSample.timestamp)
+        guard elapsed >= 1 else {
+            return
+        }
+
+        let fps = Double(renderedFrameCount) / elapsed
+        let cpuDelta = max(0, nextSample.cpuTime - lastDebugSample.cpuTime)
+        debugMetrics = TerminalDebugMetrics(
+            framesPerSecond: fps,
+            cpuPercent: min(999, (cpuDelta / elapsed) * 100),
+            memoryMegabytes: nextSample.memoryMegabytes
+        )
+        renderedFrameCount = 0
+        lastDebugSample = nextSample
+    }
+
+    private func refreshSearchMatches(resetActive: Bool, revealActive: Bool, force: Bool) {
         guard !activeSearchQuery.isEmpty else {
             searchMatches = []
             activeSearchMatchIndex = 0
+            lastSearchRefreshAt = nil
+            return
+        }
+
+        let now = Date()
+        guard force || resetActive || revealActive || shouldRefreshLiveSearch(at: now) else {
             return
         }
 
         let matches = search(activeSearchQuery, options: activeSearchOptions)
+        lastSearchRefreshAt = now
         searchMatches = matches
         if matches.isEmpty {
             activeSearchMatchIndex = 0
@@ -427,6 +488,13 @@ final class TerminalViewModel: ObservableObject {
         if revealActive {
             revealActiveSearchMatch()
         }
+    }
+
+    private func shouldRefreshLiveSearch(at now: Date) -> Bool {
+        guard let lastSearchRefreshAt else {
+            return true
+        }
+        return now.timeIntervalSince(lastSearchRefreshAt) >= Self.liveSearchRefreshInterval
     }
 
     private func revealActiveSearchMatch() {
@@ -467,7 +535,7 @@ final class TerminalViewModel: ObservableObject {
                 isExited = true
                 progress = .clear
             case .progress(let progress):
-                if TermyAppConfiguration.current.native.progressIndicatorEnabled {
+                if configuration.native.progressIndicatorEnabled {
                     self.progress = progress
                 }
             case .workingDirectory(let path):
@@ -484,7 +552,7 @@ final class TerminalViewModel: ObservableObject {
                  .shellCommandStart,
                  .shellCommandExecuting,
                  .shellCommandFinished(_):
-                guard TermyAppConfiguration.current.native.shellIntegrationEnabled else {
+                guard configuration.native.shellIntegrationEnabled else {
                     break
                 }
                 break
@@ -514,6 +582,51 @@ final class TerminalViewModel: ObservableObject {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    private static func normalizedRestoredBufferText(_ value: String?) -> String? {
+        guard let value else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    func visibleTextSnapshot() -> String {
+        frame.visibleTextSnapshot()
+    }
+
+}
+
+struct TerminalDebugMetrics: Equatable {
+    var framesPerSecond: Double
+    var cpuPercent: Double
+    var memoryMegabytes: Double
+
+    static let empty = TerminalDebugMetrics(
+        framesPerSecond: 0,
+        cpuPercent: 0,
+        memoryMegabytes: 0
+    )
+}
+
+private struct ProcessUsageSample {
+    var timestamp: Date
+    var cpuTime: TimeInterval
+    var memoryMegabytes: Double
+
+    static func capture() -> ProcessUsageSample {
+        var usage = rusage()
+        _ = getrusage(RUSAGE_SELF, &usage)
+        let userCPU = TimeInterval(usage.ru_utime.tv_sec)
+            + TimeInterval(usage.ru_utime.tv_usec) / 1_000_000
+        let systemCPU = TimeInterval(usage.ru_stime.tv_sec)
+            + TimeInterval(usage.ru_stime.tv_usec) / 1_000_000
+
+        return ProcessUsageSample(
+            timestamp: Date(),
+            cpuTime: userCPU + systemCPU,
+            memoryMegabytes: Double(max(0, usage.ru_maxrss)) / 1_048_576
+        )
+    }
 }
 
 private struct TerminalResize: Equatable {

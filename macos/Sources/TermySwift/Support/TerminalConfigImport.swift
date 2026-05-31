@@ -79,6 +79,7 @@ enum TerminalConfigImport {
     }
 
     /// Apply imported settings to the Termy config, returning the keys written.
+    @MainActor
     @discardableResult
     static func apply(_ settings: ImportedSettings) -> [String] {
         var written: [String] = []
@@ -88,6 +89,7 @@ enum TerminalConfigImport {
             }
         }
         if !written.isEmpty {
+            TermyConfigurationStore.shared.reload()
             NotificationCenter.default.post(name: .termySettingsChanged, object: nil)
         }
         return written
