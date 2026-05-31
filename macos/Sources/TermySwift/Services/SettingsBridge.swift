@@ -27,6 +27,28 @@ enum SettingsBridge {
 
         var bytes = TermyFfiBytes()
         try TermyFfiBridge.requireOK("termy_settings_schema_json", termy_settings_schema_json(config, &bytes))
+        return try decodeSchema(from: bytes)
+    }
+
+    static func loadSchema(contents: String) throws -> SettingsSchema {
+        var config: OpaquePointer?
+        let contentsBytes = Array(contents.utf8)
+        let status = contentsBytes.withUnsafeBufferPointer { buffer in
+            termy_config_from_contents(buffer.baseAddress, buffer.count, &config)
+        }
+        try TermyFfiBridge.requireOK("termy_config_from_contents", status)
+        defer {
+            if let config {
+                _ = termy_config_free(config)
+            }
+        }
+
+        var bytes = TermyFfiBytes()
+        try TermyFfiBridge.requireOK("termy_settings_schema_json", termy_settings_schema_json(config, &bytes))
+        return try decodeSchema(from: bytes)
+    }
+
+    private static func decodeSchema(from bytes: TermyFfiBytes) throws -> SettingsSchema {
         defer {
             if bytes.ptr != nil {
                 _ = termy_buffer_free(bytes)

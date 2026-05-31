@@ -1,0 +1,59 @@
+name: macOS Native Swift
+
+on:
+  pull_request:
+    paths:
+      - "macos/**"
+      - "crates/core/**"
+      - "crates/config_core/**"
+      - "crates/command_core/**"
+      - "crates/ffi/**"
+      - "crates/theme_core/**"
+      - "crates/themes/**"
+      - ".github/workflows/macos-native.yml"
+  push:
+    branches: [main]
+    paths:
+      - "macos/**"
+      - "crates/core/**"
+      - "crates/config_core/**"
+      - "crates/command_core/**"
+      - "crates/ffi/**"
+      - "crates/theme_core/**"
+      - "crates/themes/**"
+      - ".github/workflows/macos-native.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  swift-native:
+    name: Swift native tests
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Build libtermy FFI
+        run: cargo build -p termy_ffi
+
+      - name: Build Swift app
+        run: TERMY_FFI_LIBRARY_PATH="$PWD/target/debug" swift build --package-path macos -Xswiftc -warnings-as-errors
+
+      - name: Config matrix
+        run: ./macos/scripts/check-config-matrix.sh
+
+      - name: Native stress tests
+        run: ./macos/scripts/stress-native.sh
+
+      - name: Release readiness checks
+        run: ./macos/scripts/check-release-readiness.sh

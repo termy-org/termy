@@ -185,7 +185,7 @@ fn normalized_windows_path_env(
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn normalized_path_env(path: Option<&OsStr>) -> Option<String> {
+pub fn normalized_path_env(path: Option<&OsStr>) -> Option<String> {
     let mut path_entries = Vec::new();
     push_split_paths(&mut path_entries, path);
 
@@ -205,7 +205,7 @@ pub(crate) fn normalized_path_env(path: Option<&OsStr>) -> Option<String> {
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn normalized_path_env(path: Option<&OsStr>) -> Option<String> {
+pub fn normalized_path_env(path: Option<&OsStr>) -> Option<String> {
     normalized_windows_path_env(path, registry_path_values(), windows_tool_path_entries())
 }
 

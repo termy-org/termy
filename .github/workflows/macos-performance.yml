@@ -1,0 +1,82 @@
+name: macOS Performance Gates
+
+on:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "macos/**"
+      - "assets/**"
+      - ".github/workflows/macos-performance.yml"
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: "Git ref used as the benchmark baseline"
+        required: false
+        default: "main"
+      duration_secs:
+        description: "Seconds per benchmark scenario"
+        required: false
+        default: "5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-performance-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  performance:
+    name: Benchmark and gate
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      DURATION_SECS: ${{ github.event_name == 'workflow_dispatch' && inputs.duration_secs || '5' }}
+    steps:
+      - name: Checkout baseline
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          path: baseline
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || inputs.baseline_ref || github.event.repository.default_branch }}
+
+      - name: Checkout candidate
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          path: candidate
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: |
+            baseline -> target
+            candidate -> target
+
+      - name: Run benchmark comparison
+        run: |
+          cd "$GITHUB_WORKSPACE/candidate"
+          cargo run -p xtask -- benchmark-compare \
+            --baseline-root "$GITHUB_WORKSPACE/baseline" \
+            --candidate-root "$GITHUB_WORKSPACE/candidate" \
+            --output "$GITHUB_WORKSPACE/benchmark-output" \
+            --duration-secs "$DURATION_SECS"
+
+      - name: Check performance gates
+        run: |
+          "$GITHUB_WORKSPACE/candidate/macos/scripts/check-performance-gates.sh" \
+            --summary "$GITHUB_WORKSPACE/benchmark-output/summary.json"
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-performance-report
+          path: |
+            benchmark-output/report.md
+            benchmark-output/summary.json
+          if-no-files-found: ignore

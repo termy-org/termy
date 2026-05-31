@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$MACOS_DIR/.." && pwd)"
 
 usage() {
   cat <<EOF
-Usage: $0 [--version VERSION] [--arch ARCH] [--target TARGET] [--no-layout]
+Usage: $0 [options]
 
 Build the native macOS SwiftUI app as a drag-to-Applications DMG.
 
@@ -16,10 +16,27 @@ Options:
   --arch ARCH         Set architecture (arm64 or x86_64, default: host)
   --target TARGET     Set target triple (aarch64-apple-darwin or x86_64-apple-darwin)
   --no-layout         Skip Finder layout customization
+
+Signing options (optional — omit for an unsigned DMG):
+  --sign-identity NAME    Developer ID Application identity (enables signing)
+  --entitlements PATH     Entitlements plist for app signing
+  --no-sign-dmg           Sign the app but not the final DMG
+
+Notarization options (require a signing identity):
+  --notary-profile NAME   notarytool keychain profile name
+  --notary-key PATH       App Store Connect API key file (.p8)
+  --notary-key-id ID      App Store Connect API key ID
+  --notary-issuer UUID    App Store Connect issuer ID
+  --no-notarize           Skip notarization + stapling even when credentials exist
+
   --help, -h          Show this help message
 
+Environment variable defaults:
+  TERMY_SIGN_IDENTITY  TERMY_ENTITLEMENTS
+  TERMY_NOTARY_PROFILE TERMY_NOTARY_KEY TERMY_NOTARY_KEY_ID TERMY_NOTARY_ISSUER
+
 Output:
-  macos/dist/Termy-<version>-macos-<arch>.dmg
+  macos/dist/TermyAlpha-<version>-macos-<arch>[-signed].dmg
 EOF
 }
 
@@ -77,6 +94,15 @@ ARCH=""
 TARGET=""
 SKIP_LAYOUT=0
 
+SIGN_IDENTITY="${TERMY_SIGN_IDENTITY:-}"
+ENTITLEMENTS="${TERMY_ENTITLEMENTS:-}"
+NOTARY_PROFILE="${TERMY_NOTARY_PROFILE:-}"
+NOTARY_KEY="${TERMY_NOTARY_KEY:-}"
+NOTARY_KEY_ID="${TERMY_NOTARY_KEY_ID:-}"
+NOTARY_ISSUER="${TERMY_NOTARY_ISSUER:-}"
+NOTARIZE=1
+SIGN_DMG=1
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version)
@@ -93,6 +119,44 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || die "--target requires a value"
       TARGET="$2"
       shift 2
+      ;;
+    --sign-identity)
+      [[ $# -ge 2 ]] || die "--sign-identity requires a value"
+      SIGN_IDENTITY="$2"
+      shift 2
+      ;;
+    --entitlements)
+      [[ $# -ge 2 ]] || die "--entitlements requires a value"
+      ENTITLEMENTS="$2"
+      shift 2
+      ;;
+    --notary-profile)
+      [[ $# -ge 2 ]] || die "--notary-profile requires a value"
+      NOTARY_PROFILE="$2"
+      shift 2
+      ;;
+    --notary-key)
+      [[ $# -ge 2 ]] || die "--notary-key requires a value"
+      NOTARY_KEY="$2"
+      shift 2
+      ;;
+    --notary-key-id)
+      [[ $# -ge 2 ]] || die "--notary-key-id requires a value"
+      NOTARY_KEY_ID="$2"
+      shift 2
+      ;;
+    --notary-issuer)
+      [[ $# -ge 2 ]] || die "--notary-issuer requires a value"
+      NOTARY_ISSUER="$2"
+      shift 2
+      ;;
+    --no-notarize)
+      NOTARIZE=0
+      shift
+      ;;
+    --no-sign-dmg)
+      SIGN_DMG=0
+      shift
       ;;
     --no-layout)
       SKIP_LAYOUT=1
@@ -130,6 +194,39 @@ if [[ -n "$ARCH" && -n "$TARGET" ]]; then
   [[ "$EXPECTED_TARGET" == "$TARGET" ]] || die "Mismatched --arch ($ARCH) and --target ($TARGET)"
 fi
 
+SIGN=0
+if [[ -n "$SIGN_IDENTITY" ]]; then
+  SIGN=1
+else
+  NOTARIZE=0
+  SIGN_DMG=0
+  if [[ -n "$NOTARY_PROFILE$NOTARY_KEY$NOTARY_KEY_ID$NOTARY_ISSUER$ENTITLEMENTS" ]]; then
+    log "No signing identity set; ignoring signing/notarization options (unsigned build)"
+  fi
+fi
+
+NOTARY_MODE=""
+if [[ "$NOTARIZE" -eq 1 ]]; then
+  if [[ -n "$NOTARY_PROFILE" && -n "$NOTARY_KEY$NOTARY_KEY_ID$NOTARY_ISSUER" ]]; then
+    die "Use either --notary-profile OR the API-key flags, not both"
+  elif [[ -n "$NOTARY_PROFILE" ]]; then
+    NOTARY_MODE="profile"
+  elif [[ -n "$NOTARY_KEY$NOTARY_KEY_ID$NOTARY_ISSUER" ]]; then
+    [[ -n "$NOTARY_KEY" ]] || die "Missing --notary-key (or TERMY_NOTARY_KEY)"
+    [[ -n "$NOTARY_KEY_ID" ]] || die "Missing --notary-key-id (or TERMY_NOTARY_KEY_ID)"
+    [[ -n "$NOTARY_ISSUER" ]] || die "Missing --notary-issuer (or TERMY_NOTARY_ISSUER)"
+    [[ -f "$NOTARY_KEY" ]] || die "Notary API key file not found: $NOTARY_KEY"
+    NOTARY_MODE="apikey"
+  else
+    NOTARIZE=0
+    log "No notarization credentials provided; skipping notarization"
+  fi
+fi
+
+if [[ -n "$ENTITLEMENTS" ]]; then
+  [[ -f "$ENTITLEMENTS" ]] || die "Entitlements file not found: $ENTITLEMENTS"
+fi
+
 SWIFT_TRIPLE="$(target_to_swift_triple "$TARGET")" || die "Unsupported target: $TARGET"
 
 APP_NAME="TermyAlpha"
@@ -140,7 +237,9 @@ ICON_SOURCE="$REPO_ROOT/assets/termy_old_icon.png"
 ICON_NAME="TermyIcon"
 LOGO_SOURCES=(termy_old_icon TermyIcon)
 OS_NAME="macos"
-DMG_NAME="${APP_NAME}-${VERSION}-${OS_NAME}-${ARCH}"
+SUFFIX=""
+[[ "$SIGN" -eq 1 ]] && SUFFIX="-signed"
+DMG_NAME="${APP_NAME}-${VERSION}-${OS_NAME}-${ARCH}${SUFFIX}"
 VOLUME_NAME="${APP_NAME}-${VERSION}"
 
 TARGET_RELEASE_DIR="$REPO_ROOT/target/$TARGET/release"
@@ -165,6 +264,21 @@ require_cmd iconutil
 require_cmd install_name_tool
 require_cmd otool
 
+if [[ "$SIGN" -eq 1 ]]; then
+  require_cmd codesign
+  require_cmd security
+  require_cmd xattr
+  if ! security find-identity -v -p codesigning | grep -F "$SIGN_IDENTITY" >/dev/null 2>&1; then
+    security find-identity -v -p codesigning >&2 || true
+    die "Signing identity not found in keychain: $SIGN_IDENTITY"
+  fi
+fi
+if [[ "$NOTARIZE" -eq 1 ]]; then
+  require_cmd xcrun
+  require_cmd spctl
+  xcrun notarytool --help >/dev/null 2>&1 || die "xcrun notarytool is required for notarization"
+fi
+
 [[ -f "$ICON_SOURCE" ]] || die "Could not find icon source at $ICON_SOURCE"
 
 build_icon() {
@@ -186,6 +300,54 @@ build_icon() {
   sips -z 512 512 "$ICON_SOURCE" --out "$iconset/icon_512x512.png" >/dev/null
   sips -z 1024 1024 "$ICON_SOURCE" --out "$iconset/icon_512x512@2x.png" >/dev/null
   iconutil -c icns "$iconset" -o "$APP_RESOURCES/$ICON_NAME.icns"
+}
+
+sign_app_bundle() {
+  log "Signing app bundle with: $SIGN_IDENTITY"
+  xattr -rc "$APP_BUNDLE"
+  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_FRAMEWORKS/libtermy_ffi.dylib"
+  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_BINARY"
+
+  local codesign_args=(--force --options runtime --timestamp --sign "$SIGN_IDENTITY")
+  [[ -n "$ENTITLEMENTS" ]] && codesign_args+=(--entitlements "$ENTITLEMENTS")
+  codesign "${codesign_args[@]}" "$APP_BUNDLE"
+  codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+}
+
+sign_dmg_if_requested() {
+  if [[ "$SIGN_DMG" -ne 1 ]]; then
+    return
+  fi
+
+  log "Signing DMG with: $SIGN_IDENTITY"
+  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$OUTPUT_DMG"
+  codesign --verify --verbose=2 "$OUTPUT_DMG"
+}
+
+notarize_if_requested() {
+  if [[ "$NOTARIZE" -ne 1 ]]; then
+    return
+  fi
+
+  log "Submitting DMG for notarization"
+  local notary_args=(notarytool submit "$OUTPUT_DMG" --wait)
+  case "$NOTARY_MODE" in
+    profile)
+      notary_args+=(--keychain-profile "$NOTARY_PROFILE")
+      ;;
+    apikey)
+      notary_args+=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+      ;;
+    *)
+      die "internal error: unknown notary credential mode"
+      ;;
+  esac
+  xcrun "${notary_args[@]}"
+
+  log "Stapling notarization ticket"
+  xcrun stapler staple "$OUTPUT_DMG"
+  xcrun stapler validate "$OUTPUT_DMG"
+  spctl --assess --type open --context context:primary-signature --verbose "$OUTPUT_DMG"
 }
 
 log "Building libtermy FFI for $ARCH ($TARGET)"
@@ -262,6 +424,10 @@ PLIST
 
 /usr/bin/plutil -lint "$INFO_PLIST" >/dev/null
 
+if [[ "$SIGN" -eq 1 ]]; then
+  sign_app_bundle
+fi
+
 log "Preparing DMG staging folder"
 rm -rf "$DMG_ROOT"
 mkdir -p "$DMG_ROOT"
@@ -329,5 +495,10 @@ DEVICE=""
 log "Converting to compressed DMG"
 hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUTPUT_DMG" >/dev/null
 rm -f "$RW_DMG"
+
+if [[ "$SIGN" -eq 1 ]]; then
+  sign_dmg_if_requested
+  notarize_if_requested
+fi
 
 echo "Done: $OUTPUT_DMG"

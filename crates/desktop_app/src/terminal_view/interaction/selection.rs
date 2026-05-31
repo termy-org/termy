@@ -1286,8 +1286,8 @@ mod tests {
             TerminalSize {
                 cols: 8,
                 rows,
-                cell_width: px(base_cell_width),
-                cell_height: px(base_cell_height),
+                cell_width: base_cell_width,
+                cell_height: base_cell_height,
             },
             TerminalOptions {
                 scrollback_history: 128,
@@ -1298,8 +1298,8 @@ mod tests {
             TerminalSize {
                 cols: 4,
                 rows,
-                cell_width: px(base_cell_width * 2.0),
-                cell_height: px(base_cell_height * 2.0),
+                cell_width: base_cell_width * 2.0,
+                cell_height: base_cell_height * 2.0,
             },
             TerminalOptions {
                 scrollback_history: 128,

@@ -609,9 +609,7 @@ impl SettingsWindow {
                 Self::enum_field_spec(RootSettingId::TabCloseVisibility)
             }
             EditableField::TabWidthMode => Self::enum_field_spec(RootSettingId::TabWidthMode),
-            EditableField::TabBarPosition => {
-                Self::enum_field_spec(RootSettingId::TabBarPosition)
-            }
+            EditableField::TabBarPosition => Self::enum_field_spec(RootSettingId::TabBarPosition),
             _ => unreachable!("invalid tabs field"),
         }
     }

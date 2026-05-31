@@ -59,7 +59,7 @@ impl TerminalView {
     ) -> TerminalSize {
         let default_size = TerminalSize::default();
         let (cell_width, cell_height) = if let Some(cell_size) = cell_size {
-            (cell_size.width, cell_size.height)
+            (cell_size.width.into(), cell_size.height.into())
         } else {
             (default_size.cell_width, default_size.cell_height)
         };

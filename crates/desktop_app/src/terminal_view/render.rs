@@ -3074,70 +3074,80 @@ impl Render for TerminalView {
                     .w_full()
                     .overflow_hidden()
                     .child(
-                        div().id("terminal-content").flex().w_full().h_full().child(
-                            div()
-                                .id("terminal-pane")
-                                .flex()
-                                .flex_col()
-                                .flex_1()
-                                .h_full()
-                                .overflow_hidden()
-                                .child(
-                                    div()
-                                        .id("terminal-surface")
-                                        .relative()
-                                        .flex_1()
-                                        .h_full()
-                                        .overflow_hidden()
-                                        .cursor_text()
-                                        .on_scroll_wheel(
-                                            cx.listener(Self::handle_terminal_scroll_wheel),
-                                        )
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(Self::handle_mouse_down),
-                                        )
-                                        .on_mouse_down(
-                                            MouseButton::Middle,
-                                            cx.listener(Self::handle_mouse_down),
-                                        )
-                                        .on_mouse_down(
-                                            MouseButton::Right,
-                                            cx.listener(Self::handle_mouse_down),
-                                        )
-                                        .on_mouse_move(cx.listener(Self::handle_mouse_move))
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(Self::handle_mouse_up),
-                                        )
-                                        .on_mouse_up(
-                                            MouseButton::Middle,
-                                            cx.listener(Self::handle_mouse_up),
-                                        )
-                                        .on_mouse_up(
-                                            MouseButton::Right,
-                                            cx.listener(Self::handle_mouse_up),
-                                        )
-                                        .when_some(
-                                            self.pane_resize_drag.as_ref().map(|d| d.axis).or(self
-                                                .hovered_pane_divider
-                                                .as_ref()
-                                                .map(|h| h.axis)),
-                                            |s, axis| match axis {
-                                                PaneResizeAxis::Horizontal => s.cursor_col_resize(),
-                                                PaneResizeAxis::Vertical => s.cursor_row_resize(),
-                                            },
-                                        )
-                                        .font_family(font_family)
-                                        .text_size(font_size)
-                                        .child(ime_input_layer)
-                                        .child(terminal_grid_layer)
-                                        .children(ime_preedit_overlay)
-                                        .children(terminal_scrollbar_overlay)
-                                        .children(terminal_progress_loader),
-                                ),
-                        )
-                        .children(tab_sidebar),
+                        div()
+                            .id("terminal-content")
+                            .flex()
+                            .w_full()
+                            .h_full()
+                            .child(
+                                div()
+                                    .id("terminal-pane")
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .h_full()
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .id("terminal-surface")
+                                            .relative()
+                                            .flex_1()
+                                            .h_full()
+                                            .overflow_hidden()
+                                            .cursor_text()
+                                            .on_scroll_wheel(
+                                                cx.listener(Self::handle_terminal_scroll_wheel),
+                                            )
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(Self::handle_mouse_down),
+                                            )
+                                            .on_mouse_down(
+                                                MouseButton::Middle,
+                                                cx.listener(Self::handle_mouse_down),
+                                            )
+                                            .on_mouse_down(
+                                                MouseButton::Right,
+                                                cx.listener(Self::handle_mouse_down),
+                                            )
+                                            .on_mouse_move(cx.listener(Self::handle_mouse_move))
+                                            .on_mouse_up(
+                                                MouseButton::Left,
+                                                cx.listener(Self::handle_mouse_up),
+                                            )
+                                            .on_mouse_up(
+                                                MouseButton::Middle,
+                                                cx.listener(Self::handle_mouse_up),
+                                            )
+                                            .on_mouse_up(
+                                                MouseButton::Right,
+                                                cx.listener(Self::handle_mouse_up),
+                                            )
+                                            .when_some(
+                                                self.pane_resize_drag.as_ref().map(|d| d.axis).or(
+                                                    self.hovered_pane_divider
+                                                        .as_ref()
+                                                        .map(|h| h.axis),
+                                                ),
+                                                |s, axis| match axis {
+                                                    PaneResizeAxis::Horizontal => {
+                                                        s.cursor_col_resize()
+                                                    }
+                                                    PaneResizeAxis::Vertical => {
+                                                        s.cursor_row_resize()
+                                                    }
+                                                },
+                                            )
+                                            .font_family(font_family)
+                                            .text_size(font_size)
+                                            .child(ime_input_layer)
+                                            .child(terminal_grid_layer)
+                                            .children(ime_preedit_overlay)
+                                            .children(terminal_scrollbar_overlay)
+                                            .children(terminal_progress_loader),
+                                    ),
+                            )
+                            .children(tab_sidebar),
                     ),
             )
             .child(overlay_view);

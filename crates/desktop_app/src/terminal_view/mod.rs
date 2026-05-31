@@ -2364,6 +2364,7 @@ impl TerminalView {
             },
             term: config.term.clone(),
             colorterm: config.colorterm.clone(),
+            environment: Default::default(),
             query_colors: Self::terminal_query_colors(colors),
             working_dir_fallback,
             scrollback_history: config.scrollback_history,

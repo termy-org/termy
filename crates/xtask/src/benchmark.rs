@@ -29,12 +29,15 @@ const ECHO_TRAIN_DEFAULT_ITERATIONS: u64 = 40;
 
 pub(crate) fn run(mut args: impl Iterator<Item = String>) -> Result<()> {
     let Some(command) = args.next() else {
-        bail!("usage: cargo run -p xtask -- <benchmark-driver|benchmark-compare> [options]");
+        bail!(
+            "usage: cargo run -p xtask -- <benchmark-driver|benchmark-compare|benchmark-gate> [options]"
+        );
     };
 
     match command.as_str() {
         "benchmark-driver" => run_driver(args),
         "benchmark-compare" => run_compare(args),
+        "benchmark-gate" => run_gate(args),
         other => bail!("unknown benchmark command `{other}`"),
     }
 }
@@ -160,6 +163,203 @@ fn run_compare(mut args: impl Iterator<Item = String>) -> Result<()> {
     write_report_artifacts(&output_root, &summary)?;
     println!("wrote benchmark report to {}", output_root.display());
     Ok(())
+}
+
+fn run_gate(mut args: impl Iterator<Item = String>) -> Result<()> {
+    let mut summary_path = None;
+    let mut thresholds = BenchmarkGateThresholds::default();
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--summary" => {
+                summary_path = Some(PathBuf::from(
+                    args.next().context("missing value for --summary")?,
+                ));
+            }
+            "--max-cpu-delta-percent" => {
+                thresholds.max_cpu_delta_percent = parse_gate_value(&mut args, &arg)?;
+            }
+            "--max-memory-delta-mib" => {
+                thresholds.max_memory_delta_mib = parse_gate_value(&mut args, &arg)?;
+            }
+            "--max-frame-p95-delta-ms" => {
+                thresholds.max_frame_p95_delta_ms = parse_gate_value(&mut args, &arg)?;
+            }
+            "--max-hitch-count-delta" => {
+                thresholds.max_hitch_count_delta = parse_gate_value(&mut args, &arg)?;
+            }
+            "--max-idle-wakeup-delta" => {
+                thresholds.max_idle_wakeup_delta = parse_gate_value(&mut args, &arg)?;
+            }
+            "--max-echo-p95-delta-ms" => {
+                thresholds.max_echo_p95_delta_ms = parse_gate_value(&mut args, &arg)?;
+            }
+            "--max-echo-missed-delta" => {
+                thresholds.max_echo_missed_delta = parse_gate_value(&mut args, &arg)?;
+            }
+            other => bail!(
+                "unknown benchmark-gate argument `{other}`; expected --summary or a --max-* threshold"
+            ),
+        }
+    }
+
+    let summary_path = summary_path.context("missing --summary")?;
+    let summary: ComparisonSummary = read_json(&summary_path)?;
+    let failures = thresholds.failures(&summary);
+    if failures.is_empty() {
+        println!(
+            "benchmark gates passed for {} scenarios ({})",
+            summary.scenarios.len(),
+            summary_path.display()
+        );
+        return Ok(());
+    }
+
+    bail!("benchmark gates failed:\n- {}", failures.join("\n- "))
+}
+
+fn parse_gate_value<T: std::str::FromStr>(
+    args: &mut impl Iterator<Item = String>,
+    flag: &str,
+) -> Result<T>
+where
+    T::Err: std::fmt::Display,
+{
+    let value = args
+        .next()
+        .with_context(|| format!("missing value for {flag}"))?;
+    value
+        .parse()
+        .map_err(|error| anyhow::anyhow!("invalid {flag} value `{value}`: {error}"))
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BenchmarkGateThresholds {
+    max_cpu_delta_percent: f32,
+    max_memory_delta_mib: f32,
+    max_frame_p95_delta_ms: f32,
+    max_hitch_count_delta: i64,
+    max_idle_wakeup_delta: i64,
+    max_echo_p95_delta_ms: f32,
+    max_echo_missed_delta: i64,
+}
+
+impl Default for BenchmarkGateThresholds {
+    fn default() -> Self {
+        Self {
+            max_cpu_delta_percent: 15.0,
+            max_memory_delta_mib: 20.0,
+            max_frame_p95_delta_ms: 8.0,
+            max_hitch_count_delta: 3,
+            max_idle_wakeup_delta: 75,
+            max_echo_p95_delta_ms: 10.0,
+            max_echo_missed_delta: 0,
+        }
+    }
+}
+
+impl BenchmarkGateThresholds {
+    fn failures(self, summary: &ComparisonSummary) -> Vec<String> {
+        let mut failures = Vec::new();
+        let max_memory_delta_bytes = (self.max_memory_delta_mib * 1024.0 * 1024.0) as i64;
+
+        for scenario in &summary.scenarios {
+            check_optional_f32(
+                &mut failures,
+                &scenario.scenario,
+                "activity-monitor CPU delta",
+                scenario.deltas.activity_monitor_cpu_percent,
+                self.max_cpu_delta_percent,
+                "%",
+            );
+            check_optional_i64(
+                &mut failures,
+                &scenario.scenario,
+                "memory delta",
+                scenario.deltas.memory_bytes,
+                max_memory_delta_bytes,
+                "bytes",
+            );
+            check_optional_f32(
+                &mut failures,
+                &scenario.scenario,
+                "frame p95 delta",
+                scenario.deltas.frame_p95_ms,
+                self.max_frame_p95_delta_ms,
+                "ms",
+            );
+            check_optional_i64(
+                &mut failures,
+                &scenario.scenario,
+                "hitch count delta",
+                scenario.deltas.hitch_count,
+                self.max_hitch_count_delta,
+                "hitches",
+            );
+            check_optional_i64(
+                &mut failures,
+                &scenario.scenario,
+                "idle wakeup delta",
+                scenario.deltas.idle_wakeups,
+                self.max_idle_wakeup_delta,
+                "wakeups",
+            );
+            check_optional_f32(
+                &mut failures,
+                &scenario.scenario,
+                "echo first-frame p95 delta",
+                scenario.deltas.echo_first_frame_ms_p95,
+                self.max_echo_p95_delta_ms,
+                "ms",
+            );
+            check_optional_i64(
+                &mut failures,
+                &scenario.scenario,
+                "echo missed count delta",
+                scenario.deltas.echo_missed_count,
+                self.max_echo_missed_delta,
+                "misses",
+            );
+        }
+
+        failures
+    }
+}
+
+fn check_optional_f32(
+    failures: &mut Vec<String>,
+    scenario: &str,
+    metric: &str,
+    value: Option<f32>,
+    max_allowed: f32,
+    unit: &str,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    if value > max_allowed {
+        failures.push(format!(
+            "{scenario}: {metric} {value:.2}{unit} exceeded {max_allowed:.2}{unit}"
+        ));
+    }
+}
+
+fn check_optional_i64(
+    failures: &mut Vec<String>,
+    scenario: &str,
+    metric: &str,
+    value: Option<i64>,
+    max_allowed: i64,
+    unit: &str,
+) {
+    let Some(value) = value else {
+        return;
+    };
+    if value > max_allowed {
+        failures.push(format!(
+            "{scenario}: {metric} {value}{unit} exceeded {max_allowed}{unit}"
+        ));
+    }
 }
 
 fn canonicalize_root(path: PathBuf) -> Result<PathBuf> {
@@ -716,7 +916,7 @@ struct AnimationSummary {
     hitch_max_ms: Option<f32>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct RunResult {
     build_label: String,
     target_name: String,
@@ -728,20 +928,20 @@ struct RunResult {
     micro_latency: MicroLatencySummary,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct MicroLatencySummary {
     idle_burst: Option<IdleBurstLatencySummary>,
     echo_train: Option<EchoTrainLatencySummary>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct IdleBurstLatencySummary {
     first_frame_after_burst_ms: Option<f32>,
     last_frame_after_burst_ms: Option<f32>,
     frames_until_settle: Option<u64>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct EchoTrainLatencySummary {
     echo_first_frame_ms_p50: Option<f32>,
     echo_first_frame_ms_p95: Option<f32>,
@@ -1790,7 +1990,7 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     fs::write(path, contents).with_context(|| format!("failed to write {}", path.display()))
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ComparisonSummary {
     baseline: ComparedTargetSummary,
     candidate: ComparedTargetSummary,
@@ -1830,7 +2030,7 @@ impl ComparisonSummary {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ComparedTargetSummary {
     label: String,
     name: String,
@@ -1849,7 +2049,7 @@ impl ComparedTargetSummary {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ScenarioComparison {
     scenario: String,
     baseline: RunResult,
@@ -1978,7 +2178,7 @@ impl ScenarioComparison {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ScenarioDeltas {
     frame_p50_ms: Option<f32>,
     frame_p95_ms: Option<f32>,
@@ -2960,5 +3160,63 @@ mod tests {
         assert!(report.contains("Displayed frame p95 ms"));
         assert!(report.contains("Only `Baseline` exposed in-app diagnostics"));
         assert!(report.contains("Shaped-line cache hits"));
+    }
+
+    #[test]
+    fn benchmark_gates_fail_on_positive_regressions() {
+        let summary = super::ComparisonSummary {
+            baseline: compared_target("baseline"),
+            candidate: compared_target("candidate"),
+            scenarios: vec![super::ScenarioComparison::new(
+                "idle-burst".to_string(),
+                run_result("baseline", 3.0, 10, 10 * 1024 * 1024),
+                run_result("candidate", 25.0, 200, 45 * 1024 * 1024),
+            )],
+        };
+
+        let failures = super::BenchmarkGateThresholds::default().failures(&summary);
+
+        assert!(failures.iter().any(|failure| failure.contains("CPU")));
+        assert!(failures.iter().any(|failure| failure.contains("memory")));
+        assert!(
+            failures
+                .iter()
+                .any(|failure| failure.contains("idle wakeup"))
+        );
+    }
+
+    fn compared_target(label: &str) -> super::ComparedTargetSummary {
+        super::ComparedTargetSummary {
+            label: label.to_string(),
+            name: "Termy".to_string(),
+            source_path: format!("/tmp/{label}"),
+            git_sha: None,
+        }
+    }
+
+    fn run_result(
+        build_label: &str,
+        cpu_percent: f32,
+        idle_wakeups: u64,
+        memory_bytes: u64,
+    ) -> super::RunResult {
+        super::RunResult {
+            build_label: build_label.to_string(),
+            target_name: "Termy".to_string(),
+            git_sha: None,
+            scenario: "idle-burst".to_string(),
+            app_summary: None,
+            energy_summary: super::EnergySummary {
+                trace_template: "Activity Monitor".to_string(),
+                cpu_total_ns: None,
+                cpu_percent: Some(cpu_percent),
+                idle_wakeups: Some(idle_wakeups),
+                memory_bytes: Some(memory_bytes),
+                disk_bytes_read: None,
+                disk_bytes_written: None,
+            },
+            animation_summary: None,
+            micro_latency: super::MicroLatencySummary::default(),
+        }
     }
 }

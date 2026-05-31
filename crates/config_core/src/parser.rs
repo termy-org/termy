@@ -10,8 +10,7 @@ use crate::schema::{RootSettingId, root_setting_from_key, root_setting_spec};
 use crate::types::{
     AppConfig, AppearanceMode, CursorStyle, KeybindConfigLine, PaneFocusEffect, TabBarPosition,
     TabCloseVisibility, TabTitleMode, TabTitleSource, TabWidthMode, TaskConfig,
-    TerminalScrollbarStyle,
-    TerminalScrollbarVisibility, ThemeId, WindowsShell, WorkingDirFallback,
+    TerminalScrollbarStyle, TerminalScrollbarVisibility, ThemeId, WindowsShell, WorkingDirFallback,
 };
 
 #[derive(Default)]

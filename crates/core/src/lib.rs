@@ -27,12 +27,17 @@ pub use keyboard::{
     TermyModifiers, keystroke_to_input,
 };
 pub use links::{DetectedLink, classify_link_token, find_link_in_line};
+#[cfg(unix)]
+pub use locale::{
+    DEFAULT_UTF8_LOCALE, Utf8LocaleOverridePlan, preferred_utf8_locale, utf8_locale_override_plan,
+};
 pub use monotonic_time::terminal_ui_monotonic_now_ns;
 pub use mouse_protocol::{
     TerminalMouseButton, TerminalMouseEventKind, TerminalMouseMode, TerminalMouseModifiers,
     TerminalMousePosition, encode_mouse_report,
 };
 pub use osc_intercept::{OscEvent, OscInterceptor};
+pub use path_env::normalized_path_env;
 pub use protocol::{TerminalClipboardTarget, TerminalQueryColors, TerminalReplyHost};
 pub use render_metrics::{
     TerminalUiRenderMetricsSnapshot, add_span_damage_compute_us, add_span_grid_paint_us,
@@ -44,8 +49,9 @@ pub use runtime::{
     TabTitleShellIntegration, Terminal, TerminalCursorState, TerminalCursorStyle,
     TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent, TerminalOptions,
     TerminalRuntimeConfig, TerminalSize, WindowsShell, WorkingDirFallback,
-    normalize_working_directory_candidate, resolve_launch_working_directory,
-    resolve_working_directory_path,
+    cursor_position_from_term, cursor_state_from_term, normalize_working_directory_candidate,
+    resolve_launch_working_directory, resolve_working_directory_path, take_term_damage_snapshot,
+    termmode_to_terminal_mouse_mode,
 };
 pub use search::{TermySearchMatch, TermySearchOptions, search_frame, search_frame_with_options};
 pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState};

@@ -148,7 +148,8 @@ impl TerminalView {
 
                 let line_height: f32 = size.cell_height.into();
                 let viewport_height = line_height * f32::from(size.rows);
-                let raw_delta_pixels: f32 = event.delta.pixel_delta(size.cell_height).y.into();
+                let raw_delta_pixels: f32 =
+                    event.delta.pixel_delta(size.cell_height.into()).y.into();
                 let delta_pixels = raw_delta_pixels * self.mouse_scroll_multiplier;
 
                 Self::terminal_scroll_lines_from_pixels(

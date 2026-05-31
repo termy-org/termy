@@ -86,10 +86,7 @@ pub fn native_window_tab_group_count(window: &gpui::Window) -> Result<u32, Nativ
 }
 
 /// Update the title shown for this window in the native AppKit tab bar.
-pub fn set_window_tab_title(
-    window: &gpui::Window,
-    title: &str,
-) -> Result<(), NativeAppKitError> {
+pub fn set_window_tab_title(window: &gpui::Window, title: &str) -> Result<(), NativeAppKitError> {
     let ns_view = appkit_ns_view(window)?;
     let title = CString::new(title).map_err(|_| NativeAppKitError::InvalidString)?;
     set_window_tab_title_for_ns_view(ns_view, &title)

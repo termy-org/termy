@@ -5854,12 +5854,10 @@ version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
- "dirs 6.0.0",
  "flume",
  "gpui",
- "polling",
  "rustix-openpty",
- "winreg",
+ "termy_core",
 ]
 
 [[package]]

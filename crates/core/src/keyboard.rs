@@ -30,7 +30,7 @@ pub struct TerminalKeyboardMode {
 }
 
 impl TerminalKeyboardMode {
-    pub(crate) fn from_term_mode(mode: TermMode) -> Self {
+    pub fn from_term_mode(mode: TermMode) -> Self {
         Self {
             application_cursor_keys: mode.contains(TermMode::APP_CURSOR),
             disambiguate_escape_codes: mode.contains(TermMode::DISAMBIGUATE_ESC_CODES),

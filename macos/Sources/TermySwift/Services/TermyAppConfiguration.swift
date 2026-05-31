@@ -56,6 +56,22 @@ struct TermyAppConfiguration {
         try load()
     }
 
+    static func load(contents: String) throws -> TermyAppConfiguration {
+        var config: OpaquePointer?
+        let bytes = Array(contents.utf8)
+        let status = bytes.withUnsafeBufferPointer { buffer in
+            termy_config_from_contents(buffer.baseAddress, buffer.count, &config)
+        }
+        try TermyFfiBridge.requireOK("termy_config_from_contents", status)
+        guard let config else {
+            throw TermyAppConfigurationError.missingConfig
+        }
+        defer {
+            _ = termy_config_free(config)
+        }
+        return try load(from: config)
+    }
+
     static let loadErrorMessage: String? = {
         switch loadedConfiguration {
         case .success:
@@ -84,6 +100,10 @@ struct TermyAppConfiguration {
             _ = termy_config_free(config)
         }
 
+        return try load(from: config)
+    }
+
+    private static func load(from config: OpaquePointer) throws -> TermyAppConfiguration {
         var width: Float = Float(defaultConfiguration.windowWidth)
         var height: Float = Float(defaultConfiguration.windowHeight)
         try TermyFfiBridge.requireOK(

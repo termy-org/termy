@@ -16,8 +16,8 @@ mod tmux;
 // Intentionally re-exported for the app renderer adapter boundary. These types are the
 // cross-crate contract for row-level paint-cache invalidation between `termy` and this crate.
 pub use grid::{
-    CellRenderInfo, TerminalCursorStyle, TerminalGrid, TerminalGridPaintCacheHandle,
-    TerminalGridPaintDamage, TerminalGridRow, TerminalGridRows,
+    CellRenderInfo, TerminalGrid, TerminalGridPaintCacheHandle, TerminalGridPaintDamage,
+    TerminalGridRow, TerminalGridRows,
 };
 pub use keyboard::{TerminalKeyEventKind, TerminalKeyboardMode, keystroke_to_input};
 pub use links::{DetectedLink, classify_link_token, find_link_in_line};
@@ -34,10 +34,11 @@ pub use render_metrics::{
     terminal_ui_render_metrics_snapshot,
 };
 pub use runtime::{
-    TabTitleShellIntegration, Terminal, TerminalCursorState, TerminalDamageSnapshot,
-    TerminalDirtySpan, TerminalEvent, TerminalOptions, TerminalRuntimeConfig, TerminalSize,
-    WindowsShell, WorkingDirFallback, normalize_working_directory_candidate,
-    resolve_launch_working_directory, resolve_working_directory_path,
+    TabTitleShellIntegration, Terminal, TerminalCursorState, TerminalCursorStyle,
+    TerminalDamageSnapshot, TerminalDirtySpan, TerminalEvent, TerminalOptions,
+    TerminalRuntimeConfig, TerminalSize, WindowsShell, WorkingDirFallback,
+    normalize_working_directory_candidate, resolve_launch_working_directory,
+    resolve_working_directory_path,
 };
 pub use shell_integration::{CommandLifecycle, CommandPhase, ProgressState};
 pub use tmux::{

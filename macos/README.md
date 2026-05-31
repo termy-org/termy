@@ -29,3 +29,27 @@ At startup the app reads Termy's local config, including `working_dir`, `window_
 - Drag split dividers with the mouse to resize panes
 
 Keyboard input is encoded through repo-local `termy_core`, including Kitty keyboard protocol modes when terminal applications negotiate them.
+
+## Validate
+
+```sh
+./scripts/check-config-matrix.sh
+./scripts/stress-native.sh
+./scripts/check-release-readiness.sh
+```
+
+`check-config-matrix.sh` runs Swift regression tests for shared config/schema parity. `stress-native.sh` runs persistence, selection, and render-clamping stress tests; pass `--launch` for a local app launch smoke. `check-release-readiness.sh` verifies native bundle metadata plus signing/notarization hooks, and accepts `--app PATH` to inspect a staged `.app`.
+
+For a staged app bundle, run a local startup/RSS/CPU gate with:
+
+```sh
+./scripts/check-launch-gate.sh --app .build/dmg-arm64/TermyAlpha.app
+```
+
+Native DMGs are built with `./scripts/build-dmg.sh`. Pass `--sign-identity` plus notary credentials to sign/notarize, or use `./scripts/build-dmg-signed.sh` when a missing signing identity should fail loudly.
+
+Performance benchmark summaries from `cargo run -p xtask -- benchmark-compare` can be gated with:
+
+```sh
+./scripts/check-performance-gates.sh --summary target/macos-performance-gate/summary.json
+```

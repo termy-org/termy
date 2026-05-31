@@ -991,8 +991,8 @@ impl TerminalView {
             TerminalSize {
                 cols: cols.max(1),
                 rows: rows.max(1),
-                cell_width: cell_size.width,
-                cell_height: cell_size.height,
+                cell_width: cell_size.width.into(),
+                cell_height: cell_size.height.into(),
             },
             preferred_working_dir.as_deref(),
             Some(self.event_wakeup_tx.clone()),
@@ -1109,8 +1109,8 @@ impl TerminalView {
             active_pane.terminal.resize(TerminalSize {
                 cols: current_size.2,
                 rows: current_size.3,
-                cell_width: cell_size.width,
-                cell_height: cell_size.height,
+                cell_width: cell_size.width.into(),
+                cell_height: cell_size.height.into(),
             });
         }
 

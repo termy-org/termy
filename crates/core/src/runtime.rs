@@ -140,7 +140,7 @@ impl Default for TerminalRuntimeConfig {
 }
 
 impl TerminalOptions {
-    pub(crate) fn term_config(&self) -> TermConfig {
+    pub fn term_config(&self) -> TermConfig {
         let shape = match self.default_cursor_style {
             TerminalCursorStyle::Line => CursorShape::Beam,
             TerminalCursorStyle::Block => CursorShape::Block,
@@ -183,9 +183,7 @@ fn terminal_cursor_style_from_shape(shape: CursorShape) -> Option<TerminalCursor
     }
 }
 
-pub(crate) fn cursor_state_from_term<T: EventListener>(
-    term: &Term<T>,
-) -> Option<TerminalCursorState> {
+pub fn cursor_state_from_term<T: EventListener>(term: &Term<T>) -> Option<TerminalCursorState> {
     let cursor = term.renderable_content().cursor;
     let style = terminal_cursor_style_from_shape(cursor.shape)?;
     let row = usize::try_from(cursor.point.line.0).ok()?;
@@ -196,13 +194,13 @@ pub(crate) fn cursor_state_from_term<T: EventListener>(
     })
 }
 
-pub(crate) fn cursor_position_from_term<T: EventListener>(term: &Term<T>) -> (usize, usize) {
+pub fn cursor_position_from_term<T: EventListener>(term: &Term<T>) -> (usize, usize) {
     let cursor = term.renderable_content().cursor;
     let row = usize::try_from(cursor.point.line.0).ok().unwrap_or(0);
     (cursor.point.column.0, row)
 }
 
-pub(crate) fn termmode_to_terminal_mouse_mode(mode: TermMode) -> TerminalMouseMode {
+pub fn termmode_to_terminal_mouse_mode(mode: TermMode) -> TerminalMouseMode {
     TerminalMouseMode {
         enabled: mode.intersects(TermMode::MOUSE_MODE) && !mode.contains(TermMode::VI),
         report_click: mode.contains(TermMode::MOUSE_REPORT_CLICK),
@@ -775,9 +773,7 @@ fn searchable_grid_line<T: EventListener>(term: &Term<T>, line: Line, cols: usiz
     text.trim_end().to_string()
 }
 
-pub(crate) fn take_term_damage_snapshot<T: EventListener>(
-    term: &mut Term<T>,
-) -> TerminalDamageSnapshot {
+pub fn take_term_damage_snapshot<T: EventListener>(term: &mut Term<T>) -> TerminalDamageSnapshot {
     let rows = term.grid().screen_lines();
     let cols = term.grid().columns();
     let display_offset = term.grid().display_offset();

@@ -1,11 +1,11 @@
 #[cfg(target_os = "macos")]
-pub(crate) const DEFAULT_UTF8_LOCALE: &str = "en_US.UTF-8";
+pub const DEFAULT_UTF8_LOCALE: &str = "en_US.UTF-8";
 #[cfg(all(unix, not(target_os = "macos")))]
-pub(crate) const DEFAULT_UTF8_LOCALE: &str = "C.UTF-8";
+pub const DEFAULT_UTF8_LOCALE: &str = "C.UTF-8";
 
 #[cfg(unix)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Utf8LocaleOverridePlan {
+pub enum Utf8LocaleOverridePlan {
     None,
     LcCtypeOnly,
     LcAllAndLcCtype,
@@ -65,7 +65,7 @@ fn utf8_locale_from_candidate(locale: &str) -> Option<String> {
 }
 
 #[cfg(unix)]
-pub(crate) fn preferred_utf8_locale(
+pub fn preferred_utf8_locale(
     lc_all: Option<&str>,
     lc_ctype: Option<&str>,
     lang: Option<&str>,
@@ -78,7 +78,7 @@ pub(crate) fn preferred_utf8_locale(
 }
 
 #[cfg(unix)]
-pub(crate) fn utf8_locale_override_plan(
+pub fn utf8_locale_override_plan(
     lc_all: Option<&str>,
     lc_ctype: Option<&str>,
     lang: Option<&str>,

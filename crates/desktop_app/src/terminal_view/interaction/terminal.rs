@@ -18,8 +18,8 @@ impl TerminalView {
     fn fallback_cell_size() -> Size<Pixels> {
         let default = TerminalSize::default();
         Size {
-            width: default.cell_width,
-            height: default.cell_height,
+            width: default.cell_width.into(),
+            height: default.cell_height.into(),
         }
     }
 
@@ -391,8 +391,8 @@ impl TerminalView {
                 let next_size = TerminalSize {
                     cols: pane_cols,
                     rows: pane_rows,
-                    cell_width: pane_cell_size.width,
-                    cell_height: pane_cell_size.height,
+                    cell_width: pane_cell_size.width.into(),
+                    cell_height: pane_cell_size.height.into(),
                 };
                 let current = pane.terminal.size();
                 let needs_resize = current.cols != next_size.cols

@@ -618,7 +618,7 @@ impl TerminalView {
                     return true;
                 }
 
-                let delta = event.delta.pixel_delta(size.cell_height);
+                let delta = event.delta.pixel_delta(size.cell_height.into());
                 let delta_x: f32 = delta.x.into();
                 let delta_y: f32 = delta.y.into();
                 let vertical_steps = quantized_scroll_steps(

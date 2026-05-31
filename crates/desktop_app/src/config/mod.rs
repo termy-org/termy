@@ -28,8 +28,7 @@ pub use termy_config_core::{
     AppConfig, AppearanceMode, ConfigDiagnostic, ConfigDiagnosticKind, CursorStyle, CustomColors,
     PaneFocusEffect, SHELL_DECIDE_THEME_ID, SystemAppearance, TabBarPosition, TabCloseVisibility,
     TabTitleConfig, TabTitleSource, TabWidthMode, TaskConfig, TerminalScrollbarStyle,
-    TerminalScrollbarVisibility,
-    WindowsShell, WorkingDirFallback, resolve_active_theme,
+    TerminalScrollbarVisibility, WindowsShell, WorkingDirFallback, resolve_active_theme,
 };
 
 pub fn system_appearance_from_window(appearance: gpui::WindowAppearance) -> SystemAppearance {

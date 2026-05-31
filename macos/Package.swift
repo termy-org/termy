@@ -7,6 +7,16 @@ let packageDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent
 let repoRoot = packageDirectory.deletingLastPathComponent()
 let ffiLibraryPath = ProcessInfo.processInfo.environment["TERMY_FFI_LIBRARY_PATH"]
     ?? repoRoot.appendingPathComponent("target/debug").path
+let termyLinkerSettings: [LinkerSetting] = [
+    .unsafeFlags([
+        "-L", ffiLibraryPath,
+        "-ltermy_ffi",
+        "-Xlinker", "-rpath",
+        "-Xlinker", "@executable_path/../Frameworks",
+        "-Xlinker", "-rpath",
+        "-Xlinker", ffiLibraryPath
+    ])
+]
 
 let package = Package(
     name: "termy-swift",
@@ -24,16 +34,11 @@ let package = Package(
         .executableTarget(
             name: "TermySwift",
             dependencies: ["CTermy"],
-            linkerSettings: [
-                .unsafeFlags([
-                    "-L", ffiLibraryPath,
-                    "-ltermy_ffi",
-                    "-Xlinker", "-rpath",
-                    "-Xlinker", "@executable_path/../Frameworks",
-                    "-Xlinker", "-rpath",
-                    "-Xlinker", ffiLibraryPath
-                ])
-            ]
+            linkerSettings: termyLinkerSettings
+        ),
+        .testTarget(
+            name: "TermySwiftTests",
+            dependencies: ["TermySwift", "CTermy"]
         )
     ]
 )

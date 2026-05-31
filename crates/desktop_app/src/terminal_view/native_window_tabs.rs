@@ -33,7 +33,9 @@ pub(super) fn free_callback_context(context: usize) {
     // is owned by exactly one TerminalView, so it is reconstructed and dropped
     // at most once.
     unsafe {
-        drop(Box::from_raw(context as *mut NativeWindowTabCallbackContext));
+        drop(Box::from_raw(
+            context as *mut NativeWindowTabCallbackContext,
+        ));
     }
 }
 

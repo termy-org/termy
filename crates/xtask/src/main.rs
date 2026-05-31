@@ -8,7 +8,7 @@ use termy_config_core::{
 
 mod benchmark;
 
-const XTASK_USAGE: &str = "usage: cargo run -p xtask -- <generate-keybindings-doc|generate-config-doc|benchmark-driver|benchmark-compare> [options]";
+const XTASK_USAGE: &str = "usage: cargo run -p xtask -- <generate-keybindings-doc|generate-config-doc|benchmark-driver|benchmark-compare|benchmark-gate> [options]";
 
 fn main() {
     if let Err(error) = run() {
@@ -23,7 +23,10 @@ fn run() -> Result<()> {
         bail!(XTASK_USAGE);
     };
 
-    if matches!(command.as_str(), "benchmark-driver" | "benchmark-compare") {
+    if matches!(
+        command.as_str(),
+        "benchmark-driver" | "benchmark-compare" | "benchmark-gate"
+    ) {
         return benchmark::run(std::iter::once(command).chain(args));
     }
 

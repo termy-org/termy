@@ -11,6 +11,26 @@ run:
 run-macos *args:
     ./macos/script/build_and_run.sh {{ args }}
 
+# Run native macOS Swift config/schema parity tests
+test-macos-config:
+    ./macos/scripts/check-config-matrix.sh
+
+# Run native macOS stress-focused Swift tests
+test-macos-stress *args:
+    ./macos/scripts/stress-native.sh {{ args }}
+
+# Check native macOS benchmark summary against regression gates
+check-macos-performance *args:
+    ./macos/scripts/check-performance-gates.sh {{ args }}
+
+# Check native macOS staged app launch, RSS, and idle CPU gates
+check-macos-launch *args:
+    ./macos/scripts/check-launch-gate.sh {{ args }}
+
+# Check native macOS release metadata, signing hooks, and optional staged app bundle
+check-macos-release *args:
+    ./macos/scripts/check-release-readiness.sh {{ args }}
+
 test:
     cargo test -p termy --release
 

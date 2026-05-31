@@ -8,6 +8,7 @@ use gpui::{
     ShapedLine, SharedString, Size, TextAlign, TextRun, UnderlineStyle, Window, point, px, quad,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc, time::Instant};
+use termy_core::TerminalCursorStyle;
 
 /// Info needed to render a single cell.
 #[derive(Clone)]
@@ -25,12 +26,6 @@ pub struct CellRenderInfo {
     pub search_current: bool,
     /// Part of any search match (but not current)
     pub search_match: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TerminalCursorStyle {
-    Line,
-    Block,
 }
 
 /// Custom element for rendering the terminal grid.
