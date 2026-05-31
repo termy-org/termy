@@ -140,9 +140,11 @@ if [[ "$FORMAT" == "appimage" ]]; then
 fi
 
 log "Building $APP_NAME v$VERSION for $ARCH ($TARGET)"
-(cd "$REPO_ROOT" && cargo build --release --target "$TARGET" -p termy)
+(cd "$REPO_ROOT" && cargo build --release --target "$TARGET" -p termy -p termy_cli)
 
+CLI_BINARY_PATH="$TARGET_RELEASE_DIR/termy-cli"
 [[ -f "$BINARY_PATH" ]] || die "Binary not found at $BINARY_PATH"
+[[ -f "$CLI_BINARY_PATH" ]] || die "CLI binary not found at $CLI_BINARY_PATH"
 
 mkdir -p "$DIST_DIR"
 
@@ -157,6 +159,7 @@ case "$FORMAT" in
     mkdir -p "$STAGING_DIR/$APP_NAME_LOWER"
 
     cp "$BINARY_PATH" "$STAGING_DIR/$APP_NAME_LOWER/"
+    cp "$CLI_BINARY_PATH" "$STAGING_DIR/$APP_NAME_LOWER/"
 
     # Copy assets if they exist
     if [[ -d "$REPO_ROOT/assets" ]]; then
@@ -173,10 +176,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${1:-$HOME/.local/bin}"
 
 mkdir -p "$INSTALL_DIR"
-cp "$SCRIPT_DIR/termy" "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/termy"
+cp "$SCRIPT_DIR/termy" "$SCRIPT_DIR/termy-cli" "$INSTALL_DIR/"
+chmod +x "$INSTALL_DIR/termy" "$INSTALL_DIR/termy-cli"
 
-echo "Installed termy to $INSTALL_DIR/termy"
+echo "Installed termy and termy-cli to $INSTALL_DIR/"
 echo "Make sure $INSTALL_DIR is in your PATH"
 INSTALL_SCRIPT
     chmod +x "$STAGING_DIR/$APP_NAME_LOWER/install.sh"
@@ -204,7 +207,8 @@ INSTALL_SCRIPT
       "$APPDIR/usr/share/icons/hicolor/512x512/apps"
 
     cp "$BINARY_PATH" "$APPDIR/usr/bin/$APP_NAME_LOWER"
-    chmod +x "$APPDIR/usr/bin/$APP_NAME_LOWER"
+    cp "$CLI_BINARY_PATH" "$APPDIR/usr/bin/termy-cli"
+    chmod +x "$APPDIR/usr/bin/$APP_NAME_LOWER" "$APPDIR/usr/bin/termy-cli"
 
     # Keep assets as a sibling to the binary, matching the tarball layout.
     if [[ -d "$REPO_ROOT/assets" ]]; then

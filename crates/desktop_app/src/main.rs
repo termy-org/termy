@@ -4,6 +4,7 @@ mod app_actions;
 mod app_icon;
 mod asset_source;
 mod chrome_style;
+mod cli_delegate;
 mod colors;
 mod commands;
 mod config;
@@ -450,9 +451,14 @@ fn spawn_deeplink_listener(cx: &mut App, deeplink_rx: Receiver<Vec<String>>) {
 }
 
 fn main() {
+    let cli_args: Vec<String> = std::env::args().skip(1).collect();
+    if cli_delegate::should_delegate_to_cli(&cli_args) {
+        cli_delegate::delegate_to_cli_or_exit(cli_args);
+    }
+
     env_logger::init();
 
-    let startup_arguments = parse_startup_arguments(std::env::args().skip(1));
+    let startup_arguments = parse_startup_arguments(cli_args);
     let (deeplink_tx, deeplink_rx) = flume::unbounded::<Vec<String>>();
     let application = Application::new().with_assets(crate::asset_source::EmbeddedAssets);
 

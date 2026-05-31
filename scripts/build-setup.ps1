@@ -144,10 +144,11 @@ if (-not $Arch) {
 }
 
 $exePath = Join-Path $repoRoot "target\$Target\release\termy.exe"
+$cliExePath = Join-Path $repoRoot "target\$Target\release\termy-cli.exe"
 
 if (-not $NoBuild) {
-    Write-Host "Building termy.exe for target '$Target'..."
-    & cargo build --release --target $Target -p termy
+    Write-Host "Building termy.exe and termy-cli.exe for target '$Target'..."
+    & cargo build --release --target $Target -p termy -p termy_cli
     if ($LASTEXITCODE -ne 0) {
         throw "cargo build failed with exit code $LASTEXITCODE"
     }
@@ -155,6 +156,9 @@ if (-not $NoBuild) {
 
 if (-not (Test-Path $exePath)) {
     throw "Expected binary not found at $exePath"
+}
+if (-not (Test-Path $cliExePath)) {
+    throw "Expected CLI binary not found at $cliExePath"
 }
 
 $isccPath = Resolve-IsccPath
@@ -166,6 +170,7 @@ Write-Host "Packaging Termy $Version ($Arch)..."
     "/DMyArch=$Arch" `
     "/DMyTarget=$Target" `
     "/DMyExeName=termy.exe" `
+    "/DMyCliExeName=termy-cli.exe" `
     $issPath
 
 if ($LASTEXITCODE -ne 0) {

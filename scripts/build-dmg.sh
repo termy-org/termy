@@ -188,6 +188,7 @@ DMG_NAME="${APP_NAME}-${VERSION}-macos-${ARCH}${SUFFIX}"
 VOLUME_NAME="${APP_NAME}-${VERSION}"
 
 TARGET_RELEASE_DIR="$REPO_ROOT/target/$TARGET/release"
+CLI_BINARY_PATH="$TARGET_RELEASE_DIR/termy-cli"
 DIST_DIR="$REPO_ROOT/dist"
 DMG_ROOT="$REPO_ROOT/target/dmg-root-$ARCH"
 RW_DMG="$DIST_DIR/${DMG_NAME}-rw.dmg"
@@ -218,7 +219,7 @@ if [[ ! -f "$REPO_ROOT/assets/termy.icns" || "$REPO_ROOT/assets/termy_icon@1024p
 fi
 
 log "Building $APP_NAME v$VERSION for $ARCH ($TARGET)"
-(cd "$REPO_ROOT" && cargo build --release --target "$TARGET" -p termy)
+(cd "$REPO_ROOT" && cargo build --release --target "$TARGET" -p termy -p termy_cli)
 (cd "$REPO_ROOT" && cargo bundle --release --format osx --target "$TARGET" --package termy)
 
 APP_PATH="$TARGET_RELEASE_DIR/bundle/osx/$APP_NAME.app"
@@ -226,6 +227,11 @@ if [[ ! -d "$APP_PATH" ]]; then
   APP_PATH="$(find "$REPO_ROOT/target" -maxdepth 5 -type d -name "$APP_NAME.app" -path "*/bundle/osx/*" | head -n1 || true)"
 fi
 [[ -n "$APP_PATH" && -d "$APP_PATH" ]] || die "Could not find built app bundle"
+[[ -f "$CLI_BINARY_PATH" ]] || die "CLI binary not found at $CLI_BINARY_PATH"
+
+log "Installing termy-cli into app bundle"
+cp "$CLI_BINARY_PATH" "$APP_PATH/Contents/MacOS/termy-cli"
+chmod +x "$APP_PATH/Contents/MacOS/termy-cli"
 
 log "Registering termy:// URL scheme in app bundle"
 ensure_termy_url_scheme "$APP_PATH"

@@ -14,6 +14,10 @@
   #define MyExeName "termy.exe"
 #endif
 
+#ifndef MyCliExeName
+  #define MyCliExeName "termy-cli.exe"
+#endif
+
 #if MyArch == "x64"
   #define MyArchAllowed "x64compatible"
   #define MyArchInstallMode "x64compatible"
@@ -49,6 +53,7 @@ RestartApplications=no
 
 [Files]
 Source: "..\..\target\{#MyTarget}\release\{#MyExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\target\{#MyTarget}\release\{#MyCliExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Termy"; Filename: "{app}\{#MyExeName}"
