@@ -375,11 +375,6 @@ impl TerminalView {
                         MouseButton::Left,
                         cx.listener(|this, _event: &MouseDownEvent, window, cx| {
                             window.prevent_default();
-                            #[cfg(target_os = "macos")]
-                            if this.open_native_window_tab(window, cx) {
-                                cx.stop_propagation();
-                                return;
-                            }
                             this.add_tab(cx);
                             cx.stop_propagation();
                         }),

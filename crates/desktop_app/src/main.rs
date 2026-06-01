@@ -213,12 +213,6 @@ fn open_main_window(
                 {
                     log::error!("Failed to disable automatic macOS titlebar dragging: {error}");
                 }
-                let view_for_tabbing = view.clone();
-                window.defer(cx, move |window, cx| {
-                    let _ = view_for_tabbing.update(cx, |view, _cx| {
-                        view.ensure_native_window_tabbing_configured(window);
-                    });
-                });
 
                 let (native_drop_tx, native_drop_rx) = flume::unbounded();
                 match terminal_view::install_native_file_drop(window, native_drop_tx) {

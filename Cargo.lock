@@ -2531,14 +2531,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-native-appkit"
-version = "0.1.0"
-dependencies = [
- "gpui",
- "raw-window-handle",
-]
-
-[[package]]
 name = "gpui_macros"
 version = "0.1.0"
 source = "git+https://github.com/zed-industries/zed?rev=83de8a25e0ef71a8d762a148459bc863adaeb7e3#83de8a25e0ef71a8d762a148459bc863adaeb7e3"
@@ -5697,7 +5689,6 @@ dependencies = [
  "fs4",
  "futures",
  "gpui",
- "gpui-native-appkit",
  "libsqlite3-sys",
  "log",
  "objc",

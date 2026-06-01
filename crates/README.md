@@ -11,7 +11,6 @@ Termy is a Rust workspace split by ownership boundary, not by implementation con
 ## Runtime And UI
 
 - `core/` (`termy_core`): headless terminal runtime/API for embedders.
-- `gpui_native_appkit/` (`gpui-native-appkit`): AppKit/SwiftUI titlebar accessory bridge for GPUI-hosted windows.
 - `terminal_ui/` (`termy_terminal_ui`): GPUI-facing terminal adapter, grid paint cache, native pane runtime, and tmux support.
 - `native_sdk/` (`termy_native_sdk`): narrow platform-native helpers.
 
@@ -37,7 +36,6 @@ Each crate has its own `README.md`. Update the local README when a crate gains o
 ## Dependency Rules
 
 - `termy_core`, `termy_ffi`, `termy_cli`, `termy_cli_install_core`, and pure domain crates must not depend on GPUI.
-- `gpui-native-appkit` may depend on GPUI, but it should stay limited to reusable macOS host-window interop.
 - `termy_ffi` should wrap `termy_core`, not copy desktop app behavior.
 - `termy_command_core` must stay independent of config parsing and UI presentation.
 - App-only behavior belongs in `desktop_app/` until another product surface needs it.

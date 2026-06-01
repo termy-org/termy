@@ -2811,31 +2811,17 @@ impl Render for TerminalView {
         let titlebar_height = Self::window_titlebar_height_for(false, show_tab_strip_chrome);
         let vertical_tabs = self.tab_strip_orientation()
             == crate::terminal_view::tab_strip::state::TabStripOrientation::Vertical;
-        #[cfg(target_os = "macos")]
-        {
-            // Make sure tabbing is configured even if the startup defer lost the
-            // race, and reconcile `native_tab_group_active` with AppKit's real
-            // tab-group membership so the gate below reflects whether a native
-            // bar is actually on screen.
-            self.ensure_native_window_tabbing_configured(window);
-            self.refresh_native_tab_group_state(window);
-        }
-        #[cfg(target_os = "macos")]
-        let native_window_tabs = self.uses_native_window_tabs(show_tab_strip_chrome, vertical_tabs);
-        #[cfg(not(target_os = "macos"))]
-        let native_window_tabs = false;
-        let show_horizontal_tabbar = show_tab_strip_chrome && !vertical_tabs && !native_window_tabs;
+        let show_horizontal_tabbar = show_tab_strip_chrome && !vertical_tabs;
         let tabs_row = show_horizontal_tabbar
             .then(|| self.render_tab_strip(window, &colors, &ui_font_family, tabbar_bg, cx));
         let tab_sidebar = (vertical_tabs && show_tab_strip_chrome)
             .then(|| self.render_tab_sidebar(window, &colors, &ui_font_family, tabbar_bg, cx));
-        let hidden_titlebar_branding = (!native_window_tabs
-            && Self::should_render_hidden_titlebar_branding(
-                self.auto_hide_tabbar,
-                self.tabs.len(),
-                self.effective_tab_bar_visibility(),
-                self.show_termy_in_titlebar,
-            ))
+        let hidden_titlebar_branding = Self::should_render_hidden_titlebar_branding(
+            self.auto_hide_tabbar,
+            self.tabs.len(),
+            self.effective_tab_bar_visibility(),
+            self.show_termy_in_titlebar,
+        )
         .then(|| {
             self.render_titlebar_branding(window, &colors, &ui_font_family, tabbar_bg, false, cx)
         })
