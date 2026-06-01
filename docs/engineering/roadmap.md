@@ -42,7 +42,7 @@
 | E0.4 | PR definition of done | PR template checklist | Matches CI jobs by name | G12 | Done |
 | E0.5 | Agent/contributor doc sync | `CLAUDE.md` paths | G11 review passes | G11 | Done |
 
-**Remaining:** Merge to `main`, then flip G3–G4 to **Met** on the scorecard after two weeks green.
+**Status:** Merged to `main` ([#317](https://github.com/lassejlv/termy/pull/317)). Monitor CI for two weeks; revert gates if regressions appear.
 
 **Explicitly not in E0:** 100% coverage, rewriting `render.rs`, new ADR process.
 
