@@ -25,3 +25,9 @@ Closes #
 ## Checklist
 
 - [ ] I confirmed there is no existing open PR for the same or overlapping changes.
+- [ ] I ran the smallest validation pass for this change (see [CONTRIBUTING.md](CONTRIBUTING.md#testing-and-validation)).
+- [ ] `just check-boundaries` (if deps, config keys, commands, or generated docs changed).
+- [ ] `just test-workspace` or targeted `cargo test -p <crate>` (if Rust behavior changed).
+- [ ] `just fmt-check` (if Rust formatting may have drifted).
+- [ ] `just test-tmux-integration` (if tmux behavior changed).
+- [ ] Regenerated `docs/configuration.md` / `docs/keybindings.md` when schema or defaults changed.

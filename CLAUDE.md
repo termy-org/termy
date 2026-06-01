@@ -14,8 +14,14 @@ cargo run --release
 # Check workspace
 cargo check --workspace
 
-# Run tests
-cargo test --release
+# Run desktop app tests
+just test
+
+# Run all workspace tests (release)
+just test-workspace
+
+# Full local gate (check, fmt, tests, boundaries, clippy)
+just validate
 
 # Run specific crate tests
 cargo test -p termy_config_core
@@ -40,12 +46,12 @@ Termy is a terminal emulator built with **GPUI** (Zed's UI framework) and **alac
 
 ### Source Structure
 
-- `src/` - Main GPUI desktop application
+- `crates/desktop_app/src/` - Main GPUI desktop application (`termy` package)
   - `terminal_view/` - Terminal rendering, interaction, tabs, search, pane splitting
   - `settings_view/` - Settings UI
   - `commands.rs` - Command dispatch and keybind handling
   - `config/` - Config loading and app-level adapter
-- `crates/` - Workspace crates with strict dependency boundaries
+- `crates/` - Workspace crates with strict dependency boundaries (see `crates/README.md`)
 
 ### Key Crates and Boundaries
 
@@ -94,9 +100,14 @@ RUST_LOG=info TERMY_RENDER_METRICS=1 cargo run -p termy
 - `partial`: dirty-span patch updates
 - `reuse`: no cache update needed
 
+## Roadmaps
+
+- Product + v1 milestones: `ROADMAP.md`
+- Engineering quality (CI, modularity, scorecard): `docs/engineering/roadmap.md`
+
 ## Plugin System
 
-Plugins are out-of-process executables using stdio JSON protocol. Located in `<config-dir>/plugins/<plugin-id>/`. See `docs/architecture/plugins.md` for the protocol spec.
+Plugins are out-of-process executables using stdio JSON protocol. Located in `<config-dir>/plugins/<plugin-id>/`. Protocol spec: document when added under `docs/architecture/`.
 
 ## Clippy Configuration
 

@@ -80,4 +80,6 @@ check_forbidden_dep "termy_ffi" "termy_terminal_ui"
 cargo run -p xtask -- generate-keybindings-doc --check
 cargo run -p xtask -- generate-config-doc --check
 
+"$(dirname "${BASH_SOURCE[0]}")/check-file-sizes.sh"
+
 echo "Boundary checks passed"

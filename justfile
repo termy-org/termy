@@ -34,6 +34,18 @@ check-macos-release *args:
 test:
     cargo test -p termy --release
 
+# All workspace crate tests (release). Target for CI — see docs/engineering/roadmap.md E0.1
+test-workspace:
+    cargo test --workspace --release
+
+# Format check (no writes). Target for CI — see docs/engineering/roadmap.md E0.2
+fmt-check:
+    cargo fmt --all -- --check
+
+# Local gate closest to target CI (see docs/engineering/roadmap.md E0.3)
+validate: check fmt-check test-workspace check-boundaries
+    cargo clippy --workspace --all-targets -- -D warnings
+
 dev:
     cargo watch -x "run -p termy --release"
 
@@ -91,6 +103,9 @@ check-config-doc:
 
 check-boundaries:
     ./scripts/check-boundaries.sh
+
+check-file-sizes:
+    ./scripts/check-file-sizes.sh
 
 test-tmux-integration:
     cargo test -p termy_terminal_ui --test tmux_split_integration -- --ignored --nocapture --test-threads=1
