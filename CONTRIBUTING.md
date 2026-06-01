@@ -82,14 +82,16 @@ just check-config-doc
 
 ## Testing and validation
 
-Use the smallest validation pass that proves your change.
+Use the smallest validation pass that proves your change. See [docs/engineering/testing.md](docs/engineering/testing.md) for the full test pyramid.
 
 Common options:
 
 ```sh
 cargo check -p termy
 cargo test -p termy_config_core
+just test-workspace          # all workspace tests (release)
 just check-boundaries
+just validate                # check + fmt + tests + boundaries + clippy (before large PRs)
 ```
 
 If your change touches tmux behavior, also run:
@@ -97,6 +99,11 @@ If your change touches tmux behavior, also run:
 ```sh
 just test-tmux-integration
 ```
+
+Roadmaps:
+
+- Product + milestones: [ROADMAP.md](ROADMAP.md)
+- Engineering quality (CI, modularity, scorecard): [docs/engineering/roadmap.md](docs/engineering/roadmap.md)
 
 ## Config and command changes
 

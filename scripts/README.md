@@ -15,7 +15,8 @@ See `docs/architecture/release-packaging.md` for artifact names and release work
 
 ## Maintenance
 
-- `check-boundaries.sh`: validates crate dependency boundaries, generated docs, required ownership docs, and release packaging path alignment.
+- `check-boundaries.sh`: validates crate dependency boundaries, generated docs, required ownership docs, release packaging path alignment, and Rust file size limits (via `check-file-sizes.sh`).
+- `check-file-sizes.sh`: fails if any tracked `crates/**/*.rs` exceeds 1,500 lines (allowlisted legacy files warn only).
 - `generate-icon.sh`: regenerates app icon assets from the source image.
 - `test_osc_sequences.sh`: exercises OSC behavior manually.
 

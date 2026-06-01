@@ -30,6 +30,11 @@ Config and keybinds live under your platform config dir. See [docs/configuration
 
 Termy is a Rust workspace with a GPUI desktop app, reusable headless runtime, CLI, FFI, website, and platform packaging scripts. See [Project Layout](docs/architecture/project-layout.md) for ownership boundaries and [Release Packaging](docs/architecture/release-packaging.md) for release artifact flow.
 
+## Roadmap
+
+- [Product & v1.0 plan](ROADMAP.md)
+- [Engineering quality plan](docs/engineering/roadmap.md)
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, build, and validation commands.

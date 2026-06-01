@@ -44,6 +44,42 @@ jobs:
       - name: Run boundary checks
         run: ./scripts/check-boundaries.sh
 
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+
+  workspace-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Run workspace tests
+        run: cargo test --workspace --release
+
   tmux-integration:
     runs-on: macos-latest
     steps:
@@ -61,8 +97,7 @@ jobs:
       - name: Install tmux + just
         run: brew install tmux just
 
-      - name: Check tmux version
-        id: tmux-version
+      - name: Require tmux >= 3.3
         shell: bash
         run: |
           set -euo pipefail
@@ -70,23 +105,14 @@ jobs:
           major="${version%%.*}"
           minor_part="${version#*.}"
           minor_digits="${minor_part%%[^0-9]*}"
-
           if [[ -z "${minor_digits}" ]]; then
             minor_digits=0
           fi
-
-          if (( major > 3 )) || (( major == 3 && minor_digits >= 3 )); then
-            echo "supported=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          if (( major < 3 )) || (( major == 3 && minor_digits < 3 )); then
+            echo "tmux ${version} is below required 3.3 (run: brew upgrade tmux)" >&2
+            exit 1
           fi
-
-          echo "supported=false" >> "$GITHUB_OUTPUT"
-          echo "tmux ${version} is below required 3.3; skipping tmux integration tests."
+          echo "tmux ${version}"
 
       - name: Run tmux integration tests
-        if: steps.tmux-version.outputs.supported == 'true'
         run: just test-tmux-integration
-
-      - name: Skip tmux integration tests (tmux < 3.3)
-        if: steps.tmux-version.outputs.supported != 'true'
-        run: echo "tmux integration tests skipped because tmux is below 3.3."
