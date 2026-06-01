@@ -31,8 +31,9 @@ Execute **one tranche per release** (or per month), each ≤500 lines moved, wit
 
 ### Tranche 1 — Session & window glue (E1 Q2)
 
-- Move window-scoped session wiring out of `mod.rs` → `session_window.rs` or extend `runtime/mod.rs`.
+- Move window-scoped session wiring out of `mod.rs` → `window_appearance.rs` (started in #319).
 - **Exit:** `mod.rs` −300 lines; no behavior change; tests unchanged count.
+- **Progress:** `window_appearance.rs` holds background blur/opacity + system appearance handlers (~196 lines removed from `mod.rs`).
 
 ### Tranche 2 — Tab lifecycle boundary (E1 Q2–Q3)
 
